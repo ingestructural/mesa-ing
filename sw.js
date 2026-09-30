@@ -1,7 +1,7 @@
-/* Service worker — Mesa de Cálculo, versión 20260929-1854
+/* Service worker — Mesa de Cálculo, versión 20260930-1137
    Página: primero la red (así llegan las versiones nuevas) y, sin conexión, la copia guardada.
    Íconos, manifiesto y fuentes: copia guardada. */
-const CACHE = 'mesa-20260929-1854';
+const CACHE = 'mesa-20260930-1137';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE))); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

@@ -1,0 +1,17 @@
+# Mesa de Cálculo — ING Estructural. Sitio estático (sin compilación).
+[build]
+  publish = "."
+
+# La página y el service worker no se guardan en caché del navegador: así el iPhone detecta cada versión nueva.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-cache"
