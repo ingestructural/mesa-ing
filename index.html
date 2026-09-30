@@ -40451,11 +40451,14 @@ route();
    + '#esqLive .el-b svg{width:100%!important;height:auto!important;max-width:100%;display:block;margin:0 auto 8px}'
    + '#esqLive.min .el-b{display:none}'
    + '#esqLive.dim{opacity:.18;pointer-events:none}'
-   + '@media print{#esqLive{display:none!important}}';
+   + '#esqBtn{position:fixed;right:18px;bottom:18px;z-index:41;display:none;border:0;border-radius:22px;padding:10px 16px;background:linear-gradient(90deg,#0060c1,#0086c9);color:#fff;font:600 .85rem/1 var(--ff-d,sans-serif);box-shadow:0 6px 16px rgba(20,40,70,.3);cursor:pointer}'
+   + '@media print{#esqLive,#esqBtn{display:none!important}}';
   document.head.appendChild(st);
   var box = document.createElement('aside'); box.id = 'esqLive'; box.setAttribute('aria-label','Esquema de variables');
   box.innerHTML = '<div class="el-h" title="Clic para plegar / desplegar"><span>Esquema de variables</span><span style="display:flex;gap:12px"><small class="el-z" title="Ampliar / reducir el esquema">⤢ ampliar</small><small class="el-t">▾ plegar</small></span></div><div class="el-b"></div>';
   document.body.appendChild(box);
+  var btn = document.createElement('button'); btn.id = 'esqBtn'; btn.type = 'button'; btn.textContent = '📐 Ver esquema'; document.body.appendChild(btn);
+  var abierto = false; btn.addEventListener('click', function(){ abierto = !abierto; if (abierto) setMin(false); colocar(); });
   var zb = box.querySelector('.el-z'), big = false; try { big = localStorage.getItem('mesaEsqLiveBig') === '1'; } catch(e){}
   zb.addEventListener('click', function(ev){ ev.stopPropagation(); big = !big; zb.textContent = big ? '⤡ reducir' : '⤢ ampliar'; try { localStorage.setItem('mesaEsqLiveBig', big ? '1' : '0'); } catch(e){} colocar(); });
   zb.textContent = big ? '⤡ reducir' : '⤢ ampliar';
@@ -40471,9 +40474,16 @@ route();
   }
   function colocar(){
     var main = document.getElementById('mainView');
-    if (!main || !srcs.length || !document.documentElement.classList.contains('tool-open') && !location.hash) { box.style.display = 'none'; return; }
+    if (!main || !srcs.length || !document.documentElement.classList.contains('tool-open') && !location.hash) { box.style.display = 'none'; btn.style.display = 'none'; return; }
     var r = main.getBoundingClientRect(), left = Math.round(r.right + 20), w = window.innerWidth - left - 20;
-    if (w < 240) { box.style.display = 'none'; return; }
+    if (w < 240) { // sin espacio libre a la derecha: botón flotante que abre el esquema encima
+      btn.style.display = 'block'; btn.textContent = abierto ? '✕ Cerrar esquema' : '📐 Ver esquema';
+      if (!abierto) { box.style.display = 'none'; return; }
+      var ow = Math.min(window.innerWidth - 36, 900);
+      box.classList.remove('dim'); box.style.display = 'flex'; box.style.left = (window.innerWidth - ow - 18) + 'px'; box.style.width = ow + 'px';
+      box.style.maxHeight = (window.innerHeight - 140) + 'px'; return;
+    }
+    btn.style.display = 'none';
     if (big) { var bw = Math.min(Math.max(w, Math.round(window.innerWidth * 0.55)), 1000); left = window.innerWidth - bw - 20; w = bw; }
     box.style.display = 'flex'; box.style.left = left + 'px'; box.style.width = (big ? w : Math.min(w, 760)) + 'px';
     box.style.maxHeight = (window.innerHeight - 80) + 'px';
@@ -40495,14 +40505,14 @@ route();
   window.addEventListener('resize', colocar);
   window.addEventListener('hashchange', pronto);
   window.addEventListener('change', pronto, true);
-  window.addEventListener('beforeprint', function(){ box.style.display = 'none'; });
+  window.addEventListener('beforeprint', function(){ box.style.display = 'none'; btn.style.display = 'none'; });
   window.addEventListener('afterprint', pronto);
   pronto();
 })();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20260930-1820. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20260930-1823. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
