@@ -26,6 +26,21 @@
 .pwsync{font-size:.74rem;font-weight:600;padding:2px 8px;border-radius:10px;white-space:nowrap}
 .pwsync.ok{background:#dcfce7;color:#15803d} .pwsync.pend{background:#fef3c7;color:#b45309} .pwsync.off{background:#fee2e2;color:#b91c1c}
 .pwout{font:600 .74rem var(--ff-d,system-ui);border:1px solid var(--line,#ccc);background:transparent;color:var(--muted,#555);border-radius:4px;padding:2px 8px;cursor:pointer}
+#pwLock,#pwLockCfg{position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;padding:20px;padding-top:calc(20px + env(safe-area-inset-top,0px))}
+#pwLock{background:var(--bg,#eef4fa)} #pwLockCfg{background:rgba(10,14,20,.45)}
+#pwLock[hidden],#pwLockCfg[hidden]{display:none}
+html.pw-locked body>*:not(#pwLock):not(.toast){visibility:hidden}
+.pwk-box{background:var(--panel,#fff);border:1px solid var(--line,#dfe2e6);border-top:4px solid #15803d;border-radius:8px;padding:22px;width:min(380px,100%);display:grid;gap:10px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.15)}
+.pwk-box h2{margin:0;color:#0060c1;border:none;padding:0} .pwk-box h3{margin:0}
+.pwk-box label{display:grid;gap:4px;text-align:left;font-size:.82rem;font-weight:600;color:var(--muted,#5e6675)}
+.pwk-box input,.pwk-box select{font-size:16px;padding:8px}
+.pwk-box .btn{padding:10px;font-size:1rem}
+.pwk-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.pwk-box form{display:grid;gap:8px}
+.pwk-box{grid-template-columns:minmax(0,1fr);box-sizing:border-box}
+.pwk-box .pwl-logo{height:52px;width:auto;max-width:100%;display:block;margin:0 auto 6px;object-fit:contain}
+.pwk-box .pwl-sub{color:var(--muted,#5e6675);font-size:.88rem;margin:0}
+.pwk-box .pwl-err{min-height:1.2em;color:var(--bad,#b3261e);font-size:.85rem}
 </style>
 <script>/* ==========================================================================
    POWER en la nube (Supabase) — adaptador con la misma interfaz mínima que la
@@ -169,9 +184,102 @@
       clearInterval(timer); timer = setInterval(() => { if (document.visibilityState === 'visible') sync(); }, 20000);
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
       window.addEventListener('online', sync); window.addEventListener('offline', () => setStatus('offline'));
+      if (window.PW_LOCK) window.PW_LOCK.init();
       return db;
     },
-    sync, logout, user: () => sess && sess.user
+    sync, logout, user: () => sess && sess.user,
+    async checkPassword(pw) { const mail = sess && sess.user && sess.user.email; if (!mail) throw new Error('sin sesión'); await authCall('password', {email: mail, password: pw}); }
+  };
+})();
+</script>
+<script>/* ==========================================================================
+   Bloqueo con Face ID / huella / Windows Hello (WebAuthn, autenticador del propio equipo).
+   Se activa por equipo desde el botón 🔒 de la cabecera. Al abrir la app — o al volver a ella después
+   de X minutos — tapa la pantalla y pide la verificación biométrica; alternativa: la contraseña.
+   Es un bloqueo local de la pantalla (los datos siguen protegidos en la nube por el usuario y contraseña).
+   ========================================================================== */
+(() => {
+  if (!window.PW_CLOUD) return;
+  const K = 'pw_lock';
+  const LS = { get: () => { try { return JSON.parse(localStorage.getItem(K) || 'null'); } catch (e) { return null; } },
+               set: v => { try { v ? localStorage.setItem(K, JSON.stringify(v)) : localStorage.removeItem(K); } catch (e) {} } };
+  const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const unb64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+  const rnd = n => crypto.getRandomValues(new Uint8Array(n));
+  const bioName = () => /iPhone|iPad|Macintosh/.test(navigator.userAgent) ? 'Face ID / Touch ID' : /Windows/.test(navigator.userAgent) ? 'Windows Hello' : 'huella / reconocimiento facial';
+  async function available() { try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch (e) { return false; } }
+  let locked = false, hiddenAt = 0;
+
+  async function activar(minutos) {
+    const u = (window.PW_CLOUD.user && window.PW_CLOUD.user()) || {};
+    const cred = await navigator.credentials.create({ publicKey: {
+      challenge: rnd(32), rp: { name: 'POWER — ING Estructural' },
+      user: { id: rnd(16), name: u.email || 'power', displayName: 'POWER' },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+      timeout: 60000 } });
+    LS.set({ id: b64(cred.rawId), min: minutos });
+  }
+  async function verificar() {
+    const L = LS.get(); if (!L) return true;
+    const a = await navigator.credentials.get({ publicKey: { challenge: rnd(32), allowCredentials: [{ type: 'public-key', id: unb64(L.id) }], userVerification: 'required', timeout: 60000 } });
+    return !!a;
+  }
+  function pantalla() {
+    let ov = document.getElementById('pwLock');
+    if (!ov) { ov = document.createElement('div'); ov.id = 'pwLock'; document.body.appendChild(ov); }
+    const logo = document.querySelector('img.logo');
+    ov.innerHTML = `<div class="pwk-box">${logo ? `<img src="${logo.src}" alt="ING Estructural" class="pwl-logo">` : ''}<h2>POWER</h2>
+      <p class="pwl-sub">Bloqueado — use ${bioName()} para ver sus datos</p>
+      <button class="btn" id="pwkGo">🔓 Desbloquear</button>
+      <button class="btn ghost" id="pwkPass">Usar contraseña</button>
+      <form id="pwkForm" hidden><label>Contraseña<input id="pwkIn" type="password" autocomplete="current-password"></label><button class="btn" type="submit">Entrar</button></form>
+      <div class="pwl-err" id="pwkErr"></div></div>`;
+    ov.hidden = false; locked = true; document.documentElement.classList.add('pw-locked');
+    const err = t => ov.querySelector('#pwkErr').textContent = t;
+    const abrir = () => { ov.hidden = true; locked = false; document.documentElement.classList.remove('pw-locked'); };
+    ov.querySelector('#pwkGo').onclick = async () => { err(''); try { if (await verificar()) abrir(); } catch (e) { err(e.name === 'NotAllowedError' ? 'Verificación cancelada. Toque «Desbloquear» para intentar de nuevo.' : 'No se pudo verificar: ' + e.message); } };
+    ov.querySelector('#pwkPass').onclick = () => { ov.querySelector('#pwkForm').hidden = false; ov.querySelector('#pwkIn').focus(); };
+    ov.querySelector('#pwkForm').onsubmit = async e => { e.preventDefault(); err('Verificando…');
+      try { await window.PW_CLOUD.checkPassword(ov.querySelector('#pwkIn').value); abrir(); }
+      catch (er) { err(!navigator.onLine ? 'Sin conexión: use ' + bioName() + '.' : 'Contraseña incorrecta.'); } };
+    // en PC/Android se puede pedir de inmediato; en iPhone/iPad hace falta tocar el botón
+    if (!/iPhone|iPad|Macintosh/.test(navigator.userAgent)) setTimeout(() => ov.querySelector('#pwkGo').click(), 300);
+  }
+  function panel() {
+    const L = LS.get();
+    let ov = document.getElementById('pwLockCfg'); if (!ov) { ov = document.createElement('div'); ov.id = 'pwLockCfg'; document.body.appendChild(ov); }
+    ov.innerHTML = `<div class="pwk-box"><h3>🔒 Bloqueo con ${bioName()}</h3>
+      <p class="pwl-sub">${L ? 'Activado en este equipo.' : 'Pide ' + bioName() + ' para ver el POWER en este equipo (se activa por separado en cada equipo).'}</p>
+      <label>Pedir de nuevo al volver a la app después de
+        <select id="pwkMin"><option value="0">cada vez que se abre</option><option value="1">1 minuto</option><option value="5">5 minutos</option><option value="15">15 minutos</option><option value="60">1 hora</option></select></label>
+      <div class="pwk-row">${L ? '<button class="btn" id="pwkSave">Guardar</button><button class="btn danger" id="pwkOff">Desactivar</button>' : '<button class="btn" id="pwkOn">Activar</button>'}<button class="btn ghost" id="pwkClose">Cerrar</button></div>
+      <div class="pwl-err" id="pwkCfgErr"></div></div>`;
+    ov.hidden = false;
+    const sel = ov.querySelector('#pwkMin'); sel.value = String(L ? L.min : 5);
+    const cerrar = () => { ov.hidden = true; };
+    ov.querySelector('#pwkClose').onclick = cerrar; ov.onclick = e => { if (e.target === ov) cerrar(); };
+    const on = ov.querySelector('#pwkOn'), off = ov.querySelector('#pwkOff'), sv = ov.querySelector('#pwkSave');
+    if (on) on.onclick = async () => { const er = ov.querySelector('#pwkCfgErr');
+      if (!(await available())) { er.textContent = 'Este equipo o navegador no tiene ' + bioName() + ' disponible para páginas web.'; return; }
+      try { await activar(+sel.value); cerrar(); marcar(); toastL('Bloqueo activado en este equipo'); } catch (e) { er.textContent = e.name === 'NotAllowedError' ? 'Activación cancelada.' : 'No se pudo activar: ' + e.message; } };
+    if (off) off.onclick = () => { LS.set(null); cerrar(); marcar(); toastL('Bloqueo desactivado en este equipo'); };
+    if (sv) sv.onclick = () => { const L2 = LS.get(); if (L2) { L2.min = +sel.value; LS.set(L2); } cerrar(); toastL('Guardado'); };
+  }
+  function toastL(t) { try { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2400); } catch (e) {} }
+  function marcar() { const b = document.getElementById('pwLockBtn'); if (b) { const on = !!LS.get(); b.textContent = on ? '🔒' : '🔓'; b.title = on ? 'Bloqueo con ' + bioName() + ': activado' : 'Activar bloqueo con ' + bioName(); } }
+
+  window.PW_LOCK = {
+    init() {
+      const hoy = document.getElementById('hoyBox');
+      if (hoy && !document.getElementById('pwLockBtn')) { const b = document.createElement('button'); b.id = 'pwLockBtn'; b.className = 'pwout'; b.onclick = panel; hoy.appendChild(b); marcar(); }
+      if (LS.get()) pantalla();
+      document.addEventListener('visibilitychange', () => {
+        const L = LS.get(); if (!L) return;
+        if (document.visibilityState === 'hidden') hiddenAt = Date.now();
+        else if (!locked && hiddenAt && Date.now() - hiddenAt >= L.min * 60000) pantalla();
+      });
+    }
   };
 })();
 </script>
@@ -1995,7 +2103,7 @@ cargarUF();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20260930-1333. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20260930-1408. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
