@@ -1,7 +1,6 @@
-# Mesa de Cálculo — ING Estructural
+# ING Estructural — apps instalables
 
-App instalable (PWA) de la Mesa de Cálculo: https://mesa-ing.netlify.app
+- Mesa de Cálculo: https://mesa-ing.netlify.app
+- POWER (administración): https://mesa-ing.netlify.app/power/ — requiere iniciar sesión; los datos están en Supabase (no en este repositorio).
 
-- En el iPhone: abrir en Safari → Compartir → «Agregar a pantalla de inicio».
-- Funciona sin conexión; al abrirla con internet detecta la versión nueva y ofrece actualizar.
-- Cada cambio subido a la rama `main` se publica automáticamente en Netlify.
+Cada cambio subido a `main` se publica automáticamente en Netlify.

@@ -1,8 +1,8 @@
-# Mesa de Cálculo — ING Estructural. Sitio estático (sin compilación).
+# Mesa de Cálculo (raíz) y POWER (/power/) — ING Estructural. Sitio estático (sin compilación).
 [build]
   publish = "."
 
-# La página y el service worker no se guardan en caché del navegador: así el iPhone detecta cada versión nueva.
+# La página y el service worker no se guardan en caché del navegador: así cada dispositivo detecta las versiones nuevas.
 [[headers]]
   for = "/sw.js"
   [headers.values]
@@ -13,5 +13,17 @@
     Cache-Control = "no-cache"
 [[headers]]
   for = "/"
+  [headers.values]
+    Cache-Control = "no-cache"
+[[headers]]
+  for = "/power/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+[[headers]]
+  for = "/power/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+[[headers]]
+  for = "/power/"
   [headers.values]
     Cache-Control = "no-cache"
