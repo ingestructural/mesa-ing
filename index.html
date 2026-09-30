@@ -40470,7 +40470,7 @@ route();
   var srcs = [], lastHtml = '';
   function fuentes(){
     var main = document.getElementById('mainView'); if (!main) return [];
-    return Array.prototype.filter.call(main.querySelectorAll('[id*="_esq"]'), function(el){ return el.querySelector('svg') && el.offsetParent !== null; });
+    return Array.prototype.filter.call(main.querySelectorAll('[id*="_esq"],[id$="_plot"],[id$="_diagrama"],#ch_seccion,#ah_figura'), function(el){ return el.querySelector('svg') && el.offsetParent !== null; });
   }
   function colocar(){
     var main = document.getElementById('mainView');
@@ -40478,6 +40478,9 @@ route();
     var r = main.getBoundingClientRect(), left = Math.round(r.right + 20), w = window.innerWidth - left - 20;
     if (w < 240) { // sin espacio libre a la derecha: botón flotante que abre el esquema encima
       btn.style.display = 'block'; btn.textContent = abierto ? '✕ Cerrar esquema' : '📐 Ver esquema';
+      var pa = document.querySelector('.print-actions'), bb = 18;
+      if (pa && getComputedStyle(pa).position === 'fixed' && getComputedStyle(pa).display !== 'none') { var pr = pa.getBoundingClientRect(); if (pr.height) bb = Math.max(18, Math.round(window.innerHeight - pr.top + 10)); }
+      btn.style.bottom = bb + 'px';
       if (!abierto) { box.style.display = 'none'; return; }
       var ow = Math.min(window.innerWidth - 36, 900);
       box.classList.remove('dim'); box.style.display = 'flex'; box.style.left = (window.innerWidth - ow - 18) + 'px'; box.style.width = ow + 'px';
@@ -40512,7 +40515,7 @@ route();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20260930-1832. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20260930-1912. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
