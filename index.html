@@ -877,7 +877,8 @@
 var FS_SUPPORTED = (typeof window.showDirectoryPicker === 'function');
 var FS_ROOT = null;          // FileSystemDirectoryHandle elegido por el usuario
 var FS_ACTIVE_PATH = [];     // array de nombres de carpeta, relativo a FS_ROOT, donde se guarda por defecto
-var PENDING_RESTORE = null;  // snapshot a restaurar apenas termine el próximo render de route()
+var PENDING_RESTORE = null;
+var FS_STORED_NAME = '';     // nombre de la carpeta base guardada (aunque falte reautorizar)  // snapshot a restaurar apenas termine el próximo render de route()
 
 /* ---------- IndexedDB: persistencia del handle de la carpeta base entre sesiones ---------- */
 function fsDbOpen(){
@@ -948,7 +949,10 @@ function fsReconnectWithGesture(){
   }).catch(function(){ return false; });
 }
 function fsChooseRoot(){
-  return window.showDirectoryPicker({mode:'readwrite'}).then(function(handle){
+  return fsDbGet('root').catch(function(){ return null; }).then(function(prev){
+    var opt = {mode:'readwrite', id:'mesaBase'}; try { opt.startIn = prev || 'documents'; } catch(e){}
+    return window.showDirectoryPicker(opt);
+  }).then(function(handle){
     return fsDbSet('root', handle).then(function(){
       FS_ROOT = handle;
       FS_ACTIVE_PATH = [];
@@ -1250,6 +1254,8 @@ async function fsSaveCurrentCalc(){
   if (!tool) { fsToast('Elige primero una calculadora con formulario.'); return; }
   if (!FS_ROOT) {
     var ok = await fsTryReconnect();
+    if (!ok) ok = await fsReconnectWithGesture();
+    if (ok) { var rr = document.getElementById('fsReconnectRow'); if (rr) rr.style.display = 'none'; fsUpdateRootLabel(); fsUpdateSaveBarLabel(); }
     if (!ok) { fsOpenPanel(); fsToast('Elige una carpeta base para poder guardar cálculos.'); return; }
   }
   var dir = await fsResolveDir(FS_ACTIVE_PATH, true);
@@ -1297,7 +1303,7 @@ async function fsOpenSavedFile(path, filename){
 function fsPanelIsOpen(){ var p = document.getElementById('fsPanel'); return !!(p && p.classList.contains('open')); }
 function fsUpdateRootLabel(){
   var el = document.getElementById('fsRootLabel');
-  if (el) el.textContent = FS_ROOT ? ('Carpeta base: ' + (FS_ROOT.name || '(elegida)')) : 'Sin carpeta base elegida';
+  if (el) el.textContent = FS_ROOT ? ('Carpeta base: ' + (FS_ROOT.name || '(elegida)')) : (FS_STORED_NAME ? ('Carpeta base: ' + FS_STORED_NAME + ' (se reconecta al primer clic)') : 'Sin carpeta base elegida');
 }
 function fsUpdateSaveBarLabel(){
   var el = document.querySelector('.calc-save-bar .fs-active-path');
@@ -1675,7 +1681,26 @@ if (!FS_SUPPORTED) {
   if (fsBtnUnsupported) fsBtnUnsupported.style.display = 'none';
 } else {
   fsLoadActivePath();
-  fsTryReconnect().then(function(){ fsUpdateRootLabel(); fsUpdateSaveBarLabel(); });
+  fsTryReconnect().then(function(ok){
+    fsUpdateRootLabel(); fsUpdateSaveBarLabel();
+    if (ok) return;
+    fsDbGet('root').then(function(stored){
+      if (!stored) return;
+      FS_STORED_NAME = stored.name || '';
+      fsUpdateRootLabel(); fsUpdateSaveBarLabel();
+      // la carpeta base queda siempre la misma: al primer clic se vuelve a autorizar sola
+      var once = function(){
+        document.removeEventListener('pointerdown', once, true); document.removeEventListener('keydown', once, true);
+        if (FS_ROOT) return;
+        fsReconnectWithGesture().then(function(ok2){
+          if (!ok2) return;
+          var rr = document.getElementById('fsReconnectRow'); if (rr) rr.style.display = 'none';
+          fsUpdateRootLabel(); fsUpdateSaveBarLabel(); try { fsRenderTree(); } catch(e){}
+        });
+      };
+      document.addEventListener('pointerdown', once, true); document.addEventListener('keydown', once, true);
+    }).catch(function(){});
+  });
 }
 </script>
 
@@ -40418,7 +40443,7 @@ route();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20260930-1316. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20260930-1811. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
