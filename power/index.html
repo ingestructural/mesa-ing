@@ -651,6 +651,9 @@ td.c-pp{background:color-mix(in srgb,#dc2626 6%,transparent)!important} td.c-pp.
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) td.c-fac.on{color:#7fb2f0} :root:not([data-theme="light"]) td.c-pf.on{color:#fb923c} :root:not([data-theme="light"]) td.c-pag.on{color:#4ade80} :root:not([data-theme="light"]) td.c-pp.on{color:#f87171} :root:not([data-theme="light"]) td.c-pct{color:#c4a5ff}}
 :root[data-theme="dark"] td.c-fac.on{color:#7fb2f0} :root[data-theme="dark"] td.c-pf.on{color:#fb923c} :root[data-theme="dark"] td.c-pag.on{color:#4ade80} :root[data-theme="dark"] td.c-pp.on{color:#f87171} :root[data-theme="dark"] td.c-pct{color:#c4a5ff}
 
+.pill.e-odc{background:#e0e7ff;color:#3730a3;border:1px solid #6366f1}
+.cobrar.odc{background:#eef2ff;color:#3730a3;border-color:#6366f1}
+.alerta.odc{background:color-mix(in srgb,#6366f1 11%,var(--panel));border-left:5px solid #6366f1}
 .pill.e-hes{background:#fce7f3;color:#be185d;border:1px solid #ec4899}
 .cobrar.hes{color:#be185d;background:#fce7f3;border-color:#ec4899}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .cobrar.hes{background:#3d1530;color:#f9a8d4}}
@@ -754,7 +757,7 @@ const num = v => { const x = parseFloat(String(v).replace(/\./g, '').replace(','
 const numIn = v => { if (v === '' || v == null) return null; const s = String(v).trim(); const x = /,/.test(s) ? parseFloat(s.replace(/\./g, '').replace(',', '.')) : parseFloat(s); return isNaN(x) ? null : x; };
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const ESTADOS_DOC = ['Pendiente','Pagada','Pago parcial','Vencida','Anulada'];
-const ESTADOS_PROY = ['En oferta','Adjudicado','En ejecución','Entregado','Solicitar HES/WE/HAS','Facturado','Pagado','Terminado','Suspendido','Cancelado','No adjudicado'];
+const ESTADOS_PROY = ['En oferta','Adjudicado','Solicitar ODC','En ejecución','Entregado','Solicitar HES/WE/HAS','Facturado','Pagado','Terminado','Suspendido','Cancelado','No adjudicado'];
 const MOTIVOS = ['Detenido por el mandante','No se ejecutó','Detenido por ING Estructural','Otro (ver observaciones)'];
 const DEF_PARAMS = { iva: 0.19, ufRef: 41040.82, uta: 834504, gp: 0.30, gpTope: 15, semRojo: 3, semAmarillo: 10,
   rates: {2024: 0.1375, 2025: 0.145, 2026: 0.1525, 2027: 0.16, 2028: 0.17},
@@ -1211,7 +1214,7 @@ function tercerosDe(p) {
 const proyById = id => S.proyectos.find(p => p.id === id);
 const mandanteDe = d => proyById(d.proyectoId)?.mandante || '(sin proyecto)';
 function pillEstado(e) { const m = {'Pagada':'e-pag','Pendiente':'e-pen','Pago parcial':'e-par','Vencida':'e-can','Anulada':'e-noa'}; return `<span class="pill ${m[e]||'p-grey'}">${esc(e||'—')}</span>`; }
-function pillProy(e) { const m = {'En oferta':'e-ofe','Adjudicado':'e-adj','En ejecución':'e-eje','Entregado':'e-ent','Solicitar HES/WE/HAS':'e-hes','Facturado':'e-fac','Pagado':'e-pag','Terminado':'e-ter','Suspendido':'e-sus','Cancelado':'e-can','No adjudicado':'e-noa'}; return `<span class="pill ${m[e]||'p-grey'}">${esc(e||'—')}</span>`; }
+function pillProy(e) { const m = {'En oferta':'e-ofe','Adjudicado':'e-adj','Solicitar ODC':'e-odc','En ejecución':'e-eje','Entregado':'e-ent','Solicitar HES/WE/HAS':'e-hes','Facturado':'e-fac','Pagado':'e-pag','Terminado':'e-ter','Suspendido':'e-sus','Cancelado':'e-can','No adjudicado':'e-noa'}; return `<span class="pill ${m[e]||'p-grey'}">${esc(e||'—')}</span>`; }
 function igc(base) {
   const U = P().uta; const b = base / U; const t = P().igc; let row = t[0];
   for (const r of t) if (b >= r[0]) row = r;
@@ -1237,7 +1240,7 @@ function renderKpis() {
   const by = S.boletas.filter(b => b.estado !== 'Anulada' && (b.fecha||'').startsWith(String(y)));
   const fCob = S.facturas.filter(f => !['Anulada','Pagada'].includes(f.estado)).reduce((s, f) => s + calcFactura(f).total, 0);
   const bCob = S.boletas.filter(b => !['Anulada','Pagada'].includes(b.estado)).reduce((s, b) => s + calcBoleta(b).liq, 0);
-  const ADJ = ['Adjudicado','En ejecución','Entregado','Solicitar HES/WE/HAS','Facturado','Terminado','Suspendido'];
+  const ADJ = ['Adjudicado','Solicitar ODC','En ejecución','Entregado','Solicitar HES/WE/HAS','Facturado','Terminado','Suspendido'];
   let ingF = 0, ingB = 0, nF = 0, nB = 0, ufIng = 0, propioIng = 0;
   S.proyectos.filter(p => ADJ.includes(p.estado)).forEach(p => { const m = proyMetrics(p); const v = p.valorUF || P().ufRef; const falta = Math.max(m.totalCLP - m.pagado, 0);
     if (falta <= 0) return; ufIng += falta / v; if (p.documento === 'B') { ingB += falta; nB++; } else { ingF += falta; nF++; }
@@ -1269,6 +1272,8 @@ function semaforo(p) {
   const t = d < 0 ? `atrasado ${-d} d` : d === 0 ? 'entrega hoy' : `faltan ${d} d`;
   return {c: d <= R ? 'r' : d <= A ? 'a' : 'v', t, d};
 }
+function odcPend(p) { if (p.estado !== 'Solicitar ODC') return null; return {t: p.oc ? 'OC recibida ' + p.oc + ': pasar a En ejecución' : 'falta N° de orden de compra'}; }
+const odcHtml = p => { const o = odcPend(p); return o ? `<div class="cobrar odc" title="Solicitar al cliente la orden de compra (OC)">📋 SOLICITAR ODC<span>${esc(o.t)}</span></div>` : ''; };
 function pagarTerc(p, m) {   // el cliente ya pagó (total o parcial) o el proyecto está Pagado, y hay terceros por pagar
   if (!m.tercPendList || !m.tercPendList.length || p.estado === 'Cancelado') return null;
   return (m.pagado > 0 || p.estado === 'Pagado') ? m.tercPendList : null;
@@ -1329,6 +1334,8 @@ function vProyectos() {
     const links = A => A.map(x => `<button class="alink" data-edit="proyectos" data-id="${x.p.id}">${esc(x.p.codigo)}</button>`).join(' ');
     let h = '';
     if (F.length) h += `<div class="alerta fac">📄 <b>${F.every(x=>x.p.documento==='B')?'EMITIR BOLETA':F.every(x=>x.p.documento==='F')?'FACTURAR':'FACTURAR / EMITIR BOLETA'}: ${F.length} proyecto${F.length===1?'':'s'} entregado${F.length===1?'':'s'}</b> — ${uf(F.reduce((a,x)=>a+x.c.fact,0))} UF por facturar: ${links(F)}</div>`;
+    const OD = S.proyectos.filter(p => odcPend(p)).map(p => ({p}));
+    if (OD.length) h += `<div class="alerta odc">📋 <b>SOLICITAR ODC: ${OD.length} proyecto${OD.length===1?'':'s'}</b> — pedir al cliente la orden de compra: ${links(OD)}</div>`;
     if (HS.length) h += `<div class="alerta hes">📋 <b>SOLICITAR HES/WE/HAS: ${HS.length} proyecto${HS.length===1?'':'s'}</b> — pedir al cliente las referencias para facturar: ${links(HS)}</div>`;
     const PG = S.proyectos.map(p => { const m = proyMetrics(p); return {p, m, t: pagarTerc(p, m)}; }).filter(x => x.t);
     if (PG.length) h += `<div class="alerta pag">🟠 <b>PAGAR A TERCEROS: ${PG.length} proyecto${PG.length===1?'':'s'} ya cobrado${PG.length===1?'':'s'}</b> — ${uf(PG.reduce((a,x)=>a+x.m.tercPendUF,0))} UF (${clp(PG.reduce((a,x)=>a+x.m.tercPendCLP,0))}) que no son tuyos: ${links(PG)}</div>`;
@@ -1343,17 +1350,17 @@ function vProyectos() {
       <td class="keep">${p.documento==='F'?'<span class="pill p-i">Factura</span>':'<span class="pill p-g">Boleta</span>'}</td>
       <td class="n cen">${uf(p.montoUF)}</td><td class="n">${clp(m.totalCLP)}</td><td class="n cen prop" title="${p.documento==='F'?'Neto sin IVA menos costo neto de terceros':'Bruto menos terceros'}">${uf(m.propioUF)}${m.tercUF > 0 ? `<span class="fing">terceros ${uf(m.tercUF)}</span>` : ''}</td><td class="nw ${late?'late':''}">${fdate(p.entrega)}</td>
       <td class="keep">${pillProy(p.estado)}${(() => { const cp = cobroPend(p, m); const pg = pagarTerc(p, m); const pgH = pg ? `<div class="cobrar pag" title="El cliente ya pagó: pagar al tercero">🟠 PAGAR${pg.map(t => `<span>${uf(t.montoUF)} UF · ${esc(t.nombre||'tercero')}</span>`).join('')}</div>` : '';
-      return pgH + (cp ? (cp.tipo === 'hes' ? `<div class="cobrar hes" title="Solicitar al cliente HES / WE / HAS para poder facturar">📋 SOLICITAR HES/WE/HAS<span>${esc(cp.t)}</span></div>` : cp.tipo === 'fact' ? `<div class="cobrar fac nd" data-newdoc="${p.documento==='F'?'facturas':'boletas'}" data-proy="${p.id}" title="Clic: emitir ${p.documento==='F'?'factura':'boleta'} de este proyecto">📄 ${p.documento==='F'?'FACTURAR':'EMITIR BOLETA'}<span>${esc(cp.t)}</span></div>` : `<div class="cobrar" title="Facturado: falta cobrar">💲 COBRAR<span>${esc(cp.t)}</span></div>`) : ''); })()}${p.estado==='Cancelado'?`<div class="small muted">${fdate(p.fechaCancel)} · ${esc(p.motivoCancel||'sin motivo')}</div>`:''}</td>
+      return odcHtml(p) + pgH + (cp ? (cp.tipo === 'hes' ? `<div class="cobrar hes" title="Solicitar al cliente HES / WE / HAS para poder facturar">📋 SOLICITAR HES/WE/HAS<span>${esc(cp.t)}</span></div>` : cp.tipo === 'fact' ? `<div class="cobrar fac nd" data-newdoc="${p.documento==='F'?'facturas':'boletas'}" data-proy="${p.id}" title="Clic: emitir ${p.documento==='F'?'factura':'boleta'} de este proyecto">📄 ${p.documento==='F'?'FACTURAR':'EMITIR BOLETA'}<span>${esc(cp.t)}</span></div>` : `<div class="cobrar" title="Facturado: falta cobrar">💲 COBRAR<span>${esc(cp.t)}</span></div>`) : ''); })()}${p.estado==='Cancelado'?`<div class="small muted">${fdate(p.fechaCancel)} · ${esc(p.motivoCancel||'sin motivo')}</div>`:''}</td>
       <td class="n c-fac ${m.facturadoUF>0.005?'on':''}">${uf(m.facturadoUF)}</td><td class="n c-pf ${m.porFacturar>0.005?'on':''}" style="${m.porFacturar<-0.005?'color:var(--bad)':''}">${uf(m.porFacturar)}</td><td class="n c-pct">${m.pctF==null?'—':`${pct(m.pctF)}<span class="pbar"><i style="width:${Math.max(0,Math.min(100,m.pctF*100))}%"></i></span>`}</td>
       <td class="n c-pag ${m.pagado>0?'on':''}">${clp(m.pagado)}</td><td class="n c-pp ${m.porPagar>0?'on':''}">${clp(m.porPagar)}</td></tr>`; }).join('')}</tbody></table></div>`
   : `<div class="empty">${S.proyectos.length ? 'Ningún proyecto coincide con el filtro.' : 'Aún no hay proyectos. Use “+ Nuevo proyecto” para registrar el primero; el código se asigna solo.'}</div>`}
-  <p class="note">Colores: <span class="pill e-fac">Facturado</span> <span style="color:#c2410c;font-weight:700">por facturar</span> · <span style="color:#6d28d9;font-weight:700">% facturado</span> · <span style="color:#15803d;font-weight:700">pagado</span> · <span style="color:#b91c1c;font-weight:700">por pagar</span> — etapas: <span class="pill e-ofe">En oferta</span> <span class="pill e-adj">Adjudicado</span> <span class="pill e-eje">En ejecución</span> <span class="pill e-ent">Entregado</span> <span class="pill e-hes">Solicitar HES/WE/HAS</span> <span class="pill e-fac">Facturado</span> <span class="pill e-pag">Pagado</span> <span class="pill e-ter">Terminado</span></p>
-  <p class="note">📄 FACTURAR / EMITIR BOLETA: proyecto entregado con saldo por documentar (clic en el aviso para emitir) · 📋 SOLICITAR HES/WE/HAS: pedir las referencias del cliente antes de facturar (indica cuáles faltan) · 💲 COBRAR: proyecto facturado con pagos pendientes. Al marcarlo «Pagado» deja de cobrarse. Fecha de entrega en rojo: atrasada.</p>
+  <p class="note">Colores: <span class="pill e-fac">Facturado</span> <span style="color:#c2410c;font-weight:700">por facturar</span> · <span style="color:#6d28d9;font-weight:700">% facturado</span> · <span style="color:#15803d;font-weight:700">pagado</span> · <span style="color:#b91c1c;font-weight:700">por pagar</span> — etapas: <span class="pill e-ofe">En oferta</span> <span class="pill e-adj">Adjudicado</span> <span class="pill e-odc">Solicitar ODC</span> <span class="pill e-eje">En ejecución</span> <span class="pill e-ent">Entregado</span> <span class="pill e-hes">Solicitar HES/WE/HAS</span> <span class="pill e-fac">Facturado</span> <span class="pill e-pag">Pagado</span> <span class="pill e-ter">Terminado</span></p>
+  <p class="note">📋 SOLICITAR ODC: pedir al cliente la orden de compra · 📄 FACTURAR / EMITIR BOLETA: proyecto entregado con saldo por documentar (clic en el aviso para emitir) · 📋 SOLICITAR HES/WE/HAS: pedir las referencias del cliente antes de facturar (indica cuáles faltan) · 💲 COBRAR: proyecto facturado con pagos pendientes. Al marcarlo «Pagado» deja de cobrarse. Fecha de entrega en rojo: atrasada.</p>
   <p class="note">Código: SIGLA del mandante – correlativo del mandante – correlativo general del año – año (2 dígitos). Se asigna al crear el proyecto; se reasigna si cambia el mandante o el año, o si el proyecto se mueve a otro archivo (queda registrado el código anterior). Un proyecto cancelado conserva su código, su saldo por facturar pasa a cero y lo ya facturado o cobrado se mantiene.</p>`;
 }
 /* ---------- vista para celular: tarjetas en vez de tablas anchas ---------- */
 function avisosProy(p, m) {
-  const cp = cobroPend(p, m), pg = pagarTerc(p, m); let h = '';
+  const cp = cobroPend(p, m), pg = pagarTerc(p, m); let h = odcHtml(p);
   if (pg) h += `<div class="cobrar pag">🟠 PAGAR${pg.map(t => `<span>${uf(t.montoUF)} UF · ${esc(t.nombre||'tercero')}</span>`).join('')}</div>`;
   if (cp) h += cp.tipo === 'hes' ? `<div class="cobrar hes">📋 SOLICITAR HES/WE/HAS<span>${esc(cp.t)}</span></div>`
     : cp.tipo === 'fact' ? `<div class="cobrar fac nd" data-newdoc="${p.documento==='F'?'facturas':'boletas'}" data-proy="${p.id}">📄 ${p.documento==='F'?'FACTURAR':'EMITIR BOLETA'}<span>${esc(cp.t)}</span></div>` : `<div class="cobrar">💲 COBRAR<span>${esc(cp.t)}</span></div>`;
@@ -2061,7 +2068,7 @@ async function save(kind, rec) {
       { // al emitir la factura/boleta, el proyecto pasa a «Facturado» (si estaba en una etapa anterior).
         // Cobro parcial (anticipo / estado de pago) de un proyecto aún no entregado y con saldo por facturar: mantiene su estado.
         const pr = proyById(data.proyectoId);
-        if (pr && data.estado !== 'Anulada' && ['En oferta', 'Adjudicado', 'En ejecución', 'Entregado', 'Solicitar HES/WE/HAS'].includes(pr.estado)) {
+        if (pr && data.estado !== 'Anulada' && ['En oferta', 'Adjudicado', 'Solicitar ODC', 'En ejecución', 'Entregado', 'Solicitar HES/WE/HAS'].includes(pr.estado)) {
           const saldo = saldoDesp, parcial = !['Entregado', 'Solicitar HES/WE/HAS'].includes(pr.estado) && saldo > 0.005;
           if (!parcial) { const {id: pid, ...pd} = pr; await put('proyectos', pid, {...pd, estado: 'Facturado'}); msgEst = ' · proyecto ' + pr.codigo + ' → Facturado'; }
           else msgEst = ' · cobro parcial: el proyecto sigue «' + pr.estado + '» (saldo ' + uf(saldo) + ' UF)';
@@ -2120,7 +2127,7 @@ cargarUF();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20260930-1757. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20260930-1804. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
