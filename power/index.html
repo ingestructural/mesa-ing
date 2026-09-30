@@ -548,6 +548,38 @@ td.c-pp{background:color-mix(in srgb,#dc2626 6%,transparent)!important} td.c-pp.
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .cobrar.hes{background:#3d1530;color:#f9a8d4}}
 :root[data-theme="dark"] .cobrar.hes{background:#3d1530;color:#f9a8d4}
 .alerta.hes{background:color-mix(in srgb,#ec4899 11%,var(--panel));border-left:5px solid #ec4899}
+
+/* ---- vista para celular (≤ 760 px): tarjetas, cinta de montos deslizable, pestañas deslizables ---- */
+.pcards{display:none}
+@media (max-width:760px){
+  .wrap{padding-inline:10px;padding-top:calc(8px + env(safe-area-inset-top,0px))}
+  header.top{gap:6px;padding-bottom:8px}
+  .brandrow .logo{height:40px} .brand h1{font-size:1.25rem} .brand p{display:none}
+  .toprt{align-items:flex-start;width:100%} .hoy{justify-content:flex-start;gap:6px;font-size:.78rem} .who{display:none}
+  .kpis{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity;padding-bottom:4px}
+  .kpis .kpi{flex:0 0 132px;scroll-snap-align:start}
+  nav.tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  nav.tabs button{flex:0 0 auto;white-space:nowrap}
+  section.pane{padding:8px}
+  .bar{gap:6px} .bar .grow{flex-basis:100%} .bar select,.bar .btn{flex:1 1 auto}
+  .tbl.wide{display:none}
+  .pcards{display:grid;gap:8px}
+  .alerta{font-size:.8rem}
+  .note{font-size:.76rem}
+}
+.pcard{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--ing);border-radius:6px;padding:9px 10px;cursor:pointer}
+.pcard.b{border-left-color:var(--ga)} .pcard.cancel{opacity:.6}
+.pcard:active{background:var(--t-hover)}
+.pc-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.78rem}
+.pc-name{font-weight:800;font-size:1rem;line-height:1.25;margin:4px 0 2px;text-transform:uppercase}
+.pc-sub{font-size:.8rem;color:var(--muted)} .pc-mand{color:var(--logo1)}
+.pc-av:empty{display:none} .pc-av{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.pc-mon{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px}
+.pc-mon>div{background:var(--soft);border-radius:4px;padding:4px 6px;min-width:0}
+.pc-mon small{display:block;font-size:.62rem;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700}
+.pc-mon b{display:block;font-family:var(--ff-m);font-size:.82rem;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-mon i{display:block;font-style:normal;font-size:.66rem;color:var(--muted);font-family:var(--ff-m)}
+.pc-mon .c-fac b{color:#0060c1} .pc-mon .c-pf b{color:#c2410c} .pc-mon .c-pag b{color:#15803d} .pc-mon .c-pp b{color:#b91c1c}
 </style>
 
 <div class="wrap">
@@ -1180,7 +1212,7 @@ function vProyectos() {
     if (C.length) h += `<div class="alerta cob">💲 <b>COBRAR: ${C.length} proyecto${C.length===1?'':'s'} facturado${C.length===1?'':'s'}</b> — ${clp(C.reduce((a,x)=>a+x.c.pag,0))} por cobrar: ${links(C)}</div>`;
     return h; })()}
   <p class="small muted">${S.proyectos.length} registrados · ${canc.length} cancelados (${uf(canc.reduce((s,p)=>s+(p.montoUF||0),0))} UF). Haga clic en una fila para editarla.</p>
-  ${rows.length ? `<div class="tbl"><table>
+  ${rows.length ? `<div class="pcards">${rows.map(cardProy).join('')}</div><div class="tbl wide"><table>
     <thead><tr>${sortTh('codigo','Código')}${sortTh('mandante','Empresa mandante')}${sortTh('proyecto','Proyecto')}${sortTh('contacto','Contacto')}${sortTh('documento','Documento')}${sortTh('montoUF','Monto (UF)','n cen')}${sortTh('montoCLP','Monto ($)','n')}${sortTh('propio','Propio (UF)','n cen')}${sortTh('entrega','Entrega')}${sortTh('estado','Estado')}${sortTh('facturado','Facturado (UF)','n h-fac')}${sortTh('porFact','Por facturar (UF)','n h-pf')}${sortTh('pctF','% fact.','n h-pct')}${sortTh('pagado','Status: pagado','n h-pag')}${sortTh('porPagar','Status: por pagar','n h-pp')}</tr></thead>
     <tbody>${rows.map(p => { const m = proyMetrics(p); const late = p.entrega && p.entrega < today() && !['Entregado','Solicitar HES/WE/HAS','Facturado','Pagado','Terminado','Suspendido','Cancelado','No adjudicado'].includes(p.estado);
       return `<tr class="click ${p.estado==='Cancelado'?'cancel':''}" data-edit="proyectos" data-id="${p.id}">
@@ -1195,6 +1227,42 @@ function vProyectos() {
   <p class="note">Colores: <span class="pill e-fac">Facturado</span> <span style="color:#c2410c;font-weight:700">por facturar</span> · <span style="color:#6d28d9;font-weight:700">% facturado</span> · <span style="color:#15803d;font-weight:700">pagado</span> · <span style="color:#b91c1c;font-weight:700">por pagar</span> — etapas: <span class="pill e-ofe">En oferta</span> <span class="pill e-adj">Adjudicado</span> <span class="pill e-eje">En ejecución</span> <span class="pill e-ent">Entregado</span> <span class="pill e-hes">Solicitar HES/WE/HAS</span> <span class="pill e-fac">Facturado</span> <span class="pill e-pag">Pagado</span> <span class="pill e-ter">Terminado</span></p>
   <p class="note">📄 FACTURAR: proyecto entregado con saldo por facturar · 📋 SOLICITAR HES/WE/HAS: pedir las referencias del cliente antes de facturar (indica cuáles faltan) · 💲 COBRAR: proyecto facturado con pagos pendientes. Al marcarlo «Pagado» deja de cobrarse. Fecha de entrega en rojo: atrasada.</p>
   <p class="note">Código: SIGLA del mandante – correlativo del mandante – correlativo general del año – año (2 dígitos). Se asigna al crear el proyecto; se reasigna si cambia el mandante o el año, o si el proyecto se mueve a otro archivo (queda registrado el código anterior). Un proyecto cancelado conserva su código, su saldo por facturar pasa a cero y lo ya facturado o cobrado se mantiene.</p>`;
+}
+/* ---------- vista para celular: tarjetas en vez de tablas anchas ---------- */
+function avisosProy(p, m) {
+  const cp = cobroPend(p, m), pg = pagarTerc(p, m); let h = '';
+  if (pg) h += `<div class="cobrar pag">🟠 PAGAR${pg.map(t => `<span>${uf(t.montoUF)} UF · ${esc(t.nombre||'tercero')}</span>`).join('')}</div>`;
+  if (cp) h += cp.tipo === 'hes' ? `<div class="cobrar hes">📋 SOLICITAR HES/WE/HAS<span>${esc(cp.t)}</span></div>`
+    : cp.tipo === 'fact' ? `<div class="cobrar fac">📄 FACTURAR<span>${esc(cp.t)}</span></div>` : `<div class="cobrar">💲 COBRAR<span>${esc(cp.t)}</span></div>`;
+  return h;
+}
+function cardProy(p) {
+  const m = proyMetrics(p), late = p.entrega && p.entrega < today() && !['Entregado','Solicitar HES/WE/HAS','Facturado','Pagado','Terminado','Suspendido','Cancelado','No adjudicado'].includes(p.estado);
+  const refs = [['OC',p.oc],['HES',p.hes],['HAS',p.has],['WE',p.we]].filter(x => x[1]).map(x => x[0] + ' ' + esc(x[1])).join(' · ');
+  return `<div class="pcard click ${p.estado==='Cancelado'?'cancel':''} ${p.documento==='F'?'f':'b'}" data-edit="proyectos" data-id="${p.id}">
+    <div class="pc-top"><span class="code" style="color:${p.documento==='F'?'var(--ing)':'var(--ga)'}">${esc(p.codigo)}</span>${pillProy(p.estado)}</div>
+    <div class="pc-name">${esc(projName(p))}</div>
+    <div class="pc-sub"><b class="pc-mand">${esc(p.mandante)}</b>${p.contacto ? ' · ' + esc(TITLE(p.contacto)) : ''}${refs ? `<br><span class="refl">${refs}</span>` : ''}</div>
+    <div class="pc-av">${avisosProy(p, m)}</div>
+    <div class="pc-mon"><div><small>Monto</small><b>${uf(p.montoUF)} UF</b><i>${clp(m.totalCLP)}</i></div>
+      <div class="c-fac"><small>Facturado</small><b>${uf(m.facturadoUF)}</b><i>${m.pctF==null?'—':pct(m.pctF)}</i></div>
+      <div class="c-pf"><small>Por facturar</small><b>${uf(m.porFacturar)}</b><i>UF</i></div>
+      <div class="c-pag"><small>Pagado</small><b>${clp(m.pagado)}</b></div>
+      <div class="c-pp"><small>Por pagar</small><b>${clp(m.porPagar)}</b></div>
+      <div><small>Entrega</small><b class="${late?'late':''}">${fdate(p.entrega)||'—'}</b><i>${p.documento==='F'?'Factura':'Boleta'}</i></div></div>
+  </div>`;
+}
+function cardDoc(kind, d) {
+  const isF = kind === 'facturas', p = proyById(d.proyectoId), k = isF ? calcFactura(d) : calcBoleta(d);
+  return `<div class="pcard click ${d.estado==='Anulada'?'cancel':''} ${isF?'f':'b'}" data-edit="${kind}" data-id="${d.id}">
+    <div class="pc-top"><span class="code" style="color:${isF?'var(--ing)':'var(--ga)'}">${isF?'Factura':'Boleta'} N° ${esc(d.numero)}</span>${pillEstado(d.estado)}</div>
+    <div class="pc-name">${p ? esc(p.codigo) + ' · ' + esc(projName(p)) : '(sin proyecto)'}</div>
+    <div class="pc-sub"><b class="pc-mand">${esc(mandanteDe(d))}</b> · ${fdate(d.fecha)}${d.glosa ? `<br><span class="refl">${esc(d.glosa)}</span>` : ''}</div>
+    <div class="pc-mon"><div><small>${isF?'Total':'Bruto'}</small><b>${uf(d.montoUF)} UF</b><i>${clp(k.total)}</i></div>
+      <div><small>${isF?'Neto':'Líquido'}</small><b>${clp(isF?k.neto:k.liq)}</b></div>
+      <div><small>${isF?'IVA':'Retención'}</small><b>${clp(isF?k.iva:k.ret)}</b></div>
+      ${d.fechaPago ? `<div class="c-pag"><small>Pagada</small><b>${fdate(d.fechaPago)}</b></div>` : ''}</div>
+  </div>`;
 }
 function docList(kind) {
   const isF = kind === 'facturas', arr = S[kind], q = S.q.toLowerCase();
@@ -1220,7 +1288,7 @@ function docList(kind) {
     <button class="btn ghost" data-act="csv" data-what="${kind}">Exportar CSV</button>
   </div>
   <p class="small muted">${isF ? 'Emitidas por ING Estructural. Se ingresa el total con IVA en UF; neto = total / (1 + IVA).' : 'Emitidas por Germán Aguilera. Se ingresa el bruto en UF; la retención usa la tasa del año de emisión.'} * = UF de referencia (Parámetros).</p>
-  ${rows.length ? `<div class="tbl"><table><thead><tr>${head}</tr></thead><tbody>${body}
+  ${rows.length ? `<div class="pcards">${rows.map(d => cardDoc(kind, d)).join('')}</div><div class="tbl wide"><table><thead><tr>${head}</tr></thead><tbody>${body}
     <tr class="tot"><td colspan="5">Total (sin anuladas)</td><td class="n">${uf(tot.u)}</td><td></td><td class="n">${clp(tot.a)}</td><td class="n">${clp(tot.b)}</td><td class="n">${clp(tot.c)}</td><td colspan="${isF?2:3}"></td></tr></tbody></table></div>`
   : `<div class="empty">${arr.length ? 'Ningún documento coincide con el filtro.' : (isF ? 'Aún no hay facturas registradas.' : 'Aún no hay boletas registradas.')}</div>`}`;
 }
@@ -1927,7 +1995,7 @@ cargarUF();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20260930-1316. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20260930-1333. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
