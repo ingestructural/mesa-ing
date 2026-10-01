@@ -41434,6 +41434,24 @@ async function mcmDocx(S) {
     sections:[{properties:{page:{size:{width:12240, height:15840}, margin:{top:2269, bottom:1418, left:902, right:1418, header:227, footer:227}}}, headers:{default:header}, footers:{default:footer}, children:K}]});
   return Packer.toBlob(doc);
 }
+// Guardar en el mismo archivo (si se abrió o guardó antes con el selector de archivos) o pedir nombre ("Guardar como")
+async function mcmGuardarEn(fh, nombre, data, mime, desc, ext, como) {
+  if (fh && !como) { try { const w = await fh.createWritable(); await w.write(data); await w.close(); fsToast('Guardado: ' + fh.name); return fh; } catch (e) { /* sin permiso: se pide nombre */ } }
+  if (typeof window.showSaveFilePicker === 'function') {
+    try { const o = {suggestedName: fh ? fh.name : nombre, types:[{description:desc, accept:{[mime]:[ext]}}]}; if (typeof FS_ROOT !== 'undefined' && FS_ROOT) o.startIn = FS_ROOT;
+      const h = await window.showSaveFilePicker(o); const w = await h.createWritable(); await w.write(data); await w.close(); fsToast('Guardado: ' + h.name); return h; }
+    catch (e) { if (e && e.name === 'AbortError') return fh; }
+  }
+  await mcmGuardarArchivo(nombre, data, mime, desc, ext); return null;
+}
+async function mcmAbrirJson(desc, inputEl) {
+  if (typeof window.showOpenFilePicker === 'function') {
+    try { const o = {types:[{description:desc, accept:{'application/json':['.json']}}]}; if (typeof FS_ROOT !== 'undefined' && FS_ROOT) o.startIn = FS_ROOT;
+      const [h] = await window.showOpenFilePicker(o); const f = await h.getFile(); return {fh:h, name:f.name, text:await f.text()}; }
+    catch (e) { if (e && e.name === 'AbortError') return null; }
+  }
+  return new Promise(res => { inputEl.onchange = () => { const f = inputEl.files[0]; inputEl.value = ''; if (!f) return res(null); f.text().then(t => res({fh:null, name:f.name, text:t})); }; inputEl.click(); });
+}
 async function mcmGuardarArchivo(nombre, data, mime, desc, ext) {
   if (typeof window.showSaveFilePicker === 'function') {
     try { const o = {suggestedName:nombre, types:[{description:desc, accept:{[mime]:[ext]}}]}; if (typeof FS_ROOT !== 'undefined' && FS_ROOT) o.startIn = FS_ROOT;
@@ -41464,7 +41482,7 @@ function mcmCapDef(S, where, file) {
 }
 function renderMemorias(container) {
   if (!document.getElementById('mcmCss')) { const st = document.createElement('style'); st.id = 'mcmCss'; st.textContent = MCM_CSS; document.head.appendChild(st); }
-  let S = mcmLoad();
+  let S = mcmLoad(), mcmFH = null;
   const root = document.createElement('div'); root.className = 'mcm-ui'; container.innerHTML = ''; container.appendChild(root);
   const get = (o, p) => p.split('.').reduce((a, k) => a == null ? a : a[k], o);
   const set = (o, p, v) => { const ks = p.split('.'), last = ks.pop(); const t = ks.reduce((a, k) => a[k], o); t[last] = v; };
@@ -41506,7 +41524,7 @@ function renderMemorias(container) {
     <div class="mem-head" style="margin-bottom:1rem">
       <h1>Constructor de Memorias de Cálculo</h1>
       <div class="sub">Llena los paneles y marca los contenidos; al final, «Emitir memoria» genera el documento completo en formato ING Estructural (Word y PDF). Pensado para estructuras mixtas de acero, hormigón armado y madera. Los textos sugeridos se rellenan solos con tus datos y se pueden editar. Lo marcado con <mark>[completar]</mark> queda destacado hasta que lo llenes.</div>
-      <div class="mem-btns"><button type="button" class="btn-add" data-act="nueva">🗋 Nueva memoria</button><button type="button" class="btn-add" data-act="abrir">📂 Abrir memoria…</button><button type="button" class="btn-add" data-act="guardar">💾 Guardar memoria</button><input type="file" accept=".json,application/json" id="mcmFile" hidden></div>
+      <div class="mem-btns"><button type="button" class="btn-add" data-act="nueva">🗋 Nueva memoria</button><button type="button" class="btn-add" data-act="abrir">📂 Abrir memoria…</button><button type="button" class="btn-add" data-act="guardar">💾 Guardar</button><button type="button" class="btn-add" data-act="guardarComo">💾 Guardar como…</button><input type="file" accept=".json,application/json" id="mcmFile" hidden>${mcmFH ? `<span class="note" style="align-self:center">Archivo: <b>${esc(mcmFH.name)}</b></span>` : ''}</div>
     </div>
     <div class="panel"><h3>1 · Proyecto y portada</h3><div class="field-grid">
       ${SEL('Tipo de documento', 'proy.titulo', MCM_DOCS)}${F('Nombre del proyecto', 'proy.proyecto', 'Ej: Ampliación nave de secado')}${F('Mandante', 'proy.mandante')}${F('Código ING', 'proy.codigo', 'Ej: ING-24-031')}
@@ -41579,7 +41597,6 @@ function renderMemorias(container) {
       mcmSave(S); draw(); return; }
     if (t.dataset.txt) { draw(); }
     if (t.id === 'mcmImgIn') { addImgs([...t.files], imgDest); imgDest = 'desc'; t.value = ''; }
-    if (t.id === 'mcmFile' && t.files[0]) { t.files[0].text().then(tx => { const o = JSON.parse(tx); if (!o || o.v !== 1 || !o.proy) throw 0; S = mcmMerge(o); mcmSave(S); draw(); fsToast('Memoria abierta: ' + mcmV(S.proy.proyecto, t.files[0].name)); }).catch(() => fsToast('Ese archivo no es una memoria guardada.')); }
   });
   root.addEventListener('click', e => { root.querySelectorAll('details.mcm-dd[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; }); });
   root.addEventListener('click', async e => {
@@ -41595,9 +41612,9 @@ function renderMemorias(container) {
     else if (a === 'addFig') { imgDest = 'desc'; root.querySelector('#mcmImgIn').click(); return; }
     else if (a === 'combosReset') { S.combos = MCM_COMBOS0; }
     else if (a === 'normReset') { S.normSel = {}; MCM_NORMAS.forEach(n => S.normSel[n.id] = !!n.c(S)); fsToast(`Normas sugeridas: ${MCM_NORMAS.filter(n => n.c(S)).length} según estructura, materiales y cargas.`); }
-    else if (a === 'nueva') { if (!confirmMem()) return; S = mcmDef(); }
-    else if (a === 'abrir') { root.querySelector('#mcmFile').click(); return; }
-    else if (a === 'guardar') { mcmGuardarArchivo(`Memoria_${mcmSlug(S.proy.codigo || S.proy.proyecto) || 'calculo'}_Rev${mcmSlug(S.proy.rev)}.json`, JSON.stringify(S), 'application/json', 'Memoria de cálculo (.json)', '.json'); return; }
+    else if (a === 'nueva') { if (!confirmMem()) return; S = mcmDef(); mcmFH = null; }
+    else if (a === 'abrir') { const r = await mcmAbrirJson('Memoria de cálculo (.json)', root.querySelector('#mcmFile')); if (!r) return; try { const o = JSON.parse(r.text); if (!o || o.v !== 1 || !o.proy) throw 0; S = mcmMerge(o); mcmFH = r.fh; mcmSave(S); draw(); fsToast('Memoria abierta: ' + r.name); } catch (err) { fsToast('Ese archivo no es una memoria guardada.'); } return; }
+    else if (a === 'guardar' || a === 'guardarComo') { mcmFH = await mcmGuardarEn(mcmFH, `Memoria_${mcmSlug(S.proy.codigo || S.proy.proyecto) || 'calculo'}_Rev${mcmSlug(S.proy.rev)}.json`, JSON.stringify(S), 'application/json', 'Memoria de cálculo (.json)', '.json', a === 'guardarComo'); draw(); return; }
     else if (a === 'pdf') { mcmImprimir(S); return; }
     else if (a === 'word') { b.disabled = true; const t0 = b.textContent; b.textContent = 'Generando Word…';
       try { const blob = await mcmDocx(S); await mcmGuardarArchivo(`Memoria_${mcmSlug(S.proy.codigo || S.proy.proyecto) || 'calculo'}_Rev${mcmSlug(S.proy.rev)}.docx`, blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Documento de Word', '.docx'); }
@@ -41822,7 +41839,7 @@ async function ettDocx(E, mats) {
 /* ---------- interfaz ---------- */
 function renderEETT(container) {
   if (!document.getElementById('mcmCss')) { const st = document.createElement('style'); st.id = 'mcmCss'; st.textContent = MCM_CSS; document.head.appendChild(st); }
-  let E = ettLoad();
+  let E = ettLoad(), ettFH = null, armado = 0;
   const root = document.createElement('div'); root.className = 'mcm-ui'; container.innerHTML = ''; container.appendChild(root);
   document.documentElement.classList.add('mcm-on');
   const offRoute = () => { if (location.hash.replace('#', '') !== 'eett') { document.documentElement.classList.remove('mcm-on'); window.removeEventListener('hashchange', offRoute); } };
@@ -41848,7 +41865,8 @@ function renderEETT(container) {
     const A = act();
     let memInfo = ''; try { const M = JSON.parse(localStorage.getItem(MCM_LS) || 'null'); memInfo = M && M.proy ? `Memoria disponible en este equipo: <b>${esc(mcmV(M.proy.proyecto, 'sin nombre'))}</b> (${esc(M.proy.mandante || '')}${M.proy.fecha ? ', ' + esc(M.proy.fecha) : ''}).` : 'No hay una memoria guardada en este equipo; puedes abrir un archivo de memoria (.json).'; } catch (e) {}
     return `<div style="margin-bottom:1rem"><h1>Especificaciones Técnicas</h1>
-      <div class="sub">Arma las especificaciones técnicas de acero, hormigón armado, madera y albañilería reforzada en formato ING Estructural, a partir de la biblioteca de EETT de la oficina. Puede tomar los datos del proyecto, la descripción de la estructura y las calidades de materiales de una memoria de cálculo del Constructor de Memorias.</div></div>
+      <div class="sub">Arma las especificaciones técnicas de acero, hormigón armado, madera y albañilería reforzada en formato ING Estructural, a partir de la biblioteca de EETT de la oficina. Puede tomar los datos del proyecto, la descripción de la estructura y las calidades de materiales de una memoria de cálculo del Constructor de Memorias.</div>
+      <div class="mem-btns"><button type="button" class="btn-add" data-act="nueva">🗋 Nueva EETT</button><button type="button" class="btn-add" data-act="abrir">📂 Abrir EETT…</button><button type="button" class="btn-add" data-act="guardar">💾 Guardar</button><button type="button" class="btn-add" data-act="guardarComo">💾 Guardar como…</button>${ettFH ? `<span class="note" style="align-self:center">Archivo: <b>${esc(ettFH.name)}</b></span>` : ''}</div></div>
     <div class="panel"><h3>1 · Tomar datos de la memoria de cálculo</h3><div class="note">${memInfo}${E.desde ? ` Última importación: ${esc(E.desde)}.` : ''}</div>
       <div class="mem-btns"><button type="button" class="mem-btn" data-act="desdeLocal">⇩ Traer datos de la memoria</button><button type="button" class="btn-add" data-act="desdeArchivo">📂 Desde archivo de memoria (.json)…</button><input type="file" accept=".json,application/json" id="ettMemFile" hidden></div>
       <div class="note">Trae: proyecto, mandante, ubicación, fecha, revisión, elaboró y revisó, la descripción de la estructura, los materiales que componen la estructura y sus calidades (perfiles, pernos, soldadura, grado de hormigón, acero de refuerzo, madera, albañilería).</div></div>
@@ -41859,7 +41877,7 @@ function renderEETT(container) {
     ${A.map((m, i) => matPanel(m, 4 + i)).join('')}
     <div class="panel"><h3>${4 + A.length} · Emitir</h3>
       <div class="mem-btns">${E.modo === 'unico' || A.length <= 1 ? `<button type="button" class="mem-btn" data-word="all">⬇ Descargar Word</button><button type="button" class="mem-btn" data-pdf="all">🖨 Imprimir / Guardar PDF</button>` : A.map(m => `<button type="button" class="mem-btn" data-word="${m.id}">⬇ Word — ${esc(m.label)}</button>`).join('') + A.map(m => `<button type="button" class="btn-add" data-pdf="${m.id}">🖨 PDF — ${esc(m.label)}</button>`).join('')}
-        <button type="button" class="btn-add" data-act="guardar">💾 Guardar EETT</button><button type="button" class="btn-add" data-act="abrir">📂 Abrir EETT…</button><input type="file" accept=".json,application/json" id="ettFile" hidden></div>
+        <button type="button" class="btn-add" data-act="guardar">💾 Guardar</button><button type="button" class="btn-add" data-act="guardarComo">💾 Guardar como…</button><input type="file" accept=".json,application/json" id="ettFile" hidden></div>
       <div class="note">Word: al abrirlo, Word pregunta si actualiza los campos → Sí, para llenar el índice. Lo que falta queda destacado como [COMPLETAR].</div>
       ${A.length ? `<div class="field-grid" style="margin:.4rem 0">${E.modo === 'unico' || A.length <= 1 ? '' : `<div class="field"><label>Vista previa</label><select data-prev>${A.map(m => `<option value="${m.id}" ${E.prev === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></div>`}</div>
       <div class="mem-prev-wrap" id="ettPrev">${ettSheet(E, prevMats())}</div>` : '<div class="note">Elige al menos un material en el panel 3.</div>'}</div>`;
@@ -41878,7 +41896,6 @@ function renderEETT(container) {
     if (t.hasAttribute('data-modo')) { E.modo = t.value; ettSave(E); draw(); return; }
     if (t.hasAttribute('data-prev')) { E.prev = t.value; ettSave(E); draw(); return; }
     if (t.id === 'ettMemFile' && t.files[0]) { t.files[0].text().then(tx => { const M = mcmMerge(JSON.parse(tx)); ettDesdeMemoria(E, M); ettSave(E); draw(); fsToast('Datos traídos de la memoria: ' + mcmV(M.proy.proyecto, t.files[0].name)); }).catch(() => fsToast('Ese archivo no es una memoria guardada.')); }
-    if (t.id === 'ettFile' && t.files[0]) { t.files[0].text().then(tx => { const o = JSON.parse(tx); if (!o || !o.proy || !o.mats) throw 0; E = Object.assign(ettDef(), o); ettSave(E); draw(); fsToast('EETT abiertas.'); }).catch(() => fsToast('Ese archivo no son EETT guardadas.')); }
   });
   root.addEventListener('click', async e => { const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.mat) { E.mats[b.dataset.mat] = !E.mats[b.dataset.mat]; ettSave(E); draw(); return; }
@@ -41891,8 +41908,9 @@ function renderEETT(container) {
     const a = b.dataset.act;
     if (a === 'desdeLocal') { let M = null; try { M = JSON.parse(localStorage.getItem(MCM_LS) || 'null'); } catch (err) {} if (!M || !M.proy) { fsToast('No hay una memoria en este equipo: ábrela desde archivo.'); return; } M = mcmMerge(M); ettDesdeMemoria(E, M); ettSave(E); draw(); fsToast('Datos traídos de la memoria: ' + mcmV(M.proy.proyecto, 'sin nombre')); }
     else if (a === 'desdeArchivo') root.querySelector('#ettMemFile').click();
-    else if (a === 'abrir') root.querySelector('#ettFile').click();
-    else if (a === 'guardar') mcmGuardarArchivo(`EETT_${mcmSlug(E.proy.proyecto) || 'proyecto'}_${mcmSlug(E.proy.rev)}.json`, JSON.stringify(E), 'application/json', 'Especificaciones técnicas (.json)', '.json');
+    else if (a === 'abrir') { const r = await mcmAbrirJson('Especificaciones técnicas (.json)', root.querySelector('#ettFile')); if (!r) return; try { const o = JSON.parse(r.text); if (!o || !o.proy || !o.mats) throw 0; E = Object.assign(ettDef(), o); ettFH = r.fh; ettSave(E); draw(); fsToast('EETT abiertas: ' + r.name); } catch (err) { fsToast('Ese archivo no son EETT guardadas.'); } }
+    else if (a === 'guardar' || a === 'guardarComo') { ettFH = await mcmGuardarEn(ettFH, `EETT_${mcmSlug(E.proy.proyecto) || 'proyecto'}_${mcmSlug(E.proy.rev)}.json`, JSON.stringify(E), 'application/json', 'Especificaciones técnicas (.json)', '.json', a === 'guardarComo'); draw(); }
+    else if (a === 'nueva') { if (Date.now() - armado > 4000) { armado = Date.now(); fsToast('Vuelve a pulsar «Nueva EETT» para empezar unas en blanco (guarda antes las actuales si las necesitas).'); return; } armado = 0; E = ettDef(); ettFH = null; ettSave(E); draw(); fsToast('EETT nuevas en blanco.'); }
   });
   draw();
 }
@@ -42060,7 +42078,7 @@ route();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20261001-1841. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261001-1846. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
