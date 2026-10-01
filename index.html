@@ -40997,6 +40997,25 @@ function renderVigaFundTorsion(container) {
    mecanismo genérico de captura/restauración de la Mesa no interfiera.
    ========================================================================= */
 const MCM_LS = 'mesaMemoria.v1';
+// Resultados y verificaciones por material: cada ítem es un recuadro donde se arrastran imágenes del modelo
+const MCM_RES = {
+  acero: {label:'Estructura de acero', act:S => S.est.acero, items:[
+    {k:'combo', t:'Combinaciones de carga', combos:true, intro:S => `Las figuras siguientes muestran los resultados del modelo en ${mcmV(S.anal.software, 'el programa de análisis')} para las combinaciones de carga consideradas.`},
+    {k:'tens', t:'Estado de tensiones', intro:S => `Se presenta el estado de tensiones de los elementos de acero, con la escala de colores de los distintos niveles de esfuerzos internos entregada por ${mcmV(S.anal.software, 'el programa')}.`, cap:'Estado de tensiones en los elementos de acero'},
+    {k:'dc', t:'Relaciones demanda/capacidad', intro:() => 'Se presentan las razones demanda/capacidad (D/C) de los elementos de acero según AISC 360 y NCh427. Una razón D/C ≤ 1,00 indica que el elemento cumple.', cap:'Relaciones demanda/capacidad de los elementos de acero'},
+    {k:'fund', t:'Fundaciones', intro:() => 'Se presentan las verificaciones de las fundaciones, obtenidas con las planillas de la Mesa de Cálculo de ING Estructural u otro programa de análisis.', cap:'Verificación de fundaciones'}]},
+  horm: {label:S => S.est.hormigon && S.est.albanileria ? 'Estructura de hormigón armado y albañilería' : (S.est.albanileria ? 'Estructura de albañilería reforzada' : 'Estructura de hormigón armado'), act:S => S.est.hormigon || S.est.albanileria, items:[
+    {k:'combo', t:'Combinaciones de carga', combos:true, intro:S => `Las figuras siguientes muestran los resultados del modelo en ${mcmV(S.anal.software, 'el programa de análisis')} para las combinaciones de carga consideradas.`},
+    {k:'sol', t:'Elementos más solicitados', intro:() => 'Se presentan los elementos más solicitados, con sus esfuerzos internos de diseño.', cap:S => `Elementos más solicitados — ${S.est.albanileria && !S.est.hormigon ? 'albañilería' : 'hormigón armado'}`},
+    {k:'tabla', t:'Verificación de elementos', intro:S => `Se resume la verificación de los elementos según ${[S.est.hormigon ? 'NCh430 y ACI 318' : '', S.est.albanileria ? 'NCh1928 / NCh2123' : ''].filter(Boolean).join(' y ')}.`, cap:S => `Verificación de elementos de ${S.est.albanileria && !S.est.hormigon ? 'albañilería' : 'hormigón armado'}`}]},
+  mad: {label:'Estructura de madera', act:S => S.est.madera, items:[
+    {k:'combo', t:'Combinaciones de carga', combos:true, intro:S => `Las figuras siguientes muestran los resultados del modelo en ${mcmV(S.anal.software, 'el programa de análisis')} para las combinaciones de carga consideradas.`},
+    {k:'sol', t:'Elementos más solicitados', intro:() => 'Se presentan los elementos de madera más solicitados, con sus esfuerzos internos de diseño.', cap:'Elementos de madera más solicitados'},
+    {k:'tabla', t:'Verificación de elementos', intro:() => 'Se resume la verificación de los elementos de madera por tensiones admisibles según NCh1198.', cap:'Verificación de elementos de madera'}]},
+};
+const mcmResLabel = (S, m) => typeof MCM_RES[m].label === 'function' ? MCM_RES[m].label(S) : MCM_RES[m].label;
+const mcmCombos = S => String(S.combos || '').split('\n').map(x => x.trim()).filter(Boolean);
+const MCM_ING = ['Germán Aguilera, Ingeniero Civil', 'Víctor Villagrán, Ingeniero Civil'];
 const MCM_DOCS = ['MEMORIA DE CÁLCULO ESTRUCTURAL', 'INFORME DE VERIFICACIÓN ESTRUCTURAL'];
 const MCM_REVS = ['Emitida para revisión', 'Emitida para observaciones o comentarios', 'Emitida para construcción'];
 const MCM_LATERAL = ['marcos arriostrados con diagonales en ambas direcciones', 'marcos rígidos (de momento) en ambas direcciones', 'marcos rígidos en una dirección y arriostrados en la otra',
@@ -41017,6 +41036,8 @@ const MCM_USOS = [
   {id:'vivienda', label:'Vivienda', txt:'una vivienda'},
   {id:'soporte', label:'Soporte de equipos', txt:'una estructura soporte de equipos'},
   {id:'plataforma', label:'Plataforma o pasarela', txt:'una plataforma'},
+  {id:'fundEquipo', label:'Fundación de equipo', txt:'la fundación de un equipo'},
+  {id:'fundaciones', label:'Fundaciones', txt:'las fundaciones de una estructura'},
   {id:'refuerzo', label:'Refuerzo o modificación de estructura existente', txt:'la modificación y refuerzo de una estructura existente'},
   {id:'otro', label:'Otro', txt:'una estructura'},
 ];
@@ -41030,7 +41051,7 @@ const MCM_MAT = {
   anc:    {g:'any', label:'Anclajes a hormigón', opts:['Químicos Hilti HIT-HY 200 + varilla','Expansión Hilti HST3','Pernos de anclaje A36 / A307'], prop:() => 'Según ficha técnica del fabricante (ETA) y ACI 318 Cap. 17', nombre:o => `Anclajes: ${o.grado}`, uso:true},
   sold:   {g:'acero', label:'Soldadura', opts:['E70XX','E60XX'], prop:o => o.grado === 'E70XX' ? 'FEXX = 490 MPa (70 ksi)' : 'FEXX = 415 MPa (60 ksi)', nombre:o => `Electrodo ${o.grado} (AWS D1.1)`, uso:true},
   mad:    {g:'madera', label:'Madera estructural', opts:['Pino radiata C16','Pino radiata C24','Pino radiata grado G1','Pino radiata grado G2','Madera laminada encolada (MLE)'], prop:() => 'Tensiones admisibles según NCh1198; contenido de humedad ≤ 19 %', nombre:o => o.grado, uso:true},
-  alb:    {g:'albanileria', label:'Albañilería reforzada', opts:['Albañilería armada de bloques de hormigón','Albañilería armada de ladrillo cerámico','Albañilería confinada de ladrillo cerámico'], prop:o => /confinada/.test(o.grado) ? "Según NCh2123; f'm y τm según ensayo de prismas o valores de diseño de la norma" : "Según NCh1928; f'm según ensayo de prismas o valores de diseño de la norma", nombre:o => o.grado, uso:true},
+  alb:    {g:'albanileria', label:'Albañilería reforzada', opts:['Albañilería armada','Albañilería confinada'], extra:{k:'unidad', label:'Tipo de unidad', opts:['Ladrillo cerámico MqP (perforado, hecho a máquina)','Ladrillo cerámico MqH (hueco, hecho a máquina)','Ladrillo cerámico MqM (macizo, hecho a máquina)','Ladrillo cerámico artesanal (fiscal)','Bloque de hormigón']}, prop:o => `${/confinada/.test(o.grado) ? 'Según NCh2123' : 'Según NCh1928'}; unidad ${/Bloque/.test(o.unidad || '') ? 'según NCh181' : 'según NCh169'}; f'm y τm según ensayo de prismas o valores de diseño de la norma`, nombre:o => `${o.grado} de ${String(o.unidad || 'ladrillo cerámico').replace(/^Ladrillo/, 'ladrillo').replace(/^Bloque/, 'bloque')}`, uso:true},
   grout:  {g:'albanileria', label:'Mortero y hormigón de relleno (grout)', opts:['Mortero M10 / grout G17','Mortero M12,5 / grout G20'], prop:() => 'Según NCh2256/1 (morteros) y NCh1928 (relleno de huecos)', nombre:o => o.grado, uso:true},
   tab:    {g:'madera', label:'Tableros estructurales', opts:['OSB 9,5 mm','OSB 11,1 mm','OSB 15,1 mm','Contrachapado 15 mm','Contrachapado 18 mm'], prop:() => 'Según ficha técnica del fabricante', nombre:o => `Tablero ${o.grado}`, uso:true},
 };
@@ -41059,6 +41080,8 @@ const MCM_NORMAS = [
   {id:'aci350',  t:'ACI 350-06 — Code Requirements for Environmental Engineering Concrete Structures', c:S => mcmCarga(S,'H') && S.est.hormigon},
   {id:'aci3503', t:'ACI 350.3-06 — Seismic Design of Liquid-Containing Concrete Structures', c:S => mcmCarga(S,'H') && S.est.hormigon && S.sis.on},
   {id:'awwa100', t:'AWWA D100 — Welded Carbon Steel Tanks for Water Storage', c:S => mcmCarga(S,'H') && S.est.acero},
+  {id:'aci351',  t:'ACI 351.3R-18 — Report on Foundations for Dynamic Equipment', c:S => S.est.uso === 'fundEquipo'},
+  {id:'api650',  t:'API 650 — Welded Tanks for Oil Storage (estanques de acero soldados)', c:S => mcmCarga(S,'H') && S.est.acero},
   {id:'oguc',    t:'Ordenanza General de Urbanismo y Construcciones (OGUC)', c:S => ['edificio','vivienda','galpon'].includes(S.est.uso)},
 ];
 const MCM_CARGAS0 = () => [
@@ -41080,13 +41103,14 @@ function mcmDef() {
     v:1,
     proy:{titulo:'MEMORIA DE CÁLCULO ESTRUCTURAL', proyecto:'', mandante:'', codigo:'', ubicacion:'', fecha:MCM_HOY(), rev:'0', descRev:'Emitida para revisión', elaboro:'Germán Aguilera, Ingeniero Civil', reviso:''},
     est:{uso:'industrial', acero:true, hormigon:true, madera:false, albanileria:false, el:JSON.parse(JSON.stringify(MCM_EL0)), elOtro:{acero:'', hormigon:'', madera:'', albanileria:'', fund:''}, nombre:'', dim:'', niveles:'1', cubierta:'', lateral:'marcos arriostrados con diagonales en ambas direcciones', sisAcero:'columnas, vigas, marcos y arriostramientos', sisHorm:'fundaciones, pedestales y radier', sisMad:'tabiques, entramados y costaneras', fund:'zapatas aisladas unidas por vigas de fundación'},
-    mat:Object.fromEntries(Object.entries(MCM_MAT).map(([k, m]) => [k, {on:['horm','a630','perf','pernos','sold'].includes(k), grado:m.opts[k === 'horm' ? 2 : 0], uso:({horm:'fundaciones, pedestales y radier', horm2:'emplantillado bajo fundaciones', a630:'armaduras de elementos de hormigón', perf:'columnas, vigas y arriostramientos', tubo:'elementos secundarios', pernos:'conexiones apernadas', anc:'anclaje de placas base', sold:'conexiones soldadas', mad:'tabiques y entramados', tab:'arriostramiento de tabiques', alb:'muros resistentes', grout:'pega y relleno de huecos'})[k] || ''}])),
+    mat:Object.fromEntries(Object.entries(MCM_MAT).map(([k, m]) => [k, {unidad: m.extra ? m.extra.opts[0] : undefined, on:['horm','a630','perf','pernos','sold'].includes(k), grado:m.opts[k === 'horm' ? 2 : 0], uso:({horm:'fundaciones, pedestales y radier', horm2:'emplantillado bajo fundaciones', a630:'armaduras de elementos de hormigón', perf:'columnas, vigas y arriostramientos', tubo:'elementos secundarios', pernos:'conexiones apernadas', anc:'anclaje de placas base', sold:'conexiones soldadas', mad:'tabiques y entramados', tab:'arriostramiento de tabiques', alb:'muros resistentes', grout:'pega y relleno de huecos'})[k] || ''}])),
     normSel:{}, normExtra:'',
     cargas:MCM_CARGAS0(),
     sis:{on:true, norma:'NCh2369', zona:'3', suelo:'D', cat:'C2', I:'1,0', R:'', metodo:'estático'},
     combos:MCM_COMBOS0,
     anal:{software:'RAM Elements', modelo:'tridimensional de barras', suelo:'σadm = [completar] kgf/cm²', fuenteSuelo:'el informe de mecánica de suelos del proyecto'},
     verif:[], figs:[], planos:[],
+    res:{acero:{on:true, it:{combo:true, tens:true, dc:true, fund:true}}, horm:{on:true, it:{combo:true, sol:true, tabla:true}}, mad:{on:true, it:{combo:true, sol:true, tabla:true}}},
     caps:{intro:true, desc:true, normas:true, mat:true, cargas:true, anal:true, verif:true, concl:true, anexos:true},
     txt:{}
   };
@@ -41100,6 +41124,8 @@ function mcmMerge(s) {
   const out = Object.assign(d, s);
   ['proy','est','sis','anal','caps'].forEach(k => out[k] = Object.assign(mcmDef()[k], s[k] || {}));
   out.mat = Object.assign(mcmDef().mat, s.mat || {});
+  Object.entries(MCM_MAT).forEach(([k, m]) => { if (!m.opts.includes(out.mat[k].grado)) out.mat[k].grado = m.opts[0]; if (m.extra && !m.extra.opts.includes(out.mat[k][m.extra.k])) out.mat[k][m.extra.k] = m.extra.opts[0]; });
+  out.res = mcmDef().res; Object.keys(out.res).forEach(m => { const r = (s.res || {})[m]; if (r) { out.res[m].on = r.on !== false; Object.assign(out.res[m].it, r.it || {}); } });
   out.est.el = Object.assign(JSON.parse(JSON.stringify(MCM_EL0)), (s.est || {}).el || {});
   out.est.elOtro = Object.assign({acero:'', hormigon:'', madera:'', albanileria:'', fund:''}, (s.est || {}).elOtro || {});
   const syms = (out.cargas || []).map(c => c.sym); MCM_CARGAS0().forEach(c => { if (!syms.includes(c.sym)) out.cargas.push(c); });
@@ -41133,6 +41159,7 @@ const MCM_TXT = {
     S.est.hormigon ? 'Los elementos de hormigón armado se diseñan por resistencia según NCh430 y ACI 318.' : '',
     S.est.madera ? 'Los elementos de madera se diseñan por tensiones admisibles según NCh1198.' : '',
     S.est.albanileria ? 'Los muros de albañilería reforzada se diseñan según NCh1928 (armada) o NCh2123 (confinada).' : '',
+    S.est.uso === 'fundEquipo' ? 'La fundación del equipo se verifica estática y dinámicamente: la frecuencia natural del conjunto fundación–suelo debe alejarse de la frecuencia de operación del equipo y las amplitudes de vibración deben quedar bajo los límites admisibles del fabricante.' : '',
     mcmCarga(S, 'H') ? 'Las paredes y fondos en contacto con líquido se verifican para la presión hidrostática y los efectos hidrodinámicos sísmicos, con control de fisuración.' : '',
     S.est.hormigon ? `La capacidad de soporte del suelo considerada es ${mcmV(S.anal.suelo)}.` : '',
     'Las condiciones de apoyo y la continuidad de las uniones son las indicadas en los planos de proyecto.'].filter(Boolean).join('\n')},
@@ -41167,7 +41194,7 @@ function mcmNormas(S) {
 function mcmBuild(S) {
   const B = []; let nF = 0, nT = 0;
   const tab = (cap, head, rows, widths, align) => B.push({t:'table', cap:`Tabla ${++nT}: ${cap}`, head, rows, widths, align});
-  const figs = where => S.figs.filter(f => f.where === where).forEach(f => B.push(Object.assign({}, f, {t: f.blank ? 'blank' : 'fig', cap:`Figura ${++nF}: ${f.cap || ''}`})));
+  const figs = where => S.figs.filter(f => f.where === where).forEach(f => B.push(Object.assign({}, f, {t: f.blank ? 'blank' : 'fig', fnum: nF + 1, cap:`Figura ${++nF}: ${f.cap || ''}`})));
   const P = k => { const t = mcmTxt(S, k); if (!t.trim()) return; if (MCM_TXT[k].lista) B.push({t:'ul', items:t.split('\n').map(x => x.trim()).filter(Boolean)}); else t.split(/\n\s*\n/).forEach(p => B.push({t:'p', text:p.trim()})); };
   const c = S.caps;
   if (c.intro) { B.push({t:'h1', text:'INTRODUCCIÓN'}); P('intro'); B.push({t:'h2', text:'Alcance'}); P('alcance'); }
@@ -41206,17 +41233,28 @@ function mcmBuild(S) {
   }
   if (c.anal) { B.push({t:'h1', text:'MODELO Y ANÁLISIS'}); P('anal'); B.push({t:'h2', text:'Hipótesis de diseño'}); P('hip'); figs('modelo'); }
   if (c.verif) {
-    B.push({t:'h1', text:'VERIFICACIONES'});
+    B.push({t:'h1', text:'RESULTADOS Y VERIFICACIONES'});
+    Object.keys(MCM_RES).filter(m => MCM_RES[m].act(S) && S.res[m].on).forEach(m => {
+      B.push({t:'h2', text:mcmResLabel(S, m), key:'ra|' + m});
+      MCM_RES[m].items.filter(it => S.res[m].it[it.k]).forEach(it => {
+        B.push({t:'h3', text:it.t, key:`ra|${m}|${it.k}`});
+        B.push({t:'p', text:it.intro(S)});
+        if (it.combos) {
+          let alguna = false;
+          mcmCombos(S).forEach(cb => { const w = `ra|${m}|combo|${cb}`; if (!S.figs.some(f => f.where === w)) return; alguna = true; B.push({t:'pb2', text:'Combinación ' + cb}); figs(w); });
+          if (!alguna) B.push({t:'p', text:'[completar: arrastrar las imágenes de cada combinación en el panel 7]'});
+        } else { const w = `ra|${m}|${it.k}`; if (S.figs.some(f => f.where === w)) figs(w); else B.push({t:'p', text:'[completar: arrastrar las imágenes en el panel 7]'}); }
+      });
+    });
     const R = S.verif.filter(v => v.elem || v.verif || v.dc);
-    B.push({t:'p', text:'La siguiente tabla resume las verificaciones de los elementos estructurales principales, con su razón demanda/capacidad (D/C). Una razón D/C ≤ 1,00 indica que el elemento cumple.'});
+    if (R.length) { B.push({t:'h2', text:'Resumen de verificaciones', key:'ra|resumen'}); B.push({t:'p', text:'La siguiente tabla resume las verificaciones de los elementos estructurales principales, con su razón demanda/capacidad (D/C). Una razón D/C ≤ 1,00 indica que el elemento cumple.'}); }
     if (R.length) tab('Resumen de verificaciones', ['Elemento', 'Sección / perfil', 'Verificación', 'D/C', 'Estado'], R.map(v => { const d = parseFloat(String(v.dc).replace(',', '.')); return [v.elem || '', v.sec || '', v.verif || '', isFinite(d) ? d.toLocaleString('es-CL', {minimumFractionDigits:2, maximumFractionDigits:2}) : '', isFinite(d) ? (d <= 1 ? 'CUMPLE' : 'NO CUMPLE') : '']; }), [2300, 2100, 3100, 1000, 1420], ['l','l','l','c','c']);
-    else B.push({t:'p', text:'[completar la tabla de verificaciones en el panel 7]'});
     figs('verif');
   }
   if (c.concl) { B.push({t:'h1', text:'CONCLUSIONES Y RECOMENDACIONES'}); B.push({t:'h2', text:'Conclusiones'}); P('concl'); B.push({t:'h2', text:'Recomendaciones'}); P('recom'); }
   if (c.anexos && S.figs.some(f => f.where === 'anexo')) { B.push({t:'pb'}); B.push({t:'ha', text:'ANEXOS'}); figs('anexo'); }
-  let n1 = 0, n2 = 0;
-  B.forEach(b => { if (b.t === 'h1') { n1++; n2 = 0; b.num = `${n1}.`; } else if (b.t === 'h2') { n2++; b.num = `${n1}.${n2}`; } });
+  let n1 = 0, n2 = 0, n3 = 0;
+  B.forEach(b => { if (b.t === 'h1') { n1++; n2 = 0; b.num = `${n1}.`; } else if (b.t === 'h2') { n2++; n3 = 0; b.num = `${n1}.${n2}`; } else if (b.t === 'h3') { n3++; b.num = `${n1}.${n2}.${n3}`; } });
   return B;
 }
 
@@ -41229,6 +41267,8 @@ function mcmHtml(S, B) {
     if (b.t === 'h1') return `<h1 class="mp-h1">${b.num} ${esc(b.text)}</h1>`;
     if (b.t === 'ha') return `<h1 class="mp-h1">${esc(b.text)}</h1>`;
     if (b.t === 'h2') return `<h2 class="mp-h2">${b.num} ${esc(b.text)}</h2>`;
+    if (b.t === 'h3') return `<h3 class="mp-h3">${b.num} ${esc(b.text)}</h3>`;
+    if (b.t === 'pb2') return `<p class="mp-p mp-cb">${esc(b.text)}</p>`;
     if (b.t === 'p') return `<p class="mp-p">${e(b.text)}</p>`;
     if (b.t === 'ul') return `<ul class="mp-ul">${b.items.map(x => `<li>${e(x)}</li>`).join('')}</ul>`;
     if (b.t === 'table') return tbl(b);
@@ -41254,7 +41294,7 @@ const MCM_CSS = `
 .mp-cover{padding-top:40px} .mp-tit{text-align:center;font-size:22pt;font-weight:700;color:#1F3864;text-decoration:underline;margin-bottom:12px}
 .mp-sub{text-align:center;font-size:16pt;color:#2E5395;text-decoration:underline;margin-bottom:36px}
 .mp-h1{font-size:15pt;color:#1F3864;margin:18px 0 8px;font-weight:700;break-after:avoid} .mp-h2{font-size:13pt;color:#2E5395;margin:14px 0 6px;font-weight:700;break-after:avoid}
-.mp-p{text-align:justify;margin:0 0 8px} .mp-ul{margin:0 0 8px 1.2em;padding:0} .mp-ul li{margin-bottom:3px;text-align:justify}
+.mp-p{text-align:justify;margin:0 0 8px} .mp-h3{font-size:12pt;color:#2E5395;margin:12px 0 5px;font-weight:700;break-after:avoid} .mp-cb{font-weight:700;margin-top:10px;break-after:avoid} .mp-ul{margin:0 0 8px 1.2em;padding:0} .mp-ul li{margin-bottom:3px;text-align:justify}
 .mp-t{width:100%;border-collapse:collapse;font-size:9pt;margin:6px 0 2px} .mp-t th{background:#1F3864;color:#fff;padding:4px 6px;border:1px solid #a6a6a6;text-align:center}
 .mp-t td{border:1px solid #a6a6a6;padding:3px 6px;vertical-align:top} .mp-t td.c{text-align:center} .mp-t td.ok{color:#15803d;font-weight:700} .mp-t td.bad{color:#b91c1c;font-weight:700}
 .mp-t tr{break-inside:avoid} .mp-ant{font-size:10.5pt;margin-bottom:18px} .mp-ant td.k{width:28%;font-weight:700;background:#F2F5FA} .mp-rev{font-size:9pt}
@@ -41288,6 +41328,10 @@ html.mcm-on .print-actions{display:none !important}
 .mcm-drop span{color:var(--ink-muted)} .mcm-drop.over{background:color-mix(in srgb,var(--accent,#0060c1) 16%,transparent)} .mcm-drop:focus{outline:2px solid var(--accent)}
 .mcm-thumbs{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:.3rem} .mcm-th{display:grid;gap:.2rem;width:180px;cursor:default} .mcm-th img{width:180px;height:110px;object-fit:cover;border-radius:4px;border:1px solid var(--line,#ccd)}
 .mcm-th input{font-size:.75rem;width:100%} .mcm-th button{justify-self:end;margin:0}
+.mcm-tog{border:1px solid var(--accent,#0060c1);background:transparent;color:var(--accent,#0060c1);border-radius:16px;padding:.35rem .8rem;font-weight:600;cursor:pointer}
+.mcm-tog.on{background:var(--accent,#0060c1);color:#fff} .mcm-tog:disabled{opacity:.4;cursor:not-allowed}
+.mcm-res h4{font-size:.95rem;color:var(--accent)} .mcm-resit{margin:.6rem 0 .2rem} .mcm-resit-h{font-weight:700;font-size:.85rem;margin-bottom:.3rem}
+.mcm-drop-s{margin:.35rem 0;padding:.5rem .6rem} .mcm-th small{color:var(--ink-muted);font-size:.72rem}
 .mcm-dd{position:relative}
 .mcm-ui .mcm-dd-l label{flex:none;display:flex;gap:.45rem;align-items:center;justify-content:flex-start;text-align:left;font-size:.85rem;color:var(--ink);line-height:1.3}
 .mcm-ui input[type=checkbox]{width:auto !important;min-width:0 !important;padding:0 !important;flex:none;margin:0}
@@ -41363,6 +41407,8 @@ async function mcmDocx(S) {
   for (const b of mcmBuild(S)) {
     if (b.t === 'h1' || b.t === 'ha') K.push(new Paragraph({heading:HeadingLevel.HEADING_1, keepNext:true, spacing:{before:280, after:140}, children:[run((b.num ? b.num + ' ' : '') + b.text, {size:30, bold:true, color:NAVY})]}));
     else if (b.t === 'h2') K.push(new Paragraph({heading:HeadingLevel.HEADING_2, keepNext:true, spacing:{before:200, after:100}, children:[run(b.num + ' ' + b.text, {size:26, bold:true, color:BLUE})]}));
+    else if (b.t === 'h3') K.push(new Paragraph({heading:HeadingLevel.HEADING_3, keepNext:true, spacing:{before:160, after:80}, children:[run(b.num + ' ' + b.text, {size:24, bold:true, color:BLUE})]}));
+    else if (b.t === 'pb2') K.push(P(b.text, {bold:true, keepNext:true, before:120}));
     else if (b.t === 'p') K.push(P(b.text));
     else if (b.t === 'ul') b.items.forEach(x => K.push(P(x, {numbering:{reference:'vinetas', level:0}, after:60})));
     else if (b.t === 'table') { K.push(table(b.head, b.rows, b.widths, b.align)); K.push(cap(b.cap)); }
@@ -41378,7 +41424,8 @@ async function mcmDocx(S) {
   const doc = new Document({creator:'ING Estructural', title:mcmV(Pp.titulo, 'Memoria de cálculo') + ' — ' + mcmV(Pp.proyecto, ''), features:{updateFields:true},
     styles:{default:{document:{run:{font:FONT, size:24}}}, paragraphStyles:[
       {id:'Heading1', name:'Heading 1', basedOn:'Normal', next:'Normal', quickFormat:true, run:{font:FONT, size:30, bold:true, color:NAVY}, paragraph:{spacing:{before:280, after:140}, outlineLevel:0}},
-      {id:'Heading2', name:'Heading 2', basedOn:'Normal', next:'Normal', quickFormat:true, run:{font:FONT, size:26, bold:true, color:BLUE}, paragraph:{spacing:{before:200, after:100}, outlineLevel:1}}]},
+      {id:'Heading2', name:'Heading 2', basedOn:'Normal', next:'Normal', quickFormat:true, run:{font:FONT, size:26, bold:true, color:BLUE}, paragraph:{spacing:{before:200, after:100}, outlineLevel:1}},
+      {id:'Heading3', name:'Heading 3', basedOn:'Normal', next:'Normal', quickFormat:true, run:{font:FONT, size:24, bold:true, color:BLUE}, paragraph:{spacing:{before:160, after:80}, outlineLevel:2}}]},
     numbering:{config:[{reference:'vinetas', levels:[{level:0, format:LevelFormat.BULLET, text:'•', alignment:AlignmentType.LEFT, style:{paragraph:{indent:{left:500, hanging:280}}}}]}]},
     sections:[{properties:{page:{size:{width:12240, height:15840}, margin:{top:2269, bottom:1418, left:902, right:1418, header:227, footer:227}}}, headers:{default:header}, footers:{default:footer}, children:K}]});
   return Packer.toBlob(doc);
@@ -41404,6 +41451,13 @@ function mcmImg(file) {
 }
 
 /* ---------- interfaz ---------- */
+function mcmCapDef(S, where, file) {
+  if (where === 'modelo') return `Modelo de análisis en ${mcmV(S.anal.software, 'el programa')}`;
+  const p = where.split('|');
+  if (p[0] === 'ra') { const m = p[1], R = MCM_RES[m]; if (p[2] === 'combo') return `Resultados para la combinación ${p.slice(3).join('|')} — ${mcmResLabel(S, m).replace(/^Estructura de /, '')}`;
+    const it = R.items.find(x => x.k === p[2]); if (it) return typeof it.cap === 'function' ? it.cap(S) : it.cap; }
+  return ((file && file.name) || 'imagen').replace(/\.[^.]+$/, '');
+}
 function renderMemorias(container) {
   if (!document.getElementById('mcmCss')) { const st = document.createElement('style'); st.id = 'mcmCss'; st.textContent = MCM_CSS; document.head.appendChild(st); }
   let S = mcmLoad();
@@ -41413,28 +41467,36 @@ function renderMemorias(container) {
   const I = (k, ph = '', type = 'text') => `<input type="${type}" data-k="${k}" value="${esc(get(S, k) ?? '')}" placeholder="${esc(ph)}">`;
   const F = (label, k, ph, type) => `<div class="field"><label>${label}</label>${I(k, ph, type)}</div>`;
   const SEL = (label, k, opts) => `<div class="field"><label>${label}</label><select data-k="${k}">${opts.map(o => { const [v, l] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(get(S, k)) === String(v) ? 'selected' : ''}>${esc(l)}</option>`; }).join('')}</select></div>`;
-  const SELO = (label, k, opts) => { const v = get(S, k) || '', otro = v !== '' && !opts.includes(v); return `<div class="field"><label>${label}</label><select data-selo="${k}">${opts.map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}<option value="__otro" ${otro ? 'selected' : ''}>Otro (escribir)…</option></select>${otro ? `<input type="text" data-k="${k}" value="${esc(v)}" style="margin-top:.3rem">` : ''}</div>`; };
+  const SELO = (label, k, opts) => { const v = get(S, k) || '', otro = v !== '' && !opts.includes(v); return `<div class="field"><label>${label}</label><select data-selo="${k}">${v === '' ? '<option value="" selected>— elegir —</option>' : ''}${opts.map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}<option value="__otro" ${otro ? 'selected' : ''}>Otro (escribir)…</option></select>${otro ? `<input type="text" data-k="${k}" value="${esc(v)}" style="margin-top:.3rem">` : ''}</div>`; };
   const MULTI = (label, g) => { const sel = S.est.el[g] || []; const txt = mcmEl(S, g) || 'elegir…'; return `<div class="field"><label>${label}</label><details class="mcm-dd"><summary>${esc(txt)}</summary><div class="mcm-dd-l">${MCM_EL[g].map(o => `<label><input type="checkbox" data-el="${g}" value="${esc(o)}" ${sel.includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}<input type="text" data-k="est.elOtro.${g}" value="${esc(S.est.elOtro[g] || '')}" placeholder="otros, separados por coma"></div></details></div>`; };
   const CHK = (label, k) => `<label><input type="checkbox" data-k="${k}" ${get(S, k) ? 'checked' : ''}> <span>${label}</span></label>`;
   const blk = (k) => { const ed = S.txt[k] != null; return `<div class="mem-blk"><h4>${esc(MCM_TXT[k].titulo)} ${ed ? '<span class="mem-tag">editado</span>' : '<small>texto sugerido</small>'}${ed ? `<button type="button" class="btn-add" data-reset="${k}" style="margin:0 0 0 auto;padding:.1rem .5rem">↺ volver al sugerido</button>` : ''}</h4><textarea data-txt="${k}">${esc(mcmTxt(S, k))}</textarea>${MCM_TXT[k].lista ? '<div class="note">Un punto por línea.</div>' : ''}</div>`; };
 
   function html() {
     const E = S.est, sisNCh433 = S.sis.norma === 'NCh433';
-    const matRows = Object.entries(MCM_MAT).filter(([k, m]) => m.g === 'any' || m.g.split('|').some(g => E[g])).map(([k, m]) => `<div class="mem-row" style="grid-template-columns:minmax(180px,1.1fr) minmax(150px,1fr) 1.4fr">
-        <label style="display:flex;gap:.4rem;align-items:center"><input type="checkbox" data-k="mat.${k}.on" ${S.mat[k].on ? 'checked' : ''}> ${m.label}</label>
-        <select data-k="mat.${k}.grado">${m.opts.map(o => `<option ${o === S.mat[k].grado ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>
-        <input type="text" data-k="mat.${k}.uso" value="${esc(S.mat[k].uso)}" placeholder="uso en la estructura"></div>`).join('');
+    const matRows = Object.entries(MCM_MAT).map(([k, m]) => { const act = m.g === 'any' || m.g.split('|').some(g => E[g]); return `<div class="mem-row" style="grid-template-columns:minmax(180px,1.1fr) minmax(150px,1fr) 1.4fr;${act ? '' : 'opacity:.55'}" title="${act ? '' : 'Al marcarlo se activa también en el panel 2'}">
+        <label style="display:flex;gap:.4rem;align-items:center"><input type="checkbox" data-k="mat.${k}.on" ${S.mat[k].on && act ? 'checked' : ''}> ${m.label}</label>
+        <span style="display:grid;gap:.25rem"><select data-k="mat.${k}.grado">${m.opts.map(o => `<option ${o === S.mat[k].grado ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>${m.extra ? `<select data-k="mat.${k}.${m.extra.k}" title="${esc(m.extra.label)}">${m.extra.opts.map(o => `<option ${o === S.mat[k][m.extra.k] ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>` : ''}</span>
+        <input type="text" data-k="mat.${k}.uso" value="${esc(S.mat[k].uso)}" placeholder="uso en la estructura"></div>`; }).join('');
     const normRows = MCM_NORMAS.map(n => { const sug = n.c(S), on = S.normSel[n.id] != null ? S.normSel[n.id] : sug; return `<label><input type="checkbox" data-norm="${n.id}" ${on ? 'checked' : ''}> <span>${esc(n.t)}${sug ? '' : ' <small style="color:var(--ink-muted)">(no sugerida)</small>'}</span></label>`; }).join('');
     const cargaRows = S.cargas.map((c, i) => `<div class="mem-row" style="grid-template-columns:auto 60px minmax(140px,1fr) 2.2fr"><input type="checkbox" data-k="cargas.${i}.on" ${c.on ? 'checked' : ''}><input type="text" data-k="cargas.${i}.sym" value="${esc(c.sym)}"><input type="text" data-k="cargas.${i}.n" value="${esc(c.n)}"><input type="text" data-k="cargas.${i}.v" value="${esc(c.v)}"></div>`).join('');
     const verifRows = S.verif.map((v, i) => `<div class="mem-row" style="grid-template-columns:1.3fr 1.1fr 1.6fr 70px 1.1fr auto"><input type="text" data-k="verif.${i}.elem" value="${esc(v.elem)}" placeholder="Elemento (ej. Columna C1)"><input type="text" data-k="verif.${i}.sec" value="${esc(v.sec)}" placeholder="Sección / perfil"><input type="text" data-k="verif.${i}.verif" value="${esc(v.verif)}" placeholder="Verificación (ej. flexocompresión)"><input type="text" inputmode="decimal" data-k="verif.${i}.dc" value="${esc(v.dc)}" placeholder="D/C"><input type="text" data-k="verif.${i}.obs" value="${esc(v.obs)}" placeholder="Herramienta / obs."><button type="button" class="btn-remove" data-del="verif.${i}">✕</button></div>`).join('');
     const planoRows = S.planos.map((p, i) => `<div class="mem-row" style="grid-template-columns:1fr 2.5fr 70px auto"><input type="text" data-k="planos.${i}.num" value="${esc(p.num)}" placeholder="N° de plano"><input type="text" data-k="planos.${i}.tit" value="${esc(p.tit)}" placeholder="Título"><input type="text" data-k="planos.${i}.rev" value="${esc(p.rev)}" placeholder="Rev."><button type="button" class="btn-remove" data-del="planos.${i}">✕</button></div>`).join('');
-    const figRows = S.figs.map((f, i) => `<div class="mem-blk"><div class="mem-row" style="grid-template-columns:90px 2fr 1.2fr 1fr auto">
+    const figRows = S.figs.map((f, i) => /^ra\|/.test(f.where) || (f.where === 'modelo' && f.src) ? '' : `<div class="mem-blk"><div class="mem-row" style="grid-template-columns:90px 2fr 1.2fr 1fr auto">
         <div>${f.blank ? `<div style="border:1px dashed #999;height:56px;display:flex;align-items:center;justify-content:center;font-size:.7rem;color:#888">dibujo</div>` : (f.src ? `<img src="${f.src}" style="width:86px;height:56px;object-fit:cover;border-radius:4px">` : '<span class="note">sin imagen</span>')}</div>
         <input type="text" data-k="figs.${i}.cap" value="${esc(f.cap)}" placeholder="Pie de figura">
         <select data-k="figs.${i}.where">${[['desc','Cap. Descripción'],['modelo','Cap. Modelo y análisis'],['verif','Cap. Verificaciones'],['anexo','Anexos']].map(([v, l]) => `<option value="${v}" ${f.where === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
         ${f.blank ? `<select data-k="figs.${i}.hcm">${[5,8,12,16,20].map(h => `<option value="${h}" ${+f.hcm === h ? 'selected' : ''}>alto ${h} cm</option>`).join('')}</select>` : `<select data-k="figs.${i}.ancho">${[100,75,50].map(a => `<option value="${a}" ${+f.ancho === a ? 'selected' : ''}>ancho ${a} %</option>`).join('')}</select>`}
         <span style="display:flex;gap:.2rem"><button type="button" class="btn-remove" data-up="${i}" title="Subir">▲</button><button type="button" class="btn-remove" data-del="figs.${i}">✕</button></span></div></div>`).join('');
     const B = mcmBuild(S);
+    const num = {}; B.forEach(b => { if (b.key) num[b.key] = b.num; });
+    const fnum = {}; B.forEach(b => { if (b.fnum && b.id != null) fnum[b.id] = b.fnum; });
+    const zona = (w, titulo, sub) => `<div class="mcm-drop mcm-drop-s" data-drop="${esc(w)}" tabindex="0"><b>${titulo}</b>${sub ? `<span>${sub}</span>` : ''}<div class="mcm-thumbs">${S.figs.map((f, i) => f.where === w && f.src ? `<div class="mcm-th"><img src="${f.src}"><small>Figura ${fnum[f.id] || '—'}</small><input type="text" data-k="figs.${i}.cap" value="${esc(f.cap)}" placeholder="Pie de figura"><button type="button" class="btn-remove" data-del="figs.${i}">✕</button></div>` : '').join('')}</div></div>`;
+    const resUI = Object.keys(MCM_RES).filter(m => MCM_RES[m].act(S) && S.res[m].on).map(m => `<div class="mem-blk mcm-res"><h4>${num['ra|' + m] || ''} ${esc(mcmResLabel(S, m))}</h4>
+        <div class="mem-checks">${MCM_RES[m].items.map(it => `<label><input type="checkbox" data-resit="${m}|${it.k}" ${S.res[m].it[it.k] ? 'checked' : ''}> <span>${esc(it.t)}</span></label>`).join('')}</div>
+        ${MCM_RES[m].items.filter(it => S.res[m].it[it.k]).map(it => `<div class="mcm-resit"><div class="mcm-resit-h">${num[`ra|${m}|${it.k}`] || ''} ${esc(it.t)}</div>${it.combos
+          ? (mcmCombos(S).length ? mcmCombos(S).map((cb, j) => zona(`ra|${m}|combo|${cb}`, `C${j + 1}: ${esc(cb)}`, '')).join('') : '<div class="note">Escribe las combinaciones en el panel 5.</div>')
+          : zona(`ra|${m}|${it.k}`, '⇩ Arrastra aquí las imágenes', it.k === 'tens' ? 'imagen en colores de los niveles de esfuerzos internos' : it.k === 'dc' ? 'tabla o imagen con las relaciones D/C de los elementos' : it.k === 'fund' ? 'verificaciones de la Mesa de Cálculo u otro programa' : it.k === 'sol' ? 'elementos más solicitados y sus esfuerzos' : 'tabla de verificación de los elementos')}</div>`).join('')}</div>`).join('');
     const esq = `<div id="mem_esq" class="mem-esq"><b>Índice de la memoria</b><br>${B.filter(b => b.t === 'h1' || b.t === 'h2' || b.t === 'ha').map(b => (b.t === 'h2' ? '&nbsp;&nbsp;&nbsp;' : '<b>') + (b.num ? b.num + ' ' : '') + esc(b.text) + (b.t === 'h2' ? '' : '</b>')).join('<br>')}<br><br>${B.filter(b => b.t === 'table').length} tablas · ${B.filter(b => b.t === 'fig' || b.t === 'blank').length} figuras · ${(html.pend = (mcmHtml(S, B).match(/\[completar/g) || []).length)} campos por completar</div>`;
     return `
     <div class="mem-head" style="margin-bottom:1rem">
@@ -41444,7 +41506,7 @@ function renderMemorias(container) {
     </div>
     <div class="panel"><h3>1 · Proyecto y portada</h3><div class="field-grid">
       ${SEL('Tipo de documento', 'proy.titulo', MCM_DOCS)}${F('Nombre del proyecto', 'proy.proyecto', 'Ej: Ampliación nave de secado')}${F('Mandante', 'proy.mandante')}${F('Código ING', 'proy.codigo', 'Ej: ING-24-031')}
-      ${F('Ubicación', 'proy.ubicacion', 'Comuna, región')}${F('Fecha', 'proy.fecha')}${F('Revisión', 'proy.rev')}${SELO('Descripción de la revisión', 'proy.descRev', MCM_REVS)}${F('Elaboró', 'proy.elaboro')}${F('Revisó', 'proy.reviso')}</div></div>
+      ${F('Ubicación', 'proy.ubicacion', 'Comuna, región')}${F('Fecha', 'proy.fecha')}${F('Revisión', 'proy.rev')}${SELO('Descripción de la revisión', 'proy.descRev', MCM_REVS)}${SELO('Elaboró', 'proy.elaboro', MCM_ING)}${SELO('Revisó', 'proy.reviso', MCM_ING)}</div></div>
     <div class="panel"><h3>2 · Tipo de estructura</h3><div class="field-grid">
       ${SEL('Uso / tipo', 'est.uso', MCM_USOS.map(u => [u.id, u.label]))}${F('Destino o nombre de la estructura', 'est.nombre', 'Ej: almacenamiento de madera seca')}
       ${F('Dimensiones principales', 'est.dim', 'Ej: 24 × 60 m en planta y 9 m de altura')}${F('N° de niveles', 'est.niveles', '', 'number')}${F('Cubierta', 'est.cubierta', 'Ej: plancha de acero prepintada sobre costaneras')}
@@ -41452,7 +41514,7 @@ function renderMemorias(container) {
       <div class="note" style="margin-top:.6rem;font-weight:600">Materiales que componen la estructura (mixta):</div>
       <div class="mem-checks">${CHK('Acero estructural', 'est.acero')}${CHK('Hormigón armado', 'est.hormigon')}${CHK('Madera', 'est.madera')}${CHK('Albañilería reforzada', 'est.albanileria')}</div>
       <div class="field-grid" style="margin-top:.5rem">${E.acero ? MULTI('Elementos de acero', 'acero') : ''}${E.hormigon ? MULTI('Elementos de hormigón armado', 'hormigon') : ''}${E.madera ? MULTI('Elementos de madera', 'madera') : ''}${E.albanileria ? MULTI('Elementos de albañilería', 'albanileria') : ''}${E.hormigon ? MULTI('Tipo de fundación', 'fund') : ''}</div></div>
-    <div class="panel"><h3>3 · Materiales</h3><div class="note">Solo se muestran los de los materiales marcados en el panel 2. Cada casilla agrega su fila a la tabla de materiales.</div>${matRows}</div>
+    <div class="panel"><h3>3 · Materiales</h3><div class="note">Cada casilla agrega su fila a la tabla de materiales. Los atenuados corresponden a materiales no marcados en el panel 2; al marcarlos se activan allí también.</div>${matRows}</div>
     <div class="panel"><h3>4 · Normativa</h3><div class="mem-btns"><button type="button" class="mem-btn" data-act="normReset">⚙ Sugerir normas atingentes</button><span class="note" style="align-self:center">Marca las normas que corresponden a los materiales, al tipo de estructura, al sismo y a las cargas consideradas (paneles 2 y 5).</span></div><div class="note">Puedes marcar o desmarcar a mano. Revisa que las versiones sean las vigentes.</div><div class="mem-checks" style="margin-top:.4rem">${normRows}</div>
       <div class="mem-blk"><h4>Otras normas <small>una por línea</small></h4><textarea data-k="normExtra" style="min-height:3em">${esc(S.normExtra)}</textarea></div>
 </div>
@@ -41467,12 +41529,16 @@ function renderMemorias(container) {
         <b>📐 Imágenes del modelo</b><span>Arrastra aquí capturas del modelo de ${esc(mcmV(S.anal.software, 'tu programa'))}, haz clic para elegirlas, o selecciona este recuadro y pega con Ctrl+V una captura de pantalla.</span>
         <div class="mcm-thumbs">${S.figs.map((f, i) => f.where === 'modelo' && f.src ? `<div class="mcm-th"><img src="${f.src}"><input type="text" data-k="figs.${i}.cap" value="${esc(f.cap)}" placeholder="Pie de figura"><button type="button" class="btn-remove" data-del="figs.${i}">✕</button></div>` : '').join('')}</div>
       </div></div>
-    <div class="panel"><h3>7 · Verificaciones</h3><div class="note">Un renglón por elemento verificado, con su razón demanda/capacidad (D/C). Arma la tabla resumen y la conclusión. (Etapa 2: importar directamente los cálculos guardados de la Mesa.)</div>${verifRows}<button type="button" class="btn-add" data-act="addVerif">+ Agregar elemento</button></div>
+    <div class="panel"><h3>7 · Resultados y verificaciones</h3>
+      <div class="note">Elige los materiales cuyos resultados quieres presentar y arrastra las imágenes de tu modelo a cada recuadro (también clic para elegir, o Ctrl+V para pegar una captura). La numeración de capítulos y figuras se actualiza sola.</div>
+      <div class="mem-btns">${Object.keys(MCM_RES).map(m => { const act = MCM_RES[m].act(S), on = act && S.res[m].on; return `<button type="button" class="mcm-tog ${on ? 'on' : ''}" data-res="${m}" ${act ? '' : 'disabled title="Marca este material en el panel 2"'}>${on ? '✓ ' : ''}${esc(mcmResLabel(S, m))}</button>`; }).join('')}</div>
+      ${resUI}
+      <div class="mem-blk"><h4>Resumen de verificaciones <small>opcional: tabla escrita con elemento y D/C, que alimenta la conclusión</small></h4>${verifRows}<button type="button" class="btn-add" data-act="addVerif">+ Agregar elemento</button></div></div>
     <div class="panel"><h3>8 · Figuras y planos</h3><div class="note">Fotos, planos o capturas del modelo (se reducen solas a 1600 px), o espacios en blanco con marco para pegar o dibujar después. Se numeran solas.</div>${figRows}
       <div class="mcm-drop" data-drop="desc" tabindex="0" style="margin:.4rem 0"><b>🖼 Arrastra aquí fotos o planos</b><span>o haz clic para elegirlos, o pega con Ctrl+V. Quedan en el capítulo Descripción; cámbialos de capítulo en la lista.</span></div>
       <div class="mem-btns"><button type="button" class="btn-add" data-act="addFig">+ Agregar imagen</button><button type="button" class="btn-add" data-act="addBlank">+ Agregar espacio para dibujo</button><input type="file" accept="image/*" multiple id="mcmImgIn" hidden></div>
       <div class="note" style="font-weight:600;margin-top:.6rem">Planos de referencia</div>${planoRows}<button type="button" class="btn-add" data-act="addPlano">+ Agregar plano</button></div>
-    <div class="panel"><h3>9 · Capítulos y textos</h3><div class="mem-checks">${[['intro','1. Introducción y alcance'],['desc','2. Descripción de la estructura'],['normas','3. Normativa'],['mat','4. Materiales'],['cargas','5. Cargas y combinaciones'],['anal','6. Modelo y análisis'],['verif','7. Verificaciones'],['concl','8. Conclusiones y recomendaciones'],['anexos','Anexos (figuras marcadas como anexo)']].map(([k, l]) => CHK(l, 'caps.' + k)).join('')}</div>
+    <div class="panel"><h3>9 · Capítulos y textos</h3><div class="mem-checks">${[['intro','1. Introducción y alcance'],['desc','2. Descripción de la estructura'],['normas','3. Normativa'],['mat','4. Materiales'],['cargas','5. Cargas y combinaciones'],['anal','6. Modelo y análisis'],['verif','7. Resultados y verificaciones'],['concl','8. Conclusiones y recomendaciones'],['anexos','Anexos (figuras marcadas como anexo)']].map(([k, l]) => CHK(l, 'caps.' + k)).join('')}</div>
       ${['intro','alcance','descGen','descSis'].concat(E.hormigon ? ['descFund'] : []).concat(['anal','hip','concl','recom']).filter(k => S.caps[MCM_TXT[k].cap]).map(blk).join('')}</div>
     <div class="panel"><h3>10 · Emitir memoria</h3>${esq}
       <div class="mem-btns"><button type="button" class="mem-btn" data-act="word">⬇ Descargar Word</button><button type="button" class="mem-btn" data-act="pdf">🖨 Imprimir / Guardar PDF</button><button type="button" class="btn-add" data-act="guardar">💾 Guardar memoria</button></div>
@@ -41493,6 +41559,7 @@ function renderMemorias(container) {
   });
   root.addEventListener('change', e => {
     const t = e.target;
+    if (t.dataset.resit) { const [m, k] = t.dataset.resit.split('|'); S.res[m].it[k] = t.checked; mcmSave(S); draw(); return; }
     if (t.dataset.norm) { S.normSel[t.dataset.norm] = t.checked; mcmSave(S); draw(); return; }
     if (t.dataset.selo) { set(S, t.dataset.selo, t.value === '__otro' ? ' ' : t.value); mcmSave(S); draw(); return; }
     if (t.dataset.el) { const g = t.dataset.el, a = S.est.el[g] = S.est.el[g] || []; if (t.checked) { if (!a.includes(t.value)) a.push(t.value); a.sort((x, y) => MCM_EL[g].indexOf(x) - MCM_EL[g].indexOf(y)); } else S.est.el[g] = a.filter(x => x !== t.value);
@@ -41501,7 +41568,9 @@ function renderMemorias(container) {
       if (t.dataset.k === 'est.acero' && t.checked) ['perf','pernos','sold'].forEach(k => S.mat[k].on = true);
       if (t.dataset.k === 'est.hormigon' && t.checked) ['horm','a630'].forEach(k => S.mat[k].on = true);
       if (t.dataset.k === 'est.madera' && t.checked) ['mad'].forEach(k => S.mat[k].on = true);
+      { const mm = /^mat\.(\w+)\.on$/.exec(t.dataset.k); if (mm && t.checked) { const g = MCM_MAT[mm[1]].g; if (g !== 'any' && !g.split('|').some(x => S.est[x])) S.est[g.split('|')[0]] = true; } }
       if (t.dataset.k === 'est.albanileria' && t.checked) ['alb','grout','a630'].forEach(k => S.mat[k].on = true);
+      if (t.dataset.k === 'est.uso' && ['fundEquipo', 'fundaciones'].includes(t.value)) { S.est.hormigon = true; ['horm','a630'].forEach(k => S.mat[k].on = true); if (t.value === 'fundEquipo') { const c = S.cargas.find(x => x.sym === 'Leq'); if (c) c.on = true; } }
       if (t.dataset.k === 'sis.norma') { S.sis.cat = t.value === 'NCh433' ? 'II' : 'C2'; S.sis.I = '1,0'; }
       mcmSave(S); draw(); return; }
     if (t.dataset.txt) { draw(); }
@@ -41511,6 +41580,7 @@ function renderMemorias(container) {
   root.addEventListener('click', e => { root.querySelectorAll('details.mcm-dd[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; }); });
   root.addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.res) { S.res[b.dataset.res].on = !S.res[b.dataset.res].on; mcmSave(S); draw(); return; }
     if (b.dataset.reset) { delete S.txt[b.dataset.reset]; mcmSave(S); draw(); return; }
     if (b.dataset.del) { const [arr, i] = b.dataset.del.split('.'); S[arr].splice(+i, 1); mcmSave(S); draw(); return; }
     if (b.dataset.up) { const i = +b.dataset.up; if (i > 0) { [S.figs[i - 1], S.figs[i]] = [S.figs[i], S.figs[i - 1]]; mcmSave(S); draw(); } return; }
@@ -41534,8 +41604,8 @@ function renderMemorias(container) {
   let imgDest = 'desc';
   function addImgs(fs, where) {
     fs = fs.filter(f => /^image\//.test(f.type)); if (!fs.length) { fsToast('Arrastra un archivo de imagen (PNG o JPG).'); return; }
-    Promise.all(fs.map(mcmImg)).then(rs => { rs.forEach((r, i) => S.figs.push({id:Date.now() + i, cap: where === 'modelo' ? `Modelo de análisis en ${mcmV(S.anal.software, 'el programa')}` : (fs[i].name || 'imagen').replace(/\.[^.]+$/, ''), where, ancho:100, src:r.src, w:r.w, h:r.h}));
-      mcmSave(S); draw(); fsToast(rs.length + (rs.length === 1 ? ' imagen agregada' : ' imágenes agregadas') + (where === 'modelo' ? ' al capítulo Modelo y análisis.' : '.')); }).catch(() => fsToast('No se pudo leer la imagen.'));
+    Promise.all(fs.map(mcmImg)).then(rs => { rs.forEach((r, i) => S.figs.push({id:Date.now() + i, cap: mcmCapDef(S, where, fs[i]), where, ancho:100, src:r.src, w:r.w, h:r.h}));
+      mcmSave(S); draw(); fsToast(rs.length + (rs.length === 1 ? ' imagen agregada' : ' imágenes agregadas') + (where === 'modelo' ? ' al capítulo Modelo y análisis.' : /^ra\|/.test(where) ? ' a Resultados y verificaciones.' : '.')); }).catch(() => fsToast('No se pudo leer la imagen.'));
   }
   root.addEventListener('dragover', e => { const z = e.target.closest('[data-drop]'); if (!z) return; e.preventDefault(); z.classList.add('over'); });
   root.addEventListener('dragleave', e => { const z = e.target.closest('[data-drop]'); if (z && !z.contains(e.relatedTarget)) z.classList.remove('over'); });
@@ -41711,7 +41781,7 @@ route();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20261001-1752. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261001-1809. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
