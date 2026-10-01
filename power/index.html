@@ -652,6 +652,11 @@ td.c-pp{background:color-mix(in srgb,#dc2626 6%,transparent)!important} td.c-pp.
 :root[data-theme="dark"] td.c-fac.on{color:#7fb2f0} :root[data-theme="dark"] td.c-pf.on{color:#fb923c} :root[data-theme="dark"] td.c-pag.on{color:#4ade80} :root[data-theme="dark"] td.c-pp.on{color:#f87171} :root[data-theme="dark"] td.c-pct{color:#c4a5ff}
 
 .pill.e-odc{background:#e0e7ff;color:#3730a3;border:1px solid #6366f1}
+.pill.e-factu{background:#dc2626;color:#fff;border:2px solid #facc15;font-weight:800;letter-spacing:.03em;text-transform:uppercase;box-shadow:0 0 0 3px rgba(220,38,38,.25);animation:factuPulse 1.6s ease-in-out infinite}
+@keyframes factuPulse{0%,100%{box-shadow:0 0 0 2px rgba(220,38,38,.25)}50%{box-shadow:0 0 0 6px rgba(220,38,38,.45)}}
+@media (prefers-reduced-motion: reduce){.pill.e-factu{animation:none}}
+tr.row-factu td{background:color-mix(in srgb,#dc2626 9%,transparent)!important}
+.pcard.pc-factu{border:2px solid #dc2626;border-left:6px solid #dc2626;background:color-mix(in srgb,#dc2626 7%,var(--panel))}
 .cobrar.odc{background:#eef2ff;color:#3730a3;border-color:#6366f1}
 .alerta.odc{background:color-mix(in srgb,#6366f1 11%,var(--panel));border-left:5px solid #6366f1}
 .pill.e-hes{background:#fce7f3;color:#be185d;border:1px solid #ec4899}
@@ -757,7 +762,7 @@ const num = v => { const x = parseFloat(String(v).replace(/\./g, '').replace(','
 const numIn = v => { if (v === '' || v == null) return null; const s = String(v).trim(); const x = /,/.test(s) ? parseFloat(s.replace(/\./g, '').replace(',', '.')) : parseFloat(s); return isNaN(x) ? null : x; };
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const ESTADOS_DOC = ['Pendiente','Pagada','Pago parcial','Vencida','Anulada'];
-const ESTADOS_PROY = ['En oferta','Adjudicado','Solicitar ODC','En ejecución','Entregado','Solicitar HES/WE/HAS','Facturado','Pagado','Terminado','Suspendido','Cancelado','No adjudicado'];
+const ESTADOS_PROY = ['En oferta','Adjudicado','Solicitar ODC','En ejecución','Entregado','Solicitar HES/WE/HAS','Facturar','Facturado','Pagado','Terminado','Suspendido','Cancelado','No adjudicado'];
 const MOTIVOS = ['Detenido por el mandante','No se ejecutó','Detenido por ING Estructural','Otro (ver observaciones)'];
 const DEF_PARAMS = { iva: 0.19, ufRef: 41040.82, uta: 834504, gp: 0.30, gpTope: 15, semRojo: 3, semAmarillo: 10,
   rates: {2024: 0.1375, 2025: 0.145, 2026: 0.1525, 2027: 0.16, 2028: 0.17},
@@ -1214,7 +1219,7 @@ function tercerosDe(p) {
 const proyById = id => S.proyectos.find(p => p.id === id);
 const mandanteDe = d => proyById(d.proyectoId)?.mandante || '(sin proyecto)';
 function pillEstado(e) { const m = {'Pagada':'e-pag','Pendiente':'e-pen','Pago parcial':'e-par','Vencida':'e-can','Anulada':'e-noa'}; return `<span class="pill ${m[e]||'p-grey'}">${esc(e||'—')}</span>`; }
-function pillProy(e) { const m = {'En oferta':'e-ofe','Adjudicado':'e-adj','Solicitar ODC':'e-odc','En ejecución':'e-eje','Entregado':'e-ent','Solicitar HES/WE/HAS':'e-hes','Facturado':'e-fac','Pagado':'e-pag','Terminado':'e-ter','Suspendido':'e-sus','Cancelado':'e-can','No adjudicado':'e-noa'}; return `<span class="pill ${m[e]||'p-grey'}">${esc(e||'—')}</span>`; }
+function pillProy(e) { const m = {'En oferta':'e-ofe','Adjudicado':'e-adj','Solicitar ODC':'e-odc','En ejecución':'e-eje','Entregado':'e-ent','Solicitar HES/WE/HAS':'e-hes','Facturar':'e-factu','Facturado':'e-fac','Pagado':'e-pag','Terminado':'e-ter','Suspendido':'e-sus','Cancelado':'e-can','No adjudicado':'e-noa'}; return `<span class="pill ${m[e]||'p-grey'}">${esc(e||'—')}</span>`; }
 function igc(base) {
   const U = P().uta; const b = base / U; const t = P().igc; let row = t[0];
   for (const r of t) if (b >= r[0]) row = r;
@@ -1240,7 +1245,7 @@ function renderKpis() {
   const by = S.boletas.filter(b => b.estado !== 'Anulada' && (b.fecha||'').startsWith(String(y)));
   const fCob = S.facturas.filter(f => !['Anulada','Pagada'].includes(f.estado)).reduce((s, f) => s + calcFactura(f).total, 0);
   const bCob = S.boletas.filter(b => !['Anulada','Pagada'].includes(b.estado)).reduce((s, b) => s + calcBoleta(b).liq, 0);
-  const ADJ = ['Adjudicado','Solicitar ODC','En ejecución','Entregado','Solicitar HES/WE/HAS','Facturado','Terminado','Suspendido'];
+  const ADJ = ['Adjudicado','Solicitar ODC','En ejecución','Entregado','Solicitar HES/WE/HAS','Facturar','Facturado','Terminado','Suspendido'];
   let ingF = 0, ingB = 0, nF = 0, nB = 0, ufIng = 0, propioIng = 0;
   S.proyectos.filter(p => ADJ.includes(p.estado)).forEach(p => { const m = proyMetrics(p); const v = p.valorUF || P().ufRef; const falta = Math.max(m.totalCLP - m.pagado, 0);
     if (falta <= 0) return; ufIng += falta / v; if (p.documento === 'B') { ingB += falta; nB++; } else { ingF += falta; nF++; }
@@ -1264,7 +1269,7 @@ function renderKpis() {
 const projName = p => UP([p.proyecto, p.descripcion].filter(Boolean).join(' – '));
 const diasA = f => { if (!f) return null; const a = new Date(f + 'T00:00:00'), b = new Date(today() + 'T00:00:00'); return Math.round((a - b) / 86400000); };
 function semaforo(p) {
-  if (['Entregado','Solicitar HES/WE/HAS','Facturado','Terminado'].includes(p.estado)) return {c: 'ok', t: 'entregado'};
+  if (['Entregado','Solicitar HES/WE/HAS','Facturar','Facturado','Terminado'].includes(p.estado)) return {c: 'ok', t: 'entregado'};
   if (['Cancelado','No adjudicado'].includes(p.estado)) return null;
   if (p.estado === 'Suspendido') return {c: 'gr', t: 'suspendido'};
   const d = diasA(p.entrega); if (d === null) return {c: 'gr', t: 'sin fecha'};
@@ -1279,11 +1284,11 @@ function pagarTerc(p, m) {   // el cliente ya pagó (total o parcial) o el proye
   return (m.pagado > 0 || p.estado === 'Pagado') ? m.tercPendList : null;
 }
 function cobroPend(p, m) {   // Entregado → FACTURAR · Solicitar HES/WE/HAS → SOLICITAR · Facturado → COBRAR · Terminado → lo que quede pendiente · Pagado → nada
-  if (!['Entregado','Solicitar HES/WE/HAS','Facturado','Terminado'].includes(p.estado)) return null;
+  if (!['Entregado','Solicitar HES/WE/HAS','Facturar','Facturado','Terminado'].includes(p.estado)) return null;
   const fact = Math.max(m.porFacturar, 0), pag = Math.max(m.porPagar, 0);
   if (p.estado === 'Solicitar HES/WE/HAS') { const falta = [['HES', p.hes], ['WE', p.we], ['HAS', p.has]].filter(x => !x[1]).map(x => x[0]);
     return {tipo: 'hes', fact, pag: 0, t: falta.length ? 'falta ' + falta.join(' · ') : 'referencias recibidas: facturar'}; }
-  if (p.estado === 'Entregado') return fact > 0.005 ? {tipo: 'fact', fact, pag: 0, t: uf(fact) + ' UF por facturar'} : (pag > 0.5 ? {tipo: 'cob', fact: 0, pag, t: clp(pag) + ' por cobrar'} : {tipo: 'fact', fact: 0, pag: 0, t: 'emitir factura / boleta'});
+  if (p.estado === 'Entregado' || p.estado === 'Facturar') return fact > 0.005 ? {tipo: 'fact', fact, pag: 0, t: uf(fact) + ' UF por facturar'} : (pag > 0.5 ? {tipo: 'cob', fact: 0, pag, t: clp(pag) + ' por cobrar'} : {tipo: 'fact', fact: 0, pag: 0, t: 'emitir factura / boleta'});
   if (p.estado === 'Facturado') return {tipo: 'cob', fact: 0, pag, t: pag > 0.5 ? clp(pag) + ' por cobrar' : 'confirmar pago y marcar «Pagado»'};
   if (fact <= 0.005 && pag <= 0.5) return null;
   return fact > 0.005 ? {tipo: 'fact', fact, pag: 0, t: uf(fact) + ' UF por facturar'} : {tipo: 'cob', fact: 0, pag, t: clp(pag) + ' por cobrar'};
@@ -1344,8 +1349,8 @@ function vProyectos() {
   <p class="small muted">${S.proyectos.length} registrados · ${canc.length} cancelados (${uf(canc.reduce((s,p)=>s+(p.montoUF||0),0))} UF). Haga clic en una fila para editarla.</p>
   ${rows.length ? `<div class="pcards">${rows.map(cardProy).join('')}</div><div class="tbl wide"><table>
     <thead><tr>${sortTh('codigo','Código')}${sortTh('mandante','Empresa mandante')}${sortTh('proyecto','Proyecto')}${sortTh('contacto','Contacto')}${sortTh('documento','Documento')}${sortTh('montoUF','Monto (UF)','n cen')}${sortTh('montoCLP','Monto ($)','n')}${sortTh('propio','Propio (UF)','n cen')}${sortTh('entrega','Entrega')}${sortTh('estado','Estado')}${sortTh('facturado','Facturado (UF)','n h-fac')}${sortTh('porFact','Por facturar (UF)','n h-pf')}${sortTh('pctF','% fact.','n h-pct')}${sortTh('pagado','Status: pagado','n h-pag')}${sortTh('porPagar','Status: por pagar','n h-pp')}</tr></thead>
-    <tbody>${rows.map(p => { const m = proyMetrics(p); const late = p.entrega && p.entrega < today() && !['Entregado','Solicitar HES/WE/HAS','Facturado','Pagado','Terminado','Suspendido','Cancelado','No adjudicado'].includes(p.estado);
-      return `<tr class="click ${p.estado==='Cancelado'?'cancel':''}" data-edit="proyectos" data-id="${p.id}">
+    <tbody>${rows.map(p => { const m = proyMetrics(p); const late = p.entrega && p.entrega < today() && !['Entregado','Solicitar HES/WE/HAS','Facturar','Facturado','Pagado','Terminado','Suspendido','Cancelado','No adjudicado'].includes(p.estado);
+      return `<tr class="click ${p.estado==='Cancelado'?'cancel':''} ${p.estado==='Facturar'?'row-factu':''}" data-edit="proyectos" data-id="${p.id}">
       <td class="code keep" style="color:${p.documento==='F'?'var(--ing)':'var(--ga)'}">${esc(p.codigo)}<span class="fing" title="Fecha de ingreso">${p.creado ? fdate(p.creado) : '—'}</span></td><td class="mand">${esc(p.mandante)}</td><td class="pname">${esc(projName(p))}${[['OC',p.oc],['HES',p.hes],['HAS',p.has],['WE',p.we]].some(x=>x[1]) ? `<span class="refl">${[['OC',p.oc],['HES',p.hes],['HAS',p.has],['WE',p.we]].filter(x=>x[1]).map(x=>x[0]+' '+esc(x[1])).join(' · ')}</span>` : ''}</td><td>${esc(TITLE(p.contacto || ''))}</td>
       <td class="keep">${p.documento==='F'?'<span class="pill p-i">Factura</span>':'<span class="pill p-g">Boleta</span>'}</td>
       <td class="n cen">${uf(p.montoUF)}</td><td class="n">${clp(m.totalCLP)}</td><td class="n cen prop" title="${p.documento==='F'?'Neto sin IVA menos costo neto de terceros':'Bruto menos terceros'}">${uf(m.propioUF)}${m.tercUF > 0 ? `<span class="fing">terceros ${uf(m.tercUF)}</span>` : ''}</td><td class="nw ${late?'late':''}">${fdate(p.entrega)}</td>
@@ -1354,7 +1359,7 @@ function vProyectos() {
       <td class="n c-fac ${m.facturadoUF>0.005?'on':''}">${uf(m.facturadoUF)}</td><td class="n c-pf ${m.porFacturar>0.005?'on':''}" style="${m.porFacturar<-0.005?'color:var(--bad)':''}">${uf(m.porFacturar)}</td><td class="n c-pct">${m.pctF==null?'—':`${pct(m.pctF)}<span class="pbar"><i style="width:${Math.max(0,Math.min(100,m.pctF*100))}%"></i></span>`}</td>
       <td class="n c-pag ${m.pagado>0?'on':''}">${clp(m.pagado)}</td><td class="n c-pp ${m.porPagar>0?'on':''}">${clp(m.porPagar)}</td></tr>`; }).join('')}</tbody></table></div>`
   : `<div class="empty">${S.proyectos.length ? 'Ningún proyecto coincide con el filtro.' : 'Aún no hay proyectos. Use “+ Nuevo proyecto” para registrar el primero; el código se asigna solo.'}</div>`}
-  <p class="note">Colores: <span class="pill e-fac">Facturado</span> <span style="color:#c2410c;font-weight:700">por facturar</span> · <span style="color:#6d28d9;font-weight:700">% facturado</span> · <span style="color:#15803d;font-weight:700">pagado</span> · <span style="color:#b91c1c;font-weight:700">por pagar</span> — etapas: <span class="pill e-ofe">En oferta</span> <span class="pill e-adj">Adjudicado</span> <span class="pill e-odc">Solicitar ODC</span> <span class="pill e-eje">En ejecución</span> <span class="pill e-ent">Entregado</span> <span class="pill e-hes">Solicitar HES/WE/HAS</span> <span class="pill e-fac">Facturado</span> <span class="pill e-pag">Pagado</span> <span class="pill e-ter">Terminado</span></p>
+  <p class="note">Colores: <span class="pill e-fac">Facturado</span> <span style="color:#c2410c;font-weight:700">por facturar</span> · <span style="color:#6d28d9;font-weight:700">% facturado</span> · <span style="color:#15803d;font-weight:700">pagado</span> · <span style="color:#b91c1c;font-weight:700">por pagar</span> — etapas: <span class="pill e-ofe">En oferta</span> <span class="pill e-adj">Adjudicado</span> <span class="pill e-odc">Solicitar ODC</span> <span class="pill e-eje">En ejecución</span> <span class="pill e-ent">Entregado</span> <span class="pill e-hes">Solicitar HES/WE/HAS</span> <span class="pill e-factu">Facturar</span> <span class="pill e-fac">Facturado</span> <span class="pill e-pag">Pagado</span> <span class="pill e-ter">Terminado</span></p>
   <p class="note">📋 SOLICITAR ODC: pedir al cliente la orden de compra · 📄 FACTURAR / EMITIR BOLETA: proyecto entregado con saldo por documentar (clic en el aviso para emitir) · 📋 SOLICITAR HES/WE/HAS: pedir las referencias del cliente antes de facturar (indica cuáles faltan) · 💲 COBRAR: proyecto facturado con pagos pendientes. Al marcarlo «Pagado» deja de cobrarse. Fecha de entrega en rojo: atrasada.</p>
   <p class="note">Código: SIGLA del mandante – correlativo del mandante – correlativo general del año – año (2 dígitos). Se asigna al crear el proyecto; se reasigna si cambia el mandante o el año, o si el proyecto se mueve a otro archivo (queda registrado el código anterior). Un proyecto cancelado conserva su código, su saldo por facturar pasa a cero y lo ya facturado o cobrado se mantiene.</p>`;
 }
@@ -1367,9 +1372,9 @@ function avisosProy(p, m) {
   return h;
 }
 function cardProy(p) {
-  const m = proyMetrics(p), late = p.entrega && p.entrega < today() && !['Entregado','Solicitar HES/WE/HAS','Facturado','Pagado','Terminado','Suspendido','Cancelado','No adjudicado'].includes(p.estado);
+  const m = proyMetrics(p), late = p.entrega && p.entrega < today() && !['Entregado','Solicitar HES/WE/HAS','Facturar','Facturado','Pagado','Terminado','Suspendido','Cancelado','No adjudicado'].includes(p.estado);
   const refs = [['OC',p.oc],['HES',p.hes],['HAS',p.has],['WE',p.we]].filter(x => x[1]).map(x => x[0] + ' ' + esc(x[1])).join(' · ');
-  return `<div class="pcard click ${p.estado==='Cancelado'?'cancel':''} ${p.documento==='F'?'f':'b'}" data-edit="proyectos" data-id="${p.id}">
+  return `<div class="pcard click ${p.estado==='Cancelado'?'cancel':''} ${p.documento==='F'?'f':'b'} ${p.estado==='Facturar'?'pc-factu':''}" data-edit="proyectos" data-id="${p.id}">
     <div class="pc-top"><span class="code" style="color:${p.documento==='F'?'var(--ing)':'var(--ga)'}">${esc(p.codigo)}</span>${pillProy(p.estado)}</div>
     <div class="pc-name">${esc(projName(p))}</div>
     <div class="pc-sub"><b class="pc-mand">${esc(p.mandante)}</b>${p.contacto ? ' · ' + esc(TITLE(p.contacto)) : ''}${refs ? `<br><span class="refl">${refs}</span>` : ''}</div>
@@ -2068,8 +2073,8 @@ async function save(kind, rec) {
       { // al emitir la factura/boleta, el proyecto pasa a «Facturado» (si estaba en una etapa anterior).
         // Cobro parcial (anticipo / estado de pago) de un proyecto aún no entregado y con saldo por facturar: mantiene su estado.
         const pr = proyById(data.proyectoId);
-        if (pr && data.estado !== 'Anulada' && ['En oferta', 'Adjudicado', 'Solicitar ODC', 'En ejecución', 'Entregado', 'Solicitar HES/WE/HAS'].includes(pr.estado)) {
-          const saldo = saldoDesp, parcial = !['Entregado', 'Solicitar HES/WE/HAS'].includes(pr.estado) && saldo > 0.005;
+        if (pr && data.estado !== 'Anulada' && ['En oferta', 'Adjudicado', 'Solicitar ODC', 'En ejecución', 'Entregado', 'Solicitar HES/WE/HAS', 'Facturar'].includes(pr.estado)) {
+          const saldo = saldoDesp, parcial = !['Entregado', 'Solicitar HES/WE/HAS', 'Facturar'].includes(pr.estado) && saldo > 0.005;
           if (!parcial) { const {id: pid, ...pd} = pr; await put('proyectos', pid, {...pd, estado: 'Facturado'}); msgEst = ' · proyecto ' + pr.codigo + ' → Facturado'; }
           else msgEst = ' · cobro parcial: el proyecto sigue «' + pr.estado + '» (saldo ' + uf(saldo) + ' UF)';
         } }
@@ -2127,7 +2132,7 @@ cargarUF();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20260930-1832. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261001-1302. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
