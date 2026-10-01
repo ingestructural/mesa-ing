@@ -652,6 +652,14 @@ td.c-pp{background:color-mix(in srgb,#dc2626 6%,transparent)!important} td.c-pp.
 :root[data-theme="dark"] td.c-fac.on{color:#7fb2f0} :root[data-theme="dark"] td.c-pf.on{color:#fb923c} :root[data-theme="dark"] td.c-pag.on{color:#4ade80} :root[data-theme="dark"] td.c-pp.on{color:#f87171} :root[data-theme="dark"] td.c-pct{color:#c4a5ff}
 
 .pill.e-odc{background:#e0e7ff;color:#3730a3;border:1px solid #6366f1}
+.resumen-est{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;margin:4px 0 8px;font-size:11px}
+.resumen-est .rs-tit{color:var(--muted, #6b7280);font-weight:600;margin-right:2px}
+.rs-chip{display:inline-flex;align-items:center;gap:4px;background:none;border:1px solid transparent;border-radius:12px;padding:1px 4px 1px 1px;cursor:pointer;font:inherit;color:inherit}
+.rs-chip:hover{border-color:var(--line)}
+.rs-chip.on{border-color:var(--ing);background:color-mix(in srgb,var(--ing) 8%,transparent)}
+.rs-chip .pill{font-size:10px;padding:1px 6px;animation:none;box-shadow:none}
+.rs-chip b{font-size:11px} .rs-chip i{font-style:normal;color:var(--muted, #6b7280);font-size:10px}
+.rs-clear{color:var(--muted, #6b7280);padding:1px 6px}
 .pill.e-factu{background:#dc2626;color:#fff;border:2px solid #facc15;font-weight:800;letter-spacing:.03em;text-transform:uppercase;box-shadow:0 0 0 3px rgba(220,38,38,.25);animation:factuPulse 1.6s ease-in-out infinite}
 @keyframes factuPulse{0%,100%{box-shadow:0 0 0 2px rgba(220,38,38,.25)}50%{box-shadow:0 0 0 6px rgba(220,38,38,.45)}}
 @media (prefers-reduced-motion: reduce){.pill.e-factu{animation:none}}
@@ -1221,6 +1229,20 @@ const mandanteDe = d => proyById(d.proyectoId)?.mandante || '(sin proyecto)';
 function pillEstado(e) { const m = {'Pagada':'e-pag','Pendiente':'e-pen','Pago parcial':'e-par','Vencida':'e-can','Anulada':'e-noa'}; return `<span class="pill ${m[e]||'p-grey'}">${esc(e||'—')}</span>`; }
 // "Facturar" se muestra como FACTURAR (factura) o EMITIR BOLETA (boleta) según el documento del proyecto
 function estadoTxt(e, doc) { return e === 'Facturar' ? (doc === 'B' ? 'Emitir boleta' : doc === 'F' ? 'Facturar' : 'Facturar / Emitir boleta') : e; }
+// Franja de totales por estado (sobre la tabla de proyectos): N° de proyectos y UF, con el color de cada estado; clic = filtrar
+function resumenEstados() {
+  const items = [];
+  ESTADOS_PROY.forEach(e => {
+    const ps = S.proyectos.filter(p => p.estado === e);
+    if (!ps.length) return;
+    const grupos = e === 'Facturar' ? [['F', ps.filter(p => p.documento === 'F')], ['B', ps.filter(p => p.documento !== 'F')]] : [[null, ps]];
+    grupos.forEach(([doc, g]) => { if (!g.length) return;
+      const ufT = g.reduce((a, p) => a + (p.montoUF || 0), 0);
+      items.push(`<button type="button" class="rs-chip${S.fEstado === e ? ' on' : ''}" data-festado="${e}" title="Filtrar: ${esc(estadoTxt(e, doc))}">${pillProy(e, doc)}<b>${g.length}</b><i>${uf(ufT)} UF</i></button>`); });
+  });
+  if (!items.length) return '';
+  return `<div class="resumen-est"><span class="rs-tit">Por estado:</span>${items.join('')}${S.fEstado ? `<button type="button" class="rs-chip rs-clear" data-festado="">✕ quitar filtro</button>` : ''}</div>`;
+}
 function pillProy(e, doc) { const m = {'En oferta':'e-ofe','Adjudicado':'e-adj','Solicitar ODC':'e-odc','En ejecución':'e-eje','Entregado':'e-ent','Solicitar HES/WE/HAS':'e-hes','Facturar':'e-factu','Facturado':'e-fac','Pagado':'e-pag','Terminado':'e-ter','Suspendido':'e-sus','Cancelado':'e-can','No adjudicado':'e-noa'}; return `<span class="pill ${m[e]||'p-grey'}">${esc(estadoTxt(e, doc)||'—')}</span>`; }
 function igc(base) {
   const U = P().uta; const b = base / U; const t = P().igc; let row = t[0];
@@ -1349,6 +1371,7 @@ function vProyectos() {
     if (C.length) h += `<div class="alerta cob">💲 <b>COBRAR: ${C.length} proyecto${C.length===1?'':'s'} facturado${C.length===1?'':'s'}</b> — ${clp(C.reduce((a,x)=>a+x.c.pag,0))} por cobrar: ${links(C)}</div>`;
     return h; })()}
   <p class="small muted">${S.proyectos.length} registrados · ${canc.length} cancelados (${uf(canc.reduce((s,p)=>s+(p.montoUF||0),0))} UF). Haga clic en una fila para editarla.</p>
+  ${resumenEstados()}
   ${rows.length ? `<div class="pcards">${rows.map(cardProy).join('')}</div><div class="tbl wide"><table>
     <thead><tr>${sortTh('codigo','Código')}${sortTh('mandante','Empresa mandante')}${sortTh('proyecto','Proyecto')}${sortTh('contacto','Contacto')}${sortTh('documento','Documento')}${sortTh('montoUF','Monto (UF)','n cen')}${sortTh('montoCLP','Monto ($)','n')}${sortTh('propio','Propio (UF)','n cen')}${sortTh('entrega','Entrega')}${sortTh('estado','Estado')}${sortTh('facturado','Facturado (UF)','n h-fac')}${sortTh('porFact','Por facturar (UF)','n h-pf')}${sortTh('pctF','% fact.','n h-pct')}${sortTh('pagado','Status: pagado','n h-pag')}${sortTh('porPagar','Status: por pagar','n h-pp')}</tr></thead>
     <tbody>${rows.map(p => { const m = proyMetrics(p); const late = p.entrega && p.entrega < today() && !['Entregado','Solicitar HES/WE/HAS','Facturar','Facturado','Pagado','Terminado','Suspendido','Cancelado','No adjudicado'].includes(p.estado);
@@ -1592,6 +1615,7 @@ function bindPane() {
   const pane = $('#pane');
   const q = $('#q', pane); if (q) q.oninput = () => { S.q = q.value; render(); };
   const fe = $('#fEstado', pane); if (fe) fe.onchange = () => { S.fEstado = fe.value; render(); };
+  pane.querySelectorAll('[data-festado]').forEach(b => b.onclick = ev => { ev.stopPropagation(); const v = b.dataset.festado; S.fEstado = (v && S.fEstado === v) ? '' : v; render(); });
   liveCase($('#newCli', pane), UP);
   const setSort = v => { S.sortP = v; try { localStorage.setItem('ing_sortP', JSON.stringify(v)); } catch (e) {} render(); };
   pane.querySelectorAll('th[data-sort]').forEach(th => th.onclick = () => { const k = th.dataset.sort; setSort(S.sortP && S.sortP.k === k ? (S.sortP.d > 0 ? {k, d: -1} : null) : {k, d: 1}); });
@@ -2136,7 +2160,7 @@ cargarUF();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20261001-1335. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261001-1346. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
