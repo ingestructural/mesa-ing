@@ -29640,6 +29640,33 @@ function renderConexionesDiagonal(container) {
     </div>
 
     <div class="panel">
+      <h3>1 · Tipo de unión a la columna</h3>
+      <div class="field-grid">
+        <div class="field"><label>Tipo de unión diagonal — columna</label><select id="cd_union"><option value="soldada">Cartela soldada directamente a la columna</option><option value="placa4">Cartela con placa de extremo apernada a la columna (4 pernos)</option><option value="placaDiag">Placa soldada al extremo de la diagonal, apernada directo a la columna (4 pernos, sin cartela)</option></select></div>
+        <div class="field cd-upd"><label>Disposición de los 4 pernos</label><select id="cd_uDisp"><option value="auto">Automática (según ancho del ala de la columna)</option><option value="lados">A ambos lados del perfil (gramil horizontal)</option><option value="vert">Sobre y bajo el perfil (columnas angostas)</option></select></div>
+      </div>
+      <div id="cd_unionFields">
+        <div class="field-grid">
+          <div class="field"><label>Perno / anclaje a la columna</label><select id="cd_uGrado">${cdOptions(CD_GRADO_COL, state.uGrado)}</select></div>
+          <div class="field cd-uacero"><label>Diámetro del perno</label><select id="cd_uDiam">${cdOptions(CD_DIAM, state.uDiam)}</select></div>
+          <div class="field cd-uanc"><label>Tamaño del anclaje</label><select id="cd_uAnc">${CD_ANC_TAM.map((t,i)=>`<option value="${i}" ${i===state.uAnc?'selected':''}>${t}</option>`).join('')}</select></div>
+          <div class="field"><label>Ancho de la placa de extremo, Bp (mm)</label><input type="text" inputmode="decimal" id="cd_uBp" value="${state.uBp}"></div>
+          <div class="field"><label>Alto de la placa de extremo, Hp (mm)</label><input type="text" inputmode="decimal" id="cd_uHp" value="${state.uHp}"></div>
+          <div class="field"><label>Espesor de la placa de extremo, tp (mm)</label><input type="text" inputmode="decimal" id="cd_utp" value="${state.utp}" list="dl_cd_utp"><datalist id="dl_cd_utp">${CD_ESP_STD.map(v=>`<option value="${v}"></option>`).join('')}</datalist></div>
+          <div class="field"><label>Gramil horizontal entre pernos, g (mm)</label><input type="text" inputmode="decimal" id="cd_ug" value="${state.ug}"></div>
+          <div class="field"><label>Paso vertical entre pernos, p (mm)</label><input type="text" inputmode="decimal" id="cd_up" value="${state.up}"></div>
+          <div class="field cd-uacero cd-ucol"><label id="cd_lbl_bfc">Columna: ancho del ala, bf (mm)</label><input type="text" inputmode="decimal" id="cd_ubfc" value="${state.ubfc}"></div>
+          <div class="field cd-uacero"><label id="cd_lbl_tfc">Columna: espesor del ala, tf (mm)</label><input type="text" inputmode="decimal" id="cd_utfc" value="${state.utfc}"></div>
+          <div class="field cd-uacero cd-ucol"><label>Columna: espesor del alma, tw (mm)</label><input type="text" inputmode="decimal" id="cd_utwc" value="${state.utwc}"></div>
+          <div class="field cd-uacero"><label id="cd_lbl_mcol">Material de la columna</label><select id="cd_uMatCol">${cdOptions(CD_MAT_COL, state.uMatCol)}</select></div>
+          <div class="field cd-uanc"><label>Factor de mayoración promedio γ (Pu → carga de servicio)</label><input type="text" inputmode="decimal" id="cd_uGam" value="${state.uGam}" list="dl_cd_uGam"><datalist id="dl_cd_uGam"><option value="1.4">Valor usual</option><option value="1.5">Conservador</option></datalist></div>
+        </div>
+        <div class="note" id="cd_uSugTxt" style="margin-top:.6rem"></div>
+        <div style="margin:.4rem 0 .7rem"><button type="button" class="btn-add" id="cd_uSug">Aplicar dimensiones sugeridas</button></div>
+      </div>
+    </div>
+
+    <div class="panel">
       <h3>1 · Tipo de diagonal, ángulo y material del perfil</h3>
       <div class="field-grid">
         <div class="field"><label>Tipo de diagonal</label><select id="cd_tipo">${CD_TIPOS.map(t=>`<option value="${t.id}" ${t.id===state.tipo?'selected':''}>${t.label}</option>`).join('')}</select></div>
@@ -29651,6 +29678,11 @@ function renderConexionesDiagonal(container) {
     <div class="panel">
       <h3>2 · Geometría del perfil de la diagonal</h3>
       <div id="cd_geomFields" class="field-grid"></div>
+    </div>
+
+    <div class="panel">
+      <h3>6 · Esquema</h3>
+      <div id="cd_esquema"></div>
     </div>
 
     <div class="panel">
@@ -29694,11 +29726,6 @@ function renderConexionesDiagonal(container) {
     </div>
 
     <div class="panel">
-      <h3>6 · Esquema</h3>
-      <div id="cd_esquema"></div>
-    </div>
-
-    <div class="panel">
       <h3>7 · Capacidad de pernos (AISC 360 J3)</h3>
       <div id="cd_pernos"></div>
     </div>
@@ -29738,34 +29765,11 @@ function renderConexionesDiagonal(container) {
       <div id="cd_weld2" style="margin-top:.7rem"></div>
     </div>
 
-    <div class="panel">
-      <h3>12 · Unión a la columna / apoyo</h3>
-      <div class="field-grid">
-        <div class="field"><label>Tipo de unión cartela — columna</label><select id="cd_union"><option value="soldada">Cartela soldada directamente a la columna</option><option value="placa4">Cartela con placa de extremo apernada a la columna (4 pernos)</option><option value="placaDiag">Placa soldada al extremo de la diagonal, apernada directo a la columna (4 pernos, sin cartela)</option></select></div>
-        <div class="field cd-upd"><label>Disposición de los 4 pernos</label><select id="cd_uDisp"><option value="auto">Automática (según ancho del ala de la columna)</option><option value="lados">A ambos lados del perfil (gramil horizontal)</option><option value="vert">Sobre y bajo el perfil (columnas angostas)</option></select></div>
-      </div>
-      <div id="cd_unionFields">
-        <div class="field-grid">
-          <div class="field"><label>Perno / anclaje a la columna</label><select id="cd_uGrado">${cdOptions(CD_GRADO_COL, state.uGrado)}</select></div>
-          <div class="field cd-uacero"><label>Diámetro del perno</label><select id="cd_uDiam">${cdOptions(CD_DIAM, state.uDiam)}</select></div>
-          <div class="field cd-uanc"><label>Tamaño del anclaje</label><select id="cd_uAnc">${CD_ANC_TAM.map((t,i)=>`<option value="${i}" ${i===state.uAnc?'selected':''}>${t}</option>`).join('')}</select></div>
-          <div class="field"><label>Ancho de la placa de extremo, Bp (mm)</label><input type="text" inputmode="decimal" id="cd_uBp" value="${state.uBp}"></div>
-          <div class="field"><label>Alto de la placa de extremo, Hp (mm)</label><input type="text" inputmode="decimal" id="cd_uHp" value="${state.uHp}"></div>
-          <div class="field"><label>Espesor de la placa de extremo, tp (mm)</label><input type="text" inputmode="decimal" id="cd_utp" value="${state.utp}" list="dl_cd_utp"><datalist id="dl_cd_utp">${CD_ESP_STD.map(v=>`<option value="${v}"></option>`).join('')}</datalist></div>
-          <div class="field"><label>Gramil horizontal entre pernos, g (mm)</label><input type="text" inputmode="decimal" id="cd_ug" value="${state.ug}"></div>
-          <div class="field"><label>Paso vertical entre pernos, p (mm)</label><input type="text" inputmode="decimal" id="cd_up" value="${state.up}"></div>
-          <div class="field cd-uacero cd-ucol"><label id="cd_lbl_bfc">Columna: ancho del ala, bf (mm)</label><input type="text" inputmode="decimal" id="cd_ubfc" value="${state.ubfc}"></div>
-          <div class="field cd-uacero"><label id="cd_lbl_tfc">Columna: espesor del ala, tf (mm)</label><input type="text" inputmode="decimal" id="cd_utfc" value="${state.utfc}"></div>
-          <div class="field cd-uacero cd-ucol"><label>Columna: espesor del alma, tw (mm)</label><input type="text" inputmode="decimal" id="cd_utwc" value="${state.utwc}"></div>
-          <div class="field cd-uacero"><label id="cd_lbl_mcol">Material de la columna</label><select id="cd_uMatCol">${cdOptions(CD_MAT_COL, state.uMatCol)}</select></div>
-          <div class="field cd-uanc"><label>Factor de mayoración promedio γ (Pu → carga de servicio)</label><input type="text" inputmode="decimal" id="cd_uGam" value="${state.uGam}" list="dl_cd_uGam"><datalist id="dl_cd_uGam"><option value="1.4">Valor usual</option><option value="1.5">Conservador</option></datalist></div>
-        </div>
-        <div class="note" id="cd_uSugTxt" style="margin-top:.6rem"></div>
-        <div style="margin:.4rem 0 .7rem"><button type="button" class="btn-add" id="cd_uSug">Aplicar dimensiones sugeridas</button></div>
+    <div class="panel" id="cd_panelURes">
+      <h3>12 · Unión a la columna — verificación</h3>
         <div id="cd_uRes"></div>
         <div class="note" style="font-weight:600;margin-top:.8rem">Opciones de pernos y anclajes (4 unidades): menor diámetro que cumple, con su placa sugerida</div>
         <div id="cd_uOpc"></div>
-      </div>
     </div>
 
     <div class="panel">
@@ -29897,7 +29901,7 @@ function renderConexionesDiagonal(container) {
     document.getElementById('dl_cd_eT').innerHTML = `<option value="${lcMinTxt}">mínimo Tabla J3.4</option>`;
     document.getElementById('cd_note_eT').textContent = `e_t → mínimo Tabla J3.4 = ${lcMinTxt} mm (borde laminado/oxicortado)`;
 
-    document.getElementById('cd_panel9').style.display = (state.tipo==='Cajon'||state.tipo==='Circular') ? '' : 'none';
+    document.getElementById('cd_panel9').style.display = (state.tipo==='Cajon'||state.tipo==='Circular'||state.union==='placaDiag') ? '' : 'none';
 
     document.getElementById('cd_distancias').innerHTML = `
       <table class="results">
@@ -29990,6 +29994,7 @@ function renderConexionesDiagonal(container) {
     const pdU = state.union === 'placaDiag';
     const pl4 = state.union === 'placa4' || pdU;
     document.getElementById('cd_unionFields').style.display = pl4 ? '' : 'none';
+    document.getElementById('cd_panelURes').style.display = pl4 ? '' : 'none';
     container.querySelectorAll('.cd-upd').forEach(e => e.style.display = pdU ? '' : 'none');
     ['cd_nf','cd_s','cd_pernos','cd_tg','cd_elemento','cd_w2'].forEach(id => { const pn = document.getElementById(id).closest('.panel'); if (pn) pn.style.display = pdU ? 'none' : ''; });
     document.getElementById('cd_tPE').closest('.field').style.display = pdU ? 'none' : '';
@@ -30083,6 +30088,12 @@ function renderConexionesDiagonal(container) {
       rows.map(([lbl, ok, ratio]) => `<div class="verdict-row"><span>${lbl}</span><span>${ok===null?'<span class="chip neutral">N/A</span>':chip(ok)}${ratio!=null&&isFinite(ratio)?` <span class="u">D/C = ${fmt3(ratio)}</span>`:''}</span></div>`).join('') +
       `<div class="global-verdict ${r.global?'ok':'bad'}"><span class="label">ESTADO GLOBAL</span><span class="label">${r.global?'CUMPLE':'NO CUMPLE'}${r.globalRatio!=null?' · D/C = '+fmt3(r.globalRatio):''}</span></div>`;
 
+    // numeracion correlativa de los paneles visibles
+    let nPan = 0;
+    container.querySelectorAll(':scope > .panel').forEach(pn => {
+      const h = pn.querySelector('h3'); if (!h || pn.style.display === 'none') return;
+      nPan++; h.textContent = h.textContent.replace(/^\s*\d+\s*·\s*/, nPan + ' · ');
+    });
     if (typeof buildPrintSheetsConexionesDiagonal === 'function') buildPrintSheetsConexionesDiagonal(state, r);
   }
 
@@ -41092,7 +41103,7 @@ route();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20261001-1225. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261001-1237. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
