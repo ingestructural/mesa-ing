@@ -761,11 +761,19 @@
     if (HOJA_ING_TOOLS.indexOf(location.hash.replace('#','')) >= 0) document.documentElement.classList.add('hoja-ing');
   });
   window.addEventListener('afterprint', function(){ document.documentElement.classList.remove('hoja-ing'); });
+  window.addEventListener('beforeprint', refreshCalcSheets);
   window.addEventListener('beforeprint', insertPrintPageHeaders);
   window.addEventListener('afterprint', clearPrintPageHeaders);
 
   // El renglón de Proyecto / Cálculo siempre se imprime (aunque los campos estén vacíos),
   // para que el espacio quede visible en la hoja y no pase inadvertido.
+  // Recalcula la calculadora activa para que las hojas de impresión (Datos) tomen el Proyecto / Cálculo actuales
+  function refreshCalcSheets(){
+    try {
+      var el = document.querySelector('main .panel input[type="text"], main .panel input[type="number"]');
+      if (el) el.dispatchEvent(new Event('input', {bubbles:true}));
+    } catch(e) {}
+  }
   function syncPrintMeta(){
     var meta = document.querySelector('.print-meta-line');
     if (!meta) return;
@@ -788,6 +796,7 @@
     head.appendChild(wrap);
     wrap.querySelector('#metaProyecto').addEventListener('input', function(e){ PROYECTO_META.proyecto = e.target.value; syncPrintMeta(); });
     wrap.querySelector('#metaCalculo').addEventListener('input', function(e){ PROYECTO_META.calculo = e.target.value; syncPrintMeta(); });
+    wrap.querySelectorAll('#metaProyecto,#metaCalculo').forEach(function(el){ el.addEventListener('change', refreshCalcSheets); });
     syncPrintMeta();
     if (typeof injectSaveBar === 'function') injectSaveBar(main);
   }
@@ -25281,7 +25290,7 @@ function murosCorteDatosHtml(state) {
     return `<tr><td class="xv-label">${label}</td><td class="xv-input" colspan="${span || 3}">${value}</td></tr>`;
   }
   const proyecto = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.proyecto) ? PROYECTO_META.proyecto : '____________________';
-  const calculo = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.calculo) ? PROYECTO_META.calculo : 'MURO DE CORTE';
+  const calculo = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.calculo) ? PROYECTO_META.calculo : '____________________';
   const tipoLabel = state.tipo === 'especial'
     ? 'Especial (ACI 318-19 Cap. 18.10 — muro dúctil con elementos de borde)'
     : 'Ordinario (ACI 318-19 Cap. 11 — sin detallamiento sísmico especial)';
@@ -29237,8 +29246,8 @@ function conexionesDiagonalDatosHtml(state) {
   const diam = CD_DIAM[state.diam], grado = CD_GRADO[state.grado];
   const matPerfil = CD_MAT_PERFIL[state.matPerfil], matPlaca = CD_MAT_PLACA[state.matPlaca];
   const elec1 = CD_ELECTRODO[state.elec1], elec2 = CD_ELECTRODO[state.elec2];
-  const proyecto = (PROYECTO_META && PROYECTO_META.proyecto) ? PROYECTO_META.proyecto : 'PROYECTO ESTRUCTURAL';
-  const calculo = (PROYECTO_META && PROYECTO_META.calculo) ? PROYECTO_META.calculo : 'DIAGONAL EJE X-1, NIVEL 1 - COLUMNA C1';
+  const proyecto = (PROYECTO_META && PROYECTO_META.proyecto) ? PROYECTO_META.proyecto : '____________________';
+  const calculo = (PROYECTO_META && PROYECTO_META.calculo) ? PROYECTO_META.calculo : '____________________';
 
   return `
     <div class="xlsx-title-bar">DATOS DE ENTRADA</div>
@@ -29518,54 +29527,93 @@ function buildPrintSheetsConexionesDiagonal(state, r) {
 
 
 /* ---- esquema — elevación de la conexión: columna, cartela, diagonal, pernos y cargas ---- */
+function cdPernoTxt(state, r) {
+  const G = CD_GRADO_COL[state.uGrado] || CD_GRADO_COL[0];
+  const nom = {A325N:'A325-N', A325X:'A325-X', A490N:'A490-N', HST3:'Hilti HST3 (expansión)', HY200:'Hilti HIT-HY 200 (químico)'}[G.id] || G.id;
+  return G.tipo === 'acero' ? `4 pernos Ø ${(CD_DIAM[state.uDiam]||CD_DIAM[3]).label} ${nom}` : `4 anclajes ${CD_ANC_TAM[state.uAnc]||'M16'} ${nom}`;
+}
+// Vista frontal acotada de la placa de extremo (Bp, Hp, g, p, bordes, tp, pernos) dentro de la caja X0,Y0,W,H
+function cdVistaFrontal(m, state, r, X0, Y0, W, H, modo) {
+  const Bp=+state.uBp||1, Hp=+state.uHp||1, g=+state.ug||0, p=+state.up||0, tp=+state.utp||0;
+  const fs = 9.5, ex=(Bp-g)/2, ey=(Hp-p)/2;
+  const sc = Math.min((W-120)/Bp, (H-110)/Hp);
+  const fw=Bp*sc, fh=Hp*sc, x0 = X0 + Math.max(0,(W-120-fw)/2), y0 = Y0 + 40;
+  const cx=x0+fw/2, cy=y0+fh/2;
+  let stem = '';
+  if (modo === 'cartela') {
+    const tw=Math.max(3,(+state.tg||0)*sc), lh=Math.min(fh,(+state.Lw2||0)*sc);
+    stem = `<rect x="${(cx-tw/2).toFixed(1)}" y="${(cy-lh/2).toFixed(1)}" width="${tw.toFixed(1)}" height="${lh.toFixed(1)}" fill="var(--ink)" opacity=".55"/>`;
+  } else {
+    const bw2=((r&&r.uBw)||0)*sc/2, hw2=((r&&r.uHw)||0)*sc/2;
+    const tL=Math.max(2,(+state.t_L||0)*sc), tw=Math.max(2,(+state.tPared||0)*sc);
+    if (state.tipo==='Circular') stem=`<ellipse cx="${cx}" cy="${cy}" rx="${bw2.toFixed(1)}" ry="${hw2.toFixed(1)}" fill="none" stroke="var(--ink)" stroke-width="${tw.toFixed(1)}"/>`;
+    else if (state.tipo==='Cajon') stem=`<rect x="${(cx-bw2).toFixed(1)}" y="${(cy-hw2).toFixed(1)}" width="${(2*bw2).toFixed(1)}" height="${(2*hw2).toFixed(1)}" fill="none" stroke="var(--ink)" stroke-width="${tw.toFixed(1)}"/>`;
+    else if (state.tipo==='XL') stem=`<path d="M ${cx-bw2} ${cy-hw2} L ${cx-bw2} ${cy+hw2} L ${cx+bw2} ${cy+hw2}" fill="none" stroke="var(--ink)" stroke-width="${tL.toFixed(1)}"/>`;
+    else stem=`<path d="M ${cx-bw2} ${cy} L ${cx+bw2} ${cy} M ${cx} ${cy-hw2} L ${cx} ${cy+hw2}" fill="none" stroke="var(--ink)" stroke-width="${tL.toFixed(1)}"/>`;
+  }
+  const dmm = r ? r.uD : 20, rb = Math.max(3.5, dmm*sc/2);
+  const bolts = [[-1,-1],[1,-1],[-1,1],[1,1]].map(([a,b])=>{ const bx=cx+a*g*sc/2, by=cy+b*p*sc/2;
+    return `<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="${rb.toFixed(1)}" fill="var(--surface)" stroke="var(--accent-warm)" stroke-width="2"/><line x1="${(bx-rb-2).toFixed(1)}" y1="${by.toFixed(1)}" x2="${(bx+rb+2).toFixed(1)}" y2="${by.toFixed(1)}" stroke="var(--accent-warm)" stroke-width=".8"/><line x1="${bx.toFixed(1)}" y1="${(by-rb-2).toFixed(1)}" x2="${bx.toFixed(1)}" y2="${(by+rb+2).toFixed(1)}" stroke="var(--accent-warm)" stroke-width=".8"/>`; }).join('');
+  const xb1=cx-g*sc/2, xb2=cx+g*sc/2, yb1=cy-p*sc/2, yb2=cy+p*sc/2;
+  const yd1=y0+fh+16, yd2=y0+fh+40, xd1=x0+fw+14, xd2=x0+fw+62;
+  const ext = (x1,y1,x2,y2) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--ink-muted)" stroke-width=".6" stroke-dasharray="2 2"/>`;
+  const hd = (xa,xb,y,lbl) => ESQ.dim(m, +xa.toFixed(1), y, +xb.toFixed(1), y, lbl, {fontSize:fs, labelOffset:12});
+  return `
+    ${ESQ.text(X0, Y0+12, 'VISTA FRONTAL DE LA PLACA', {fontSize:11, anchor:'start', bold:true})}
+    ${ESQ.text(X0, Y0+27, `Espesor tp = ${fmt0(tp)} mm`, {fontSize:10.5, anchor:'start', color:'var(--accent)', bold:true})}
+    <rect x="${x0.toFixed(1)}" y="${y0.toFixed(1)}" width="${fw.toFixed(1)}" height="${fh.toFixed(1)}" fill="var(--surface-alt)" stroke="var(--accent)" stroke-width="2"/>
+    ${stem}${bolts}
+    ${ext(xb1,yb2,xb1,yd1+3)}${ext(xb2,yb2,xb2,yd1+3)}${ext(x0,y0+fh,x0,yd2+3)}${ext(x0+fw,y0+fh,x0+fw,yd2+3)}
+    ${ex*sc>14 ? hd(x0,xb1,yd1,fmt0(ex)) : ''}${hd(xb1,xb2,yd1,`g=${fmt0(g)}`)}${ex*sc>14 ? hd(xb2,x0+fw,yd1,fmt0(ex)) : ''}
+    ${hd(x0,x0+fw,yd2,`Bp=${fmt0(Bp)}`)}
+    ${ext(xb2,yb1,xd1+3,yb1)}${ext(xb2,yb2,xd1+3,yb2)}${ext(x0+fw,y0,xd2+3,y0)}${ext(x0+fw,y0+fh,xd2+3,y0+fh)}
+    ${ey*sc>12 ? ESQ.vdim(m, xd1, +y0.toFixed(1), +yb1.toFixed(1), fmt0(ey), {side:'right', fontSize:fs}) : ''}
+    ${ESQ.vdim(m, xd1, +yb1.toFixed(1), +yb2.toFixed(1), `p=${fmt0(p)}`, {side:'right', fontSize:fs})}
+    ${ey*sc>12 ? ESQ.vdim(m, xd1, +yb2.toFixed(1), +(y0+fh).toFixed(1), fmt0(ey), {side:'right', fontSize:fs}) : ''}
+    ${ESQ.vdim(m, xd2, +y0.toFixed(1), +(y0+fh).toFixed(1), `Hp=${fmt0(Hp)}`, {side:'right', fontSize:fs})}
+    ${ESQ.text(X0, yd2+26, cdPernoTxt(state, r), {fontSize:10.5, anchor:'start', color:'var(--accent-warm)', bold:true})}
+    ${ESQ.text(X0, yd2+41, r && r.uEsAcero ? 'pasantes por el ala de la columna' : 'a columna de hormigón armado', {fontSize:9.5, anchor:'start'})}`;
+}
 function svgCdPlacaDiag(state, r) {
-  const ang = state.angulo*Math.PI/180, ux=Math.cos(ang), uy=-Math.sin(ang), px=-uy, py=ux;
-  const colX = 90, yC = 220;
-  const dims = r ? {bw:r.uBw, hw:r.uHw, h0:r.uBw} : {bw:150, hw:200};
+  const ang = state.angulo*Math.PI/180, ux=Math.cos(ang), uy=-Math.sin(ang);
+  const colX = 150, yC = 245;
   const h0 = state.tipo==='Cajon' ? state.h : (state.tipo==='Circular' ? state.D : (state.tipo==='X' ? 2*state.b_L+state.tg : state.b_L));
-  const k = 150/Math.max(state.uHp||1, dims.hw||1);
-  const Hp = (state.uHp||0)*k, tpx = Math.max(5, (state.utp||0)*k*1.5), pp = (state.up||0)*k/2;
-  const xP = colX + 4, xF = xP + tpx;               // cara exterior de la placa
-  const hh = (h0||0)*k/2;                           // semialtura del perfil (perpendicular a su eje)
-  const c0 = [xF + hh*Math.tan(ang), yC];           // punto del eje en la cara (desplazado para que el borde inferior toque)
-  const O = [xF, yC];
-  const L = 150;
-  const a1 = [O[0] + px*hh/Math.cos(ang)*0, O[1]];
-  const lo0 = [xF, yC + hh/Math.cos(ang)], hi0 = [xF, yC - hh/Math.cos(ang)];
-  const lo1 = [lo0[0]+ux*L, lo0[1]+uy*L], hi1 = [hi0[0]+ux*L, hi0[1]+uy*L];
-  const tip = [xF + ux*(L+20), yC + uy*(L+20)];
+  const Hp0 = +state.uHp||1, hwp = (r&&r.uHw)||h0||1;
+  const k = 230/Math.max(Hp0, hwp);
+  const Hp = Hp0*k, tpx = Math.max(6, (+state.utp||0)*k), pp = (+state.up||0)*k/2;
+  const vert = r && r.uVert;
+  const xP = colX + 4, xF = xP + tpx;
+  const hh = (h0||0)*k/2, hc = hh/Math.max(0.2,Math.cos(ang));
+  const L = 140;
+  const lo0=[xF, yC+hc], hi0=[xF, yC-hc], lo1=[lo0[0]+ux*L, lo0[1]+uy*L], hi1=[hi0[0]+ux*L, hi0[1]+uy*L];
+  const tip=[xF+ux*(L+12), yC+uy*(L+12)];
   const P = q => `${q[0].toFixed(1)},${q[1].toFixed(1)}`;
-  const sc = 75/Math.max(state.uBp||1, state.uHp||1), fw=(state.uBp||0)*sc, fh=(state.uHp||0)*sc, fx=335, fy=275, cx=fx+fw/2, cy=fy+fh/2;
-  const bw2=(dims.bw||0)*sc/2, hw2=(dims.hw||0)*sc/2, gx=(state.ug||0)*sc/2, pyv=(state.up||0)*sc/2;
-  let prof;
-  if (state.tipo==='Circular') prof=`<ellipse cx="${cx}" cy="${cy}" rx="${bw2.toFixed(1)}" ry="${hw2.toFixed(1)}" fill="none" stroke="var(--ink)" stroke-width="2"/>`;
-  else if (state.tipo==='Cajon') prof=`<rect x="${(cx-bw2).toFixed(1)}" y="${(cy-hw2).toFixed(1)}" width="${(2*bw2).toFixed(1)}" height="${(2*hw2).toFixed(1)}" fill="none" stroke="var(--ink)" stroke-width="2"/>`;
-  else if (state.tipo==='XL') prof=`<path d="M ${cx-bw2} ${cy-hw2} L ${cx-bw2} ${cy+hw2} L ${cx+bw2} ${cy+hw2}" fill="none" stroke="var(--ink)" stroke-width="2"/>`;
-  else prof=`<path d="M ${cx-bw2} ${cy} L ${cx+bw2} ${cy} M ${cx} ${cy-hw2} L ${cx} ${cy+hw2}" fill="none" stroke="var(--ink)" stroke-width="2"/>`;
   const pt_ = r && r.PuTracD!=null ? r.PuTracD : state.PuTrac, pc_ = r && r.PuCompD!=null ? r.PuCompD : state.PuComp;
   const hormigon = r && !r.uEsAcero;
+  const yT = yC-Hp/2, yB = yC+Hp/2;
   const col = hormigon
-    ? `<rect x="${colX-60}" y="60" width="60" height="310" fill="var(--surface-alt)" stroke="var(--ink)" stroke-width="2"/>${Array.from({length:10}).map((_,i)=>`<circle cx="${colX-45+(i%3)*14}" cy="${75+i*29}" r="2" fill="var(--ink-muted)"/>`).join('')}`
-    : `<line x1="${colX}" y1="370" x2="${colX}" y2="60" stroke="var(--ink)" stroke-width="7"/><line x1="${colX-50}" y1="370" x2="${colX-50}" y2="60" stroke="var(--ink)" stroke-width="2"/>`;
-  const boltLen = hormigon ? 42 : 56;
-  const bolts = [-1,1].map(sg => `<rect x="${(colX-boltLen+12).toFixed(1)}" y="${(yC+sg*pp-3).toFixed(1)}" width="${(boltLen+tpx).toFixed(1)}" height="6" fill="var(--accent-warm)" opacity=".9"/>`).join('');
+    ? `<rect x="${colX-70}" y="70" width="70" height="330" fill="var(--surface-alt)" stroke="var(--ink)" stroke-width="2"/>${Array.from({length:12}).map((_,i)=>`<circle cx="${colX-55+(i%3)*18}" cy="${85+i*26}" r="2" fill="var(--ink-muted)"/>`).join('')}${ESQ.text(colX-35, 418, 'Columna H.A.', {fontSize:10})}`
+    : `<line x1="${colX}" y1="400" x2="${colX}" y2="70" stroke="var(--ink)" stroke-width="6"/><line x1="${colX-60}" y1="400" x2="${colX-60}" y2="70" stroke="var(--ink)" stroke-width="2"/><line x1="${colX-30}" y1="400" x2="${colX-30}" y2="70" stroke="var(--ink-muted)" stroke-width="1" stroke-dasharray="6 3"/>${ESQ.text(colX-30, 418, `Columna (ala tf=${fmt0(state.utfc)})`, {fontSize:10})}`;
+  const bL = hormigon ? 52 : 40;
+  const bolts = (vert ? [-1,1] : [-1,1]).map(sg => `<rect x="${(colX-bL).toFixed(1)}" y="${(yC+sg*pp-3).toFixed(1)}" width="${(bL+tpx+12).toFixed(1)}" height="6" rx="1" fill="var(--accent-warm)"/>`).join('');
   return ESQ.svg(m => `
+    ${ESQ.text(20, 40, 'ELEVACIÓN', {fontSize:11, anchor:'start', bold:true})}
     ${col}
-    <rect x="${xP}" y="${(yC-Hp/2).toFixed(1)}" width="${tpx.toFixed(1)}" height="${Hp.toFixed(1)}" fill="var(--accent)" opacity=".85"/>
-    <polygon points="${P(lo0)} ${P(lo1)} ${P(hi1)} ${P(hi0)}" fill="var(--ink)" opacity=".12"/>
+    <rect x="${xP}" y="${yT.toFixed(1)}" width="${tpx.toFixed(1)}" height="${Hp.toFixed(1)}" fill="var(--accent)" opacity=".85"/>
+    <polygon points="${P(lo0)} ${P(lo1)} ${P(hi1)} ${P(hi0)}" fill="var(--ink)" opacity=".10"/>
     <line x1="${lo0[0]}" y1="${lo0[1]}" x2="${lo1[0]}" y2="${lo1[1]}" stroke="var(--ink)" stroke-width="2"/>
     <line x1="${hi0[0]}" y1="${hi0[1]}" x2="${hi1[0]}" y2="${hi1[1]}" stroke="var(--ink)" stroke-width="2"/>
     ${bolts}
-    ${ESQ.arrow(m, tip[0], tip[1], -state.angulo, 46, pt_>0 ? `PuTrac=${fmt2(pt_)} T` : `PuComp=${fmt2(pc_)} T`, {labelDx:6, labelDy:-6})}
-    ${ESQ.text(colX-55, 34, `Placa ${fmt0(state.uBp)}×${fmt0(state.uHp)}×${fmt0(state.utp)} mm soldada a la diagonal`, {color:'var(--accent)', bold:true, fontSize:10.5, anchor:'start'})}
-    ${ESQ.text(colX-55, 49, hormigon ? 'Apernada a columna de H.A. con 4 anclajes' : 'Apernada al ala de la columna metálica (4 pernos)', {fontSize:10, anchor:'start'})}
-    ${ESQ.note(colX+70, 385, `α=${fmt1(state.angulo)}° respecto a la horizontal`, {fontSize:11})}
-    <rect x="${fx}" y="${fy}" width="${fw.toFixed(1)}" height="${fh.toFixed(1)}" fill="var(--surface-alt)" stroke="var(--ink)" stroke-width="1.5"/>
-    ${prof}
-    ${[[-1,-1],[1,-1],[-1,1],[1,1]].map(([a,b])=>`<circle cx="${(cx+a*gx).toFixed(1)}" cy="${(cy+b*pyv).toFixed(1)}" r="4.5" fill="none" stroke="var(--accent-warm)" stroke-width="2"/>`).join('')}
-    ${ESQ.text(cx, fy-18, 'Vista frontal placa', {fontSize:10, anchor:'middle', bold:true})}${ESQ.text(cx, fy-6, `g=${fmt0(state.ug)} · p=${fmt0(state.up)}`, {fontSize:10, anchor:'middle'})}
-    ${r ? ESQ.text(cx, fy+fh+13, `4 × ${r.uTamTxt} ${String(r.uTipoTxt).split(' ')[0]}`, {fontSize:10, anchor:'middle', color:'var(--accent-warm)', bold:true}) : ''}
-  `, {viewBox:'-60 20 480 380', maxWidth:460, aria:'Diagonal con placa de extremo soldada, apernada directamente a la columna con 4 pernos'});
+    ${ESQ.vdim(m, colX-(hormigon?88:78), +yT.toFixed(1), +yB.toFixed(1), `Hp=${fmt0(state.uHp)}`, {side:'left', fontSize:9.5})}
+    <line x1="${colX-(hormigon?92:82)}" y1="${yT.toFixed(1)}" x2="${xP}" y2="${yT.toFixed(1)}" stroke="var(--ink-muted)" stroke-width=".6" stroke-dasharray="2 2"/>
+    <line x1="${colX-(hormigon?92:82)}" y1="${yB.toFixed(1)}" x2="${xP}" y2="${yB.toFixed(1)}" stroke="var(--ink-muted)" stroke-width=".6" stroke-dasharray="2 2"/>
+    <line x1="${(xF+4).toFixed(1)}" y1="${(yB+8).toFixed(1)}" x2="${(xF+28).toFixed(1)}" y2="${(yB+28).toFixed(1)}" stroke="var(--accent)" stroke-width="1"/>
+    ${ESQ.text(xF+30, yB+32, `tp=${fmt0(state.utp)} mm`, {fontSize:10, anchor:'start', color:'var(--accent)', bold:true})}
+    ${ESQ.arrow(m, tip[0], tip[1], -state.angulo, 38, pt_>0 ? `Pu=${fmt2(pt_)} T` : `Pu=${fmt2(pc_)} T (comp.)`, {labelDx:-4, labelDy:-10, anchor:'middle', fontSize:12})}
+    ${ESQ.note(xF+70, 432, `α=${fmt1(state.angulo)}°`, {fontSize:11})}
+    <line x1="430" y1="30" x2="430" y2="430" stroke="var(--line, #ccc)" stroke-width="1" stroke-dasharray="3 4"/>
+    ${cdVistaFrontal(m, state, r, 450, 30, 330, 400, 'perfil')}
+  `, {viewBox:'0 20 790 425', maxWidth:760, aria:'Elevación y vista frontal acotada de la placa soldada a la diagonal y apernada a la columna'});
 }
 
 function svgConexionesDiagonal(state, r) {
@@ -29600,22 +29648,18 @@ function svgConexionesDiagonal(state, r) {
     ${ESQ.note(origin[0]+ux*70+px*40, origin[1]+uy*70+py*40, `s=${fmt0(state.s)} · g=${fmt0(state.g)} · Lc,b=${fmt0(state.LcB)} · e_t=${fmt0(state.eT)} mm`, {anchor:'start', fontSize:10.5})}
     ${ESQ.note(origin[0]+ux*30-px*90, origin[1]+uy*30-py*90, `tg=${fmt1(state.tg)} mm`, {fontSize:10.5})}
     ${ESQ.arrow(m, tip[0], tip[1], -state.angulo, 46, (() => { const pt = r && r.PuTracD!=null ? r.PuTracD : state.PuTrac, pc = r && r.PuCompD!=null ? r.PuCompD : state.PuComp; return pt>0 ? `PuTrac=${fmt2(pt)} T` : `PuComp=${fmt2(pc)} T`; })(), {labelDx:6, labelDy: -6})}
-    ${ESQ.note(origin[0]+70, yBase-20, `α=${fmt1(state.angulo)}° respecto a la horizontal`, {fontSize:11})}
+    ${ESQ.note(origin[0]+120, yBase+30, `α=${fmt1(state.angulo)}° respecto a la horizontal`, {fontSize:11})}
     ${state.union==='placa4' && r ? (() => {
       const H = Math.max(60, Math.min(110, 2*halfW+40)), y0 = origin[1]-H/2;
-      const sc = 75/Math.max(state.uBp||1, state.uHp||1), fw = (state.uBp||0)*sc, fh = (state.uHp||0)*sc;
-      const fx = 340, fy = 290, gx = (state.ug||0)*sc/2, py = (state.up||0)*sc/2, cx = fx+fw/2, cy = fy+fh/2;
       return `<rect x="${colX+3}" y="${y0}" width="7" height="${H}" fill="var(--accent)" opacity=".85"/>
-        <line x1="${colX+6}" y1="${y0+10}" x2="${colX-12}" y2="${y0+10}" stroke="var(--accent)" stroke-width="2.5"/>
-        <line x1="${colX+6}" y1="${y0+H-10}" x2="${colX-12}" y2="${y0+H-10}" stroke="var(--accent)" stroke-width="2.5"/>
-        ${ESQ.text(colX+6, yBase+16, `Placa de extremo ${fmt0(state.uBp)}×${fmt0(state.uHp)}×${fmt0(state.utp)} mm`, {color:'var(--accent)', bold:true, fontSize:10.5, anchor:'start'})}
-        <rect x="${fx}" y="${fy}" width="${fw.toFixed(1)}" height="${fh.toFixed(1)}" fill="var(--surface-alt)" stroke="var(--ink)" stroke-width="1.5"/>
-        <rect x="${(cx-2).toFixed(1)}" y="${fy}" width="4" height="${fh.toFixed(1)}" fill="var(--ink)" opacity=".55"/>
-        ${[[-1,-1],[1,-1],[-1,1],[1,1]].map(([a,b])=>`<circle cx="${(cx+a*gx).toFixed(1)}" cy="${(cy+b*py).toFixed(1)}" r="4.5" fill="none" stroke="var(--accent-warm)" stroke-width="2"/>`).join('')}
-        ${ESQ.text(cx, fy-18, 'Vista frontal placa', {fontSize:10, anchor:'middle', bold:true})}${ESQ.text(cx, fy-6, `g=${fmt0(state.ug)} · p=${fmt0(state.up)}`, {fontSize:10, anchor:'middle'})}
-        ${ESQ.text(cx, fy+fh+13, `4 × ${r.uTamTxt} ${String(r.uTipoTxt).split(' ')[0]}`, {fontSize:10, anchor:'middle', color:'var(--accent-warm)', bold:true})}`;
+        <line x1="${colX+6}" y1="${y0+10}" x2="${colX-12}" y2="${y0+10}" stroke="var(--accent-warm)" stroke-width="3"/>
+        <line x1="${colX+6}" y1="${y0+H-10}" x2="${colX-12}" y2="${y0+H-10}" stroke="var(--accent-warm)" stroke-width="3"/>
+        <line x1="${colX+12}" y1="${y0+H+2}" x2="${colX+30}" y2="${y0+H+22}" stroke="var(--accent)" stroke-width="1"/>
+        ${ESQ.text(colX+32, y0+H+26, `Placa ${fmt0(state.uBp)}×${fmt0(state.uHp)}, tp=${fmt0(state.utp)} mm`, {fontSize:10, anchor:'start', color:'var(--accent)', bold:true})}
+        <line x1="440" y1="30" x2="440" y2="430" stroke="var(--line, #ccc)" stroke-width="1" stroke-dasharray="3 4"/>
+        ${cdVistaFrontal(m, state, r, 455, 25, 330, 380, 'cartela')}`;
     })() : ''}
-  `, {viewBox:'-60 20 480 390', maxWidth:460, aria:'Elevación de la conexión diagonal-columna: cartela, pernos, soldadura y carga axial de la diagonal'});
+  `, state.union==='placa4' ? {viewBox:'-60 20 850 440', maxWidth:780, aria:'Elevación de la conexión con cartela y vista frontal acotada de la placa de extremo apernada a la columna'} : {viewBox:'-60 20 480 390', maxWidth:460, aria:'Elevación de la conexión diagonal-columna: cartela, pernos, soldadura y carga axial de la diagonal'});
 }
 
 function renderConexionesDiagonal(container) {
@@ -30462,8 +30506,8 @@ function evXlsxDatosHtml(state) {
   const diam = CD_DIAM[state.diam], grado = CD_GRADO[state.grado];
   const matViga = EV_MAT_VIGA[state.matViga];
   const matPF = CD_MAT_PLACA[state.matPF], matPW = CD_MAT_PLACA[state.matPW];
-  const proyecto = (PROYECTO_META && PROYECTO_META.proyecto) ? PROYECTO_META.proyecto : 'PROYECTO ESTRUCTURAL';
-  const calculo = (PROYECTO_META && PROYECTO_META.calculo) ? PROYECTO_META.calculo : 'EMPALME DE VIGA';
+  const proyecto = (PROYECTO_META && PROYECTO_META.proyecto) ? PROYECTO_META.proyecto : '____________________';
+  const calculo = (PROYECTO_META && PROYECTO_META.calculo) ? PROYECTO_META.calculo : '____________________';
   const perfilLine = state.perfilCat
     ? `<tr><td class="xv-label">Perfil de catálogo utilizado</td><td class="xv-input" colspan="3">${state.perfilCat}</td></tr>`
     : '';
@@ -41103,7 +41147,7 @@ route();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20261001-1237. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261001-1250. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
