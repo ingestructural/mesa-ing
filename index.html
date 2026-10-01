@@ -41999,6 +41999,18 @@ function route() {
   }
 }
 
+// Todos los textos que se escriben en las planillas quedan en MAYÚSCULAS (campos de una línea; no aplica a
+// números, correos ni a los párrafos largos de memorias/EETT). Se ejecuta en fase de captura, antes de que la
+// planilla lea el valor, conservando la posición del cursor.
+document.addEventListener('input', function(e){
+  var t = e.target; if (!t || t.tagName !== 'INPUT') return;
+  if (!/^(text|search|)$/.test(t.type || '') || t.dataset.noupper != null) return;
+  if (!t.closest('#mainView')) return;
+  var v = t.value; if (!v || v.indexOf('@') >= 0 || !/[a-záéíóúñü]/.test(v)) return;
+  if (/^[\d\s.,+\-*/()eE]*$/.test(v)) return; // números con notación científica
+  var a = t.selectionStart, b = t.selectionEnd; t.value = v.toLocaleUpperCase('es-CL');
+  try { t.setSelectionRange(a, b); } catch (er) {}
+}, true);
 document.getElementById('mobMenu').addEventListener('click', () => { if (location.hash) location.hash = ''; });
 buildSidebar();
 window.addEventListener('hashchange', route);
@@ -42078,7 +42090,7 @@ route();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20261001-1846. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261001-1909. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
