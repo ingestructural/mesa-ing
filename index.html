@@ -28791,7 +28791,215 @@ function cdChip(estado, ratio) {
   return chip(estado) + (ratio!=null && isFinite(ratio) ? ` <span class="u">D/C = ${fmt3(ratio)}</span>` : '');
 }
 
+
+/* ---- Diseño por capacidad de la diagonal + unión a columna con placa de extremo de 4 pernos (oct-2026) ---- */
+const CD_RY = [1.5, 1.1, 1.4, 1.3, 1.6]; // Ry por material de perfil (AISC 341 Tabla A3.1), mismo orden que CD_MAT_PERFIL
+const CD_GRADO_COL = [
+  {id:'A325N', label:'A325-N pasante a columna metálica (rosca incluida)', tipo:'acero', Fnt:6328, Fnv:3797},
+  {id:'A325X', label:'A325-X pasante a columna metálica (rosca excluida)', tipo:'acero', Fnt:6328, Fnv:4781},
+  {id:'A490N', label:'A490-N pasante a columna metálica (rosca incluida)', tipo:'acero', Fnt:7945, Fnv:4781},
+  {id:'HST3',  label:'Anclaje de expansión Hilti HST3 (columna de hormigón)', tipo:'expansion'},
+  {id:'HY200', label:'Anclaje químico Hilti HIT-HY 200 + varilla (columna de hormigón)', tipo:'quimico'},
+];
+const CD_ANC_TAM = ['M10','M12','M16','M20','M24','M30'];
+const CD_MAT_COL = [
+  {label:'A36', Fy:2530, Fu:4080},
+  {label:'A572 Gr50', Fy:3515, Fu:4570},
+  {label:'A270ES (NCh203)', Fy:2700, Fu:4100},
+  {label:'A345ES (NCh203)', Fy:3450, Fu:4500},
+];
+const CD_ESP_STD = [8,10,12,16,20,22,25,28,32,36,40,45,50,56,63];
+const CD_C1 = [[12.70,22],[15.88,27],[19.05,32],[22.23,35],[25.40,37],[28.58,40],[31.75,43]]; // holgura de llave aprox. (AISC Tabla 7-15) [mm]
+function cdCeil5(x){ return Math.ceil(x/5 - 1e-9)*5; }
+function cdEspStd(t){ return CD_ESP_STD.find(v => v >= t - 1e-9) || Math.ceil(t); }
+function cdC1(d){ if (d > 31.8) return 1.4*d; let c = CD_C1[0][1]; CD_C1.forEach(([dd, cc]) => { if (d >= dd - 0.01) c = cc; }); return c; }
+function cdRectProps(rects){
+  let A=0, Sx=0, Sy=0;
+  rects.forEach(([x0,x1,y0,y1]) => { const a=(x1-x0)*(y1-y0); A+=a; Sx+=a*(x0+x1)/2; Sy+=a*(y0+y1)/2; });
+  const xc=Sx/A, yc=Sy/A; let Ix=0, Iy=0, Ixy=0;
+  rects.forEach(([x0,x1,y0,y1]) => { const w=x1-x0, h=y1-y0, a=w*h, dx=(x0+x1)/2-xc, dy=(y0+y1)/2-yc;
+    Ix += w*h*h*h/12 + a*dy*dy; Iy += h*w*w*w/12 + a*dx*dx; Ixy += a*dx*dy; });
+  const Imin = (Ix+Iy)/2 - Math.sqrt(((Ix-Iy)/2)**2 + Ixy*Ixy);
+  return {A, Imin};
+}
+// propiedades de la sección de la diagonal [cm2, cm]
+function cdSeccion(inp){
+  const c = v => (+v||0)/10;
+  let A=0, Imin=0;
+  if (inp.tipo==='X' || inp.tipo==='XL') {
+    const b=c(inp.b_L), t=c(inp.t_L), h=c(inp.tg)/2;
+    if (b<=0 || t<=0 || t>=b) return {A:0, r:0};
+    const rects = inp.tipo==='XL' ? [[0,b,0,t],[0,t,t,b]]
+      : [[h,h+t,0,b],[h+t,h+b,0,t],[-h-t,-h,-b,0],[-h-b,-h-t,-t,0]]; // ángulos en cruz con la cartela entre ellos
+    ({A, Imin} = cdRectProps(rects));
+  } else if (inp.tipo==='Cajon') {
+    const b=c(inp.b), h=c(inp.h), t=c(inp.tPared);
+    if (b<=2*t || h<=2*t) return {A:0, r:0};
+    A = b*h - (b-2*t)*(h-2*t);
+    Imin = Math.min(b*h**3 - (b-2*t)*(h-2*t)**3, h*b**3 - (h-2*t)*(b-2*t)**3)/12;
+  } else {
+    const D=c(inp.D), t=c(inp.tPared), di=D-2*t;
+    if (di<=0) return {A:0, r:0};
+    A = Math.PI/4*(D*D - di*di); Imin = Math.PI/64*(D**4 - di**4);
+  }
+  return {A, r: A>0 ? Math.sqrt(Imin/A) : 0};
+}
+function cdFcr(KLr, Fy){
+  if (!(KLr>0)) return Fy;
+  const E=2100000, Fe=Math.PI*Math.PI*E/(KLr*KLr);
+  return KLr <= 4.71*Math.sqrt(E/Fy) ? Math.pow(0.658, Fy/Fe)*Fy : 0.877*Fe;
+}
+function cdCapacidadDiagonal(inp){
+  const sec = cdSeccion(inp);
+  const mat = CD_MAT_PERFIL[inp.matPerfil] || CD_MAT_PERFIL[0];
+  const Ry = CD_RY[inp.matPerfil] || 1, Fy = mat.Fy;
+  const L = (+inp.Ldiag||0)/10, K = +inp.Kd || 1;
+  const dgKLr = sec.r>0 ? K*L/sec.r : 0;
+  const dgFcr = cdFcr(dgKLr, Fy), dgFcre = cdFcr(dgKLr, Ry*Fy);
+  const esperada = inp.tipoCap === 'esperada';
+  const dgCapT = (esperada ? Ry*Fy*sec.A : 0.90*Fy*sec.A)/1000;
+  const dgCapC = (esperada ? Math.min(Ry*Fy*sec.A, 1.14*dgFcre*sec.A) : 0.90*dgFcr*sec.A)/1000;
+  const pct = Math.max(0, +inp.pct||0);
+  const esCap = inp.criterio === 'capacidad';
+  const PuTracCap = pct/100*dgCapT, PuCompCap = pct/100*dgCapC;
+  const PuTracD = esCap ? PuTracCap : (+inp.PuTrac||0);
+  const PuCompD = esCap ? PuCompCap : (+inp.PuComp||0);
+  return { dgA: sec.A, dgR: sec.r, dgRy: Ry, dgFy: Fy, dgKLr, dgFcr, dgFcre, dgCapT, dgCapC, pct, esCap, PuTracCap, PuCompCap, PuTracD, PuCompD,
+    dgUsoT: dgCapT>0 ? PuTracD/dgCapT : null, dgUsoC: dgCapC>0 ? PuCompD/dgCapC : null, dgEsbOk: dgKLr <= 200,
+    criterioTxt: esCap ? `Por capacidad de la diagonal: ${fmt0(pct)} % de ${esperada?'Ry·Fy·Ag (esperada, AISC 341)':'φPn (diseño, AISC 360)'}` : 'Solicitaciones ingresadas (Pu del análisis)',
+    tipoCapTxt: esperada ? 'Esperada Ry·Fy·Ag (AISC 341 / NCh2369)' : 'De diseño φPn (AISC 360 LRFD)' };
+}
+// Unión cartela -> placa de extremo -> columna, 4 pernos (2x2) a ambos lados de la cartela.
+// Tu = Pu·cosθ (normal a la cara de la columna), Vu = Pu·senθ (paralela). Línea de acción por el centroide del grupo.
+function cdUnionColumna(inp, PuT, PuC){
+  const apl = inp.union === 'placa4';
+  const G = CD_GRADO_COL[inp.uGrado] || CD_GRADO_COL[0];
+  const esAcero = G.tipo === 'acero';
+  const th = (+inp.angulo||0)*Math.PI/180;
+  const uTu = Math.max(PuT,0)*Math.cos(th), uVuT = Math.max(PuT,0)*Math.sin(th), uVuC = Math.max(PuC,0)*Math.sin(th);
+  const uVu = Math.max(uVuT, uVuC);
+  const uRut = uTu/4, uRuvT = uVuT/4, uRuv = uVu/4;
+  const mat = CD_MAT_PLACA[inp.matPlaca] || CD_MAT_PLACA[0], FuP = mat.Fu;
+  const matC = CD_MAT_COL[inp.uMatCol] || CD_MAT_COL[0], FuC = matC.Fu;
+  let d, dh, LeMin, row = null, tamTxt;
+  if (esAcero) { const D = CD_DIAM[inp.uDiam] || CD_DIAM[3]; d = D.db; dh = d + (d >= 25.4 ? 3 : 2); LeMin = D.Lcmin; tamTxt = D.label; }
+  else { tamTxt = CD_ANC_TAM[inp.uAnc] || 'M16'; d = parseFloat(tamTxt.slice(1)); dh = d + 2; LeMin = 1.75*d;
+    row = (G.tipo==='expansion' ? CATALOG_HST3 : CATALOG_HITHY200).find(x => x.t === tamTxt) || null; }
+  const g=+inp.ug||0, p=+inp.up||0, Bp=+inp.uBp||0, Hp=+inp.uHp||0, tp=+inp.utp||0, tg=+inp.tg||0, w2=+inp.w2||0, Lw2=+inp.Lw2||0;
+  const bfc=+inp.ubfc||0, tfc=+inp.utfc||0, twc=+inp.utwc||0, gam=+inp.uGam||1.4;
+  const uEx=(Bp-g)/2, uEy=(Hp-p)/2;
+  const uSmin = 2.67*d, uC1 = cdC1(d);
+  const espAnc = (row && row.espMin) ? row.espMin : 0;
+  const uGmin = Math.max(uSmin, tg + 2*(uC1 + w2), espAnc);
+  const uPmin = Math.max(uSmin, espAnc);
+  const uLeMin = LeMin;
+  // --- geometría ---
+  const uEstG = g >= uGmin, uRG = uGmin/(g||1e-9);
+  const uEstP = p >= uPmin, uRP = uPmin/(p||1e-9);
+  const uEstEx = uEx >= uLeMin, uREx = uLeMin/(uEx>0?uEx:1e-9);
+  const uEstEy = uEy >= uLeMin, uREy = uLeMin/(uEy>0?uEy:1e-9);
+  const uEstHp = Hp >= Lw2, uRHp = Lw2/(Hp||1e-9);
+  const uGcolMax = esAcero ? bfc - 2*uLeMin : null;
+  const uEstGcol = esAcero ? g <= uGcolMax : null, uRGcol = esAcero ? g/(uGcolMax>0?uGcolMax:1e-9) : null;
+  // --- palanca (AISC Manual Parte 9) en la placa ---
+  const uB_ = (g-tg)/2, uBp_ = uB_ - d/2, uA_ = Math.min(uEx, 1.25*uB_), uAp_ = uA_ + d/2;
+  const uRho = uAp_>0 ? uBp_/uAp_ : 0;
+  const uPtrib = Math.max(dh+1, Math.min(Hp/2, p/2 + Math.min(Math.max(uEy,0), Math.max(uB_,0))));
+  const uDelta = 1 - dh/uPtrib;
+  const tNoPry = (T, bp, pt, Fu) => (T>0 && bp>0) ? Math.sqrt(4*T*1000*(bp/10)/(0.90*(pt/10)*Fu))*10 : 0; // mm
+  const qFactor = (t, tc, delta, rho) => {
+    if (!(tc>0) || t >= tc) return {Q:1, alfa:0};
+    let alfa = (1/(delta*(1+rho)))*((tc/t)**2 - 1); alfa = Math.min(Math.max(alfa,0),1);
+    return {Q: Math.min(1,(t/tc)**2*(1+delta*alfa)), alfa};
+  };
+  const uTnp = tNoPry(uRut, uBp_, uPtrib, FuP);
+  const out = { uApl: apl, uEsAcero: esAcero, uTipoTxt: G.label, uTamTxt: tamTxt, uD: d, uDh: dh, uTu, uVuT, uVuC, uVu, uRut, uRuvT, uRuv,
+    uEx, uEy, uSmin, uC1, uGmin, uPmin, uLeMin, uEstG, uRG, uEstP, uRP, uEstEx, uREx, uEstEy, uREy, uEstHp, uRHp, uGcolMax, uEstGcol, uRGcol,
+    uB: uB_, uBpr: uBp_, uA: uA_, uApr: uAp_, uRho, uPtrib, uDelta, uTnp, uTpStd: cdEspStd(Math.max(uTnp, 8)), uGam: gam };
+  let est = [], rat = [];
+  if (esAcero) {
+    const Ab = Math.PI/4*(d/10)**2;
+    const uPhiRnv = 0.75*G.Fnv*Ab/1000;
+    const uFrv = uRuvT*1000/Ab;
+    const uFntp = Math.max(0, Math.min(G.Fnt, 1.3*G.Fnt - G.Fnt/(0.75*G.Fnv)*uFrv));
+    const uBt = 0.75*uFntp*Ab/1000;
+    const uTc = tNoPry(uBt, uBp_, uPtrib, FuP);
+    const qp = qFactor(tp, uTc, uDelta, uRho);
+    const uTav = uBt*qp.Q;
+    const uEstT = uTu>0 ? uRut <= uTav : null, uRT = uTu>0 ? uRut/(uTav||1e-9) : null;
+    // ala de la columna
+    const uBc = (g-twc)/2, uBpc = uBc - d/2, uAc = Math.min((bfc-g)/2, 1.25*uBc), uApc = uAc + d/2;
+    const uRhoc = uApc>0 ? uBpc/uApc : 0;
+    const uTcc = tNoPry(uBt, uBpc, uPtrib, FuC);
+    const qc = qFactor(tfc, uTcc, uDelta, uRhoc);
+    const uTavC = uBt*qc.Q;
+    const uEstTc = uTu>0 ? uRut <= uTavC : null, uRTc = uTu>0 ? uRut/(uTavC||1e-9) : null;
+    // corte + aplastamiento (placa y ala de columna)
+    const lcE = uEy - dh/2, lcI = p - dh;
+    const brg = (lc, t, Fu) => 0.75*Math.min(1.2*(Math.max(lc,0)/10)*(t/10)*Fu, 2.4*(d/10)*(t/10)*Fu)/1000;
+    const uBrgE = brg(lcE, tp, FuP), uBrgI = brg(lcI, tp, FuP), uBrgCol = 0.75*2.4*(d/10)*(tfc/10)*FuC/1000;
+    const uCapV = 2*Math.min(uPhiRnv, uBrgE, uBrgCol) + 2*Math.min(uPhiRnv, uBrgI, uBrgCol);
+    const uEstV = uVu>0 ? uVu <= uCapV : null, uRV = uVu>0 ? uVu/uCapV : null;
+    Object.assign(out, { uAb: Ab, uFnt: G.Fnt, uFnv: G.Fnv, uPhiRnv, uFrv, uFntp, uBt, uTc, uAlfa: qp.alfa, uQ: qp.Q, uTav, uEstT, uRT,
+      uBc, uBpc, uAc, uApc, uRhoc, uTcc, uAlfac: qc.alfa, uQc: qc.Q, uTavC, uEstTc, uRTc, uBrgE, uBrgI, uBrgCol, uCapV, uEstV, uRV, uTfc: tfc });
+    est = [uEstG, uEstP, uEstEx, uEstEy, uEstHp, uEstGcol, uEstT, uEstTc, uEstV];
+    rat = [uRG, uRP, uREx, uREy, uRHp, uRGcol, uRT, uRTc, uRV];
+  } else {
+    const uNrec = row ? row.N : 0, uVrec = row ? row.V : 0;
+    const uNs = uRut/gam, uVsT = uRuvT/gam, uVsC = (uVuC/4)/gam;
+    const iT = (uNrec>0&&uVrec>0) ? Math.pow(uNs/uNrec,1.5) + Math.pow(uVsT/uVrec,1.5) : Infinity;
+    const iC = uVrec>0 ? Math.pow(uVsC/uVrec,1.5) : Infinity;
+    const uInter = Math.max(iT, iC);
+    const uEstAnc = row ? uInter <= 1 : false;
+    const uEstTp = uTu>0 ? tp >= uTnp : null, uRTp = uTu>0 ? uTnp/(tp||1e-9) : null;
+    Object.assign(out, { uNrec, uVrec, uNs, uVsT, uVsC, uBetaN: uNrec>0?uNs/uNrec:null, uBetaV: uVrec>0?Math.max(uVsT,uVsC)/uVrec:null, uInter, uEstAnc, uEstTp, uRTp, uEspAnc: espAnc });
+    est = [uEstG, uEstP, uEstEx, uEstEy, uEstHp, uEstTp, uEstAnc];
+    rat = [uRG, uRP, uREx, uREy, uRHp, uRTp, isFinite(uInter)?uInter:null];
+  }
+  // --- dimensiones sugeridas de la placa ---
+  const LeS = cdCeil5(uLeMin);
+  const gS = cdCeil5(uGmin), pS = cdCeil5(Math.max(uPmin, Lw2 - 2*LeS));
+  const BpS = gS + 2*LeS, HpS = Math.max(pS + 2*LeS, cdCeil5(Lw2));
+  const bS = (gS-tg)/2, bpS = bS - d/2, ptS = Math.max(dh+1, Math.min(HpS/2, pS/2 + Math.min(LeS, bS)));
+  const tnpS = tNoPry(uRut, bpS, ptS, FuP);
+  const tS = Math.max(cdEspStd(Math.max(tnpS, 10)), esAcero ? 0 : 0);
+  Object.assign(out, { uSugLe: LeS, uSugG: gS, uSugP: pS, uSugBp: BpS, uSugHp: HpS, uSugTnp: tnpS, uSugTp: tS,
+    uSugTxt: `Placa ${fmt0(BpS)} × ${fmt0(HpS)} × ${fmt0(tS)} mm · g = ${fmt0(gS)} mm · p = ${fmt0(pS)} mm · bordes ${fmt0(LeS)} mm` });
+  out.uEstados = apl ? est : [];
+  out.uRatios = apl ? rat : [];
+  const rn = rat.filter(x => x!=null && isFinite(x));
+  out.uRatioMax = rn.length ? Math.max(...rn) : null;
+  out.uOk = !est.some(e => e === false);
+  const rs = (esAcero ? [out.uRT, out.uRTc, out.uRV] : [out.uInter, out.uRTp]).filter(x => x!=null && isFinite(x));
+  out.uRatioRes = rs.length ? Math.max(...rs) : null;
+  return out;
+}
+// Tabla de opciones: menor diámetro que cumple, para cada tipo de perno/anclaje, con su placa sugerida
+function cdOpcionesUnion(inp, PuT, PuC){
+  const cands = [];
+  [0,2].forEach(gi => [1,2,3,4,5,6].forEach(di => cands.push({gi, di, ai:0})));
+  [3,4].forEach(gi => CD_ANC_TAM.forEach((t, ai) => { if ((gi===3 ? CATALOG_HST3 : CATALOG_HITHY200).some(x => x.t===t)) cands.push({gi, di:3, ai}); }));
+  const res = {};
+  cands.forEach(c => {
+    const k = c.gi; if (res[k] && res[k].ok) return;
+    const base = Object.assign({}, inp, {union:'placa4', uGrado:c.gi, uDiam:c.di, uAnc:c.ai});
+    const s1 = cdUnionColumna(base, PuT, PuC);
+    const inp2 = Object.assign({}, base, {ug:s1.uSugG, up:s1.uSugP, uBp:s1.uSugBp, uHp:s1.uSugHp, utp:s1.uSugTp});
+    const s2 = cdUnionColumna(inp2, PuT, PuC);
+    const G = CD_GRADO_COL[c.gi];
+    // si la placa sugerida no basta por palanca (pernos de acero), subir espesor
+    let tp = s1.uSugTp, s3 = s2;
+    for (let k2=0; k2<8 && G.tipo==='acero' && s3.uEstT===false; k2++) { tp = cdEspStd(tp+1); s3 = cdUnionColumna(Object.assign({}, inp2, {utp:tp}), PuT, PuC); }
+    if (!(c.gi in res) || !res[c.gi].ok) res[c.gi] = { tipo: G.label.split(' (')[0], tam: s3.uTamTxt, ok: s3.uOk, dc: s3.uRatioRes,
+      placa: `${fmt0(s1.uSugBp)} × ${fmt0(s1.uSugHp)} × ${fmt0(tp)}`, gp: `${fmt0(s1.uSugG)} / ${fmt0(s1.uSugP)}`, gi: c.gi, di: c.di, ai: c.ai,
+      sug: {ug:s1.uSugG, up:s1.uSugP, uBp:s1.uSugBp, uHp:s1.uSugHp, utp:tp} };
+  });
+  return Object.values(res);
+}
+
 function calcConexionesDiagonal(inp) {
+  const cap = cdCapacidadDiagonal(inp);
+  inp = Object.assign({}, inp, {PuTrac: cap.PuTracD, PuComp: cap.PuCompD});
   const esX = inp.tipo==='X'?1:0, esXL = inp.tipo==='XL'?1:0, esCajon = inp.tipo==='Cajon'?1:0, esCirc = inp.tipo==='Circular'?1:0;
   const planos = esX ? 2 : 1;
   const diam = CD_DIAM[inp.diam], grado = CD_GRADO[inp.grado];
@@ -28904,14 +29112,17 @@ function calcConexionesDiagonal(inp) {
   const weld2PhiRn = 0.75*0.6*elec2.FEXX*0.707*(inp.w2/10)/1000;
   const estWeld2 = weld2PhiRn >= weld2Result, rWeld2 = weld2Result/weld2PhiRn;
 
-  // 10. estado global de la conexion
-  const estados = [estS, estG, estLcb, estEt, estPernos, estCartTracc, estCartBc, estPand, estElemTracc, estElemBc, estWeld1, estWeld2];
-  const ratios = [rS, rG, rLcb, rEt, rPernos, rCartTracc, rCartBc, rPand, rElemTracc, rElemBc, rWeld1, rWeld2];
+  // 11. union a la columna (placa de extremo con 4 pernos)
+  const un = cdUnionColumna(inp, inp.PuTrac, inp.PuComp);
+
+  // 12. estado global de la conexion
+  const estados = [estS, estG, estLcb, estEt, estPernos, estCartTracc, estCartBc, estPand, estElemTracc, estElemBc, estWeld1, estWeld2, ...un.uEstados];
+  const ratios = [rS, rG, rLcb, rEt, rPernos, rCartTracc, rCartBc, rPand, rElemTracc, rElemBc, rWeld1, rWeld2, ...un.uRatios];
   const global = !estados.some(e => e === false);
   const ratiosNum = ratios.filter(x => x != null && isFinite(x));
   const globalRatio = ratiosNum.length ? Math.max(...ratiosNum) : null;
 
-  return { esX, esXL, esCajon, esCirc, planos, db, dh, Ab, Fnv, FyPerf, FuPerf, FyPlac, FuPlac, FyElem, FuElem, PuGob, Lb, Ww, tElem, espMin, LcMin,
+  return Object.assign(cap, un, { esX, esXL, esCajon, esCirc, planos, db, dh, Ab, Fnv, FyPerf, FuPerf, FyPlac, FuPlac, FyElem, FuElem, PuGob, Lb, Ww, tElem, espMin, LcMin,
     estS, rS, estG, rG, estLcb, rLcb, estEt, rEt,
     cortePerno, aplastCartB, aplastCartI, aplastElemB, aplastElemI, capBorde, capInt, nPernos, capGrupo, estPernos, rPernos,
     cartFluencia, cartAn, cartRotura, cartCapTracc, estCartTracc, rCartTracc,
@@ -28921,7 +29132,7 @@ function calcConexionesDiagonal(inp) {
     elemAgv, elemAnv, elemAnt, elemPhiRnBc, estElemBc, rElemBc,
     weld1Aplica, weld1Perim, weld1PhiRn, estWeld1, rWeld1,
     weld2Par, weld2Perp, weld2Result, weld2PhiRn, estWeld2, rWeld2,
-    global, globalRatio, trAplica, cAplica, gApl };
+    global, globalRatio, trAplica, cAplica, gApl });
 }
 
 /* =========================================================================
@@ -29023,8 +29234,11 @@ function conexionesDiagonalDatosHtml(state) {
 
     <div class="xlsx-section">C. Carga de diseno</div>
     <table class="xlsx-table"><tbody>
-      ${row('Pu traccion [tonf]  (0 si no aplica)', xlsxNum(state.PuTrac, 2))}
-      ${row('Pu compresion [tonf]  (0 si no aplica)', xlsxNum(state.PuComp, 2))}
+      ${row('Criterio de diseno de la conexion', state.criterio==='capacidad' ? 'Por capacidad de la diagonal' : 'Solicitaciones ingresadas (Pu del analisis)')}
+      ${state.criterio==='capacidad' ? row('Porcentaje de la capacidad de la diagonal [%]', xlsxNum(state.pct, 0)) + row('Capacidad considerada', state.tipoCap==='esperada' ? 'Esperada Ry*Fy*Ag (AISC 341 / NCh2369)' : 'De diseno phi*Pn (AISC 360 LRFD)')
+        : row('Pu traccion [tonf]  (0 si no aplica)', xlsxNum(state.PuTrac, 2)) + row('Pu compresion [tonf]  (0 si no aplica)', xlsxNum(state.PuComp, 2))}
+      ${row('Longitud no arriostrada de la diagonal, L [mm]', xlsxNum(state.Ldiag, 0))}
+      ${row('Factor de longitud efectiva, K', xlsxNum(state.Kd, 2))}
     </tbody></table>
 
     <div class="xlsx-section">D. Pernos</div>
@@ -29058,6 +29272,18 @@ function conexionesDiagonalDatosHtml(state) {
       ${row('Tamano de soldadura cartela - columna, w2 [mm]', xlsxNum(state.w2, 1))}
       ${row('Longitud total de soldadura cartela - columna, L_w2 [mm]', xlsxNum(state.Lw2, 1))}
       ${row('Electrodo (cartela - columna)', elec2.label)}
+    </tbody></table>
+
+    <div class="xlsx-section">H. Union a la columna</div>
+    <table class="xlsx-table"><tbody>
+      ${row('Tipo de union', state.union==='placa4' ? 'Placa de extremo apernada a la columna (4 pernos, 2x2)' : 'Cartela soldada directamente a la columna')}
+      ${state.union==='placa4' ? (() => { const G = CD_GRADO_COL[state.uGrado] || CD_GRADO_COL[0]; const ac = G.tipo==='acero';
+        return row('Perno / anclaje a la columna', G.label)
+        + row('Diametro / tamano', ac ? CD_DIAM[state.uDiam].label : CD_ANC_TAM[state.uAnc])
+        + row('Placa de extremo Bp x Hp x tp [mm]', `${xlsxNum(state.uBp,0)} x ${xlsxNum(state.uHp,0)} x ${xlsxNum(state.utp,0)}`)
+        + row('Gramil horizontal g / paso vertical p [mm]', `${xlsxNum(state.ug,0)} / ${xlsxNum(state.up,0)}`)
+        + (ac ? row('Columna: bf / tf / tw [mm]', `${xlsxNum(state.ubfc,0)} / ${xlsxNum(state.utfc,1)} / ${xlsxNum(state.utwc,1)}`) + row('Material de la columna', (CD_MAT_COL[state.uMatCol]||CD_MAT_COL[0]).label)
+             : row('Factor de mayoracion promedio gamma (Pu -> servicio)', xlsxNum(state.uGam, 2))); })() : ''}
     </tbody></table>`;
 }
 
@@ -29163,12 +29389,80 @@ const CONEXIONESDIAGONAL_CALC_SECTIONS = [
   ]},
 ];
 
+const CD_SEC_CAPACIDAD = { title: 'Carga de diseno de la conexion (criterio y capacidad de la diagonal)', hdrDE: false, rows: [
+  { t: 'text', label: 'Criterio de diseno', f: 'criterioTxt' },
+  { t: 'var1', label: 'Area bruta de la diagonal, Ag [cm2]', f: 'dgA', d: 2 },
+  { t: 'var1', label: 'Radio de giro minimo de la diagonal, r [cm]', f: 'dgR', d: 2 },
+  { t: 'var1', label: 'Esbeltez de la diagonal, K*L/r', f: 'dgKLr', d: 1 },
+  { t: 'var1', label: 'Ry (AISC 341 Tabla A3.1)', f: 'dgRy', d: 2 },
+  { t: 'var1', label: 'Fcr de la diagonal (AISC E3) [kgf/cm2]', f: 'dgFcr', d: 0 },
+  { t: 'var1', label: 'Capacidad a traccion de la diagonal (phi*Fy*Ag o Ry*Fy*Ag) [tonf]', f: 'dgCapT', d: 2 },
+  { t: 'var1', label: 'Capacidad a compresion de la diagonal (phi*Fcr*Ag o min(RyFyAg; 1.14FcreAg)) [tonf]', f: 'dgCapC', d: 2 },
+  { t: 'var1', label: 'Pu traccion de diseno de la conexion [tonf]', f: 'PuTracD', d: 2 },
+  { t: 'var1', label: 'Pu compresion de diseno de la conexion [tonf]', f: 'PuCompD', d: 2 },
+]};
+function cdSecUnion(r) {
+  const rows = [
+    { t: 'text', label: 'Perno / anclaje a la columna', f: 'uTipoTxt' },
+    { t: 'text', label: 'Diametro / tamano', f: 'uTamTxt' },
+    { t: 'var1', label: 'Tu = Pu traccion * cos(angulo) — normal a la columna [tonf]', f: 'uTu', d: 2 },
+    { t: 'var1', label: 'Vu = Pu * sen(angulo) — paralela a la columna (max. traccion/compresion) [tonf]', f: 'uVu', d: 2 },
+    { t: 'var1', label: 'Traccion por perno, rut = Tu/4 [tonf]', f: 'uRut', d: 3 },
+    { t: 'var1', label: 'Corte por perno, ruv = Vu/4 [tonf]', f: 'uRuv', d: 3 },
+    { t: 'var1', label: 'Gramil minimo = max(2.67db ; tg + 2(C1 + w2)) [mm]', f: 'uGmin', d: 1 },
+    { t: 'var1', label: 'Distancia minima a bordes de la placa [mm]', f: 'uLeMin', d: 1 },
+    { t: 'chk', label: 'Estado: gramil g >= minimo (holgura de llave)', estL: 'uEstG', dcL: 'uRG', forceNA: true },
+    { t: 'chk', label: 'Estado: paso vertical p >= minimo', estL: 'uEstP', dcL: 'uRP', forceNA: true },
+    { t: 'chk', label: 'Estado: borde horizontal de la placa', estL: 'uEstEx', dcL: 'uREx', forceNA: true },
+    { t: 'chk', label: 'Estado: borde vertical de la placa', estL: 'uEstEy', dcL: 'uREy', forceNA: true },
+    { t: 'chk', label: 'Estado: alto de placa Hp >= longitud de soldadura de la cartela', estL: 'uEstHp', dcL: 'uRHp', forceNA: true },
+    { t: 'var1', label: "Palanca: b = (g - tg)/2 [mm]", f: 'uB', d: 1 },
+    { t: 'var1', label: "Palanca: b' = b - db/2 [mm]", f: 'uBpr', d: 1 },
+    { t: 'var1', label: "Palanca: a' [mm]", f: 'uApr', d: 1 },
+    { t: 'var1', label: 'Ancho tributario por perno, p [mm]', f: 'uPtrib', d: 1 },
+    { t: 'var1', label: "Espesor sin efecto palanca, t = raiz(4*rut*b'/(phi*p*Fu)) [mm]", f: 'uTnp', d: 1 },
+  ];
+  if (r.uEsAcero) rows.push(
+    { t: 'var1', label: 'phi*Rn corte por perno (J3.6) [tonf]', f: 'uPhiRnv', d: 3 },
+    { t: 'var1', label: "F'nt reducida por corte (J3-3a) [kgf/cm2]", f: 'uFntp', d: 0 },
+    { t: 'var1', label: 'phi*Rn traccion por perno, B (J3.7) [tonf]', f: 'uBt', d: 3 },
+    { t: 'var1', label: 'tc placa (AISC Parte 9) [mm]', f: 'uTc', d: 1 },
+    { t: 'var1', label: 'Factor Q placa', f: 'uQ', d: 3 },
+    { t: 'var1', label: 'Traccion disponible por perno con palanca en placa, B*Q [tonf]', f: 'uTav', d: 3 },
+    { t: 'chk', label: 'Estado: pernos en traccion + palanca de la placa', estL: 'uEstT', dcL: 'uRT', forceNA: true },
+    { t: 'var1', label: 'tc ala de columna [mm]', f: 'uTcc', d: 1 },
+    { t: 'var1', label: 'Factor Q ala de columna', f: 'uQc', d: 3 },
+    { t: 'var1', label: 'Traccion disponible por perno con palanca en ala de columna [tonf]', f: 'uTavC', d: 3 },
+    { t: 'chk', label: 'Estado: flexion local del ala de la columna', estL: 'uEstTc', dcL: 'uRTc', forceNA: true },
+    { t: 'chk', label: 'Estado: gramil compatible con el ala de la columna', estL: 'uEstGcol', dcL: 'uRGcol', forceNA: true },
+    { t: 'var1', label: 'Capacidad al corte del grupo (corte/aplastamiento placa y ala) [tonf]', f: 'uCapV', d: 2 },
+    { t: 'chk', label: 'Estado: corte del grupo de 4 pernos', estL: 'uEstV', dcL: 'uRV', forceNA: true },
+  ); else rows.push(
+    { t: 'var1', label: 'Factor de mayoracion promedio, gamma', f: 'uGam', d: 2 },
+    { t: 'var1', label: 'Carga recomendada por anclaje, traccion (catalogo Hilti) [tonf]', f: 'uNrec', d: 3 },
+    { t: 'var1', label: 'Carga recomendada por anclaje, corte (catalogo Hilti) [tonf]', f: 'uVrec', d: 3 },
+    { t: 'var1', label: 'Traccion de servicio por anclaje, rut/gamma [tonf]', f: 'uNs', d: 3 },
+    { t: 'var1', label: 'Interaccion (N/Nrec)^1.5 + (V/Vrec)^1.5', f: 'uInter', d: 3 },
+    { t: 'chk', label: 'Estado: anclajes (traccion + corte)', estL: 'uEstAnc', dcL: 'uInter', forceNA: true },
+    { t: 'chk', label: 'Estado: espesor de placa >= espesor sin palanca', estL: 'uEstTp', dcL: 'uRTp', forceNA: true },
+  );
+  rows.push({ t: 'text', label: 'Placa sugerida', f: 'uSugTxt' });
+  return { title: 'Union a la columna — placa de extremo con 4 pernos (AISC 360 J3 / Manual Parte 9)', hdrDE: false, rows };
+}
+function cdCalcSections(r) {
+  const base = CONEXIONESDIAGONAL_CALC_SECTIONS;
+  const out = [base[0], Object.assign({ num: '1' }, CD_SEC_CAPACIDAD)];
+  base.slice(1).forEach(sc => out.push(Object.assign({}, sc, { num: String(+sc.num + 1),
+    title: (r.uApl && sc.num === '9') ? 'Soldadura placa cartela - placa de extremo' : sc.title })));
+  if (r.uApl) out.push(Object.assign({ num: '11' }, cdSecUnion(r)));
+  return out;
+}
 function conexionesDiagonalCalcHtml(r, opts) {
   const resumen = !!(opts && opts.resumen);
-  return xlsxBuildCalculoHtml(CONEXIONESDIAGONAL_CALC_SECTIONS, r, {
+  return xlsxBuildCalculoHtml(cdCalcSections(r), r, {
     resumen,
     intro: 'Formulas segun Memoria_Calculo. La columna D/C entrega, en cada verificacion, la relacion demanda/capacidad (o minimo normativo/valor provisto, en las distancias entre pernos y a los bordes): relacion &le; 1.00 significa que CUMPLE. Los estados con N/A corresponden a verificaciones que no aplican al tipo de diagonal seleccionado o a la carga (traccion/compresion) igual a cero.',
-    globalNum: '10', globalTitle: 'ESTADO GLOBAL DE LA CONEXION',
+    globalNum: r.uApl ? '12' : '11', globalTitle: 'ESTADO GLOBAL DE LA CONEXION',
     global: { estL: 'global', dcL: 'globalRatio' },
   });
 }
@@ -29209,9 +29503,23 @@ function svgConexionesDiagonal(state, r) {
     ${ESQ.text(colX-46, origin[1]-16, `w2=${fmt1(state.w2)} mm`, {color:'var(--accent-warm)', bold:true, fontSize:11, anchor:'end'})}
     ${ESQ.note(origin[0]+ux*70+px*40, origin[1]+uy*70+py*40, `s=${fmt0(state.s)} · g=${fmt0(state.g)} · Lc,b=${fmt0(state.LcB)} · e_t=${fmt0(state.eT)} mm`, {anchor:'start', fontSize:10.5})}
     ${ESQ.note(origin[0]+ux*30-px*90, origin[1]+uy*30-py*90, `tg=${fmt1(state.tg)} mm`, {fontSize:10.5})}
-    ${ESQ.arrow(m, tip[0], tip[1], -state.angulo, 46, `${state.PuTrac>0?`PuTrac=${fmt2(state.PuTrac)} T`:`PuComp=${fmt2(state.PuComp)} T`}`, {labelDx:6, labelDy: -6})}
+    ${ESQ.arrow(m, tip[0], tip[1], -state.angulo, 46, (() => { const pt = r && r.PuTracD!=null ? r.PuTracD : state.PuTrac, pc = r && r.PuCompD!=null ? r.PuCompD : state.PuComp; return pt>0 ? `PuTrac=${fmt2(pt)} T` : `PuComp=${fmt2(pc)} T`; })(), {labelDx:6, labelDy: -6})}
     ${ESQ.note(origin[0]+70, yBase-20, `α=${fmt1(state.angulo)}° respecto a la horizontal`, {fontSize:11})}
-  `, {viewBox:'-60 20 480 340', maxWidth:460, aria:'Elevación de la conexión diagonal-columna: cartela, pernos, soldadura y carga axial de la diagonal'});
+    ${state.union==='placa4' && r ? (() => {
+      const H = Math.max(60, Math.min(110, 2*halfW+40)), y0 = origin[1]-H/2;
+      const sc = 75/Math.max(state.uBp||1, state.uHp||1), fw = (state.uBp||0)*sc, fh = (state.uHp||0)*sc;
+      const fx = 340, fy = 290, gx = (state.ug||0)*sc/2, py = (state.up||0)*sc/2, cx = fx+fw/2, cy = fy+fh/2;
+      return `<rect x="${colX+3}" y="${y0}" width="7" height="${H}" fill="var(--accent)" opacity=".85"/>
+        <line x1="${colX+6}" y1="${y0+10}" x2="${colX-12}" y2="${y0+10}" stroke="var(--accent)" stroke-width="2.5"/>
+        <line x1="${colX+6}" y1="${y0+H-10}" x2="${colX-12}" y2="${y0+H-10}" stroke="var(--accent)" stroke-width="2.5"/>
+        ${ESQ.text(colX+6, yBase+16, `Placa de extremo ${fmt0(state.uBp)}×${fmt0(state.uHp)}×${fmt0(state.utp)} mm`, {color:'var(--accent)', bold:true, fontSize:10.5, anchor:'start'})}
+        <rect x="${fx}" y="${fy}" width="${fw.toFixed(1)}" height="${fh.toFixed(1)}" fill="var(--surface-alt)" stroke="var(--ink)" stroke-width="1.5"/>
+        <rect x="${(cx-2).toFixed(1)}" y="${fy}" width="4" height="${fh.toFixed(1)}" fill="var(--ink)" opacity=".55"/>
+        ${[[-1,-1],[1,-1],[-1,1],[1,1]].map(([a,b])=>`<circle cx="${(cx+a*gx).toFixed(1)}" cy="${(cy+b*py).toFixed(1)}" r="4.5" fill="none" stroke="var(--accent-warm)" stroke-width="2"/>`).join('')}
+        ${ESQ.text(cx, fy-18, 'Vista frontal placa', {fontSize:10, anchor:'middle', bold:true})}${ESQ.text(cx, fy-6, `g=${fmt0(state.ug)} · p=${fmt0(state.up)}`, {fontSize:10, anchor:'middle'})}
+        ${ESQ.text(cx, fy+fh+13, `4 × ${r.uTamTxt} ${String(r.uTipoTxt).split(' ')[0]}`, {fontSize:10, anchor:'middle', color:'var(--accent-warm)', bold:true})}`;
+    })() : ''}
+  `, {viewBox:'-60 20 480 390', maxWidth:460, aria:'Elevación de la conexión diagonal-columna: cartela, pernos, soldadura y carga axial de la diagonal'});
 }
 
 function renderConexionesDiagonal(container) {
@@ -29224,12 +29532,15 @@ function renderConexionesDiagonal(container) {
     tg:12, matPlaca:0, Lg:60,
     tPE:12, w1:6, elec1:0,
     w2:8, Lw2:300, elec2:0,
+    criterio:'manual', pct:100, tipoCap:'diseno', Ldiag:4000, Kd:1.0,
+    union:'soldada', uGrado:0, uDiam:3, uAnc:2, uBp:160, uHp:300, utp:20, ug:100, up:240,
+    ubfc:200, utfc:12, utwc:8, uMatCol:2, uGam:1.4,
   };
 
   container.innerHTML = `
     <div class="calc-head">
       <h1>Conexiones Diagonal-Columna</h1>
-      <div class="sub">Diseño por capacidad de la conexión apernada de diagonales (X, XL, Cajón, Tubular Circular) a columna mediante placa cartela (gusset): distancias entre pernos y a los bordes, capacidad de pernos, cartela y elemento conectado a tracción y bloque de corte, pandeo de la cartela y soldaduras. Criterio combinado NCh427/AISC 360 Cap. J. Placa cartela soldada a la columna; pernos solo diagonal-placa.</div>
+      <div class="sub">Diseño por capacidad de la conexión apernada de diagonales (X, XL, Cajón, Tubular Circular) a columna mediante placa cartela (gusset): distancias entre pernos y a los bordes, capacidad de pernos, cartela y elemento conectado a tracción y bloque de corte, pandeo de la cartela y soldaduras. Criterio combinado NCh427/AISC 360 Cap. J. Carga de diseño por solicitaciones o por capacidad de la diagonal (% de φPn o de Ry·Fy·Ag). Cartela soldada a la columna o placa de extremo con 4 pernos (A325/A490 a columna metálica, o anclajes de expansión/químicos a columna de hormigón), con dimensiones de placa sugeridas.</div>
     </div>
 
     <div class="panel">
@@ -29249,9 +29560,15 @@ function renderConexionesDiagonal(container) {
     <div class="panel">
       <h3>3 · Carga de diseño</h3>
       <div class="field-grid">
-        <div class="field"><label>Pu tracción (Ton, 0 si no aplica)</label><input type="text" inputmode="decimal" step="0.1" id="cd_PuTrac" value="${state.PuTrac}" list="dl_cd_PuTrac"><datalist id="dl_cd_PuTrac"><option value="0">Solo compresión</option><option value="20">Tracción menor</option><option value="45">Valor de referencia</option><option value="80">Tracción moderada-alta</option><option value="150">Tracción alta</option></datalist></div>
-        <div class="field"><label>Pu compresión (Ton, 0 si no aplica)</label><input type="text" inputmode="decimal" step="0.1" id="cd_PuComp" value="${state.PuComp}" list="dl_cd_PuComp"><datalist id="dl_cd_PuComp"><option value="0">Solo tracción</option><option value="20">Valor de referencia</option><option value="40">Compresión moderada</option><option value="80">Compresión alta</option></datalist></div>
+        <div class="field"><label>Criterio de diseño de la conexión</label><select id="cd_criterio"><option value="manual">Solicitaciones ingresadas (Pu del análisis)</option><option value="capacidad">Por capacidad de la diagonal (% de su resistencia)</option></select></div>
+        <div class="field cd-cap"><label>% de la capacidad de la diagonal</label><input type="text" inputmode="decimal" id="cd_pct" value="${state.pct}" list="dl_cd_pct"><datalist id="dl_cd_pct"><option value="50">50 % — mínimo usual de diseño</option><option value="75">75 %</option><option value="100">100 % — capacidad completa</option></datalist></div>
+        <div class="field cd-cap"><label>Capacidad de la diagonal considerada</label><select id="cd_tipoCap"><option value="diseno">De diseño φPn (AISC 360, LRFD)</option><option value="esperada">Esperada Ry·Fy·Ag (AISC 341 / NCh2369, sísmica)</option></select></div>
+        <div class="field"><label>Longitud no arriostrada de la diagonal, L (mm)</label><input type="text" inputmode="decimal" id="cd_Ldiag" value="${state.Ldiag}" list="dl_cd_Ldiag"><datalist id="dl_cd_Ldiag"><option value="2500">Diagonal corta</option><option value="4000">Valor de referencia</option><option value="6000">Diagonal larga</option></datalist></div>
+        <div class="field"><label>Factor de longitud efectiva, K</label><input type="text" inputmode="decimal" id="cd_Kd" value="${state.Kd}" list="dl_cd_Kd"><datalist id="dl_cd_Kd"><option value="0.5">Diagonal en X, L total (cruce arriostra)</option><option value="1.0">Rotulada-rotulada</option></datalist></div>
+        <div class="field cd-man"><label>Pu tracción (Ton, 0 si no aplica)</label><input type="text" inputmode="decimal" step="0.1" id="cd_PuTrac" value="${state.PuTrac}" list="dl_cd_PuTrac"><datalist id="dl_cd_PuTrac"><option value="0">Solo compresión</option><option value="20">Tracción menor</option><option value="45">Valor de referencia</option><option value="80">Tracción moderada-alta</option><option value="150">Tracción alta</option></datalist></div>
+        <div class="field cd-man"><label>Pu compresión (Ton, 0 si no aplica)</label><input type="text" inputmode="decimal" step="0.1" id="cd_PuComp" value="${state.PuComp}" list="dl_cd_PuComp"><datalist id="dl_cd_PuComp"><option value="0">Solo tracción</option><option value="20">Valor de referencia</option><option value="40">Compresión moderada</option><option value="80">Compresión alta</option></datalist></div>
       </div>
+      <div id="cd_cap" style="margin-top:.7rem"></div>
     </div>
 
     <div class="panel">
@@ -29316,7 +29633,7 @@ function renderConexionesDiagonal(container) {
     </div>
 
     <div class="panel">
-      <h3>11 · Soldadura placa cartela — columna</h3>
+      <h3 id="cd_h11">11 · Soldadura placa cartela — columna</h3>
       <div class="field-grid">
         <div class="field"><label>Tamaño de soldadura cartela — columna, w2 (mm)</label><input type="text" inputmode="decimal" step="0.5" id="cd_w2" value="${state.w2}" list="dl_cd_w2"><datalist id="dl_cd_w2"><option value="6">Soldadura menor</option><option value="8">Valor de referencia</option><option value="10">Soldadura media</option><option value="12">Soldadura mayor</option></datalist></div>
         <div class="field"><label>Longitud total de soldadura cartela — columna, L_w2 (mm)</label><input type="text" inputmode="decimal" id="cd_Lw2" value="${state.Lw2}" list="dl_cd_Lw2"><datalist id="dl_cd_Lw2"><option value="200">Cartela pequeña</option><option value="300">Valor de referencia</option><option value="450">Cartela grande</option><option value="600">Cartela muy grande</option></datalist></div>
@@ -29326,9 +29643,38 @@ function renderConexionesDiagonal(container) {
     </div>
 
     <div class="panel">
-      <h3>12 · Resumen / estado global</h3>
+      <h3>12 · Unión a la columna</h3>
+      <div class="field-grid">
+        <div class="field"><label>Tipo de unión cartela — columna</label><select id="cd_union"><option value="soldada">Cartela soldada directamente a la columna</option><option value="placa4">Placa de extremo apernada a la columna (4 pernos)</option></select></div>
+      </div>
+      <div id="cd_unionFields">
+        <div class="field-grid">
+          <div class="field"><label>Perno / anclaje a la columna</label><select id="cd_uGrado">${cdOptions(CD_GRADO_COL, state.uGrado)}</select></div>
+          <div class="field cd-uacero"><label>Diámetro del perno</label><select id="cd_uDiam">${cdOptions(CD_DIAM, state.uDiam)}</select></div>
+          <div class="field cd-uanc"><label>Tamaño del anclaje</label><select id="cd_uAnc">${CD_ANC_TAM.map((t,i)=>`<option value="${i}" ${i===state.uAnc?'selected':''}>${t}</option>`).join('')}</select></div>
+          <div class="field"><label>Ancho de la placa de extremo, Bp (mm)</label><input type="text" inputmode="decimal" id="cd_uBp" value="${state.uBp}"></div>
+          <div class="field"><label>Alto de la placa de extremo, Hp (mm)</label><input type="text" inputmode="decimal" id="cd_uHp" value="${state.uHp}"></div>
+          <div class="field"><label>Espesor de la placa de extremo, tp (mm)</label><input type="text" inputmode="decimal" id="cd_utp" value="${state.utp}" list="dl_cd_utp"><datalist id="dl_cd_utp">${CD_ESP_STD.map(v=>`<option value="${v}"></option>`).join('')}</datalist></div>
+          <div class="field"><label>Gramil horizontal entre pernos, g (mm)</label><input type="text" inputmode="decimal" id="cd_ug" value="${state.ug}"></div>
+          <div class="field"><label>Paso vertical entre pernos, p (mm)</label><input type="text" inputmode="decimal" id="cd_up" value="${state.up}"></div>
+          <div class="field cd-uacero"><label>Columna: ancho del ala, bf (mm)</label><input type="text" inputmode="decimal" id="cd_ubfc" value="${state.ubfc}"></div>
+          <div class="field cd-uacero"><label>Columna: espesor del ala, tf (mm)</label><input type="text" inputmode="decimal" id="cd_utfc" value="${state.utfc}"></div>
+          <div class="field cd-uacero"><label>Columna: espesor del alma, tw (mm)</label><input type="text" inputmode="decimal" id="cd_utwc" value="${state.utwc}"></div>
+          <div class="field cd-uacero"><label>Material de la columna</label><select id="cd_uMatCol">${cdOptions(CD_MAT_COL, state.uMatCol)}</select></div>
+          <div class="field cd-uanc"><label>Factor de mayoración promedio γ (Pu → carga de servicio)</label><input type="text" inputmode="decimal" id="cd_uGam" value="${state.uGam}" list="dl_cd_uGam"><datalist id="dl_cd_uGam"><option value="1.4">Valor usual</option><option value="1.5">Conservador</option></datalist></div>
+        </div>
+        <div class="note" id="cd_uSugTxt" style="margin-top:.6rem"></div>
+        <div style="margin:.4rem 0 .7rem"><button type="button" class="btn-add" id="cd_uSug">Aplicar dimensiones sugeridas</button></div>
+        <div id="cd_uRes"></div>
+        <div class="note" style="font-weight:600;margin-top:.8rem">Opciones de pernos y anclajes (4 unidades): menor diámetro que cumple, con su placa sugerida</div>
+        <div id="cd_uOpc"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>13 · Resumen / estado global</h3>
       <div id="cd_resumen"></div>
-      <div class="disclosure">Diseño por capacidad según AISC 360 Cap. J (criterio combinado NCh427/AISC). La columna "D/C" es la relación demanda/capacidad de cada verificación (D/C ≤ 1,00 = CUMPLE). Las verificaciones de tracción de cartela/elemento y pandeo son N/A cuando la carga correspondiente (Pu tracción o Pu compresión) es cero; la soldadura tubo-placa de extremo es N/A para diagonales tipo X/XL. Herramienta de apoyo al diseño — no reemplaza el juicio profesional del calculista.</div>
+      <div class="disclosure">Diseño por capacidad según AISC 360 Cap. J (criterio combinado NCh427/AISC). La columna "D/C" es la relación demanda/capacidad de cada verificación (D/C ≤ 1,00 = CUMPLE). Las verificaciones de tracción de cartela/elemento y pandeo son N/A cuando la carga correspondiente (Pu tracción o Pu compresión) es cero; la soldadura tubo-placa de extremo es N/A para diagonales tipo X/XL. En diseño por capacidad la carga de la conexión es el % indicado de la capacidad de la diagonal (tracción: φ·Fy·Ag o Ry·Fy·Ag; compresión: φ·Fcr·Ag o min(Ry·Fy·Ag; 1,14·Fcre·Ag)). Unión con placa de extremo: Tu = Pu·cosθ y Vu = Pu·senθ repartidos en 4 pernos, línea de acción por el centroide del grupo; efecto palanca según AISC Manual Parte 9 (placa y ala de columna). Las cargas de anclajes de expansión/químicos son valores recomendados de catálogo Hilti por anclaje aislado, sin reducción por bordes ni separación; verificar el anclaje definitivo en PROFIS / ACI 318 Cap. 17. Herramienta de apoyo al diseño — no reemplaza el juicio profesional del calculista.</div>
     </div>
 
     <div id="printSheetCompleto"></div>
@@ -29388,6 +29734,18 @@ function renderConexionesDiagonal(container) {
     state.w2 = parseFloat(document.getElementById('cd_w2').value)||0;
     state.Lw2 = parseFloat(document.getElementById('cd_Lw2').value)||0.001;
     state.elec2 = parseInt(document.getElementById('cd_elec2').value)||0;
+    const gv = id => document.getElementById(id);
+    state.criterio = gv('cd_criterio').value;
+    state.pct = parseFloat(gv('cd_pct').value)||0;
+    state.tipoCap = gv('cd_tipoCap').value;
+    state.Ldiag = parseFloat(gv('cd_Ldiag').value)||0;
+    state.Kd = parseFloat(gv('cd_Kd').value)||1;
+    state.union = gv('cd_union').value;
+    state.uGrado = parseInt(gv('cd_uGrado').value)||0;
+    state.uDiam = parseInt(gv('cd_uDiam').value)||0;
+    state.uAnc = parseInt(gv('cd_uAnc').value)||0;
+    ['uBp','uHp','utp','ug','up','ubfc','utfc','utwc','uGam'].forEach(k => { state[k] = parseFloat(gv('cd_'+k).value)||0; });
+    state.uMatCol = parseInt(gv('cd_uMatCol').value)||0;
   }
 
   function recalc() {
@@ -29401,8 +29759,33 @@ function renderConexionesDiagonal(container) {
       tg: state.tg, matPlaca: state.matPlaca, Lg: state.Lg,
       tPE: state.tPE, w1: state.w1, elec1: state.elec1,
       w2: state.w2, Lw2: state.Lw2, elec2: state.elec2,
+      tPared: state.tPared||0,
+      criterio: state.criterio, pct: state.pct, tipoCap: state.tipoCap, Ldiag: state.Ldiag, Kd: state.Kd,
+      union: state.union, uGrado: state.uGrado, uDiam: state.uDiam, uAnc: state.uAnc,
+      uBp: state.uBp, uHp: state.uHp, utp: state.utp, ug: state.ug, up: state.up,
+      ubfc: state.ubfc, utfc: state.utfc, utwc: state.utwc, uMatCol: state.uMatCol, uGam: state.uGam,
     };
     const r = calcConexionesDiagonal(inp);
+    lastInp = inp; lastR = r;
+    const esCap = state.criterio === 'capacidad';
+    container.querySelectorAll('.cd-cap').forEach(e => e.style.display = esCap ? '' : 'none');
+    container.querySelectorAll('.cd-man').forEach(e => e.style.display = esCap ? 'none' : '');
+    const pctTxt = v => v==null||!isFinite(v) ? '—' : fmt1(100*v)+' %';
+    document.getElementById('cd_cap').innerHTML = `
+      <table class="results">
+        <tr><th colspan="2">Capacidad de la diagonal (${r.tipoCapTxt})</th></tr>
+        <tr><td>Ag — área bruta de la diagonal</td><td class="num">${fmt2(r.dgA)} cm²</td></tr>
+        <tr><td>r mín — radio de giro mínimo</td><td class="num">${fmt2(r.dgR)} cm</td></tr>
+        <tr><td>K·L/r — esbeltez</td><td class="num">${fmt1(r.dgKLr)} ${r.dgEsbOk?'':'<span class="chip bad">&gt; 200</span>'}</td></tr>
+        <tr><td>Ry (AISC 341 Tabla A3.1)</td><td class="num">${fmt2(r.dgRy)}</td></tr>
+        <tr><td>Capacidad a tracción ${state.tipoCap==='esperada'?'Ry·Fy·Ag':'φ·Fy·Ag'}</td><td class="num">${fmt2(r.dgCapT)} Ton</td></tr>
+        <tr><td>Capacidad a compresión ${state.tipoCap==='esperada'?'min(Ry·Fy·Ag; 1,14·Fcre·Ag)':'φ·Fcr·Ag'}</td><td class="num">${fmt2(r.dgCapC)} Ton</td></tr>
+        <tr><th colspan="2">Carga de diseño de la conexión</th></tr>
+        <tr><td>Pu tracción de diseño${esCap?` = ${fmt0(r.pct)} % · capacidad`:''}</td><td class="num"><b>${fmt2(r.PuTracD)} Ton</b></td></tr>
+        <tr><td>Pu compresión de diseño${esCap?` = ${fmt0(r.pct)} % · capacidad`:''}</td><td class="num"><b>${fmt2(r.PuCompD)} Ton</b></td></tr>
+        ${esCap?'':`<tr><td>Uso de la diagonal: tracción / compresión</td><td class="num">${pctTxt(r.dgUsoT)} / ${pctTxt(r.dgUsoC)}</td></tr>`}
+      </table>
+      <div class="note">Sección sin reducción por esbeltez local (verificar b/t de alas o paredes). Ángulos en cruz (X): r mínimo del conjunto, requiere presillas según AISC E6. Ángulo simple (XL): r = r_z, conservador frente a AISC E5.</div>`;
 
     document.getElementById('cd_esquema').innerHTML = svgConexionesDiagonal(inp, r);
 
@@ -29506,6 +29889,64 @@ function renderConexionesDiagonal(container) {
         <tr><td>Estado: soldadura cartela — columna</td><td>${cdChip(r.estWeld2, r.rWeld2)}</td></tr>
       </table>`;
 
+    const pl4 = state.union === 'placa4';
+    document.getElementById('cd_unionFields').style.display = pl4 ? '' : 'none';
+    document.getElementById('cd_h11').textContent = pl4 ? '11 · Soldadura placa cartela — placa de extremo' : '11 · Soldadura placa cartela — columna';
+    container.querySelectorAll('.cd-uacero').forEach(e => e.style.display = r.uEsAcero ? '' : 'none');
+    container.querySelectorAll('.cd-uanc').forEach(e => e.style.display = r.uEsAcero ? 'none' : '');
+    if (pl4) {
+      document.getElementById('cd_uSugTxt').innerHTML = `<b>Sugerencia:</b> ${r.uSugTxt} (espesor sin efecto palanca ${fmt1(r.uSugTnp)} mm; holgura de llave C1 ≈ ${fmt0(r.uC1)} mm).`;
+      const T = (a,b) => `<tr><td>${a}</td><td class="num">${b}</td></tr>`;
+      const C = (a,e,x) => `<tr><td>${a}</td><td>${cdChip(e,x)}</td></tr>`;
+      let h = `<table class="results">
+        <tr><th colspan="2">Solicitaciones en la unión</th></tr>
+        ${T('Tu = Pu tracción·cosθ (normal a la columna)', fmt2(r.uTu)+' Ton')}
+        ${T('Vu = Pu·senθ (paralela, máx. tracción/compresión)', fmt2(r.uVu)+' Ton')}
+        ${T('Por perno: tracción rut / corte ruv', fmt3(r.uRut)+' / '+fmt3(r.uRuv)+' Ton')}
+        <tr><th colspan="2">Geometría de la placa (bordes ${fmt0(r.uEx)} / ${fmt0(r.uEy)} mm)</th></tr>
+        ${C(`Gramil g ≥ ${fmt0(r.uGmin)} mm (2,67·d, holgura de llave a la cartela${r.uEspAnc?', separación mín. anclaje':''})`, r.uEstG, r.uRG)}
+        ${C(`Paso p ≥ ${fmt0(r.uPmin)} mm`, r.uEstP, r.uRP)}
+        ${C(`Borde horizontal (Bp−g)/2 ≥ ${fmt0(r.uLeMin)} mm`, r.uEstEx, r.uREx)}
+        ${C(`Borde vertical (Hp−p)/2 ≥ ${fmt0(r.uLeMin)} mm`, r.uEstEy, r.uREy)}
+        ${C(`Hp ≥ longitud de soldadura de la cartela (${fmt0(state.Lw2)} mm)`, r.uEstHp, r.uRHp)}
+        <tr><th colspan="2">Efecto palanca (AISC Manual Parte 9)</th></tr>
+        ${T("b / b' / a'", `${fmt1(r.uB)} / ${fmt1(r.uBpr)} / ${fmt1(r.uApr)} mm`)}
+        ${T('Ancho tributario por perno, p', fmt1(r.uPtrib)+' mm')}
+        ${T('Espesor requerido sin palanca', fmt1(r.uTnp)+' mm')}`;
+      if (r.uEsAcero) h += `
+        <tr><th colspan="2">Pernos ${r.uTamTxt} — ${r.uTipoTxt.split(' (')[0]}</th></tr>
+        ${T('φRn corte por perno (J3.6)', fmt3(r.uPhiRnv)+' Ton')}
+        ${T("F'nt reducida por corte (J3-3a)", fmt0(r.uFntp)+' kgf/cm²')}
+        ${T('B = φRn tracción por perno (J3.7)', fmt3(r.uBt)+' Ton')}
+        ${T('Placa: tc / Q / B·Q', `${fmt1(r.uTc)} mm / ${fmt3(r.uQ)} / ${fmt3(r.uTav)} Ton`)}
+        ${C('Pernos en tracción + palanca de la placa', r.uEstT, r.uRT)}
+        ${T('Ala de columna: tc / Q / B·Q', `${fmt1(r.uTcc)} mm / ${fmt3(r.uQc)} / ${fmt3(r.uTavC)} Ton`)}
+        ${C('Flexión local del ala de la columna', r.uEstTc, r.uRTc)}
+        ${C(`Gramil cabe en el ala de la columna (g ≤ ${fmt0(r.uGcolMax)} mm)`, r.uEstGcol, r.uRGcol)}
+        ${T('Corte del grupo (corte / aplastamiento placa y ala)', fmt2(r.uCapV)+' Ton')}
+        ${C('Corte del grupo de 4 pernos', r.uEstV, r.uRV)}`;
+      else h += `
+        <tr><th colspan="2">Anclajes ${r.uTamTxt} — ${r.uTipoTxt.split(' (')[0]}</th></tr>
+        ${T('Carga recomendada por anclaje N / V (catálogo)', `${fmt3(r.uNrec)} / ${fmt3(r.uVrec)} Ton`)}
+        ${T('Servicio por anclaje N / V (Pu/γ)', `${fmt3(r.uNs)} / ${fmt3(Math.max(r.uVsT,r.uVsC))} Ton`)}
+        ${C('Interacción (N/Nrec)^1,5 + (V/Vrec)^1,5 ≤ 1', r.uEstAnc, r.uInter)}
+        ${C('Espesor de placa ≥ espesor sin palanca', r.uEstTp, r.uRTp)}`;
+      h += `</table>`;
+      document.getElementById('cd_uRes').innerHTML = h;
+      const ops = cdOpcionesUnion(inp, r.PuTracD, r.PuCompD);
+      document.getElementById('cd_uOpc').innerHTML = `<table class="results">
+        <tr><th>Tipo</th><th>Ø mínimo</th><th>Placa Bp×Hp×tp (mm)</th><th>g / p (mm)</th><th>Estado</th><th></th></tr>
+        ${ops.map((o,i) => `<tr><td>${o.tipo}</td><td class="num">${o.tam}</td><td class="num">${o.placa}</td><td class="num">${o.gp}</td><td>${cdChip(o.ok, o.dc)}${o.ok?'':' <span class="u">no alcanza con 4 unidades: aumentar n° de pernos o revisar la columna</span>'}</td><td><button type="button" class="btn-add cd-usar" data-i="${i}">Usar</button></td></tr>`).join('')}
+      </table>`;
+      document.querySelectorAll('#cd_uOpc .cd-usar').forEach(b => b.addEventListener('click', () => {
+        const o = ops[+b.dataset.i];
+        document.getElementById('cd_uGrado').value = o.gi;
+        document.getElementById('cd_uDiam').value = o.di;
+        document.getElementById('cd_uAnc').value = o.ai;
+        applySug(o.sug);
+      }));
+    }
+
     const ratioDist = (() => { const v=[r.rS,r.rG,r.rLcb,r.rEt].filter(x=>x!=null&&isFinite(x)); return v.length?Math.max(...v):null; })();
     const okDist = r.estS && r.estLcb && r.estEt && (r.estG!==false);
     const rows = [
@@ -29517,8 +29958,21 @@ function renderConexionesDiagonal(container) {
       ['Elemento conectado — tracción', r.estElemTracc, r.rElemTracc],
       ['Elemento conectado — bloque de corte', r.estElemBc, r.rElemBc],
       ['Soldadura tubo — placa de extremo', r.estWeld1, r.rWeld1],
-      ['Soldadura cartela — columna', r.estWeld2, r.rWeld2],
+      [state.union==='placa4' ? 'Soldadura cartela — placa de extremo' : 'Soldadura cartela — columna', r.estWeld2, r.rWeld2],
     ];
+    if (state.union === 'placa4') {
+      const geo = [r.uEstG, r.uEstP, r.uEstEx, r.uEstEy, r.uEstHp, r.uEstGcol];
+      const geoR = [r.uRG, r.uRP, r.uREx, r.uREy, r.uRHp, r.uRGcol].filter(x => x!=null && isFinite(x));
+      rows.push(['Placa de extremo — geometría', !geo.some(e => e===false), geoR.length?Math.max(...geoR):null]);
+      if (r.uEsAcero) {
+        rows.push(['Pernos a columna — tracción + palanca (placa)', r.uEstT, r.uRT]);
+        rows.push(['Ala de la columna — flexión local', r.uEstTc, r.uRTc]);
+        rows.push(['Pernos a columna — corte del grupo', r.uEstV, r.uRV]);
+      } else {
+        rows.push(['Anclajes — interacción tracción/corte', r.uEstAnc, r.uInter]);
+        rows.push(['Placa de extremo — espesor sin palanca', r.uEstTp, r.uRTp]);
+      }
+    }
     document.getElementById('cd_resumen').innerHTML =
       rows.map(([lbl, ok, ratio]) => `<div class="verdict-row"><span>${lbl}</span><span>${ok===null?'<span class="chip neutral">N/A</span>':chip(ok)}${ratio!=null&&isFinite(ratio)?` <span class="u">D/C = ${fmt3(ratio)}</span>`:''}</span></div>`).join('') +
       `<div class="global-verdict ${r.global?'ok':'bad'}"><span class="label">ESTADO GLOBAL</span><span class="label">${r.global?'CUMPLE':'NO CUMPLE'}${r.globalRatio!=null?' · D/C = '+fmt3(r.globalRatio):''}</span></div>`;
@@ -29526,6 +29980,22 @@ function renderConexionesDiagonal(container) {
     if (typeof buildPrintSheetsConexionesDiagonal === 'function') buildPrintSheetsConexionesDiagonal(state, r);
   }
 
+  let lastInp = null, lastR = null;
+  function applySug(sg) {
+    const map = {ug:'cd_ug', up:'cd_up', uBp:'cd_uBp', uHp:'cd_uHp', utp:'cd_utp'};
+    Object.keys(map).forEach(k => { document.getElementById(map[k]).value = sg[k]; });
+    recalc();
+  }
+  document.getElementById('cd_uSug').addEventListener('click', () => {
+    if (!lastR) return;
+    let sg = {ug:lastR.uSugG, up:lastR.uSugP, uBp:lastR.uSugBp, uHp:lastR.uSugHp, utp:lastR.uSugTp};
+    // pernos de acero: subir espesor hasta controlar el efecto palanca
+    if (lastR.uEsAcero) for (let k=0; k<8; k++) {
+      const t = cdUnionColumna(Object.assign({}, lastInp, sg), lastR.PuTracD, lastR.PuCompD);
+      if (t.uEstT !== false) break; sg.utp = cdEspStd(sg.utp + 1);
+    }
+    applySug(sg);
+  });
   document.getElementById('cd_tipo').addEventListener('change', () => {
     state.tipo = document.getElementById('cd_tipo').value;
     renderGeomFields();
@@ -40515,7 +40985,7 @@ route();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20260930-1912. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261001-1202. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
