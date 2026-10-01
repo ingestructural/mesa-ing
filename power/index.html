@@ -1219,7 +1219,9 @@ function tercerosDe(p) {
 const proyById = id => S.proyectos.find(p => p.id === id);
 const mandanteDe = d => proyById(d.proyectoId)?.mandante || '(sin proyecto)';
 function pillEstado(e) { const m = {'Pagada':'e-pag','Pendiente':'e-pen','Pago parcial':'e-par','Vencida':'e-can','Anulada':'e-noa'}; return `<span class="pill ${m[e]||'p-grey'}">${esc(e||'—')}</span>`; }
-function pillProy(e) { const m = {'En oferta':'e-ofe','Adjudicado':'e-adj','Solicitar ODC':'e-odc','En ejecución':'e-eje','Entregado':'e-ent','Solicitar HES/WE/HAS':'e-hes','Facturar':'e-factu','Facturado':'e-fac','Pagado':'e-pag','Terminado':'e-ter','Suspendido':'e-sus','Cancelado':'e-can','No adjudicado':'e-noa'}; return `<span class="pill ${m[e]||'p-grey'}">${esc(e||'—')}</span>`; }
+// "Facturar" se muestra como FACTURAR (factura) o EMITIR BOLETA (boleta) según el documento del proyecto
+function estadoTxt(e, doc) { return e === 'Facturar' ? (doc === 'B' ? 'Emitir boleta' : doc === 'F' ? 'Facturar' : 'Facturar / Emitir boleta') : e; }
+function pillProy(e, doc) { const m = {'En oferta':'e-ofe','Adjudicado':'e-adj','Solicitar ODC':'e-odc','En ejecución':'e-eje','Entregado':'e-ent','Solicitar HES/WE/HAS':'e-hes','Facturar':'e-factu','Facturado':'e-fac','Pagado':'e-pag','Terminado':'e-ter','Suspendido':'e-sus','Cancelado':'e-can','No adjudicado':'e-noa'}; return `<span class="pill ${m[e]||'p-grey'}">${esc(estadoTxt(e, doc)||'—')}</span>`; }
 function igc(base) {
   const U = P().uta; const b = base / U; const t = P().igc; let row = t[0];
   for (const r of t) if (b >= r[0]) row = r;
@@ -1327,7 +1329,7 @@ function vProyectos() {
   return `
   <div class="bar">
     <input class="grow" id="q" type="search" placeholder="Buscar por código, mandante, proyecto, contacto, OC, HES, HAS o WE" value="${esc(S.q)}">
-    <select id="fEstado"><option value="">Todos los estados</option>${ESTADOS_PROY.map(e => `<option ${S.fEstado===e?'selected':''}>${e}</option>`).join('')}</select>
+    <select id="fEstado"><option value="">Todos los estados</option>${ESTADOS_PROY.map(e => `<option value="${e}" ${S.fEstado===e?'selected':''}>${estadoTxt(e)}</option>`).join('')}</select>
     <select id="fDoc"><option value="">Factura y boleta</option><option value="F" ${S.fDoc==='F'?'selected':''}>Factura ING Estructural</option><option value="B" ${S.fDoc==='B'?'selected':''}>Boleta Germán Aguilera</option></select>
     <select id="sortP" title="Ordenar la tabla"><option value="">Orden: más recientes</option>${Object.keys(SORT_P).map(k => `<option value="${k}" ${S.sortP && S.sortP.k === k ? 'selected' : ''}>Orden: ${SORT_P[k].l}</option>`).join('')}</select>
     <button class="btn ghost mini" id="sortDir" title="Invertir el orden" ${S.sortP ? '' : 'disabled'}>${S.sortP && S.sortP.d < 0 ? '▼ desc.' : '▲ asc.'}</button>
@@ -1354,12 +1356,12 @@ function vProyectos() {
       <td class="code keep" style="color:${p.documento==='F'?'var(--ing)':'var(--ga)'}">${esc(p.codigo)}<span class="fing" title="Fecha de ingreso">${p.creado ? fdate(p.creado) : '—'}</span></td><td class="mand">${esc(p.mandante)}</td><td class="pname">${esc(projName(p))}${[['OC',p.oc],['HES',p.hes],['HAS',p.has],['WE',p.we]].some(x=>x[1]) ? `<span class="refl">${[['OC',p.oc],['HES',p.hes],['HAS',p.has],['WE',p.we]].filter(x=>x[1]).map(x=>x[0]+' '+esc(x[1])).join(' · ')}</span>` : ''}</td><td>${esc(TITLE(p.contacto || ''))}</td>
       <td class="keep">${p.documento==='F'?'<span class="pill p-i">Factura</span>':'<span class="pill p-g">Boleta</span>'}</td>
       <td class="n cen">${uf(p.montoUF)}</td><td class="n">${clp(m.totalCLP)}</td><td class="n cen prop" title="${p.documento==='F'?'Neto sin IVA menos costo neto de terceros':'Bruto menos terceros'}">${uf(m.propioUF)}${m.tercUF > 0 ? `<span class="fing">terceros ${uf(m.tercUF)}</span>` : ''}</td><td class="nw ${late?'late':''}">${fdate(p.entrega)}</td>
-      <td class="keep">${pillProy(p.estado)}${(() => { const cp = cobroPend(p, m); const pg = pagarTerc(p, m); const pgH = pg ? `<div class="cobrar pag" title="El cliente ya pagó: pagar al tercero">🟠 PAGAR${pg.map(t => `<span>${uf(t.montoUF)} UF · ${esc(t.nombre||'tercero')}</span>`).join('')}</div>` : '';
+      <td class="keep">${pillProy(p.estado, p.documento)}${(() => { const cp = cobroPend(p, m); const pg = pagarTerc(p, m); const pgH = pg ? `<div class="cobrar pag" title="El cliente ya pagó: pagar al tercero">🟠 PAGAR${pg.map(t => `<span>${uf(t.montoUF)} UF · ${esc(t.nombre||'tercero')}</span>`).join('')}</div>` : '';
       return odcHtml(p) + pgH + (cp ? (cp.tipo === 'hes' ? `<div class="cobrar hes" title="Solicitar al cliente HES / WE / HAS para poder facturar">📋 SOLICITAR HES/WE/HAS<span>${esc(cp.t)}</span></div>` : cp.tipo === 'fact' ? `<div class="cobrar fac nd" data-newdoc="${p.documento==='F'?'facturas':'boletas'}" data-proy="${p.id}" title="Clic: emitir ${p.documento==='F'?'factura':'boleta'} de este proyecto">📄 ${p.documento==='F'?'FACTURAR':'EMITIR BOLETA'}<span>${esc(cp.t)}</span></div>` : `<div class="cobrar" title="Facturado: falta cobrar">💲 COBRAR<span>${esc(cp.t)}</span></div>`) : ''); })()}${p.estado==='Cancelado'?`<div class="small muted">${fdate(p.fechaCancel)} · ${esc(p.motivoCancel||'sin motivo')}</div>`:''}</td>
       <td class="n c-fac ${m.facturadoUF>0.005?'on':''}">${uf(m.facturadoUF)}</td><td class="n c-pf ${m.porFacturar>0.005?'on':''}" style="${m.porFacturar<-0.005?'color:var(--bad)':''}">${uf(m.porFacturar)}</td><td class="n c-pct">${m.pctF==null?'—':`${pct(m.pctF)}<span class="pbar"><i style="width:${Math.max(0,Math.min(100,m.pctF*100))}%"></i></span>`}</td>
       <td class="n c-pag ${m.pagado>0?'on':''}">${clp(m.pagado)}</td><td class="n c-pp ${m.porPagar>0?'on':''}">${clp(m.porPagar)}</td></tr>`; }).join('')}</tbody></table></div>`
   : `<div class="empty">${S.proyectos.length ? 'Ningún proyecto coincide con el filtro.' : 'Aún no hay proyectos. Use “+ Nuevo proyecto” para registrar el primero; el código se asigna solo.'}</div>`}
-  <p class="note">Colores: <span class="pill e-fac">Facturado</span> <span style="color:#c2410c;font-weight:700">por facturar</span> · <span style="color:#6d28d9;font-weight:700">% facturado</span> · <span style="color:#15803d;font-weight:700">pagado</span> · <span style="color:#b91c1c;font-weight:700">por pagar</span> — etapas: <span class="pill e-ofe">En oferta</span> <span class="pill e-adj">Adjudicado</span> <span class="pill e-odc">Solicitar ODC</span> <span class="pill e-eje">En ejecución</span> <span class="pill e-ent">Entregado</span> <span class="pill e-hes">Solicitar HES/WE/HAS</span> <span class="pill e-factu">Facturar</span> <span class="pill e-fac">Facturado</span> <span class="pill e-pag">Pagado</span> <span class="pill e-ter">Terminado</span></p>
+  <p class="note">Colores: <span class="pill e-fac">Facturado</span> <span style="color:#c2410c;font-weight:700">por facturar</span> · <span style="color:#6d28d9;font-weight:700">% facturado</span> · <span style="color:#15803d;font-weight:700">pagado</span> · <span style="color:#b91c1c;font-weight:700">por pagar</span> — etapas: <span class="pill e-ofe">En oferta</span> <span class="pill e-adj">Adjudicado</span> <span class="pill e-odc">Solicitar ODC</span> <span class="pill e-eje">En ejecución</span> <span class="pill e-ent">Entregado</span> <span class="pill e-hes">Solicitar HES/WE/HAS</span> <span class="pill e-factu">Facturar</span> <span class="pill e-factu">Emitir boleta</span> <span class="pill e-fac">Facturado</span> <span class="pill e-pag">Pagado</span> <span class="pill e-ter">Terminado</span></p>
   <p class="note">📋 SOLICITAR ODC: pedir al cliente la orden de compra · 📄 FACTURAR / EMITIR BOLETA: proyecto entregado con saldo por documentar (clic en el aviso para emitir) · 📋 SOLICITAR HES/WE/HAS: pedir las referencias del cliente antes de facturar (indica cuáles faltan) · 💲 COBRAR: proyecto facturado con pagos pendientes. Al marcarlo «Pagado» deja de cobrarse. Fecha de entrega en rojo: atrasada.</p>
   <p class="note">Código: SIGLA del mandante – correlativo del mandante – correlativo general del año – año (2 dígitos). Se asigna al crear el proyecto; se reasigna si cambia el mandante o el año, o si el proyecto se mueve a otro archivo (queda registrado el código anterior). Un proyecto cancelado conserva su código, su saldo por facturar pasa a cero y lo ya facturado o cobrado se mantiene.</p>`;
 }
@@ -1375,7 +1377,7 @@ function cardProy(p) {
   const m = proyMetrics(p), late = p.entrega && p.entrega < today() && !['Entregado','Solicitar HES/WE/HAS','Facturar','Facturado','Pagado','Terminado','Suspendido','Cancelado','No adjudicado'].includes(p.estado);
   const refs = [['OC',p.oc],['HES',p.hes],['HAS',p.has],['WE',p.we]].filter(x => x[1]).map(x => x[0] + ' ' + esc(x[1])).join(' · ');
   return `<div class="pcard click ${p.estado==='Cancelado'?'cancel':''} ${p.documento==='F'?'f':'b'} ${p.estado==='Facturar'?'pc-factu':''}" data-edit="proyectos" data-id="${p.id}">
-    <div class="pc-top"><span class="code" style="color:${p.documento==='F'?'var(--ing)':'var(--ga)'}">${esc(p.codigo)}</span>${pillProy(p.estado)}</div>
+    <div class="pc-top"><span class="code" style="color:${p.documento==='F'?'var(--ing)':'var(--ga)'}">${esc(p.codigo)}</span>${pillProy(p.estado, p.documento)}</div>
     <div class="pc-name">${esc(projName(p))}</div>
     <div class="pc-sub"><b class="pc-mand">${esc(p.mandante)}</b>${p.contacto ? ' · ' + esc(TITLE(p.contacto)) : ''}${refs ? `<br><span class="refl">${refs}</span>` : ''}</div>
     <div class="pc-av">${avisosProy(p, m)}</div>
@@ -1464,7 +1466,7 @@ function vCartera() {
   <div class="bar">
     <input class="grow" id="q" type="search" placeholder="Buscar por código, mandante, proyecto u OC" value="${esc(S.q)}">
     <select id="resCli"><option value="Todos">Todos los clientes</option>${clis.map(c => `<option ${c===cli?'selected':''}>${esc(c)}</option>`).join('')}</select>
-    <select id="fEstado"><option value="">Todos los estados</option>${ESTADOS_PROY.map(e => `<option ${S.fEstado===e?'selected':''}>${e}</option>`).join('')}</select>
+    <select id="fEstado"><option value="">Todos los estados</option>${ESTADOS_PROY.map(e => `<option value="${e}" ${S.fEstado===e?'selected':''}>${estadoTxt(e)}</option>`).join('')}</select>
     <select id="fCob"><option value="">Todo status de cobro</option>${COBROS.map(e => `<option ${S.fCob===e?'selected':''}>${e}</option>`).join('')}</select>
     <select id="fDoc"><option value="">Factura y boleta</option><option value="F" ${S.fDoc==='F'?'selected':''}>Solo factura ING</option><option value="B" ${S.fDoc==='B'?'selected':''}>Solo boleta G. Aguilera</option></select>
     <button class="btn ghost" data-act="csv" data-what="cartera">Exportar CSV</button>
@@ -1477,7 +1479,7 @@ function vCartera() {
     <div><small>Por facturar</small><b>${uf(T.pfUF)} UF</b><span>${clp(T.pfCLP)}</span></div>
   </div>
   ${rows.length ? `<div class="tbl"><table><thead><tr><th>Código</th><th>Mandante</th><th>Proyecto</th><th>Doc.</th><th>Estado proyecto</th><th class="n">Monto (UF)</th><th class="n">Monto ($)</th><th class="n">Terceros (UF)</th><th class="n">Propio (UF)</th><th class="n h-fac">Documentado (UF)</th><th class="n h-fac">Documentado ($)</th><th class="n h-pag">Pagado ($)</th><th class="n h-pp">Pendiente de pago ($)</th><th class="n h-pf">Por facturar (UF)</th><th class="n h-pf">Por facturar ($)</th><th>Status de cobro</th></tr></thead><tbody>
-    ${rows.map(r => `<tr class="click ${r.p.estado==='Cancelado'?'cancel':''}" data-edit="proyectos" data-id="${r.p.id}"><td class="code" style="color:${r.p.documento==='F'?'var(--ing)':'var(--ga)'}">${esc(r.p.codigo)}<span class="fing">${r.p.creado ? fdate(r.p.creado) : '—'}</span></td><td class="mand">${esc(r.p.mandante)}</td><td>${esc(projName(r.p))}</td><td>${r.p.documento==='F'?'<span class="pill p-i">Factura</span>':'<span class="pill p-g">Boleta</span>'}</td><td class="keep">${pillProy(r.p.estado)}</td>
+    ${rows.map(r => `<tr class="click ${r.p.estado==='Cancelado'?'cancel':''}" data-edit="proyectos" data-id="${r.p.id}"><td class="code" style="color:${r.p.documento==='F'?'var(--ing)':'var(--ga)'}">${esc(r.p.codigo)}<span class="fing">${r.p.creado ? fdate(r.p.creado) : '—'}</span></td><td class="mand">${esc(r.p.mandante)}</td><td>${esc(projName(r.p))}</td><td>${r.p.documento==='F'?'<span class="pill p-i">Factura</span>':'<span class="pill p-g">Boleta</span>'}</td><td class="keep">${pillProy(r.p.estado, r.p.documento)}</td>
       ${n(uf(r.p.montoUF))}${n(clp(r.m.totalCLP))}${n(r.m.tercUF ? uf(r.m.tercUF) + (r.m.tercPendUF > 0 ? `<span class="fing">pend. ${uf(r.m.tercPendUF)}</span>` : '') : '—')}${n(`<b>${uf(r.m.propioUF)}</b>`)}${nc(uf(r.m.facturadoUF),'c-fac',r.m.facturadoUF>0.005)}${nc(clp(r.docCLP),'c-fac',r.docCLP>0)}${nc(clp(r.m.pagado),'c-pag',r.m.pagado>0)}${nc(clp(r.m.porPagar),'c-pp',r.m.porPagar>0.5)}${nc(uf(Math.max(r.m.porFacturar, 0)),'c-pf',r.m.porFacturar>0.005)}${nc(clp(r.pfCLP),'c-pf',r.pfCLP>0.5)}<td class="keep">${pillCob(r.cobro)}</td></tr>`).join('')}
     <tr class="tot"><td colspan="5">Total (${T.n} proyecto${T.n===1?'':'s'}; cancelados no suman al contratado)</td>${n(uf(T.uf))}${n(clp(T.clp))}${n(uf(sum(rows, r => r.m.tercUF)))}${n(uf(sum(rows, r => r.m.propioUF)))}${n(uf(T.fUF))}${n(clp(T.fCLP))}${n(clp(T.pag))}${n(clp(T.pen))}${n(uf(T.pfUF))}${n(clp(T.pfCLP))}<td></td></tr></tbody></table></div>
   <h2 style="margin-top:16px">Totales por status de cobro</h2>${grp('Status de cobro', COBROS, r => r.cobro, pillCob)}
@@ -1667,7 +1669,7 @@ function openEditor(kind, id, preProy) {
       <label>Monto total (UF)<input id="e-montoUF" inputmode="decimal" value="${r.montoUF ?? ''}" required></label>
       <label>Valor UF ($, opcional)<input id="e-valorUF" inputmode="decimal" value="${r.valorUF ?? ''}" placeholder="${uf(P().ufRef)}"></label>
       <label>Fecha de entrega comprometida<input id="e-entrega" type="date" value="${r.entrega||''}"></label>
-      <label>Estado del proyecto<select id="e-estado">${ESTADOS_PROY.map(e=>`<option ${e===r.estado?'selected':''}>${e}</option>`).join('')}</select></label>
+      <label>Estado del proyecto<select id="e-estado">${ESTADOS_PROY.map(e=>`<option value="${e}" ${e===r.estado?'selected':''}>${estadoTxt(e, r.documento)}</option>`).join('')}</select></label>
       <label id="w-fc">Fecha de cancelación<input id="e-fechaCancel" type="date" value="${r.fechaCancel||''}"></label>
       <label id="w-mc">Motivo de cancelación<select id="e-motivoCancel"><option value="">Elegir…</option>${MOTIVOS.map(m=>`<option ${m===r.motivoCancel?'selected':''}>${m}</option>`).join('')}</select></label>
       <div class="terc full"><div class="rt">Pagos a terceros — monto fijo (lo que debes pagar de este proyecto)</div>
@@ -1990,6 +1992,8 @@ function wireTerceros(rec) {
   (rec && rec.terceros || []).forEach(add);
   $('#bAddTerc').onclick = () => { add(); box.lastChild.querySelector('.t-nom').focus(); sumT(); };
   ['e-montoUF','e-documento','e-anio'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', sumT); });
+  { const dSel = document.getElementById('e-documento'), eSel = document.getElementById('e-estado');
+    if (dSel && eSel) dSel.addEventListener('change', () => { const o = [...eSel.options].find(x => x.value === 'Facturar'); if (o) o.textContent = estadoTxt('Facturar', dSel.value); }); }
   sumT();
 }
 function leerTerceros() {
@@ -2132,7 +2136,7 @@ cargarUF();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20261001-1302. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261001-1335. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
