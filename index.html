@@ -41335,6 +41335,7 @@ html.mcm-on .print-actions{display:none !important}
 .mcm-tog.on{background:var(--accent,#0060c1);color:#fff} .mcm-tog:disabled{opacity:.4;cursor:not-allowed}
 .mcm-res h4{font-size:.95rem;color:var(--accent)} .mcm-resit{margin:.6rem 0 .2rem} .mcm-resit-h{font-weight:700;font-size:.85rem;margin-bottom:.3rem}
 .mcm-drop-s{margin:.35rem 0;padding:.5rem .6rem} .mcm-th small{color:var(--ink-muted);font-size:.72rem}
+.ett-sug{margin-top:.3rem;width:100%;font-size:.78rem !important;color:var(--accent) !important;background:color-mix(in srgb,var(--accent,#0060c1) 6%,transparent) !important;border:1px dashed var(--accent,#0060c1) !important;border-radius:4px;padding:.2rem .3rem}
 .mcm-dd{position:relative}
 .mcm-ui .mcm-dd-l label{flex:none;display:flex;gap:.45rem;align-items:center;justify-content:flex-start;text-align:left;font-size:.85rem;color:var(--ink);line-height:1.3}
 .mcm-ui input[type=checkbox]{width:auto !important;min-width:0 !important;padding:0 !important;flex:none;margin:0}
@@ -41655,6 +41656,33 @@ const ETT_MAP = [
   ['albanileria', /relleno de huecos/, M => /confinada/.test(M.mat.alb.grado) ? 'No aplica (albañilería confinada)' : null],
   ['albanileria', /pilares y cadenas/, M => /confinada/.test(M.mat.alb.grado) ? (['G20','G25','G30'].includes(M.mat.horm.grado) ? M.mat.horm.grado : 'G20') : 'No aplica (albañilería armada)'],
 ];
+
+// Sugerencias para cada casilla [COMPLETAR]: [valor que se escribe, explicación breve]
+const ETT_SUG = {
+  'acero|Espesor mínimo de recubrimiento': [['125 μm', 'Referencia habitual: ambiente industrial moderado (C3).'], ['80 μm', 'Interior seco, sin agresividad (C1–C2).'], ['200 μm', 'Exterior o industrial con humedad (C4).'], ['250 μm', 'Industrial agresivo o costero (C5).'], ['100 μm de zinc', 'Galvanizado en caliente ASTM A123, piezas de 6 mm o más.']],
+  'acero|Perfil de anclaje (rugosidad)': [['2,0 a 3,0 mils', 'Habitual para zinc inorgánico y epóxicos de alto espesor.'], ['1,5 a 2,0 mils', 'Sistemas de baja película (alquídicos, epóxicos delgados).'], ['3,0 a 4,0 mils', 'Sistemas de muy alto espesor o metalizado.']],
+  'acero|Espesor seco mínimo por capa': [['75 μm imprimante + 125 μm intermedia + 50 μm terminación', 'Esquema típico zinc inorgánico / epoxi / poliuretano.'], ['75 μm', 'Imprimante de zinc inorgánico.'], ['100 a 125 μm', 'Capa intermedia de epoxi poliamida.'], ['50 a 60 μm', 'Terminación de poliuretano alifático.'], ['200 μm', 'Epóxico mastic de alto espesor en una capa.']],
+  'acero|Espesor seco total mínimo del sistema': [['250 μm', 'Esquema de tres capas para exterior o industrial (C3–C4).'], ['125 μm', 'Mínimo habitual en ambientes industriales moderados.'], ['200 μm', 'Exterior con humedad frecuente.'], ['300 μm', 'Ambiente marino o químico severo (C5).']],
+  'acero|OBSERVACIONES': [['Estructura ubicada en ambiente industrial con humedad y polvo de madera; se deben respetar los espesores de pintura especificados y los retoques de terreno.', 'Planta industrial típica (aserradero, procesos).'], ['El montaje se realizará con la planta en operación; el contratista deberá coordinar con el mandante los accesos, horarios y medidas de seguridad.', 'Obra dentro de instalaciones en funcionamiento.'], ['No hay observaciones particulares adicionales a lo indicado en este documento y en los planos.', 'Cuando el proyecto no tiene condiciones especiales.']],
+  'hormigon|Recubrimiento mínimo de armadura': [['75 mm en fundaciones; 50 mm en elementos expuestos; 40 mm en vigas y pilares; 20 mm en losas y muros interiores', 'Combinación habitual según ACI 318 / NCh430.'], ['75 mm', 'Hormigón contra el terreno sin moldaje (fundaciones).'], ['50 mm', 'Expuesto a la intemperie o al terreno, barras Ø18 a Ø36.'], ['40 mm', 'Expuesto con barras ≤ Ø16, o vigas y pilares interiores.'], ['20 mm', 'Losas y muros no expuestos.']],
+  'hormigon|Espesor de grouting': [['25 mm', 'Habitual bajo placas base.'], ['40 a 50 mm', 'Placas grandes, o grout con árido fino.'], ['Según planos', 'Cuando cada placa tiene su espesor indicado.']],
+  'hormigon|OBSERVACIONES': [['Según el estudio de mecánica de suelos no se detecta agresividad química del suelo ni del agua subterránea; se emplea cemento de uso general.', 'Suelo sin sulfatos ni cloruros.'], ['El suelo presenta agresividad por sulfatos; se debe usar cemento resistente a sulfatos y el recubrimiento de fundaciones indicado.', 'Cuando la mecánica de suelos detecta sulfatos.'], ['En épocas de bajas temperaturas se deberá proteger el hormigón del congelamiento durante los primeros 7 días, según NCh170.', 'Hormigonado en invierno o zonas frías.'], ['No hay observaciones particulares adicionales a lo indicado en este documento y en los planos.', 'Cuando el proyecto no tiene condiciones especiales.']],
+  'madera|Placas de corte (shear plates) y anillos partidos': [['No aplica', 'Conexiones resueltas solo con pernos, tirafondos y clavos.'], ['Según planos de detalle', 'Cuando el diseño de conexiones los considera.']],
+  'madera|TOLERANCIAS': [['Verticalidad de pie derechos y postes: 1/300 de la altura; alineación de vigas: ± 5 mm respecto de los ejes de proyecto.', 'Valores de referencia para montaje habitual.'], ['Se aplican las tolerancias de referencia general indicadas en este capítulo.', 'Cuando el proyecto no define valores particulares.']],
+  'madera|OBSERVACIONES': [['La madera estará expuesta a la intemperie bajo alero; debe usarse madera impregnada clase C y fijaciones galvanizadas en caliente.', 'Elementos exteriores protegidos.'], ['Verificar con el proveedor la disponibilidad del grado estructural especificado antes de la compra.', 'Zonas con oferta limitada de madera clasificada.'], ['No hay observaciones particulares adicionales a lo indicado en este documento y en los planos.', 'Cuando el proyecto no tiene condiciones especiales.']],
+  "albanileria|Resistencia prismática de diseño f'm": [['Según proyecto de cálculo, verificado con ensayo de prismas', 'Recomendado: el valor lo fija el cálculo estructural.'], ['5 MPa', 'Valor referencial para ladrillo cerámico hecho a máquina; confirmar con prismas.'], ['4 MPa', 'Valor referencial para bloque de hormigón; confirmar con prismas.']],
+  'albanileria|TOLERANCIAS': [['Desaplome máximo de muros: 1/300 de la altura; espesor de juntas: 10 a 15 mm.', 'Valores de referencia para ejecución habitual.'], ['Se aplican las tolerancias de NCh1928 / NCh2123 y las indicadas en los planos.', 'Cuando el proyecto no define valores particulares.']],
+  'albanileria|OBSERVACIONES': [['Proteger la albañilería de la lluvia y las heladas durante la ejecución y el curado, suspendiendo faenas con temperaturas bajo 5 °C.', 'Ejecución en invierno o zonas frías.'], ['Verificar la disponibilidad de las unidades especificadas en la zona; cualquier cambio de unidad requiere aprobación del calculista.', 'Zonas con oferta limitada de unidades.'], ['No hay observaciones particulares adicionales a lo indicado en este documento y en los planos.', 'Cuando el proyecto no tiene condiciones especiales.']],
+};
+const ETT_SUG_P = {
+  doc: m => [[`${m}-${new Date().getFullYear()}-001`, 'Formato correlativo: prefijo por material, año y número.']],
+  rev: () => [['Rev. 0', 'Emitida para construcción.'], ['Rev. A', 'Primera emisión para revisión del mandante.'], ['Rev. B', 'Segunda emisión para revisión.']],
+};
+function ettSugSel(k, list, kind) {
+  if (!list || !list.length) return '';
+  return `<select data-sug="${k}" data-kind="${kind}" class="ett-sug" title="Valores sugeridos"><option value="">💡 Sugerencias…</option>${list.map(([v, x]) => `<option value="${esc(v)}">${esc(v.length > 70 ? v.slice(0, 68) + '…' : v)} — ${esc(x)}</option>`).join('')}</select>`;
+}
+
 function ettDef() {
   return {v:1, proy:{proyecto:'', mandante:'', ubicacion:'', doc:'', rev:'Rev. 0', fecha:MCM_HOY(), elaboro:MCM_ING[0], reviso:'', contacto:'jgaguilera@ingestructural.cl', descripcion:''},
     mats:{acero:true, hormigon:true, madera:false, albanileria:false}, modo:'separados', sel:{}, txt:{}, secOff:{}, desde:''};
@@ -41807,13 +41835,14 @@ function renderEETT(container) {
     return `<div class="panel"><h3>${n} · ${esc(m.label)}</h3><div class="note">Marca los capítulos que se incluyen y completa las calidades (listas) y los campos [COMPLETAR]. El resto del texto viene de la biblioteca de EETT de ING Estructural.</div>
       ${secs.map((sec, si) => { const off = !!E.secOff[`${m.id}.${si}`]; const fields = [];
         sec.items.forEach((it, ii) => {
-          if (it.p && /\[COMPLETAR/.test(it.p)) { const k = ettKey(m.id, si, ii, 0, 0); fields.push(`<div class="mem-blk" style="margin:.3rem 0"><textarea data-t="${k}" placeholder="${esc(it.p.replace(/^\[COMPLETAR:\s*/i, '').replace(/\]$/, ''))}" style="min-height:3.2em">${esc(E.txt[k] || '')}</textarea></div>`); }
-          if (it.h2 && sec.items.slice(ii + 1).some((x, j) => x.tbl && !sec.items.slice(ii + 1, ii + 1 + j).some(y => y.h2))) fields.push(`<div class="mcm-resit-h" style="margin-top:.4rem">${esc(it.h2)}</div>`);
+          if (it.p && /\[COMPLETAR/.test(it.p)) { const k = ettKey(m.id, si, ii, 0, 0); fields.push(`<div class="mem-blk" style="margin:.3rem 0;grid-column:1/-1">${ettSugSel(k, ETT_SUG[m.id + '|' + sec.t], 'p')}<textarea data-t="${k}" placeholder="${esc(it.p.replace(/^\[COMPLETAR:\s*/i, '').replace(/\]$/, ''))}" style="min-height:3.2em">${esc(E.txt[k] || '')}</textarea></div>`); }
+          if (it.h2) fields.push({h:`<div class="mcm-resit-h" style="margin-top:.4rem;grid-column:1/-1">${esc(it.h2)}</div>`});
           if (it.tbl) it.tbl.slice(1).forEach((row, r0) => row.forEach((cell, c) => { const k = ettKey(m.id, si, ii, r0 + 1, c);
             if (cell && cell.opts) fields.push(`<div class="field"><label>${esc(row[0])}</label><select data-s="${k}"><option value="">— seleccionar —</option>${cell.opts.map(o => `<option ${E.sel[k] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`);
-            else if (/\[COMPLETAR/.test(cell)) fields.push(`<div class="field"><label>${esc(row[0])}</label><input type="text" data-t="${k}" value="${esc(E.txt[k] || '')}" placeholder="${esc(cell.replace(/^\[COMPLETAR:\s*/i, '').replace(/\]$/, ''))}"></div>`); }));
+            else if (/\[COMPLETAR/.test(cell)) fields.push(`<div class="field"><label>${esc(row[0])}</label><input type="text" data-t="${k}" value="${esc(E.txt[k] || '')}" placeholder="${esc(cell.replace(/^\[COMPLETAR:\s*/i, '').replace(/\]$/, ''))}">${ettSugSel(k, ETT_SUG[m.id + '|' + row[0]], 't')}</div>`); }));
         });
-        return `<div class="mem-blk"><h4><label style="display:flex;gap:.4rem;align-items:center;cursor:pointer"><input type="checkbox" data-sec="${m.id}.${si}" ${off ? '' : 'checked'}> ${esc(sec.t)}</label></h4>${off || !fields.length ? '' : `<div class="field-grid">${fields.join('')}</div>`}</div>`; }).join('')}</div>`;
+        const fl = fields.filter((f, i) => !(f.h && (i === fields.length - 1 || fields[i + 1].h))).map(f => f.h || f);
+        return `<div class="mem-blk"><h4><label style="display:flex;gap:.4rem;align-items:center;cursor:pointer"><input type="checkbox" data-sec="${m.id}.${si}" ${off ? '' : 'checked'}> ${esc(sec.t)}</label></h4>${off || !fl.length ? '' : `<div class="field-grid">${fl.join('')}</div>`}</div>`; }).join('')}</div>`;
   }
   function html() {
     const A = act();
@@ -41823,7 +41852,7 @@ function renderEETT(container) {
     <div class="panel"><h3>1 · Tomar datos de la memoria de cálculo</h3><div class="note">${memInfo}${E.desde ? ` Última importación: ${esc(E.desde)}.` : ''}</div>
       <div class="mem-btns"><button type="button" class="mem-btn" data-act="desdeLocal">⇩ Traer datos de la memoria</button><button type="button" class="btn-add" data-act="desdeArchivo">📂 Desde archivo de memoria (.json)…</button><input type="file" accept=".json,application/json" id="ettMemFile" hidden></div>
       <div class="note">Trae: proyecto, mandante, ubicación, fecha, revisión, elaboró y revisó, la descripción de la estructura, los materiales que componen la estructura y sus calidades (perfiles, pernos, soldadura, grado de hormigón, acero de refuerzo, madera, albañilería).</div></div>
-    <div class="panel"><h3>2 · Datos del proyecto</h3><div class="field-grid">${F('Proyecto', 'proyecto')}${F('Mandante', 'mandante')}${F('Ubicación', 'ubicacion')}${F('N° de documento', 'doc', 'ej. ETA-2026-001')}${F('Revisión', 'rev')}${F('Fecha', 'fecha')}${SELP('Elaborado por', 'elaboro', MCM_ING)}${SELP('Revisado por', 'reviso', MCM_ING)}${F('Contacto', 'contacto')}</div>
+    <div class="panel"><h3>2 · Datos del proyecto</h3><div class="field-grid">${F('Proyecto', 'proyecto')}${F('Mandante', 'mandante')}${F('Ubicación', 'ubicacion')}<div class="field"><label>N° de documento</label><input type="text" data-p="doc" value="${esc(E.proy.doc || '')}" placeholder="ej. ETA-2026-001">${ettSugSel('p:doc', act().flatMap(m => ETT_SUG_P.doc(m.pref)), 't')}</div><div class="field"><label>Revisión</label><input type="text" data-p="rev" value="${esc(E.proy.rev || '')}">${ettSugSel('p:rev', ETT_SUG_P.rev(), 't')}</div>${F('Fecha', 'fecha')}${SELP('Elaborado por', 'elaboro', MCM_ING)}${SELP('Revisado por', 'reviso', MCM_ING)}${F('Contacto', 'contacto')}</div>
       <div class="mem-blk"><h4>Descripción del proyecto <small>opcional; se trae de la memoria. Si queda vacía, el capítulo no se incluye.</small></h4><textarea data-p="descripcion" style="min-height:6em">${esc(E.proy.descripcion || '')}</textarea></div></div>
     <div class="panel"><h3>3 · Materiales y documento</h3><div class="mem-btns">${ETT_MATS.map(m => `<button type="button" class="mcm-tog ${E.mats[m.id] ? 'on' : ''}" data-mat="${m.id}">${E.mats[m.id] ? '✓ ' : ''}${esc(m.label)}</button>`).join('')}</div>
       <div class="field-grid"><div class="field"><label>Emisión</label><select data-modo><option value="separados" ${E.modo === 'separados' ? 'selected' : ''}>Un documento por material</option><option value="unico" ${E.modo === 'unico' ? 'selected' : ''}>Un solo documento con todos los materiales</option></select></div></div></div>
@@ -41843,6 +41872,7 @@ function renderEETT(container) {
     if (t.dataset.p) { E.proy[t.dataset.p] = t.value; refresh(); } else if (t.dataset.t) { E.txt[t.dataset.t] = t.value; refresh(); } });
   root.addEventListener('change', e => { const t = e.target;
     if (t.dataset.s) { E.sel[t.dataset.s] = t.value; refresh(); return; }
+    if (t.dataset.sug) { if (!t.value) return; const k = t.dataset.sug; if (k.startsWith('p:')) E.proy[k.slice(2)] = t.value; else E.txt[k] = t.value; ettSave(E); draw(); return; }
     if (t.dataset.ps) { E.proy[t.dataset.ps] = t.value === '__otro' ? ' ' : t.value; ettSave(E); draw(); return; }
     if (t.dataset.sec) { E.secOff[t.dataset.sec] = !t.checked; ettSave(E); draw(); return; }
     if (t.hasAttribute('data-modo')) { E.modo = t.value; ettSave(E); draw(); return; }
@@ -42030,7 +42060,7 @@ route();
 </script>
 
 <script>
-/* App instalable (PWA) — versión 20261001-1824. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261001-1841. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
