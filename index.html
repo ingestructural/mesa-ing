@@ -1772,6 +1772,9 @@ const TOOLS = [
     desc:'Placa "oreja" (padeye/lug) con agujero para pasador y punta redondeada, reforzada con costillas perpendiculares cerca del agujero: tracción, corte y flexión en las 3 direcciones de la carga (Fx en el plano, Fy fuera del plano, Fz axial), verificando la sección del agujero (aplastamiento, tracción neta, desgarro y corte en ambas direcciones) y la sección de la base/empotramiento (axial, flexión en el eje fuerte y en el eje débil mediante una sección compuesta placa+costillas tipo cruciforme, y corte en ambas direcciones).',
     tag:'AISC 360 · ASD (σadm=Fy/FS)', calc:'orejaConexion' },
 
+  { id:'dosificacion-hormigon', cat:'Hormigón armado', name:'Dosificación de Hormigones', file:null,
+    desc:'Dosificación por volúmenes absolutos (ACI 211.1) para los grados G05 a G50 de NCh170: resistencia media requerida, razón a/c por resistencia y durabilidad, cantidades por m³ corregidas por humedad, por saco de cemento, por amasada de betonera y comparación de grados.',
+    tag:'ACI 211.1 · NCh170 · ACI 318-19 Cap. 19 y 26', calc:'dosificacion' },
   { id:'vigas-ha', cat:'Hormigón armado', name:'Vigas de Hormigón Armado', file:'Vigas_HA_Diseno.xlsx',
     desc:'Diseño a flexión y corte de vigas rectangulares y T: refuerzo mínimo/máximo, ductilidad, espaciamiento de estribos.',
     tag:'ACI 318-19 · NCh430', calc:'vigasHA' },
@@ -43483,6 +43486,341 @@ function renderPropPerfiles(container) {
   fillPerfiles(); recalc();
 }
 
+/* =========================================================================
+   DOSIFICACIÓN DE HORMIGONES — MÉTODO DE VOLÚMENES ABSOLUTOS (ACI 211.1)
+   Grados NCh170:2016 (f'c característica en probeta cilíndrica). Resistencia
+   media requerida: NCh170 (fracción defectuosa, f'cr = f'c + t·s) o ACI 318-19
+   §26.4.3 (con s conocida, o sin datos con Tabla 26.4.3.1(b)). Razón a/c por
+   resistencia (ACI 211.1 Tabla 6.3.4(a)) y por durabilidad (ACI 318-19
+   Tabla 19.3.2.1). Agua y aire (Tabla 6.3.3), volumen de grava compactada
+   (Tabla 6.3.6), arena por diferencia de volúmenes absolutos y corrección por
+   humedad y absorción de los áridos. Resultado por m³, por saco de cemento,
+   por amasada de betonera y tabla comparativa para todos los grados.
+   ========================================================================= */
+const DH_GRADOS = [['G05', 5], ['G10', 10], ['G15', 15], ['G17', 17], ['G20', 20], ['G25', 25], ['G30', 30], ['G35', 35], ['G40', 40], ['G45', 45], ['G50', 50]];
+const DH_DN = [10, 12.5, 20, 25, 40, 50];                     // tamaño máximo nominal (mm) ≈ 9,5 / 12,5 / 19 / 25 / 37,5 / 50
+// ACI 211.1 Tabla 6.3.3 — agua (kg/m³) por asentamiento [25–50, 75–100, 150–175 mm] y Dn
+const DH_AGUA_SA = [[207, 199, 190, 179, 166, 154], [228, 216, 205, 193, 181, 169], [243, 228, 216, 202, 190, 178]];
+const DH_AGUA_CA = [[181, 175, 168, 160, 150, 142], [202, 193, 184, 175, 165, 157], [216, 205, 197, 184, 174, 166]];
+const DH_AIRE_ATRAP = [3, 2.5, 2, 1.5, 1, 0.5];               // % aire atrapado, sin aire incorporado
+const DH_AIRE_INC = { leve: [4.5, 4.0, 3.5, 3.0, 2.5, 2.0], moderada: [6.0, 5.5, 5.0, 4.5, 4.5, 4.0], severa: [7.5, 7.0, 6.0, 6.0, 5.5, 5.0] };
+// ACI 211.1 Tabla 6.3.4(a) — a/c vs resistencia media (MPa)
+const DH_AC_SA = [[13.8, 0.82], [20.7, 0.68], [27.6, 0.57], [34.5, 0.48], [41.4, 0.41]];
+const DH_AC_CA = [[13.8, 0.74], [20.7, 0.59], [27.6, 0.48], [34.5, 0.40]];
+// ACI 211.1 Tabla 6.3.6 — volumen de grava compactada por m³, por Dn y módulo de finura [2,4 2,6 2,8 3,0]
+const DH_VG = [[0.50, 0.48, 0.46, 0.44], [0.59, 0.57, 0.55, 0.53], [0.66, 0.64, 0.62, 0.60], [0.71, 0.69, 0.67, 0.65], [0.75, 0.73, 0.71, 0.69], [0.78, 0.76, 0.74, 0.72]];
+// ACI 318-19 Tabla 19.3.2.1 — a/c máxima y f'c mínima por clase de exposición
+const DH_EXPO = [
+  { id: 'N', n: 'Sin requisito de durabilidad (F0, S0, W0, C0/C1)', ac: null, fc: 17 },
+  { id: 'F1', n: 'F1 — hielo-deshielo, exposición limitada al agua', ac: 0.55, fc: 25, aire: 'moderada' },
+  { id: 'F2', n: 'F2 — hielo-deshielo, exposición frecuente al agua', ac: 0.45, fc: 31, aire: 'severa' },
+  { id: 'F3', n: 'F3 — hielo-deshielo con sales descongelantes', ac: 0.40, fc: 35, aire: 'severa' },
+  { id: 'S1', n: 'S1 — sulfatos moderados', ac: 0.50, fc: 28 },
+  { id: 'S2', n: 'S2 — sulfatos severos', ac: 0.45, fc: 31 },
+  { id: 'S3', n: 'S3 — sulfatos muy severos', ac: 0.45, fc: 31 },
+  { id: 'W1', n: 'W1 — en contacto con agua, baja permeabilidad requerida', ac: 0.50, fc: 28 },
+  { id: 'C2', n: 'C2 — armaduras expuestas a cloruros (ambiente marino)', ac: 0.40, fc: 35 },
+];
+const DH_ASENT = [['2-4', 3], ['5-9', 7], ['10-15', 12.5], ['16-18', 17]];   // cono de Abrams, cm
+
+function dhInterp(tab, x) { // tab = [[x,y],...] ordenada por x
+  if (x <= tab[0][0]) { const [a, b] = [tab[0], tab[1]]; return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]); }
+  for (let i = 0; i < tab.length - 1; i++) if (x <= tab[i + 1][0]) { const a = tab[i], b = tab[i + 1]; return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]); }
+  const a = tab[tab.length - 2], b = tab[tab.length - 1]; return b[1] + (b[1] - a[1]) * (x - b[0]) / (b[0] - a[0]);
+}
+
+function calcDosificacion(inp) {
+  const r = { av: [] };
+  const fc = inp.fc;
+  r.fc = fc;
+  // ---- 1. Resistencia media requerida ----
+  const s = inp.s > 0 ? inp.s : null;
+  if (inp.criterio === 'NCH170') {
+    r.t = inp.t; r.sUsada = s != null ? s : (fc <= 20 ? 4.0 : fc <= 35 ? 5.0 : 6.0);
+    r.sSupuesta = s == null;
+    r.fcr = fc + r.t * r.sUsada;
+    r.fcrTxt = `f'c + t·s = ${fc} + ${r.t.toFixed(3).replace('.', ',')}·${r.sUsada.toFixed(1).replace('.', ',')}`;
+  } else if (inp.criterio === 'ACI_S' && s != null) {
+    const k = inp.nEnsayos >= 30 ? 1 : (inp.nEnsayos >= 25 ? 1.03 : inp.nEnsayos >= 20 ? 1.08 : inp.nEnsayos >= 15 ? 1.16 : null);
+    if (k == null) { r.av.push(['bad', 'Con menos de 15 ensayos ACI 318 no permite usar s: usar el criterio "sin datos".']); }
+    const ss = s * (k || 1); r.sUsada = ss; r.kS = k;
+    r.fcr = fc <= 35 ? Math.max(fc + 1.34 * ss, fc + 2.33 * ss - 3.5) : Math.max(fc + 1.34 * ss, 0.90 * fc + 2.33 * ss);
+    r.fcrTxt = (fc <= 35 ? `máx(f'c + 1,34·s ; f'c + 2,33·s − 3,5)` : `máx(f'c + 1,34·s ; 0,90·f'c + 2,33·s)`) + `, s = ${ss.toFixed(2).replace('.', ',')} MPa`;
+  } else {
+    r.fcr = fc < 21 ? fc + 7.0 : fc <= 35 ? fc + 8.3 : 1.10 * fc + 5.0;
+    r.fcrTxt = fc < 21 ? "f'c + 7,0 (f'c < 21 MPa)" : fc <= 35 ? "f'c + 8,3 (21 ≤ f'c ≤ 35 MPa)" : "1,10·f'c + 5,0 (f'c > 35 MPa)";
+  }
+  // ---- 2. Razón agua/cemento ----
+  const conAire = !!inp.aireInc;
+  const tabAC = conAire ? DH_AC_CA : DH_AC_SA;
+  r.acRes = dhInterp(tabAC, r.fcr);
+  const fmaxTab = tabAC[tabAC.length - 1][0];
+  if (r.fcr > fmaxTab) r.av.push(['warn', `f'cr = ${r.fcr.toFixed(1)} MPa excede la Tabla 6.3.4(a) de ACI 211.1 (${fmaxTab} MPa): la razón a/c se extrapola. Para hormigones de alta resistencia usar ACI 211.4R con aditivos y verificar con mezclas de prueba.`]);
+  if (r.fcr < tabAC[0][0]) r.av.push(['info', 'Resistencia bajo el rango de la tabla: a/c extrapolada; queda limitada a 0,90.']);
+  r.fueraTabla = r.fcr > fmaxTab;
+  r.acRes = Math.min(0.90, Math.max(0.25, r.acRes));
+  const ex = DH_EXPO.find(e => e.id === inp.expo) || DH_EXPO[0];
+  r.expo = ex; r.acDur = ex.ac;
+  r.ac = ex.ac != null ? Math.min(r.acRes, ex.ac) : r.acRes;
+  r.acGob = ex.ac != null && ex.ac < r.acRes ? 'durabilidad' : 'resistencia';
+  if (fc < ex.fc) r.av.push(['bad', `La clase de exposición ${ex.id} exige f'c mínimo ${ex.fc} MPa (ACI 318-19 Tabla 19.3.2.1); el grado elegido es menor.`]);
+  if ((ex.id === 'F1' || ex.id === 'F2' || ex.id === 'F3') && !conAire) r.av.push(['bad', 'Las clases F1–F3 requieren aire incorporado (ACI 318-19 Tabla 19.3.3.1).']);
+  // ---- 3. Agua y aire ----
+  const iD = Math.max(0, DH_DN.indexOf(inp.dn)); r.dn = inp.dn;
+  const asCm = inp.asent, asMm = asCm * 10;
+  const tabW = conAire ? DH_AGUA_CA : DH_AGUA_SA;
+  r.aguaTabla = dhInterp([[37.5, tabW[0][iD]], [87.5, tabW[1][iD]], [162.5, tabW[2][iD]]], Math.max(25, Math.min(175, asMm)));
+  if (asMm > 175) r.av.push(['warn', 'Asentamiento sobre 17,5 cm: usar aditivo superplastificante en vez de aumentar el agua.']);
+  r.redAditivo = Math.max(0, Math.min(35, inp.redAditivo || 0));
+  r.agua = r.aguaTabla * (1 - r.redAditivo / 100);
+  r.aire = conAire ? DH_AIRE_INC[ex.aire || inp.nivelAire || 'moderada'][iD] : DH_AIRE_ATRAP[iD];
+  // ---- 4. Cemento ----
+  r.cemento = r.agua / r.ac;
+  r.cemMin = inp.cemMin || 0;
+  if (r.cemMin && r.cemento < r.cemMin) { r.av.push(['info', `Cemento calculado ${r.cemento.toFixed(0)} kg/m³ menor que el mínimo adoptado (${r.cemMin} kg/m³): se usa el mínimo (la a/c real baja).`]); r.cemento = r.cemMin; }
+  r.acReal = r.agua / r.cemento;
+  // ---- 5. Grava ----
+  const MF = Math.max(2.4, Math.min(3.0, inp.mf));
+  if (inp.mf < 2.4 || inp.mf > 3.0) r.av.push(['warn', `Módulo de finura ${inp.mf} fuera del rango 2,4–3,0 de la Tabla 6.3.6: se acota. NCh163 recomienda arena con MF entre 2,3 y 3,1.`]);
+  r.vgComp = dhInterp([[2.4, DH_VG[iD][0]], [2.6, DH_VG[iD][1]], [2.8, DH_VG[iD][2]], [3.0, DH_VG[iD][3]]], MF);
+  if (asMm <= 50 && inp.ajusteBajo) r.vgComp *= 1.10;           // ACI 211.1 §6.3.6: mezclas secas (pavimentos) hasta +10 %
+  r.grava = r.vgComp * inp.pucG;                               // kg/m³ seca
+  // ---- 6. Arena por volúmenes absolutos ----
+  r.vAgua = r.agua / 1000; r.vCem = r.cemento / (inp.dCem * 1000); r.vGrava = r.grava / (inp.dG * 1000); r.vAire = r.aire / 100;
+  r.vArena = 1 - r.vAgua - r.vCem - r.vGrava - r.vAire;
+  r.arena = r.vArena * inp.dA * 1000;                          // kg/m³ seca (SSS si densidad SSS)
+  if (r.vArena <= 0.15) r.av.push(['bad', 'Volumen de arena muy bajo o negativo: revisar densidades, PUC de la grava o contenido de pasta.']);
+  r.aditivo = (inp.dosisAditivo || 0) / 100 * r.cemento;       // kg/m³
+  // ---- 7. Corrección por humedad (densidades en condición seca) ----
+  const hA = inp.humA / 100, aA = inp.absA / 100, hG = inp.humG / 100, aG = inp.absG / 100;
+  r.arenaH = r.arena * (1 + hA); r.gravaH = r.grava * (1 + hG);
+  r.aguaLibreA = r.arena * (hA - aA); r.aguaLibreG = r.grava * (hG - aG);
+  r.aguaCorr = r.agua - r.aguaLibreA - r.aguaLibreG;
+  r.masaM3 = r.cemento + r.aguaCorr + r.arenaH + r.gravaH;
+  r.dosisSeca = r.cemento + r.agua + r.arena + r.grava;
+  r.proporcion = [1, r.arena / r.cemento, r.grava / r.cemento];
+  r.arenaPct = r.arena / (r.arena + r.grava) * 100;
+  // ---- 8. Por saco y por amasada ----
+  const saco = inp.saco || 25;
+  r.porSaco = { cem: saco, agua: r.aguaCorr * saco / r.cemento, arena: r.arenaH * saco / r.cemento, grava: r.gravaH * saco / r.cemento };
+  r.porSaco.arenaL = r.porSaco.arena / (inp.dSueltaA || 1500) * 1000; r.porSaco.gravaL = r.porSaco.grava / (inp.dSueltaG || 1450) * 1000;
+  r.porSaco.aguaL = r.porSaco.agua;
+  r.rendSaco = saco / r.cemento * 1000;                        // litros de hormigón por saco
+  r.sacosM3 = r.cemento / saco;
+  const Vb = (inp.betonera || 150) / 1000 * (inp.llenado || 0.7); // m³ de hormigón por amasada
+  r.amasada = { V: Vb, cem: r.cemento * Vb, agua: r.aguaCorr * Vb, arena: r.arenaH * Vb, grava: r.gravaH * Vb };
+  r.amasada.sacos = r.amasada.cem / saco;
+  const bal = inp.balde || 10;
+  r.baldesSaco = { arena: r.porSaco.arenaL / bal, grava: r.porSaco.gravaL / bal, agua: r.porSaco.aguaL / bal };
+  // ---- 9. Volumen total de obra ----
+  r.volObra = inp.volObra || 0; r.desp = inp.desp || 0;
+  const Vt = r.volObra * (1 + r.desp / 100);
+  r.obra = { V: Vt, sacos: Math.ceil(r.cemento * Vt / saco), arenaM3: r.arenaH * Vt / (inp.dSueltaA || 1500), gravaM3: r.gravaH * Vt / (inp.dSueltaG || 1450), aguaL: r.aguaCorr * Vt };
+  if (r.ac < 0.35) r.av.push(['info', 'a/c menor que 0,35: requiere superplastificante y curado cuidadoso.']);
+  if (r.cemento > 500) r.av.push(['warn', `Cemento ${r.cemento.toFixed(0)} kg/m³: contenido alto, aumenta calor de hidratación y retracción. Considerar aditivo reductor de agua.`]);
+  return r;
+}
+
+/* ---------- impresión ---------- */
+function dhTablaM3Html(r, forPrint) {
+  const n = (v, d) => forPrint ? xlsxNum(v, d) : (v == null || !isFinite(v) ? '—' : v.toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d }));
+  const rows = [
+    ['Cemento', r.cemento, r.cemento, r.vCem * 1000],
+    ['Agua', r.agua, r.aguaCorr, r.vAgua * 1000],
+    ['Arena', r.arena, r.arenaH, r.vArena * 1000],
+    ['Grava', r.grava, r.gravaH, r.vGrava * 1000],
+    ['Aire', null, null, r.vAire * 1000],
+  ];
+  if (r.aditivo > 0) rows.push(['Aditivo', r.aditivo, r.aditivo, null]);
+  const cls = forPrint ? 'xlsx-table xlsx-calc-table' : 'results';
+  const td = forPrint ? 'td class="xv-num"' : 'td class="num"';
+  let h = `<table class="${cls}"><tbody><tr${forPrint ? ' class="xlsx-hdr-de"' : ''}><${forPrint ? 'td class="xv-label"' : 'th'}>Componente</${forPrint ? 'td' : 'th'}><${forPrint ? td : 'th class="num"'}>Seco / SSS (kg)</${forPrint ? 'td' : 'th'}><${forPrint ? td : 'th class="num"'}>En obra, corregido (kg)</${forPrint ? 'td' : 'th'}><${forPrint ? td : 'th class="num"'}>Volumen absoluto (L)</${forPrint ? 'td' : 'th'}></tr>`;
+  rows.forEach(([c, a, b, v]) => { h += `<tr><td${forPrint ? ' class="xv-label"' : ''}>${c}</td><${td}>${a == null ? '—' : n(a, 1)}</td><${td}>${b == null ? '—' : n(b, 1)}</td><${td}>${v == null ? '—' : n(v, 1)}</td></tr>`; });
+  h += `<tr><td${forPrint ? ' class="xv-label"' : ''}><b>Total</b></td><${td}><b>${n(r.dosisSeca + (r.aditivo || 0), 0)}</b></td><${td}><b>${n(r.masaM3 + (r.aditivo || 0), 0)}</b></td><${td}><b>1.000,0</b></td></tr></tbody></table>`;
+  return h;
+}
+function dhTablaGradosHtml(lista, forPrint) {
+  const n = (v, d) => forPrint ? xlsxNum(v, d) : v.toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const td = forPrint ? 'td class="xv-num"' : 'td class="num"';
+  const th = t => forPrint ? `<td class="xv-num">${t}</td>` : `<th class="num">${t}</th>`;
+  return `<table class="${forPrint ? 'xlsx-table xlsx-calc-table' : 'results'}"><tbody><tr${forPrint ? ' class="xlsx-hdr-de"' : ''}>${forPrint ? '<td class="xv-label">Grado</td>' : '<th>Grado</th>'}${th("f'cr (MPa)")}${th('a/c')}${th('Cemento (kg/m³)')}${th('Sacos/m³')}${th('Agua obra (L/m³)')}${th('Arena obra (kg/m³)')}${th('Grava obra (kg/m³)')}${th('Proporción C : A : G')}${forPrint ? '<td class="xv-label">Observación</td>' : '<th>Observación</th>'}</tr>` +
+    lista.map(({ g, r }) => `<tr><td${forPrint ? ' class="xv-label"' : ''}><b>${g}</b></td><${td}>${n(r.fcr, 1)}</td><${td}>${n(r.acReal, 2)}</td><${td}>${n(r.cemento, 0)}</td><${td}>${n(r.sacosM3, 1)}</td><${td}>${n(r.aguaCorr, 0)}</td><${td}>${n(r.arenaH, 0)}</td><${td}>${n(r.gravaH, 0)}</td><${td}>1 : ${n(r.proporcion[1], 2)} : ${n(r.proporcion[2], 2)}</td><td${forPrint ? ' class="xv-label"' : ' class="note"'}>${r.fueraTabla ? 'Fuera de la tabla ACI 211.1: requiere superplastificante, ACI 211.4R y mezclas de prueba' : (r.cemento > 500 ? 'Cemento alto: usar aditivo reductor de agua' : '')}</td></tr>`).join('') + '</tbody></table>';
+}
+
+function renderDosificacion(container) {
+  container.innerHTML = `
+    <div class="calc-head">
+      <h1>Dosificación de Hormigones</h1>
+      <div class="sub">Dosificación por el método de volúmenes absolutos (ACI 211.1) para los grados de NCh170: resistencia media requerida, razón agua/cemento por resistencia y durabilidad, cantidades por m³ secas y corregidas por humedad, por saco de cemento, por amasada de betonera y tabla comparativa para todos los grados.</div>
+    </div>
+
+    <div class="panel">
+      <h3>1 · Resistencia y durabilidad</h3>
+      <div class="field-grid">
+        <div class="field"><label>Grado del hormigón (NCh170)</label><select id="dh_grado">${DH_GRADOS.map(([g, f]) => `<option value="${g}"${g === 'G25' ? ' selected' : ''}>${g} — f'c = ${f} MPa</option>`).join('')}</select></div>
+        <div class="field"><label>Criterio de resistencia media requerida f'cr</label><select id="dh_criterio"><option value="NCH170">NCh170 — fracción defectuosa (f'c + t·s)</option><option value="ACI_S">ACI 318-19 — con desviación estándar conocida</option><option value="ACI_N" selected>ACI 318-19 — sin datos de ensayos</option></select></div>
+        <div class="field" id="dh_wrapT"><label>Fracción defectuosa (NCh170)</label><select id="dh_t"><option value="1.282">10 % — t = 1,282</option><option value="1.645">5 % — t = 1,645</option><option value="2.054">2 % — t = 2,054</option><option value="2.326">1 % — t = 2,326</option></select></div>
+        <div class="field" id="dh_wrapS"><label>Desviación estándar s de la planta (MPa; vacío = supuesta)</label><input type="text" inputmode="decimal" id="dh_s" value="" placeholder="Ej.: 4,5"></div>
+        <div class="field" id="dh_wrapN"><label>N° de ensayos consecutivos de la planta</label><input type="text" inputmode="decimal" id="dh_nEns" value="30"></div>
+        <div class="field"><label>Clase de exposición (ACI 318-19 Tabla 19.3.1.1)</label><select id="dh_expo">${DH_EXPO.map(e => `<option value="${e.id}">${e.n}</option>`).join('')}</select></div>
+        <div class="field"><label>Aire incorporado</label><select id="dh_aire"><option value="No">No</option><option value="Si">Sí — con aditivo incorporador de aire</option></select></div>
+        <div class="field"><label>Cemento mínimo adoptado (kg/m³; 0 = sin mínimo)</label><input type="text" inputmode="decimal" id="dh_cemMin" value="0"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>2 · Docilidad y aditivo</h3>
+      <div class="field-grid">
+        <div class="field"><label>Tamaño máximo nominal del árido (mm)</label><select id="dh_dn">${DH_DN.map(d => `<option value="${d}"${d === 20 ? ' selected' : ''}>${String(d).replace('.', ',')} mm</option>`).join('')}</select></div>
+        <div class="field"><label>Asentamiento de cono de Abrams (cm)</label><input type="text" inputmode="decimal" id="dh_asent" value="8" list="dl_dh_asent"><datalist id="dl_dh_asent"><option value="3">2–4 cm — seco (pavimentos, prefabricados)</option><option value="7">5–9 cm — plástico (vigas, losas, muros)</option><option value="12">10–15 cm — fluido (elementos muy armados, bombeo)</option></datalist></div>
+        <div class="field"><label>Reducción de agua por aditivo plastificante (%)</label><input type="text" inputmode="decimal" id="dh_redAd" value="0" list="dl_dh_red"><datalist id="dl_dh_red"><option value="0">0 — sin aditivo</option><option value="8">8 % — plastificante</option><option value="15">15 % — superplastificante (dosis media)</option><option value="25">25 % — superplastificante (dosis alta)</option></datalist></div>
+        <div class="field"><label>Dosis de aditivo (% del peso del cemento)</label><input type="text" inputmode="decimal" id="dh_dosisAd" value="0"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>3 · Materiales</h3>
+      <div class="field-grid">
+        <div class="field"><label>Densidad del cemento (t/m³)</label><input type="text" inputmode="decimal" id="dh_dCem" value="2.95" list="dl_dh_dc"><datalist id="dl_dh_dc"><option value="2.85">2,85 — cemento puzolánico</option><option value="2.95">2,95 — puzolánico / siderúrgico corriente</option><option value="3.10">3,10 — cemento portland</option></datalist></div>
+        <div class="field"><label>Peso del saco de cemento (kg)</label><input type="text" inputmode="decimal" id="dh_saco" value="25"></div>
+        <div class="field"><label>Arena — densidad real seca (t/m³)</label><input type="text" inputmode="decimal" id="dh_dA" value="2.60"></div>
+        <div class="field"><label>Arena — módulo de finura</label><input type="text" inputmode="decimal" id="dh_mf" value="2.8"></div>
+        <div class="field"><label>Arena — absorción (%)</label><input type="text" inputmode="decimal" id="dh_absA" value="1.5"></div>
+        <div class="field"><label>Arena — humedad en obra (%)</label><input type="text" inputmode="decimal" id="dh_humA" value="4.0"></div>
+        <div class="field"><label>Arena — densidad aparente suelta (kg/m³)</label><input type="text" inputmode="decimal" id="dh_dSA" value="1500"></div>
+        <div class="field"><label>Grava — densidad real seca (t/m³)</label><input type="text" inputmode="decimal" id="dh_dG" value="2.65"></div>
+        <div class="field"><label>Grava — densidad aparente compactada (kg/m³)</label><input type="text" inputmode="decimal" id="dh_pucG" value="1600"></div>
+        <div class="field"><label>Grava — absorción (%)</label><input type="text" inputmode="decimal" id="dh_absG" value="1.0"></div>
+        <div class="field"><label>Grava — humedad en obra (%)</label><input type="text" inputmode="decimal" id="dh_humG" value="0.5"></div>
+        <div class="field"><label>Grava — densidad aparente suelta (kg/m³)</label><input type="text" inputmode="decimal" id="dh_dSG" value="1450"></div>
+      </div>
+      <p class="note">Densidades, absorción y módulo de finura según los ensayos de los áridos (NCh1116, NCh1117, NCh1239, NCh165). La humedad se mide el día de la faena: cambia el agua a agregar.</p>
+    </div>
+
+    <div class="panel">
+      <h3>4 · Faena</h3>
+      <div class="field-grid">
+        <div class="field"><label>Capacidad de la betonera (L)</label><input type="text" inputmode="decimal" id="dh_bet" value="150"></div>
+        <div class="field"><label>Llenado útil de la betonera (fracción)</label><input type="text" inputmode="decimal" id="dh_llen" value="0.7"></div>
+        <div class="field"><label>Volumen del balde o carretilla de medida (L)</label><input type="text" inputmode="decimal" id="dh_balde" value="10" list="dl_dh_bal"><datalist id="dl_dh_bal"><option value="10">10 L — balde</option><option value="20">20 L — balde grande</option><option value="60">60 L — carretilla</option></datalist></div>
+        <div class="field"><label>Volumen de hormigón a fabricar (m³)</label><input type="text" inputmode="decimal" id="dh_vol" value="1"></div>
+        <div class="field"><label>Pérdidas y desperdicio (%)</label><input type="text" inputmode="decimal" id="dh_desp" value="5"></div>
+      </div>
+    </div>
+
+    <div class="panel"><h3>5 · Resultado — dosificación por m³</h3><div id="dh_res"></div><div id="dh_av" style="display:grid;gap:.4rem;margin-top:.6rem"></div></div>
+    <div class="panel"><h3>6 · Por saco de cemento y por amasada</h3><div id="dh_saco_res"></div></div>
+    <div class="panel"><h3>7 · Esquema de la dosificación por m³</h3><div id="dh_esqBarra"></div></div>
+    <div class="panel"><h3>8 · Comparación de grados con los mismos materiales</h3><div id="dh_tabla" style="overflow-x:auto"></div>
+      <p class="note">Misma exposición, docilidad, aditivo y áridos. Útil para elegir el grado y cotizar cemento.</p></div>
+    <div class="panel">
+      <div class="disclosure">Dosificación teórica de partida (ACI 211.1, volúmenes absolutos). Debe ajustarse con mezclas de prueba y confirmarse con ensayos de compresión (NCh1037) y de docilidad (NCh1019) antes de su uso en obra. La resistencia media requerida, el control de producción y la aceptación del hormigón se rigen por NCh170 y NCh1998; para hormigón premezclado, la dosificación es responsabilidad de la planta. Densidades de áridos en condición seca: el agua se corrige por humedad y absorción.</div>
+    </div>
+    <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>
+  `;
+  const v = id => { const x = parseFloat(String(document.getElementById(id).value).replace(',', '.')); return isNaN(x) ? 0 : x; };
+  function leer(fc) {
+    return { fc, criterio: document.getElementById('dh_criterio').value, t: v('dh_t'), s: v('dh_s'), nEnsayos: v('dh_nEns'),
+      expo: document.getElementById('dh_expo').value, aireInc: document.getElementById('dh_aire').value === 'Si', cemMin: v('dh_cemMin'),
+      dn: v('dh_dn'), asent: v('dh_asent'), redAditivo: v('dh_redAd'), dosisAditivo: v('dh_dosisAd'),
+      dCem: v('dh_dCem') || 2.95, saco: v('dh_saco') || 25, dA: v('dh_dA') || 2.6, mf: v('dh_mf') || 2.8, absA: v('dh_absA'), humA: v('dh_humA'), dSueltaA: v('dh_dSA') || 1500,
+      dG: v('dh_dG') || 2.65, pucG: v('dh_pucG') || 1600, absG: v('dh_absG'), humG: v('dh_humG'), dSueltaG: v('dh_dSG') || 1450,
+      betonera: v('dh_bet') || 150, llenado: v('dh_llen') || 0.7, balde: v('dh_balde') || 10, volObra: v('dh_vol'), desp: v('dh_desp') };
+  }
+  function recalc() {
+    const crit = document.getElementById('dh_criterio').value;
+    document.getElementById('dh_wrapT').hidden = crit !== 'NCH170';
+    document.getElementById('dh_wrapS').hidden = crit === 'ACI_N';
+    document.getElementById('dh_wrapN').hidden = crit !== 'ACI_S';
+    const g = document.getElementById('dh_grado').value, fc = (DH_GRADOS.find(x => x[0] === g) || ['G25', 25])[1];
+    const inp = leer(fc), r = calcDosificacion(inp);
+    if (crit === 'ACI_S' && !(inp.s > 0)) r.av.unshift(['warn', 'Ingresa la desviación estándar s o cambia a "sin datos de ensayos".']);
+    if (r.sSupuesta) r.av.unshift(['info', `Sin desviación estándar de la planta: se supone s = ${r.sUsada.toFixed(1).replace('.', ',')} MPa (control de producción medio). Reemplázala por la real.`]);
+    const n = (x, d) => x.toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d });
+    document.getElementById('dh_res').innerHTML = `
+      <table class="results">
+        <tr><td>f'c del grado ${g}</td><td class="num">${n(fc, 1)} MPa</td></tr>
+        <tr><td>f'cr — ${esc(r.fcrTxt)}</td><td class="num"><b>${n(r.fcr, 1)} MPa</b></td></tr>
+        <tr><td>a/c por resistencia (ACI 211.1 Tabla 6.3.4(a))</td><td class="num">${n(r.acRes, 3)}</td></tr>
+        <tr><td>a/c máxima por durabilidad (${esc(r.expo.id)})</td><td class="num">${r.acDur != null ? n(r.acDur, 2) : '—'}</td></tr>
+        <tr><td>a/c de diseño — gobierna ${r.acGob}</td><td class="num"><b>${n(r.acReal, 3)}</b></td></tr>
+        <tr><td>Agua de amasado (Tabla 6.3.3${r.redAditivo ? ', −' + n(r.redAditivo, 0) + ' % por aditivo' : ''})</td><td class="num">${n(r.agua, 1)} L/m³</td></tr>
+        <tr><td>Aire ${document.getElementById('dh_aire').value === 'Si' ? 'incorporado' : 'atrapado'}</td><td class="num">${n(r.aire, 1)} %</td></tr>
+        <tr><td>Volumen de grava compactada por m³ (Tabla 6.3.6)</td><td class="num">${n(r.vgComp, 3)} m³</td></tr>
+        <tr><td>Arena / total de áridos</td><td class="num">${n(r.arenaPct, 1)} %</td></tr>
+        <tr><td>Proporción en peso, cemento : arena : grava (seco)</td><td class="num"><b>1 : ${n(r.proporcion[1], 2)} : ${n(r.proporcion[2], 2)}</b></td></tr>
+      </table>
+      <div style="overflow-x:auto;margin-top:.6rem">${dhTablaM3Html(r, false)}</div>`;
+    document.getElementById('dh_av').innerHTML = r.av.map(([k, t]) => `<div class="global-verdict ${k === 'bad' ? 'bad' : 'ok'}" style="${k === 'bad' ? '' : 'background:var(--surface-alt);color:var(--ink)'}"><span class="label" style="font-size:.85rem;text-transform:none;letter-spacing:0">${esc(t)}</span></div>`).join('');
+    const ps = r.porSaco, am = r.amasada, bs = r.baldesSaco, ob = r.obra;
+    document.getElementById('dh_saco_res').innerHTML = `
+      <table class="results">
+        <tr><th colspan="2">Por saco de ${n(inp.saco, 0)} kg (áridos húmedos, en obra)</th></tr>
+        <tr><td>Cemento</td><td class="num">1 saco</td></tr>
+        <tr><td>Arena</td><td class="num">${n(ps.arena, 1)} kg ≈ ${n(ps.arenaL, 0)} L ≈ ${n(bs.arena, 1)} baldes de ${n(inp.balde, 0)} L</td></tr>
+        <tr><td>Grava</td><td class="num">${n(ps.grava, 1)} kg ≈ ${n(ps.gravaL, 0)} L ≈ ${n(bs.grava, 1)} baldes de ${n(inp.balde, 0)} L</td></tr>
+        <tr><td>Agua a agregar</td><td class="num">${n(ps.aguaL, 1)} L ≈ ${n(bs.agua, 1)} baldes</td></tr>
+        <tr><td>Rendimiento por saco</td><td class="num">${n(r.rendSaco, 0)} L de hormigón</td></tr>
+        <tr><td>Sacos por m³</td><td class="num"><b>${n(r.sacosM3, 1)} sacos</b></td></tr>
+        <tr><th colspan="2">Por amasada de betonera ${n(inp.betonera, 0)} L (${n(am.V * 1000, 0)} L de hormigón)</th></tr>
+        <tr><td>Cemento</td><td class="num">${n(am.cem, 1)} kg (${n(am.sacos, 2)} sacos)</td></tr>
+        <tr><td>Arena húmeda</td><td class="num">${n(am.arena, 1)} kg</td></tr>
+        <tr><td>Grava húmeda</td><td class="num">${n(am.grava, 1)} kg</td></tr>
+        <tr><td>Agua a agregar</td><td class="num">${n(am.agua, 1)} L</td></tr>
+        ${ob.V > 0 ? `<tr><th colspan="2">Para ${n(inp.volObra, 2)} m³ + ${n(inp.desp, 0)} % (${n(ob.V, 2)} m³)</th></tr>
+        <tr><td>Cemento</td><td class="num"><b>${ob.sacos} sacos</b></td></tr>
+        <tr><td>Arena (suelta)</td><td class="num">${n(ob.arenaM3, 2)} m³</td></tr>
+        <tr><td>Grava (suelta)</td><td class="num">${n(ob.gravaM3, 2)} m³</td></tr>
+        <tr><td>Agua</td><td class="num">${n(ob.aguaL, 0)} L</td></tr>` : ''}
+      </table>
+      <p class="note">Medir el agua siempre en volumen exacto; los volúmenes aparentes de áridos son aproximados (dependen del esponjamiento por humedad). Para mejor control, dosificar los áridos en peso.</p>`;
+    // esquema: barra de volúmenes absolutos
+    const comps = [['Agua', r.vAgua, '#5B8DB8'], ['Cemento', r.vCem, '#8C8C8C'], ['Aire', r.vAire, '#D8DEE6'], ['Arena', r.vArena, '#D9B77E'], ['Grava', r.vGrava, '#9A7B5B']];
+    let x = 40; const W = 560;
+    const bars = comps.map(([nm, vv, col]) => { const w = Math.max(0, vv) * W, s0 = x; x += w;
+      return `<rect x="${s0.toFixed(1)}" y="40" width="${w.toFixed(1)}" height="60" fill="${col}" stroke="var(--ink)" stroke-width="0.8"/>` +
+        (w > 34 ? `<text x="${(s0 + w / 2).toFixed(1)}" y="66" font-size="11" text-anchor="middle" fill="#1d1d1d" font-family="IBM Plex Mono, monospace">${nm}</text><text x="${(s0 + w / 2).toFixed(1)}" y="82" font-size="10.5" text-anchor="middle" fill="#1d1d1d" font-family="IBM Plex Mono, monospace">${(vv * 1000).toFixed(0)} L</text>` : `<text x="${(s0 + w / 2).toFixed(1)}" y="118" font-size="10" text-anchor="middle" fill="var(--ink)" font-family="IBM Plex Mono, monospace">${nm} ${(vv * 1000).toFixed(0)} L</text>`); }).join('');
+    document.getElementById('dh_esqBarra').innerHTML = ESQ.svg(m => `${ESQ.text(320, 26, `1 m³ de hormigón ${g} — volúmenes absolutos`, { fontSize: 12, bold: true })}${bars}${ESQ.text(320, 146, `a/c = ${r.acReal.toFixed(2).replace('.', ',')} · cemento ${r.cemento.toFixed(0)} kg/m³ (${r.sacosM3.toFixed(1).replace('.', ',')} sacos) · 1 : ${r.proporcion[1].toFixed(2).replace('.', ',')} : ${r.proporcion[2].toFixed(2).replace('.', ',')}`, { fontSize: 11 })}`, { viewBox: '0 0 640 160', maxWidth: 640, aria: 'Barra de volúmenes absolutos por metro cúbico: agua, cemento, aire, arena y grava' });
+    // tabla de grados
+    const lista = DH_GRADOS.map(([gg, f]) => ({ g: gg, r: calcDosificacion(leer(f)) }));
+    document.getElementById('dh_tabla').innerHTML = dhTablaGradosHtml(lista, false);
+    // impresión
+    const row = (l, val) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${val}</td></tr>`;
+    const datos = `<div class="xlsx-title-bar">DATOS DE ENTRADA</div><table class="xlsx-table"><tbody>
+      ${row('Grado (NCh170)', `${g} — f'c = ${fc} MPa`)}
+      ${row('Criterio de f\'cr', esc(document.getElementById('dh_criterio').selectedOptions[0].text))}
+      ${row('Clase de exposición', esc(r.expo.n))}
+      ${row('Aire incorporado', document.getElementById('dh_aire').value === 'Si' ? 'Sí' : 'No')}
+      ${row('Tamaño máximo nominal / asentamiento', `${xlsxNum(inp.dn, 1)} mm / ${xlsxNum(inp.asent, 1)} cm`)}
+      ${row('Aditivo: reducción de agua / dosis', `${xlsxNum(inp.redAditivo, 0)} % / ${xlsxNum(inp.dosisAditivo, 2)} % del cemento`)}
+      ${row('Cemento: densidad / saco', `${xlsxNum(inp.dCem, 2)} t/m³ / ${xlsxNum(inp.saco, 0)} kg`)}
+      ${row('Arena: densidad / MF / absorción / humedad', `${xlsxNum(inp.dA, 2)} t/m³ / ${xlsxNum(inp.mf, 2)} / ${xlsxNum(inp.absA, 1)} % / ${xlsxNum(inp.humA, 1)} %`)}
+      ${row('Grava: densidad / PUC compactada / absorción / humedad', `${xlsxNum(inp.dG, 2)} t/m³ / ${xlsxNum(inp.pucG, 0)} kg/m³ / ${xlsxNum(inp.absG, 1)} % / ${xlsxNum(inp.humG, 1)} %`)}
+    </tbody></table>`;
+    const calc = `<div class="xlsx-title-bar">CÁLCULO</div>
+      <div class="xlsx-section">1. RESISTENCIA MEDIA REQUERIDA Y RAZÓN A/C</div><table class="xlsx-table xlsx-calc-table"><tbody>
+      <tr><td class="xv-label">f'cr — ${esc(r.fcrTxt)} (MPa)</td><td class="xv-num">${xlsxNum(r.fcr, 1)}</td></tr>
+      <tr><td class="xv-label">a/c por resistencia · por durabilidad</td><td class="xv-num">${xlsxNum(r.acRes, 3)} · ${r.acDur != null ? xlsxNum(r.acDur, 2) : '—'}</td></tr>
+      <tr><td class="xv-label">a/c de diseño (gobierna ${r.acGob})</td><td class="xv-num">${xlsxNum(r.acReal, 3)}</td></tr>
+      <tr><td class="xv-label">Agua (L/m³) · aire (%) · volumen grava compactada (m³/m³)</td><td class="xv-num">${xlsxNum(r.agua, 1)} · ${xlsxNum(r.aire, 1)} · ${xlsxNum(r.vgComp, 3)}</td></tr>
+      <tr><td class="xv-label">Proporción en peso C : A : G (seco)</td><td class="xv-num">1 : ${xlsxNum(r.proporcion[1], 2)} : ${xlsxNum(r.proporcion[2], 2)}</td></tr>
+      </tbody></table>
+      <div class="xlsx-section">2. DOSIFICACIÓN POR m³</div>${dhTablaM3Html(r, true)}
+      <div class="xlsx-section">3. POR SACO Y POR AMASADA</div><table class="xlsx-table xlsx-calc-table"><tbody>
+      <tr><td class="xv-label">Por saco de ${xlsxNum(inp.saco, 0)} kg: arena / grava / agua</td><td class="xv-num">${xlsxNum(ps.arena, 1)} kg / ${xlsxNum(ps.grava, 1)} kg / ${xlsxNum(ps.aguaL, 1)} L</td></tr>
+      <tr><td class="xv-label">Sacos por m³ · rendimiento por saco</td><td class="xv-num">${xlsxNum(r.sacosM3, 1)} · ${xlsxNum(r.rendSaco, 0)} L</td></tr>
+      <tr><td class="xv-label">Amasada betonera ${xlsxNum(inp.betonera, 0)} L: cemento / arena / grava / agua</td><td class="xv-num">${xlsxNum(am.cem, 1)} / ${xlsxNum(am.arena, 1)} / ${xlsxNum(am.grava, 1)} kg / ${xlsxNum(am.agua, 1)} L</td></tr>
+      </tbody></table>
+      <div class="xlsx-section">4. COMPARACIÓN DE GRADOS</div>${dhTablaGradosHtml(lista, true)}
+      <div class="xlsx-desc-row" style="padding:.3rem">Dosificación teórica de partida (ACI 211.1). Ajustar con mezclas de prueba y confirmar con ensayos (NCh1037, NCh1019). Aceptación según NCh170 / NCh1998.</div>`;
+    const resum = `<div class="xlsx-title-bar">RESUMEN</div><div class="xlsx-section">DOSIFICACIÓN POR m³</div>${dhTablaM3Html(r, true)}`;
+    xlsxSetPrintSheets(datos, calc, resum);
+  }
+  container.querySelectorAll('input,select').forEach(el => el.addEventListener('input', recalc));
+  container.querySelectorAll('select').forEach(el => el.addEventListener('change', recalc));
+  recalc();
+}
+
 const CALC_RENDERERS = { memorias: renderMemorias, eett: renderEETT, vigaFundTorsion: renderVigaFundTorsion, costaneras: renderCostaneras, perfilesH: renderPerfilesH, flexionAtiesadores: renderFlexionAtiesadores,
   estanqueAcero: renderEstanqueAcero, fundacionEquipoDinamico: renderFundacionEquipoDinamico,
   muroBerlines: renderMuroBerlines, costanerasMadera: renderCostanerasMadera,
@@ -43497,7 +43835,8 @@ const CALC_RENDERERS = { memorias: renderMemorias, eett: renderEETT, vigaFundTor
   fundacionesDirectas: renderFundacionesDirectas, cuerdaVida: renderCuerdaVida, factorMasividad: renderFactorMasividad,
   proteccionFuego: renderProteccionFuego, asimilacionFuego: renderAsimilacionFuego, bibliotecaNormas: renderBibliotecaNormas, sobreanchoMadera: renderSobreanchoMadera, seleccionPernos: renderSeleccionPernos,
   chimeneaAcero: renderChimeneaAcero,
-  propPerfiles: renderPropPerfiles };
+  propPerfiles: renderPropPerfiles,
+  dosificacion: renderDosificacion };
 
 function renderHome(container) {
   const ready = TOOLS.filter(t => t.calc).length;
@@ -43661,7 +44000,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261006-1916. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261006-1930. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
