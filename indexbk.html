@@ -1,4 +1,16 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html><html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0060c1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mesa Cálculo">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>[hidden]:not([hidden=until-found i]){display:none!important}</style>
+</head><body>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mesa de Cálculo</title>
@@ -3159,79 +3171,6 @@ function calcPlacaBaseGeom(inp) {
   return {A1,A2:A2v,sqrtA2A1,fpMax,phiPp,okAplast, m,n,lval, L,W,semiPeralte, e,qmax,PuQmax,ecrit,casoMomentoGrande, f,Y,q,okYq, Tu,TuPorPerno, tpReqApoyo,brazoTrac,Mtrac,tpReqTrac,tpReq,tpReqMm,okEspesor, global: okAplast&&okYq&&okEspesor};
 }
 
-/* =========================================================================
-   PLACAS BASE -- DISEÑO POR CAPACIDAD DE LA COLUMNA (opción de la Mesa web)
-   Criterios:
-   - 'manual'    : solicitaciones ingresadas (Pu/Vu/Mu del análisis, ya combinadas y mayoradas).
-   - 'capacidad' : la base se diseña para un % de la resistencia a flexión de la columna:
-                   de diseño φMp = 0,90·Fy·Z (AISC 360 F2/F7/F8) o esperada 1,1·Ry·Fy·Z
-                   (AISC 341-16 §D2.6c(a) / NCh2369). El corte asociado es Vu = k·Mcap/H
-                   (k=1 voladizo, k=2 doble curvatura) o el ingresado. Pu se mantiene
-                   el ingresado (axial compatible). Los pernos de anclaje se diseñan para
-                   la tracción que resulta en la placa (ACI 318-19 §17.10.5.3(c)).
-   - 'omega'     : Vu y Mu ingresados amplificados por Ω0 (ACI 318-19 §17.10.5.3(d)).
-   Z en cm³, Fy en kgf/cm², momentos en Ton·m. Interacción P-M no considerada
-   (Mp sin reducir por la carga axial: cota superior, conservadora).
-   ========================================================================= */
-function pbModuloPlastico(shape, prof, t) {
-  const pos = v => (v > 0 ? v : 0);
-  if (shape === 'H') {
-    const d = +prof.d || 0, bf = +prof.bf || 0, tf = +t.tf || 0, tw = +t.tw || 0;
-    if (!(d > 2*tf && bf > 0 && tf > 0 && tw > 0)) return { Zx: 0, Zy: 0 };
-    return { Zx: bf*tf*(d - tf) + tw*Math.pow(d - 2*tf, 2)/4,
-             Zy: bf*bf*tf/2 + (d - 2*tf)*tw*tw/4 };
-  }
-  if (shape === 'Cajon') {
-    const H = +prof.Hc || 0, B = +prof.Bc || 0, e = +t.t || 0;
-    if (!(H > 2*e && B > 2*e && e > 0)) return { Zx: 0, Zy: 0 };
-    return { Zx: B*H*H/4 - (B - 2*e)*Math.pow(H - 2*e, 2)/4,
-             Zy: H*B*B/4 - (H - 2*e)*Math.pow(B - 2*e, 2)/4 };
-  }
-  const D = +prof.D || 0, e = +t.t || 0;
-  if (!(D > 2*e && e > 0)) return { Zx: 0, Zy: 0 };
-  const Z = (Math.pow(D, 3) - Math.pow(pos(D - 2*e), 3))/6;
-  return { Zx: Z, Zy: Z };
-}
-function pbCargasDiseno(inp) {
-  // inp: {criterio, tipoApoyo, Pu, Vu, Mu, MuY, biax, shape, prof, tCol:{tf,tw,t}, FyCol (kgf/cm²), Ry,
-  //       tipoCap, pct, Hcol (m), condCol, omega}
-  const crit = inp.criterio || 'manual';
-  const art = inp.tipoApoyo === 'Articulado';
-  const out = { criterio: crit, Pu: inp.Pu, Vu: inp.Vu, Mu: inp.Mu, MuY: inp.MuY, Zx: 0, Zy: 0, McapX: 0, McapY: 0,
-                VuCap: null, txt: 'Solicitaciones ingresadas (Pu, Vu, Mu del análisis)', aviso: '' };
-  if (crit === 'omega') {
-    const om = Math.max(+inp.omega || 1, 1);
-    out.omega = om;
-    out.Vu = om*inp.Vu; out.Mu = art ? 0 : om*inp.Mu; out.MuY = art ? 0 : om*inp.MuY;
-    out.txt = `Solicitaciones sísmicas amplificadas por Ω0 = ${fmt2(om)} (ACI 318-19 §17.10.5.3(d))`;
-    return out;
-  }
-  if (crit !== 'capacidad') return out;
-  const Z = pbModuloPlastico(inp.shape, inp.prof, inp.tCol);
-  const esperada = inp.tipoCap === 'esperada';
-  const fac = esperada ? 1.1*(+inp.Ry || 1) : 0.90;
-  const pct = Math.max(0, +inp.pct || 0)/100;
-  out.Zx = Z.Zx; out.Zy = Z.Zy; out.fac = fac; out.pct = 100*pct; out.esperada = esperada;
-  out.McapX = fac*inp.FyCol*Z.Zx/1e5;
-  out.McapY = fac*inp.FyCol*Z.Zy/1e5;
-  out.txt = `Por capacidad de la columna: ${fmt0(100*pct)} % de ${esperada ? '1,1·Ry·Fy·Z (esperada, AISC 341-16 §D2.6c)' : 'φMp = 0,90·Fy·Z (de diseño, AISC 360)'}`;
-  if (!(Z.Zx > 0)) out.aviso = 'Faltan espesores del perfil de la columna para calcular Z: se usan las solicitaciones ingresadas.';
-  if (art) {
-    out.aviso = 'Base articulada: no transmite momento, el criterio por capacidad no modifica Mu (=0); Vu se mantiene el ingresado.';
-    out.Mu = 0; out.MuY = 0; return out;
-  }
-  if (!(Z.Zx > 0)) return out;
-  out.Mu = pct*out.McapX;
-  out.MuY = inp.biax ? pct*out.McapY : 0;
-  const H = +inp.Hcol || 0;
-  if (inp.condCol !== 'ingresado' && H > 0) {
-    const k = inp.condCol === 'doble' ? 2 : 1;
-    out.VuCap = k*out.Mu/H;
-    out.Vu = Math.max(out.VuCap, 0);
-  }
-  return out;
-}
-
 function calcCorteSilla(inp) {
   const {fc, Pu, Vu, mu, phiFriccion, w, dEmb, g} = inp;
   const phiVnFriccion = phiFriccion*mu*Pu;
@@ -3938,29 +3877,6 @@ function pbShapeLabel(shape) {
   return 'Tubular circular (HSS/tubo)';
 }
 
-function pbDatosCriterioRows(state, row) {
-  const crit = state.criterio || 'manual';
-  if (crit === 'manual') return row('Criterio de diseño de la base', 'Solicitaciones ingresadas (Pu, Vu, Mu del análisis)');
-  const cd = state._cd || {};
-  let h = row('Criterio de diseño de la base', crit === 'omega' ? 'Solicitaciones sísmicas amplificadas por Ω0 (ACI 318-19 §17.10.5.3(d))' : 'Por capacidad de la columna (AISC 341-16 §D2.6c / ACI 318-19 §17.10.5.3(c))');
-  if (crit === 'omega') {
-    h += row('Ω0 — factor de sobrerresistencia', xlsxNum(state.omega, 2));
-  } else {
-    h += row('Porcentaje de la capacidad de la columna [%]', xlsxNum(state.pct, 0));
-    h += row('Capacidad considerada', state.tipoCap === 'esperada' ? 'Esperada 1,1·Ry·Fy·Z (sísmica)' : 'De diseño φMp = 0,90·Fy·Z (LRFD)');
-    h += row('Fy — acero de la columna [t/cm²]', xlsxNum(state.FyColTon, 3));
-    if (state.tipoCap === 'esperada') h += row('Ry — razón fluencia esperada / mínima', xlsxNum(state.Ry, 2));
-    h += state.shape === 'H' ? row('tf / tw — espesores de ala y alma de la columna [cm]', xlsxNum(state.tfCol, 2) + ' / ' + xlsxNum(state.twCol, 2))
-                             : row('t — espesor de pared de la columna [cm]', xlsxNum(state.tCol, 2));
-    h += row('Corte asociado a la capacidad', state.condCol === 'ingresado' ? 'Vu ingresado' : (state.condCol === 'doble' ? 'Doble curvatura: Vu = 2·M/H' : 'Voladizo: Vu = M/H'));
-    if (state.condCol !== 'ingresado') h += row('H — altura libre de la columna [m]', xlsxNum(state.Hcol, 2));
-    h += row('Z — módulo plástico x-x / y-y [cm³]', xlsxNum(cd.Zx, 1) + ' / ' + xlsxNum(cd.Zy, 1));
-    h += row('Capacidad a flexión de la columna x-x / y-y [Ton·m]', xlsxNum(cd.McapX, 2) + ' / ' + xlsxNum(cd.McapY, 2));
-  }
-  h += row('Valores ingresados Vu [Ton] / Mux [Ton·m]' + (state.biaxial === 'Si' ? ' / Muy [Ton·m]' : ''), xlsxNum(state.VuIn, 2) + ' / ' + xlsxNum(state.MuIn, 2) + (state.biaxial === 'Si' ? ' / ' + xlsxNum(state.MuYIn, 2) : ''));
-  h += row('Pernos de anclaje: Nua = Tu de la placa; Vua', state.vuaCap === 'silla' ? 'Vua = 0 (corte por fricción / silla)' : 'Vua = Vu de diseño');
-  return h;
-}
 function placasBaseDatosHtml(state) {
   function row(label, value, span) {
     return `<tr><td class="xv-label">${label}</td><td class="xv-input" colspan="${span || 3}">${value}</td></tr>`;
@@ -4006,7 +3922,6 @@ function placasBaseDatosHtml(state) {
       ${row('Mux — momento mayorado, eje fuerte x-x (0 si Articulado) [Ton·m]', xlsxNum(state.Mu, 2))}
       ${row('Verificación en ambos ejes', state.biaxial === 'Si' ? 'Sí' : 'No — solo eje fuerte')}
       ${state.biaxial === 'Si' ? row('Muy — momento mayorado, eje débil y-y [Ton·m]', xlsxNum(state.MuY, 2)) : ''}
-      ${pbDatosCriterioRows(state, row)}
     </tbody></table>
 
     <div class="xlsx-section">D. Geometría del perfil de columna (forma seleccionada)</div>
@@ -4453,7 +4368,6 @@ function renderPlacasBase(container) {
     mu:0.55, phiFriccion:0.75, w:30, dEmb:15, g:2.5,
     lambdaA:1, fya:2.53, condicionHormigon:'Fisurado', phiAceroTrac:0.75, phiAceroCorte:0.65, phiHormigon:0.7,
     da_mm:28, hef:40, ca1:15, ca2:15, s:20, ha:60, nTrac:4, nCorte:2, corteViaGrout:true, Nua:45, Vua:17,
-    criterio:'manual', pct:100, tipoCap:'esperada', FyColTon:2.53, Ry:1.5, tfCol:1.2, twCol:0.8, tCol:0.8, Hcol:4, condCol:'voladizo', omega:2, vuaCap:'pernos',
   };
 
   container.innerHTML = `
@@ -4489,21 +4403,6 @@ function renderPlacasBase(container) {
         <div class="field" id="pb_MuYWrap"><label>Muy — momento mayorado, eje débil y-y (Ton·m)</label><input type="text" inputmode="decimal" step="0.1" id="pb_MuY" value="${state.MuY}" list="dl_pb_MuY"><datalist id="dl_pb_MuY"><option value="1">Momento menor en eje débil</option><option value="3">Momento moderado en eje débil</option><option value="5">Momento importante en eje débil</option></datalist></div>
       </div>
       <div class="note" id="pb_notaApoyo"></div>
-      <div class="field-grid" style="margin-top:.7rem">
-        <div class="field"><label>Criterio de diseño de la base</label><select id="pb_criterio"><option value="manual">Solicitaciones ingresadas (Pu, Vu, Mu del análisis)</option><option value="capacidad">Por capacidad de la columna (% de su resistencia a flexión)</option><option value="omega">Solicitaciones sísmicas amplificadas por Ω0</option></select></div>
-        <div class="field pb-cap"><label>% de la capacidad de la columna</label><input type="text" inputmode="decimal" id="pb_pct" value="${state.pct}" list="dl_pb_pct"><datalist id="dl_pb_pct"><option value="100">100 % — capacidad completa (base sísmica)</option><option value="75">75 %</option><option value="50">50 % — mínimo usual de diseño</option></datalist></div>
-        <div class="field pb-cap"><label>Capacidad de la columna considerada</label><select id="pb_tipoCap"><option value="esperada">Esperada 1,1·Ry·Fy·Z (AISC 341-16 §D2.6c / NCh2369, sísmica)</option><option value="diseno">De diseño φMp = 0,90·Fy·Z (AISC 360, LRFD)</option></select></div>
-        <div class="field pb-cap"><label>Fy — acero de la columna (t/cm²)</label><input type="text" inputmode="decimal" id="pb_FyCol" value="${state.FyColTon}" list="dl_pb_FyCol"><datalist id="dl_pb_FyCol"><option value="2.53">ASTM A36</option><option value="2.7">NCh203 A270ES (A42-27ES)</option><option value="3.234">ASTM A500 Gr B (HSS rectangular)</option><option value="3.515">ASTM A572 Gr50 / A992 / A500 Gr C</option><option value="2.461">ASTM A53 Gr B (tubo circular)</option></datalist></div>
-        <div class="field pb-cap pb-capEsp"><label>Ry — razón fluencia esperada / mínima</label><input type="text" inputmode="decimal" id="pb_Ry" value="${state.Ry}" list="dl_pb_Ry"><datalist id="dl_pb_Ry"><option value="1.5">ASTM A36 (AISC 341 Tabla A3.1)</option><option value="1.1">ASTM A572 Gr50 / A992</option><option value="1.4">ASTM A500 Gr B</option><option value="1.3">ASTM A500 Gr C</option><option value="1.6">ASTM A53 Gr B</option></datalist></div>
-        <div class="field pb-cap pb-capH"><label>tf — espesor del ala de la columna (cm)</label><input type="text" inputmode="decimal" id="pb_tfCol" value="${state.tfCol}" list="dl_pb_tfCol"><datalist id="dl_pb_tfCol"><option value="0.8">Ala delgada</option><option value="1.2">Ala típica</option><option value="1.6">Ala gruesa</option></datalist></div>
-        <div class="field pb-cap pb-capH"><label>tw — espesor del alma de la columna (cm)</label><input type="text" inputmode="decimal" id="pb_twCol" value="${state.twCol}" list="dl_pb_twCol"><datalist id="dl_pb_twCol"><option value="0.6">Alma delgada</option><option value="0.8">Alma típica</option><option value="1.0">Alma gruesa</option></datalist></div>
-        <div class="field pb-cap pb-capT"><label>t — espesor de pared del cajón / tubo (cm)</label><input type="text" inputmode="decimal" id="pb_tCol" value="${state.tCol}" list="dl_pb_tCol"><datalist id="dl_pb_tCol"><option value="0.5">Pared delgada</option><option value="0.8">Pared típica</option><option value="1.2">Pared gruesa</option></datalist></div>
-        <div class="field pb-cap"><label>Corte de diseño asociado a la capacidad</label><select id="pb_condCol"><option value="voladizo">Columna en voladizo: Vu = M/H</option><option value="doble">Doble curvatura: Vu = 2·M/H</option><option value="ingresado">Usar el Vu ingresado</option></select></div>
-        <div class="field pb-cap pb-capHcol"><label>H — altura libre de la columna (m)</label><input type="text" inputmode="decimal" id="pb_Hcol" value="${state.Hcol}" list="dl_pb_Hcol"><datalist id="dl_pb_Hcol"><option value="3">Columna baja</option><option value="4">Columna típica</option><option value="6">Nave industrial</option><option value="9">Nave alta</option></datalist></div>
-        <div class="field pb-om"><label>Ω0 — factor de sobrerresistencia</label><input type="text" inputmode="decimal" id="pb_omega" value="${state.omega}" list="dl_pb_omega"><datalist id="dl_pb_omega"><option value="2">2,0 — marcos arriostrados concéntricos / valor usual</option><option value="2.5">2,5 — marcos arriostrados excéntricos</option><option value="3">3,0 — marcos de momento</option></datalist></div>
-        <div class="field pb-capAnc"><label>Corte en los pernos de anclaje (criterio no manual)</label><select id="pb_vuaCap"><option value="pernos">Los pernos toman el corte de diseño</option><option value="silla">El corte lo toman la fricción / silla (Vua = 0)</option></select></div>
-      </div>
-      <div id="pb_capBox" style="margin-top:.7rem"></div>
     </div>
 
     <div class="panel">
@@ -4667,23 +4566,6 @@ function renderPlacasBase(container) {
     state.fya = state.fyaTon * KGF_POR_TON;
     state.condicionHormigon = document.getElementById('pb_condHorm').value;
     state.corteViaGrout = document.getElementById('pb_corteGrout').value==='si';
-    const gv = id => document.getElementById(id);
-    state.criterio = gv('pb_criterio').value;
-    state.pct = parseFloat(gv('pb_pct').value)||0;
-    state.tipoCap = gv('pb_tipoCap').value;
-    state.FyColTon = parseFloat(gv('pb_FyCol').value)||0;
-    state.FyCol = state.FyColTon * KGF_POR_TON;
-    state.Ry = parseFloat(gv('pb_Ry').value)||1;
-    state.tfCol = parseFloat(gv('pb_tfCol').value)||0;
-    state.twCol = parseFloat(gv('pb_twCol').value)||0;
-    state.tCol = parseFloat(gv('pb_tCol').value)||0;
-    state.condCol = gv('pb_condCol').value;
-    state.Hcol = parseFloat(gv('pb_Hcol').value)||0;
-    state.omega = parseFloat(gv('pb_omega').value)||1;
-    state.vuaCap = gv('pb_vuaCap').value;
-    // valores ingresados (antes de aplicar el criterio de diseño)
-    state.PuIn = state.Pu; state.VuIn = state.Vu; state.MuIn = state.Mu; state.MuYIn = state.MuY;
-    state.NuaIn = state.Nua; state.VuaIn = state.Vua;
   }
 
   function recalc() {
@@ -4694,51 +4576,12 @@ function renderPlacasBase(container) {
       : 'Base empotrada: Mu se transmite íntegramente a la placa y a los pernos de anclaje del lado traccionado.';
 
     const prof = state.shape==='H' ? {d:state.d,bf:state.bf} : state.shape==='Cajon' ? {Hc:state.Hc,Bc:state.Bc} : {D:state.D};
-    // ---- criterio de diseño: manual / por capacidad de la columna / Ω0 ----
-    const crit = state.criterio;
-    const esCapPB = crit === 'capacidad', esOmPB = crit === 'omega', noManual = crit !== 'manual';
-    container.querySelectorAll('.pb-cap').forEach(e => e.style.display = esCapPB ? '' : 'none');
-    container.querySelectorAll('.pb-capH').forEach(e => e.style.display = (esCapPB && state.shape==='H') ? '' : 'none');
-    container.querySelectorAll('.pb-capT').forEach(e => e.style.display = (esCapPB && state.shape!=='H') ? '' : 'none');
-    container.querySelectorAll('.pb-capEsp').forEach(e => e.style.display = (esCapPB && state.tipoCap==='esperada') ? '' : 'none');
-    container.querySelectorAll('.pb-capHcol').forEach(e => e.style.display = (esCapPB && state.condCol!=='ingresado') ? '' : 'none');
-    container.querySelectorAll('.pb-om').forEach(e => e.style.display = esOmPB ? '' : 'none');
-    container.querySelectorAll('.pb-capAnc').forEach(e => e.style.display = noManual ? '' : 'none');
-    ['pb_Nua','pb_Vua'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = noManual; });
-    const cd = pbCargasDiseno({criterio:crit, tipoApoyo:state.tipoApoyo, Pu:state.PuIn, Vu:state.VuIn, Mu:state.MuIn, MuY:state.MuYIn,
-      biax: state.biaxial==='Si', shape:state.shape, prof, tCol:{tf:state.tfCol, tw:state.twCol, t:state.tCol},
-      FyCol:state.FyCol, Ry:state.Ry, tipoCap:state.tipoCap, pct:state.pct, Hcol:state.Hcol, condCol:state.condCol, omega:state.omega});
-    state._cd = cd;
-    state.Vu = cd.Vu; state.Mu = cd.Mu; state.MuY = cd.MuY;
     const g = calcPlacaBaseGeom({shape:state.shape, fc:state.fc, Fy:state.Fy, phiC:state.phiC, Pu:state.Pu, Vu:state.Vu, Mu:state.Mu,
       N:state.N, B:state.B, tp_mm:state.tp_mm, A2:state.A2, prof, fLever:state.fLever, nPernosTrac:state.nPernosTrac});
     const biax = state.biaxial === 'Si';
     const gy = biax ? calcPlacaBaseGeom({shape:state.shape, fc:state.fc, Fy:state.Fy, phiC:state.phiC, Pu:state.Pu, Vu:state.Vu, Mu:state.MuY,
       N:state.N, B:state.B, tp_mm:state.tp_mm, A2:state.A2, prof, fLever:state.fLeverY, nPernosTrac:state.nPernosTracY, eje:'y'}) : null;
     state._gy = gy;
-    if (noManual) {
-      state.Nua = g.Tu + (gy ? gy.Tu : 0);
-      state.Vua = state.vuaCap === 'silla' ? 0 : state.Vu;
-    }
-    const capRows = esCapPB ? `
-        <tr><td>Z — módulo plástico de la columna, eje fuerte x-x</td><td class="num">${fmt1(cd.Zx)} cm³</td></tr>
-        ${state.biaxial==='Si' ? `<tr><td>Z — módulo plástico de la columna, eje débil y-y</td><td class="num">${fmt1(cd.Zy)} cm³</td></tr>` : ''}
-        <tr><td>Capacidad a flexión ${cd.esperada ? '1,1·Ry·Fy·Z (esperada)' : 'φMp = 0,90·Fy·Z (de diseño)'}, eje x-x</td><td class="num">${fmt2(cd.McapX)} Ton·m</td></tr>
-        ${state.biaxial==='Si' ? `<tr><td>Capacidad a flexión, eje y-y</td><td class="num">${fmt2(cd.McapY)} Ton·m</td></tr>` : ''}
-        ${cd.VuCap!=null ? `<tr><td>Vu asociado = ${state.condCol==='doble'?'2·':''}Mu/H (H = ${fmt2(state.Hcol)} m)</td><td class="num">${fmt2(cd.VuCap)} Ton</td></tr>` : ''}` : '';
-    document.getElementById('pb_capBox').innerHTML = !noManual ? '' : `
-      <table class="results">
-        <tr><th colspan="2">Cargas de diseño de la base — ${cd.txt}</th></tr>
-        ${capRows}
-        <tr><td>Pu de diseño (se mantiene el ingresado)</td><td class="num"><b>${fmt2(state.Pu)} Ton</b></td></tr>
-        <tr><td>Vu de diseño</td><td class="num"><b>${fmt2(state.Vu)} Ton</b> <span class="u">(ingresado ${fmt2(state.VuIn)})</span></td></tr>
-        <tr><td>Mux de diseño</td><td class="num"><b>${fmt2(state.Mu)} Ton·m</b> <span class="u">(ingresado ${fmt2(state.MuIn)})</span></td></tr>
-        ${state.biaxial==='Si' ? `<tr><td>Muy de diseño</td><td class="num"><b>${fmt2(state.MuY)} Ton·m</b> <span class="u">(ingresado ${fmt2(state.MuYIn)})</span></td></tr>` : ''}
-        <tr><td>Nua — tracción de diseño de los pernos = Tu de la placa${gy ? ' (x + y, conservador)' : ''}</td><td class="num"><b>${fmt2(state.Nua)} Ton</b></td></tr>
-        <tr><td>Vua — corte de diseño de los pernos</td><td class="num"><b>${fmt2(state.Vua)} Ton</b></td></tr>
-      </table>
-      ${cd.aviso ? `<div class="note" style="color:var(--bad)">${cd.aviso}</div>` : ''}
-      <div class="note">${esCapPB ? 'Mp sin reducción por carga axial (cota superior, conservadora). Con ambos ejes activos, la capacidad se aplica simultáneamente en x e y (conservador). ' : 'Ω0 amplifica Vu y Mu ingresados; Pu no se amplifica (ingresar la axial compatible con la combinación sísmica). '}Los pernos de anclaje toman la tracción Tu que resulta en la placa con estas cargas (ACI 318-19 §17.10.5.3${esCapPB ? '(c)' : '(d)'}); los campos Nua y Vua de la sección 10 quedan deshabilitados. En zonas sísmicas, verificar además el factor 0,75 de §17.10.5.4 sobre las resistencias de hormigón.</div>`;
 
     document.getElementById('pb_esquema').innerHTML = svgPlacasBase(state, g);
 
@@ -4836,10 +4679,6 @@ function renderPlacasBase(container) {
   }
 
   document.getElementById('pb_biaxial').value = state.biaxial;
-  document.getElementById('pb_criterio').value = state.criterio;
-  document.getElementById('pb_tipoCap').value = state.tipoCap;
-  document.getElementById('pb_condCol').value = state.condCol;
-  document.getElementById('pb_vuaCap').value = state.vuaCap;
   document.getElementById('pb_shape').addEventListener('change', () => {
     state.shape = document.getElementById('pb_shape').value;
     renderProfFields();
@@ -4960,8 +4799,7 @@ function anclajesHiltiDatosHtml(state) {
     <table class="xlsx-table"><tbody>
       ${row('Tipo de anclaje (producto)', state.producto)}
       ${row('Tamaño de anclaje', state.tamano)}
-      ${state.criterio === 'omega' ? row('Criterio de las cargas de diseño', 'Sísmicas amplificadas por Ω0 = ' + xlsxNum(state.omega, 2) + ' (ACI 318-19 §17.10.5.3(d)); ingresadas N = ' + xlsxNum(state.NreqIn, 2) + ' Ton, V = ' + xlsxNum(state.VreqIn, 2) + ' Ton') : ''}
-      ${row('N_req_total — Tracción total' + (state.criterio === 'omega' ? ' de diseño (Ω0·N)' : '') + ' [Ton]', xlsxNum(state.Nreq, 2))}
+      ${row('N_req_total — Tracción total [Ton]', xlsxNum(state.Nreq, 2))}
       ${row('V_req_total — Corte total [Ton]', xlsxNum(state.Vreq, 2))}
     </tbody></table>`;
 }
@@ -5158,7 +4996,7 @@ function ahFotoReducir(file, cb) {
 }
 
 function renderAnclajesHilti(container) {
-  const state = { producto:'HIT-HY200', tamano:'M16', Nreq:22, Vreq:18, criterio:'manual', omega:2 };
+  const state = { producto:'HIT-HY200', tamano:'M16', Nreq:22, Vreq:18 };
 
   container.innerHTML = `
     <div class="calc-head">
@@ -5176,9 +5014,6 @@ function renderAnclajesHilti(container) {
         <div class="field"><label>Tamaño de anclaje</label><select id="ah_tamano">${anclajesHiltiOptions(state.producto)}</select></div>
         <div class="field"><label>N_req_total — tracción total (Ton)</label><input type="text" inputmode="decimal" step="0.1" id="ah_Nreq" value="${state.Nreq}" list="dl_ah_Nreq"><datalist id="dl_ah_Nreq"><option value="10">Tracción menor — anclaje liviano</option><option value="22">Valor de referencia habitual</option><option value="40">Tracción moderada</option><option value="80">Tracción alta — equipo/soporte pesado</option></datalist></div>
         <div class="field"><label>V_req_total — corte total (Ton)</label><input type="text" inputmode="decimal" step="0.1" id="ah_Vreq" value="${state.Vreq}" list="dl_ah_Vreq"><datalist id="dl_ah_Vreq"><option value="8">Corte menor — anclaje liviano</option><option value="18">Valor de referencia habitual</option><option value="30">Corte moderado</option><option value="50">Corte alto — equipo/soporte pesado</option></datalist></div>
-        <div class="field"><label>Criterio de las cargas de diseño</label><select id="ah_criterio"><option value="manual">Cargas ingresadas (del análisis)</option><option value="omega">Sísmicas amplificadas por Ω0 (ACI 318-19 §17.10.5.3(d))</option></select></div>
-        <div class="field ah-om"><label>Ω0 — factor de sobrerresistencia</label><input type="text" inputmode="decimal" id="ah_omega" value="${state.omega}" list="dl_ah_omega"><datalist id="dl_ah_omega"><option value="2">2,0 — marcos arriostrados / valor usual</option><option value="2.5">2,5</option><option value="3">3,0 — marcos de momento</option></datalist></div>
-        <div class="field ah-om" style="grid-column:1/-1"><div class="note" id="ah_omNota"></div></div>
       </div>
       <div style="flex:0 0 290px;border:1px solid var(--line);border-radius:6px;padding:.6rem;background:#fff">
         <div id="ah_figura"></div>
@@ -5216,15 +5051,6 @@ function renderAnclajesHilti(container) {
     state.tamano = document.getElementById('ah_tamano').value;
     state.Nreq = parseFloat(document.getElementById('ah_Nreq').value)||0;
     state.Vreq = parseFloat(document.getElementById('ah_Vreq').value)||0;
-    state.criterio = document.getElementById('ah_criterio').value;
-    state.omega = Math.max(parseFloat(document.getElementById('ah_omega').value)||1, 1);
-    state.NreqIn = state.Nreq; state.VreqIn = state.Vreq;
-    const om = state.criterio === 'omega';
-    container.querySelectorAll('.ah-om').forEach(e => e.style.display = om ? '' : 'none');
-    if (om) {
-      state.Nreq = state.omega*state.NreqIn; state.Vreq = state.omega*state.VreqIn;
-      document.getElementById('ah_omNota').innerHTML = `Cargas de diseño: N = ${fmt2(state.omega)} × ${fmt2(state.NreqIn)} = <b>${fmt2(state.Nreq)} Ton</b> · V = ${fmt2(state.omega)} × ${fmt2(state.VreqIn)} = <b>${fmt2(state.Vreq)} Ton</b>. Alternativa §17.10.5.3(c): ingresar directamente la fuerza que transmite el elemento fijado al fluir (diseño por capacidad) con el criterio "Cargas ingresadas". En el cálculo final, aplicar además 0,75 a las resistencias de hormigón en tracción (§17.10.5.4).`;
-    }
   }
 
   function pintarFigura(r) {
@@ -5282,7 +5108,6 @@ function renderAnclajesHilti(container) {
   document.getElementById('ah_fotoQuitar').addEventListener('click', () => { ahFotoGuardar(state.producto, ''); recalc(); });
   document.getElementById('ah_producto').value = state.producto;
   document.getElementById('ah_tamano').value = state.tamano;
-  document.getElementById('ah_criterio').value = state.criterio;
   recalc();
 }
 
@@ -5295,35 +5120,6 @@ function renderAnclajesHilti(container) {
 const ES_ACERO_REFUERZO = 2038900; // kgf/cm² — ACI 318-19 §20.2.2.2
 const EPS_CU = 0.003;              // ACI 318-19 §22.2.2.1
 
-/* =========================================================================
-   VIGAS HA -- CORTE POR CAPACIDAD (ACI 318-19 §18.6.5) -- opción de la Mesa web
-   Ve = (Mpr,i + Mpr,j)/ln + Vg ; Mpr con 1,25·fy y φ = 1,0 (§18.6.5.1).
-   Mpr+ con la armadura inferior (As,prov de la sección 5) y Mpr- con la
-   armadura superior en apoyos ingresada aquí. Vc = 0 si la parte sísmica
-   (Mpr,i+Mpr,j)/ln ≥ Ve/2 y Pu < Ag·f'c/20 (§18.6.5.2) -- en vigas Pu≈0.
-   Unidades: cm, kgf/cm², Ton, Ton·m.
-   ========================================================================= */
-function vhMpr(As, fy, fc, b, d) {
-  if (!(As > 0 && b > 0 && d > 0)) return 0;
-  const a = As*1.25*fy/(0.85*fc*b);
-  return As*1.25*fy*(d - a/2)/1e5;
-}
-function vhCorteCapacidad(inp) {
-  // inp: {fc, fy, h, rec, phiE, bInf (compresión con M+), bSup (compresión con M-), nInf, phiInf, nSup, phiSup, ln (m), Vg, Vu}
-  const area = ph => Math.PI*Math.pow(ph/10, 2)/4;
-  const AsInf = inp.nInf*area(inp.phiInf), AsSup = inp.nSup*area(inp.phiSup);
-  const dInf = inp.h - inp.rec - inp.phiE/10 - inp.phiInf/20;
-  const dSup = inp.h - inp.rec - inp.phiE/10 - inp.phiSup/20;
-  const MprPos = vhMpr(AsInf, inp.fy, inp.fc, inp.bInf, dInf);
-  const MprNeg = vhMpr(AsSup, inp.fy, inp.fc, inp.bSup, dSup);
-  const ln = +inp.ln || 0;
-  const Vsis = ln > 0 ? (MprPos + MprNeg)/ln : 0;
-  const Ve = Vsis + Math.max(+inp.Vg || 0, 0);
-  const vc0 = Ve > 0 && Vsis >= 0.5*Ve;
-  const VuDis = Math.max(Ve, +inp.Vu || 0);
-  return { AsInf, AsSup, dInf, dSup, MprPos, MprNeg, Vsis, Ve, vc0, VuDis,
-    rigeVe: Ve >= (+inp.Vu || 0) };
-}
 function calcVigaRectHA(inp) {
   const {fc, fy, lambda, phiTC, phiCC, phiV, b, h, rec, phiE_mm, phiB_mm, Mu, Vu, nBarras, nRamas, s} = inp;
   const epsTy = fy/ES_ACERO_REFUERZO;
@@ -5366,7 +5162,7 @@ function calcVigaRectHA(inp) {
 
   const bwIn = bIn;
   const VcLb = 2*lambda*Math.sqrt(fcPsi)*bwIn*dIn;
-  const Vc = inp.vc0 ? 0 : VcLb*0.000453592;
+  const Vc = VcLb*0.000453592;
   const phiVc = phiV*Vc;
   const necesidadEstribos = Vu<=phiVc/2 ? 'No requiere estribos (§9.6.3.1)' : (Vu<=phiVc ? 'Requiere estribos mínimos' : 'Requiere diseño por corte');
 
@@ -5466,7 +5262,7 @@ function calcVigaTHA(inp) {
   const okFlexionFinal = Mu<=phiMn;
 
   const VcLb = 2*lambda*Math.sqrt(fcPsi)*bwIn*dIn;
-  const Vc = inp.vc0 ? 0 : VcLb*0.000453592;
+  const Vc = VcLb*0.000453592;
   const phiVc = phiV*Vc;
   const necesidadEstribos = Vu<=phiVc/2 ? 'No requiere estribos (§9.6.3.1)' : (Vu<=phiVc ? 'Requiere estribos mínimos' : 'Requiere diseño por corte');
 
@@ -5666,16 +5462,7 @@ function vigaHaDatosHtml(state) {
     <div class="xlsx-section">3. CARGAS MAYORADAS</div>
     <table class="xlsx-table"><tbody>
       ${row('Mu — Momento flector mayorado' + (esT ? ' (positivo, ala en compresión)' : ''), xlsxNum(state.Mu, 2), 'Ton·m')}
-      ${row('Vu — Corte mayorado' + (state.criterioV === 'capacidad' ? ' de diseño = máx(Ve, Vu ingresado)' : ''), xlsxNum(state.Vu, 2), 'Ton')}
-      ${state.criterioV === 'capacidad' && state._cv ? `
-      ${row('Criterio de diseño a corte', 'Por capacidad, ACI 318-19 §18.6.5 (Mpr con 1,25·fy, φ = 1,0)', '')}
-      ${row('Vu ingresado (del análisis)', xlsxNum(state.VuIn, 2), 'Ton')}
-      ${row('ln — luz libre entre caras de apoyos', xlsxNum(state.lnCap, 2), 'm')}
-      ${row('Vg — corte gravitacional en la cara', xlsxNum(state.Vg, 2), 'Ton')}
-      ${row('Armadura superior en el apoyo', xlsxNum(state.nSup, 0) + ' ø' + xlsxNum(state.phiSup, 0), 'mm')}
-      ${row('Mpr+ / Mpr−', xlsxNum(state._cv.MprPos, 2) + ' / ' + xlsxNum(state._cv.MprNeg, 2), 'Ton·m')}
-      ${row('Ve = (Mpr+ + Mpr−)/ln + Vg', xlsxNum(state._cv.Ve, 2), 'Ton')}
-      ${row('Vc en zona de rótula (§18.6.5.2)', state._cv.vc0 ? 'Vc = 0 (parte sísmica ≥ Ve/2)' : 'Se considera Vc', '')}` : row('Criterio de diseño a corte', 'Vu ingresado (del análisis)', '')}
+      ${row('Vu — Corte mayorado', xlsxNum(state.Vu, 2), 'Ton')}
     </tbody></table>
 
     <div class="xlsx-section">4. SELECCIÓN DE REFUERZO LONGITUDINAL</div>
@@ -5710,7 +5497,7 @@ function vigaHaFlattenRect(state, r) {
   const AsMinIn2 = Math.max(3 * Math.sqrt(fcPsi) / fyPsiAsMin * bIn * dIn, 200 / fyPsiAsMin * bIn * dIn);
 
   const bwIn = bIn; // bw === b en sección rectangular
-  const VcLb = r.vc0 ? 0 : 2 * lambda * Math.sqrt(fcPsi) * bwIn * dIn;
+  const VcLb = 2 * lambda * Math.sqrt(fcPsi) * bwIn * dIn;
   const VsMaxLb = 8 * lambda * Math.sqrt(fcPsi) * bwIn * dIn;
   const umbralLb = 4 * lambda * Math.sqrt(fcPsi) * bwIn * dIn;
 
@@ -5762,7 +5549,7 @@ function vigaHaFlattenT(state, r) {
   const epsTProv = EPS_CU * (d - cProv) / cProv;
 
   // Corte, puente imperial (con bw).
-  const VcLb = r.vc0 ? 0 : 2 * lambda * Math.sqrt(fcPsi) * bwIn * dIn;
+  const VcLb = 2 * lambda * Math.sqrt(fcPsi) * bwIn * dIn;
   const VsMaxLb = 8 * lambda * Math.sqrt(fcPsi) * bwIn * dIn;
   const umbralLb = 4 * lambda * Math.sqrt(fcPsi) * bwIn * dIn;
 
@@ -6040,7 +5827,6 @@ function renderVigasHA(container) {
     b:30, h:60, rec:4, phiE:8, phiB:18,
     bw:35, hf:15, Ln:500, sepVigas:250, bf:120,
     Mu:15, Vu:10, nBarras:4, nRamas:2, s:15,
-    criterioV:'manual', lnCap:5, Vg:6, nSup:4, phiSup:18,
   };
 
   container.innerHTML = `
@@ -6077,14 +5863,6 @@ function renderVigasHA(container) {
         <div class="field"><label>Mu — momento flector mayorado (Ton·m)</label><input type="text" inputmode="decimal" step="0.1" id="vh_Mu" value="${state.Mu}" list="dl_vh_Mu"><datalist id="dl_vh_Mu"><option value="5">Viga secundaria, luz corta</option><option value="10">Viga de piso, carga moderada</option><option value="15">Viga principal, edificación típica</option><option value="25">Viga de gran luz o carga alta</option><option value="40">Viga fuertemente solicitada</option></datalist></div>
         <div class="field"><label>Vu — corte mayorado (Ton)</label><input type="text" inputmode="decimal" step="0.1" id="vh_Vu" value="${state.Vu}" list="dl_vh_Vu"><datalist id="dl_vh_Vu"><option value="5">Corte bajo, viga secundaria</option><option value="10">Corte típico de piso</option><option value="20">Viga con carga significativa</option><option value="35">Corte alto, luces grandes</option></datalist></div>
       </div>
-      <div class="field-grid" style="margin-top:.7rem">
-        <div class="field"><label>Criterio de diseño a corte</label><select id="vh_criterioV"><option value="manual">Vu ingresado (del análisis)</option><option value="capacidad">Por capacidad — Ve = (Mpr,i + Mpr,j)/ln + Vg (ACI 318-19 §18.6.5)</option></select></div>
-        <div class="field vh-cap"><label>ln — luz libre entre caras de apoyos (m)</label><input type="text" inputmode="decimal" id="vh_lnCap" value="${state.lnCap}" list="dl_vh_lnCap"><datalist id="dl_vh_lnCap"><option value="4">Luz corta</option><option value="5">Luz típica</option><option value="7">Luz larga</option></datalist></div>
-        <div class="field vh-cap"><label>Vg — corte gravitacional en la cara, 1,2D + 1,0L (+0,2S) (Ton)</label><input type="text" inputmode="decimal" id="vh_Vg" value="${state.Vg}" list="dl_vh_Vg"><datalist id="dl_vh_Vg"><option value="0">Sin carga gravitacional</option><option value="5">Carga moderada</option><option value="10">Carga alta</option></datalist></div>
-        <div class="field vh-cap"><label>N° de barras superiores en el apoyo (para Mpr−)</label><input type="text" inputmode="decimal" step="1" id="vh_nSup" value="${state.nSup}" list="dl_vh_nSup"><datalist id="dl_vh_nSup"><option value="2">2 barras</option><option value="3">3 barras</option><option value="4">4 barras</option><option value="6">6 barras</option></datalist></div>
-        <div class="field vh-cap"><label>ø barras superiores en el apoyo (mm)</label><input type="text" inputmode="decimal" id="vh_phiSup" value="${state.phiSup}" list="dl_vh_phiSup"><datalist id="dl_vh_phiSup"><option value="16">ø16</option><option value="18">ø18</option><option value="22">ø22</option><option value="25">ø25</option></datalist></div>
-      </div>
-      <div id="vh_capBox" style="margin-top:.7rem"></div>
     </div>
 
     <div class="panel">
@@ -6179,53 +5957,20 @@ function renderVigasHA(container) {
     state.phiE = parseFloat(document.getElementById('vh_phiE').value)||0;
     state.nRamas = parseFloat(document.getElementById('vh_nRamas').value)||0;
     state.s = parseFloat(document.getElementById('vh_s').value)||0;
-    state.criterioV = document.getElementById('vh_criterioV').value;
-    state.lnCap = parseFloat(document.getElementById('vh_lnCap').value)||0;
-    state.Vg = parseFloat(document.getElementById('vh_Vg').value)||0;
-    state.nSup = parseFloat(document.getElementById('vh_nSup').value)||0;
-    state.phiSup = parseFloat(document.getElementById('vh_phiSup').value)||0;
-    state.VuIn = state.Vu;
   }
 
   function recalc() {
     readState();
     const esT = state.tipo==='T';
-    const esCapV = state.criterioV === 'capacidad';
-    container.querySelectorAll('.vh-cap').forEach(e => e.style.display = esCapV ? '' : 'none');
-    const cv = esCapV ? vhCorteCapacidad({fc:state.fc, fy:state.fy, h:state.h, rec:state.rec, phiE:state.phiE,
-      bInf: esT ? state.bf : state.b, bSup: esT ? state.bw : state.b, nInf:state.nBarras, phiInf:state.phiB,
-      nSup:state.nSup, phiSup:state.phiSup, ln:state.lnCap, Vg:state.Vg, Vu:state.VuIn}) : null;
-    state._cv = cv;
-    if (cv) state.Vu = cv.VuDis;
-    const vc0 = !!(cv && cv.vc0);
-    const r0 = esT ? calcVigaTHA({
+    const r = esT ? calcVigaTHA({
       fc:state.fc, fy:state.fy, lambda:state.lambda, phiTC:state.phiTC, phiCC:state.phiCC, phiV:state.phiV,
       bw:state.bw, h:state.h, hf:state.hf, Ln:state.Ln, sepVigas:state.sepVigas, bf:state.bf, rec:state.rec,
-      phiE_mm:state.phiE, phiB_mm:state.phiB, Mu:state.Mu, Vu:state.Vu, nBarras:state.nBarras, nRamas:state.nRamas, s:state.s, vc0,
+      phiE_mm:state.phiE, phiB_mm:state.phiB, Mu:state.Mu, Vu:state.Vu, nBarras:state.nBarras, nRamas:state.nRamas, s:state.s,
     }) : calcVigaRectHA({
       fc:state.fc, fy:state.fy, lambda:state.lambda, phiTC:state.phiTC, phiCC:state.phiCC, phiV:state.phiV,
       b:state.b, h:state.h, rec:state.rec, phiE_mm:state.phiE, phiB_mm:state.phiB,
-      Mu:state.Mu, Vu:state.Vu, nBarras:state.nBarras, nRamas:state.nRamas, s:state.s, vc0,
+      Mu:state.Mu, Vu:state.Vu, nBarras:state.nBarras, nRamas:state.nRamas, s:state.s,
     });
-    const r = Object.assign(r0, {vc0});
-    if (cv) {
-      // §18.6.4.4: espaciamiento de estribos en la zona de rótula (2h desde la cara): s ≤ mín(d/4, 6·db, 15 cm)
-      const sHinge = Math.min(r.d/4, 6*Math.min(state.phiB, state.phiSup)/10, 15);
-      cv.sHinge = sHinge; cv.okSHinge = state.s <= sHinge;
-    }
-    document.getElementById('vh_capBox').innerHTML = !cv ? '' : `
-      <table class="results">
-        <tr><th colspan="2">Corte por capacidad (ACI 318-19 §18.6.5) — Mpr con 1,25·fy y φ = 1,0</th></tr>
-        <tr><td>As inferior (sección 5) / As superior en apoyo</td><td class="num">${fmt2(cv.AsInf)} / ${fmt2(cv.AsSup)} cm²</td></tr>
-        <tr><td>Mpr+ (armadura inferior, compresión en ${esT ? 'el ala bf' : 'b'})</td><td class="num">${fmt2(cv.MprPos)} Ton·m</td></tr>
-        <tr><td>Mpr− (armadura superior, compresión en ${esT ? 'el alma bw' : 'b'})</td><td class="num">${fmt2(cv.MprNeg)} Ton·m</td></tr>
-        <tr><td>Corte sísmico (Mpr+ + Mpr−)/ln</td><td class="num">${fmt2(cv.Vsis)} Ton</td></tr>
-        <tr><td>Ve = (Mpr+ + Mpr−)/ln + Vg</td><td class="num">${fmt2(cv.Ve)} Ton</td></tr>
-        <tr><td><b>Vu de diseño = máx(Ve, Vu ingresado = ${fmt2(state.VuIn)})</b></td><td class="num"><b>${fmt2(cv.VuDis)} Ton</b></td></tr>
-        <tr><td>Vc en la zona de rótula (§18.6.5.2)</td><td>${cv.vc0 ? '<span class="chip bad">Vc = 0</span> parte sísmica ≥ Ve/2' : '<span class="chip ok">Vc se considera</span> parte sísmica &lt; Ve/2'}</td></tr>
-        <tr><td>s ≤ mín(d/4; 6·db; 15 cm) = ${fmt2(cv.sHinge)} cm en 2h desde la cara (§18.6.4.4)</td><td>${chip(cv.okSHinge)}</td></tr>
-      </table>
-      <div class="note">Aplica a vigas de marcos especiales a momento (o cuando se exige diseño por capacidad). Se supone Pu &lt; Ag·f'c/20. La verificación de espaciamiento en la zona de rótula es informativa (no entra al estatus global): fuera de 2h rige s ≤ d/2.</div>`;
 
     document.getElementById('vh_esquema').innerHTML = svgVigasHA(state, r, esT);
 
@@ -6289,7 +6034,6 @@ function renderVigasHA(container) {
     if (typeof buildPrintSheetsVigasHA === 'function') buildPrintSheetsVigasHA(state, r);
   }
 
-  document.getElementById('vh_criterioV').value = state.criterioV;
   document.getElementById('vh_tipo').addEventListener('change', () => {
     state.tipo = document.getElementById('vh_tipo').value;
     renderGeomFields();
@@ -25352,22 +25096,7 @@ function calcMuroCorte(state) {
   const hwLw = Lw > 0 ? hwTotal / Lw : 0;
   const alphac = hwLw <= 1.5 ? 0.80 : (hwLw >= 2.0 ? 0.53 : 0.80 + (0.53 - 0.80) * (hwLw - 1.5) / (2.0 - 1.5));
   const esEspecial = state.tipo === 'especial';
-  // Corte por capacidad (ACI 318-19 §18.10.3.1, solo Especial): Ve = Ωv·ωv·Vu ≤ 3·Vu, con φ = 0,75.
-  const esCapV = esEspecial && state.criterioV === 'capacidad';
-  let OmegaV = 1, omegaV = 1, fVe = 1, MprBase = null, MuBase = null;
-  if (esCapV) {
-    const p0 = state.pisos[0];
-    const twb = p0.tw, fcb = p0.fc;
-    const Asbe0 = p0.nbe * Math.PI / 4 * Math.pow(p0.phibe / 10, 2);
-    const dp0 = recub + (p0.phitie / 10) + (p0.phibe / 10) / 2;
-    const a0 = (twb > 0 && fcb > 0) ? (p0.Pu * 1000) / (0.85 * fcb * twb) : 0;
-    MprBase = 0.85 * fcb * twb * a0 * (LwCm / 2 - a0 / 2) / 100000 + 2 * Asbe0 * 1.25 * fy * (LwCm / 2 - dp0) / 100000;
-    MuBase = p0.Mu;
-    OmegaV = hwLw <= 1.5 ? 1.0 : Math.max(MuBase > 0 ? MprBase / MuBase : 1.5, 1.5);
-    omegaV = hwLw < 2.0 ? 1.0 : (n <= 6 ? 0.9 + n / 10 : Math.min(1.3 + n / 30, 1.8));
-    fVe = Math.min(OmegaV * omegaV, 3);
-  }
-  const phiv = esCapV ? 0.75 : (esEspecial ? 0.60 : 0.75);
+  const phiv = esEspecial ? 0.60 : 0.75;
 
   const rows = [];
   for (let i = 0; i < n; i++) {
@@ -25377,8 +25106,7 @@ function calcMuroCorte(state) {
     const VnMax = 2.12 * Math.sqrt(p.fc) * Acv / 1000;
     const VnUse = Math.min(Vn, VnMax);
     const phiVn = VnUse * phiv;
-    const Ve = fVe * p.Vu;
-    const utilV = phiVn > 0 ? Ve / phiVn : NaN;
+    const utilV = phiVn > 0 ? p.Vu / phiVn : NaN;
     const okV = isFinite(utilV) && utilV <= 1;
     const estV = isFinite(utilV) ? (okV ? 'CUMPLE' : 'NO CUMPLE') : 'NO CUMPLE';
 
@@ -25441,7 +25169,7 @@ function calcMuroCorte(state) {
     const estPiso = fallas.some(x => x === 'NO CUMPLE') ? 'NO CUMPLE' : 'CUMPLE';
 
     rows.push({
-      piso: i + 1, ...p, Acv, Vn, VnMax, VnUse, phiv, phiVn, Ve, utilV, estV,
+      piso: i + 1, ...p, Acv, Vn, VnMax, VnUse, phiv, phiVn, utilV, estV,
       Ag, Ig, fcu, lim02, lim015, reqEB,
       Asbe, dp, a, beta1, c, ey, et, fluye, Mn, phif, phiMn, utilM, estM,
       extReq, bmin1, bmin2, bmin, aplicaEB, estExt, hx, estConf,
@@ -25449,7 +25177,7 @@ function calcMuroCorte(state) {
     });
   }
   const global = rows.length > 0 && rows.every(r => r.estPiso === 'CUMPLE');
-  return { hwTotal, hwLw, alphac, esEspecial, phiv, rows, global, esCapV, OmegaV, omegaV, fVe, MprBase, MuBase };
+  return { hwTotal, hwLw, alphac, esEspecial, phiv, rows, global };
 }
 
 const DL_MC = {
@@ -25588,7 +25316,6 @@ function murosCorteDatosHtml(state) {
     <div class="xlsx-section">B. Tipo y alcance</div>
     <table class="xlsx-table"><tbody>
       ${row('Tipo de muro', tipoLabel)}
-      ${row('Criterio de diseño a corte', (state.criterioV === 'capacidad' && state.tipo === 'especial') ? 'Por capacidad: Ve = Ωv·ωv·Vu ≤ 3·Vu, φv = 0,75 (ACI 318-19 §18.10.3.1)' : 'Vu ingresado (del análisis)')}
       ${row('N° de pisos a considerar (1 a 5, Piso 1 = base)', xlsxNum(n, 0))}
     </tbody></table>
 
@@ -25652,7 +25379,6 @@ function mcFlatten(state, r) {
     EsVal: 2000000,
     recubVal: state.recub,
     estadoGlobalMuro: r.global,
-    OmegaVval: r.OmegaV, omegaVval: r.omegaV, fVeVal: r.fVe, MprBaseVal: r.MprBase,
   };
   r.rows.forEach(x => {
     const s = '_p' + x.piso;
@@ -25662,7 +25388,7 @@ function mcFlatten(state, r) {
       ['rl' + s]: x.rl, ['rt' + s]: x.rt,
 
       ['Acv' + s]: x.Acv, ['Vn' + s]: x.Vn, ['VnMax' + s]: x.VnMax, ['VnUse' + s]: x.VnUse,
-      ['phiv' + s]: x.phiv, ['phiVn' + s]: x.phiVn, ['utilV' + s]: x.utilV, ['Ve' + s]: x.Ve,
+      ['phiv' + s]: x.phiv, ['phiVn' + s]: x.phiVn, ['utilV' + s]: x.utilV,
       ['estVbool' + s]: mcXlsxBool(x.estV),
 
       ['Ag' + s]: x.Ag, ['Ig' + s]: x.Ig, ['fcu' + s]: x.fcu, ['lim02' + s]: x.lim02, ['lim015' + s]: x.lim015,
@@ -25711,13 +25437,7 @@ function mcCalcSections(r) {
       { t: 'var1', label: 'λ (lambda)', f: 'lambdaVal', d: 2 },
       { t: 'var1', label: 'Es - módulo de elasticidad del acero [kgf/cm²] (constante)', f: 'EsVal', d: 0 },
       { t: 'var1', label: 'Recubrimiento libre a estribo, elementos de borde [cm]', f: 'recubVal', d: 2 },
-    ].concat(r.esCapV ? [
-      { t: 'label', text: 'Corte por capacidad (ACI 318-19 §18.10.3.1)' },
-      { t: 'var1', label: 'Mpr base - flexión probable del piso 1 con 1,25·fy [Ton·m]', f: 'MprBaseVal', d: 2 },
-      { t: 'var1', label: 'Ωv (1,0 si hw/Lw ≤ 1,5; máx(Mpr/Mu; 1,5) si no)', f: 'OmegaVval', d: 3 },
-      { t: 'var1', label: 'ωv (1,0 si hw/Lw < 2,0; 0,9 + ns/10 si no)', f: 'omegaVval', d: 3 },
-      { t: 'var1', label: 'Factor Ve/Vu = Ωv·ωv (≤ 3,0)', f: 'fVeVal', d: 3 },
-    ] : [])},
+    ]},
   ];
 
   r.rows.forEach(x => {
@@ -25739,10 +25459,9 @@ function mcCalcSections(r) {
       { t: 'var1', label: "Vn = Acv·(αc·λ·√f'c + ρt·fy) [Ton]", f: 'Vn' + s, d: 2 },
       { t: 'var1', label: "Vn,máx = 2.12·√f'c·Acv [Ton] (límite único, muro de 1 segmento)", f: 'VnMax' + s, d: 2 },
       { t: 'var1', label: 'Vn a usar = MIN(Vn, Vn,máx) [Ton]', f: 'VnUse' + s, d: 2 },
-      { t: 'var1', label: r.esCapV ? 'φv (0.75, corte por capacidad §18.10.3.1)' : 'φv (0.60 Especial / 0.75 Ordinario)', f: 'phiv' + s, d: 2 },
+      { t: 'var1', label: 'φv (0.60 Especial / 0.75 Ordinario)', f: 'phiv' + s, d: 2 },
       { t: 'var1', label: 'φVn [Ton]', f: 'phiVn' + s, d: 2 },
-      ...(r.esCapV ? [{ t: 'var1', label: 'Ve = Ωv·ωv·Vu [Ton]', f: 'Ve' + s, d: 2 }] : []),
-      { t: 'var1', label: r.esCapV ? 'Utilización Ve/φVn' : 'Utilización Vu/φVn', f: 'utilV' + s, d: 2 },
+      { t: 'var1', label: 'Utilización Vu/φVn', f: 'utilV' + s, d: 2 },
       { t: 'chk', label: 'Estado: corte', estL: 'estVbool' + s, dcL: 'utilV' + s, forceNA: true },
 
       { t: 'label', text: 'Necesidad de elementos de borde (ACI 318-19 §18.10.6.3, solo Especial)' },
@@ -25912,9 +25631,6 @@ function renderMurosCorte(main) {
             <option value="ordinario">Ordinario (ACI 318-19 Cap. 11 — sin detallamiento sísmico especial)</option>
           </select>
         </div>
-        <div class="field"><label>Criterio de diseño a corte (solo muro Especial)</label>
-          <select id="mc_criterioV"><option value="manual">Vu ingresado, φv = 0,60 (§21.2.4.1)</option><option value="capacidad">Por capacidad — Ve = Ωv·ωv·Vu, φv = 0,75 (ACI 318-19 §18.10.3.1)</option></select>
-        </div>
         <div class="field"><label>N° de pisos a considerar (1 a 5, Piso 1 = base)</label>
           <input type="text" inputmode="decimal" min="1" max="5" id="mc_nPisos" value="${state.nPisos}" list="dl_mc_nPisos">
           <datalist id="dl_mc_nPisos"><option value="1">1 piso</option><option value="2">2 pisos</option><option value="3">3 pisos</option><option value="4">4 pisos (default)</option><option value="5">5 pisos (máximo)</option></datalist>
@@ -25993,7 +25709,6 @@ function renderMurosCorte(main) {
   `;
 
   document.getElementById('mc_tipo').value = state.tipo;
-  document.getElementById('mc_criterioV').value = state.criterioV || 'manual';
 
   function renderDatosTable() {
     const fields = [
@@ -26046,7 +25761,6 @@ function renderMurosCorte(main) {
 
   function readGlobals() {
     state.tipo = document.getElementById('mc_tipo').value;
-    state.criterioV = document.getElementById('mc_criterioV').value;
     state.nPisos = Math.max(1, Math.min(5, +document.getElementById('mc_nPisos').value || 1));
     state.fy = +document.getElementById('mc_fy').value || 4200;
     state.lambda = +document.getElementById('mc_lambda').value || 1;
@@ -26073,13 +25787,7 @@ function renderMurosCorte(main) {
         <tr><td>hw,total / Lw</td><td class="num">${fmt2(r.hwLw)}</td></tr>
         <tr><td>αc — coeficiente de corte del hormigón</td><td class="num">${r.alphac.toFixed(3)} kgf/cm²</td></tr>
         <tr><td>φv utilizado</td><td class="num">${fmt2(r.phiv)}</td></tr>
-        ${r.esCapV ? `<tr><th colspan="2">Corte por capacidad (ACI 318-19 §18.10.3.1)</th></tr>
-        <tr><td>Mpr base = flexión probable del piso 1 con 1,25·fy</td><td class="num">${fmt2(r.MprBase)} Ton·m</td></tr>
-        <tr><td>Ωv = ${r.hwLw <= 1.5 ? '1,0 (hw/Lw ≤ 1,5)' : 'máx(Mpr/Mu; 1,5)'} — Mu base = ${fmt2(r.MuBase)} Ton·m</td><td class="num">${fmt2(r.OmegaV)}</td></tr>
-        <tr><td>ωv = ${r.hwLw < 2.0 ? '1,0 (hw/Lw &lt; 2,0)' : '0,9 + ns/10 (ns = N° de pisos)'}</td><td class="num">${fmt2(r.omegaV)}</td></tr>
-        <tr><td><b>Factor Ve/Vu = Ωv·ωv (≤ 3,0)</b></td><td class="num"><b>${fmt2(r.fVe)}</b></td></tr>` : ''}
-      </table>
-      ${state.criterioV === 'capacidad' && !r.esEspecial ? '<div class="note">El corte por capacidad aplica solo a muros Especiales (§18.10.3.1): con muro Ordinario se usa el Vu ingresado.</div>' : ''}`;
+      </table>`;
 
     document.getElementById('mc_corte').innerHTML = `
       <table class="results piso-compare">
@@ -26089,8 +25797,7 @@ function renderMurosCorte(main) {
         <tr><td>Vn,máx [Ton]</td>${rows.map(x=>`<td class="num">${fmt2(x.VnMax)}</td>`).join('')}</tr>
         <tr><td>φVn [Ton]</td>${rows.map(x=>`<td class="num">${fmt2(x.phiVn)}</td>`).join('')}</tr>
         <tr><td>Vu [Ton]</td>${rows.map(x=>`<td class="num">${fmt2(x.Vu)}</td>`).join('')}</tr>
-        ${r.esCapV ? `<tr><td>Ve = Ωv·ωv·Vu [Ton]</td>${rows.map(x=>`<td class="num"><b>${fmt2(x.Ve)}</b></td>`).join('')}</tr>` : ''}
-        <tr><td>${r.esCapV ? 'Ve' : 'Vu'} / φVn</td>${rows.map(x=>`<td class="num">${isFinite(x.utilV)?fmt2(x.utilV):'—'}</td>`).join('')}</tr>
+        <tr><td>Vu / φVn</td>${rows.map(x=>`<td class="num">${isFinite(x.utilV)?fmt2(x.utilV):'—'}</td>`).join('')}</tr>
         <tr><td>Estado</td>${rows.map(x=>`<td>${chipEstadoMC(x.estV)}</td>`).join('')}</tr>
       </table>`;
 
@@ -26163,7 +25870,7 @@ function renderMurosCorte(main) {
     if (typeof buildPrintSheetsMurosCorte === 'function') buildPrintSheetsMurosCorte(state, r);
   }
 
-  ['mc_tipo','mc_criterioV','mc_fy','mc_lambda','mc_Lw','mc_recub'].forEach(id => {
+  ['mc_tipo','mc_fy','mc_lambda','mc_Lw','mc_recub'].forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener('input', recalc);
     el.addEventListener('change', recalc);
@@ -42382,4 +42089,19 @@ route();
 })();
 </script>
 
+<script>
+/* App instalable (PWA) — versión 20261001-1909. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      reg.update();
+      reg.addEventListener('updatefound', () => { const w = reg.installing; if (!w) return;
+        w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) {
+          const b = document.createElement('div'); b.textContent = 'Nueva versión de la Mesa disponible — toque para actualizar';
+          b.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:99999;background:#0060c1;color:#fff;padding:10px 14px;border-radius:8px;font:600 14px system-ui,-apple-system,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer';
+          b.onclick = () => location.reload(); document.body.appendChild(b); } }); });
+    }).catch(() => {});
+  });
+}
+</script>
 </body></html>
