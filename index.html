@@ -42225,202 +42225,256 @@ function renderEETT(container) {
 
 /* =========================================================================
    MOTOR DE CÁLCULO — CHIMENEA CILÍNDRICA DE ACERO AUTOSOPORTADA
-   Planilla de referencia (pre-anteproyecto): cáscara cilíndrica de acero en
-   voladizo, diámetro y espesor CONSTANTES en toda la altura. Peso propio,
-   viento y sismo con la misma metodología simplificada ya usada en
-   "Estanque de Acero" (p=0.5·rho·V²·Cf con brazo H/2; Vb=Ah·W,total con
-   brazo 2/3·H). Verificación de la cáscara por esfuerzo combinado
-   axial+flexión con pandeo local de tubo circular, AISC 360-16 Cap.
-   E7.2(c) [compresión] / F8.2 [flexión] / H1.1 [interacción], método de
-   tensiones admisibles (Omega=1.67 general de Cap. E1/F1). Fundación tipo
-   zapata aislada cuadrada con área efectiva de Meyerhof en un eje y
-   deslizamiento (misma metodología simplificada que "Fundaciones
-   Directas", sin punzonamiento/corte/flexión del hormigón). Anillo de
-   pernos de anclaje con la fórmula clásica T=4M/(N*BC)-P/N ya usada en
-   "Estanque de Acero", reutilizando su mismo catálogo ASTM F1554 y de
-   aceros de plancha (ESTANQUE_ACERO_MATERIALES/_PERNOS_GRADO/_PERNOS_DIAM/
-   _AH_OPTS, ya definidos más arriba en este archivo).
+   Cáscara cilíndrica de acero en voladizo, diámetro exterior constante y
+   manto formado por CUERPOS (1 a 8) de distinto alto y espesor, numerados
+   desde la base. Peso propio por cuerpo; viento p=0.5·rho·V²·Cf uniforme
+   (misma convención que "Estanque de Acero"); sismo NCh2369.Of2003, método
+   estático (5.3): período por Rayleigh sobre el voladizo de rigidez y masa
+   variables, C (5-2) acotado, Q0=C·I·P (5-1) y distribución Ak (5-6);
+   acción vertical Cv=2/3·A0 (5.1.1 d) en fundación y anclajes.
+   Cáscara verificada en la sección inferior de cada cuerpo: pandeo local de
+   tubo circular (AISC 360-16 E7.2(c) / F8.2), pandeo global por flexión
+   como voladizo K=2 con la menor inercia del fuste y todo el peso en el
+   extremo (conservador), amplificación P-Δ 1/(1-1,6·P/Pe) e interacción
+   H1.1, ASD Omega=1.67. Fundación: zapata cuadrada, área efectiva de
+   Meyerhof en un eje y deslizamiento. Anclajes: T=4M/(N·BC)-P/N.
+   Catálogos de acero y pernos: ESTANQUE_ACERO_MATERIALES/_PERNOS_GRADO/
+   _PERNOS_DIAM. Parámetros sísmicos: N2369_A0/_SUELO/_I y n2369Cmax.
    ========================================================================= */
+const CHIM_MAX_CUERPOS = 8;
+
 function calcChimeneaAcero(inp) {
   const r = {};
-  const D = inp.D || 0, t = inp.t || 0, H = inp.H || 0, Wacc = inp.Wacc || 0;
-  r.D = D; r.t = t; r.H = H; r.Wacc = Wacc;
-
-  // ---- Geometría de la cáscara (tubo circular de pared t, diámetros en mm) ----
-  const Do = D * 1000, Di = Do - 2 * t;
-  r.Di = Di / 1000; // m
-  const A = Math.PI / 4 * (Do * Do - Di * Di);           // mm²
-  const I = Math.PI / 64 * (Math.pow(Do, 4) - Math.pow(Di, 4)); // mm⁴
-  const S = I / (Do / 2);                                  // mm³
-  const Z = (Math.pow(Do, 3) - Math.pow(Di, 3)) / 6;       // mm³ (exacto para un tubo circular)
-  r.A = A / 1e6; // m²
-  r.S = S; r.Z = Z; r.I = I;
-  const Dt = Do / t;
-  r.Dt = Dt;
-
-  // ---- Peso propio ----
-  r.pesoLineal = r.A * 7.85; // Ton/m (7850 kg/m3 = 7.85 Ton/m3)
-  r.Wshell = r.pesoLineal * H; // Ton
-  r.Wtotal = r.Wshell + Wacc; // Ton
-
-  // ---- Material de la cáscara (mismo catálogo que Estanque de Acero) ----
+  const D = inp.D || 0, Wacc = Math.max(0, inp.Wacc || 0);
+  r.D = D; r.Wacc = Wacc;
+  const E = 200000; r.E = E;                                   // MPa
   const mat = ESTANQUE_ACERO_MATERIALES.find(m => m.grado === inp.grado) || ESTANQUE_ACERO_MATERIALES[0];
   r.grado = mat.grado; r.Fy = mat.Fy; r.Fu = mat.Fu; r.matObs = mat.obs;
-  const E = 200000; // MPa, acero estructural
-  r.E = E;
+  const Fy = r.Fy, Omega = 1.67;
+  r.lambdaRcomp = 0.11 * E / Fy; r.lambdaMax = 0.45 * E / Fy;
+  r.lambdaPflex = 0.07 * E / Fy; r.lambdaRflex = 0.31 * E / Fy;
 
-  // ---- Viento (p=0.5·rho·V²·Cf, misma convención que Estanque de Acero) ----
-  const rhoAire = 1.225;
-  r.V = inp.V || 0;
-  r.qViento = 0.5 * rhoAire * r.V * r.V; // Pa
-  r.Cf = inp.Cf || 0;
-  r.pViento = r.qViento * r.Cf; // Pa
-  r.areaProy = D * H; // m²
-  r.Fw = r.pViento * r.areaProy; // N
-  r.brazoViento = H / 2; // m
-  r.Mw = r.Fw * r.brazoViento; // N·m
-
-  // ---- Sismo (equivalente estático simplificado, Vb=Ah·W,total) ----
-  r.Ah = inp.Ah || 0;
-  r.WtotalN = r.Wtotal * 1000 * 9.81; // N
-  r.Vb = r.Ah * r.WtotalN; // N
-  r.brazoSismo = 2 / 3 * H; // m
-  r.Ms = r.Vb * r.brazoSismo; // N·m
-
-  r.PchimeneaN = r.WtotalN; // N — carga axial de servicio en la base de la cáscara/fundación (solo peso propio)
-
-  // ---- Verificación de la cáscara: AISC 360-16 E7.2(c) + F8.2 + H1.1, ASD Omega=1.67 ----
-  const Omega = 1.67;
-  const lambdaRcomp = 0.11 * E / r.Fy, lambdaMax = 0.45 * E / r.Fy;
-  r.lambdaRcomp = lambdaRcomp; r.lambdaMax = lambdaMax;
-  let FcrComp = null;
-  if (Dt <= lambdaRcomp) FcrComp = r.Fy;
-  else if (Dt <= lambdaMax) FcrComp = 0.038 * E / Dt + r.Fy;
-  r.FcrComp = FcrComp;
-  const Pn = FcrComp != null ? FcrComp * A : null; // N (MPa * mm²)
-  r.Pn = Pn;
-  const Pc = Pn != null ? Pn / Omega : null; // N
-  r.Pc = Pc;
-
-  const lambdaPflex = 0.07 * E / r.Fy, lambdaRflex = 0.31 * E / r.Fy;
-  r.lambdaPflex = lambdaPflex; r.lambdaRflex = lambdaRflex;
-  let Mn = null;
-  if (Dt <= lambdaPflex) Mn = r.Fy * Z;
-  else if (Dt <= lambdaRflex) Mn = (0.021 * E / Dt + r.Fy) * S;
-  else if (Dt <= lambdaMax) Mn = (0.33 * E / Dt) * S;
-  r.Mn = Mn; // N·mm
-  const Mc = Mn != null ? Mn / Omega : null; // N·mm
-  r.Mc = Mc;
-
-  function chequeoCascara(M_Nm) {
-    if (Pc == null || Mc == null) return { na: true, ok: null, ratio: null, ratioP: null };
-    const Mr = M_Nm * 1000; // N·mm
-    const ratioP = r.PchimeneaN / Pc;
-    const ratio = ratioP >= 0.2 ? (ratioP + (8 / 9) * (Mr / Mc)) : (ratioP / 2 + (Mr / Mc));
-    return { na: false, ok: ratio <= 1.0, ratio, ratioP };
+  // ---- Cuerpos del manto (1 = inferior) ----
+  const nC = Math.max(1, Math.min(CHIM_MAX_CUERPOS, Math.round(inp.nCuerpos || 1)));
+  r.nCuerpos = nC;
+  const Do = D * 1000;
+  let z = 0;
+  r.cuerpos = [];
+  for (let i = 0; i < nC; i++) {
+    const h = Math.max(0, (inp.hC && inp.hC[i]) || 0), t = Math.max(0, (inp.tC && inp.tC[i]) || 0);
+    const Di = Math.max(0, Do - 2 * t);
+    const A = Math.PI / 4 * (Do * Do - Di * Di);               // mm²
+    const I = Math.PI / 64 * (Math.pow(Do, 4) - Math.pow(Di, 4)); // mm⁴
+    const S = Do > 0 ? I / (Do / 2) : 0;                       // mm³
+    const Z = (Math.pow(Do, 3) - Math.pow(Di, 3)) / 6;          // mm³
+    const pesoLineal = A / 1e6 * 7.85;                         // Ton/m
+    r.cuerpos.push({ n: i + 1, h, t, z0: z, z1: z + h, A, I, S, Z, Dt: t > 0 ? Do / t : Infinity, pesoLineal, peso: pesoLineal * h });
+    z += h;
   }
-  r.cascaraViento = chequeoCascara(r.Mw);
-  r.cascaraSismo = chequeoCascara(r.Ms);
+  const H = z; r.H = H;
+  r.okGeom = H > 0 && D > 0 && r.cuerpos.every(c => c.h > 0 && c.t > 0 && 2 * c.t < Do);
+  r.Wshell = r.cuerpos.reduce((s, c) => s + c.peso, 0);       // Ton
+  r.Wtotal = r.Wshell + Wacc;                                  // Ton
+  r.wAcc = H > 0 ? Wacc / H : 0;                               // Ton/m, accesorios repartidos
+  r.tMin = Math.min(...r.cuerpos.map(c => c.t)); r.tMax = Math.max(...r.cuerpos.map(c => c.t));
+  const cuerpoEn = zz => r.cuerpos.find(c => zz >= c.z0 && zz < c.z1) || r.cuerpos[r.cuerpos.length - 1];
+  // peso (N) sobre la cota zz
+  const pesoSobre = zz => {
+    let W = 0; r.cuerpos.forEach(c => { const hh = Math.max(0, c.z1 - Math.max(zz, c.z0)); W += c.pesoLineal * hh; });
+    return (W + r.wAcc * Math.max(0, H - zz)) * 1000 * 9.81;
+  };
 
-  // ---- Fundación: zapata aislada cuadrada, área efectiva de Meyerhof (un eje) + deslizamiento ----
+  // ---- Viento (p=0.5·rho·V²·Cf, uniforme) ----
+  r.V = inp.V || 0; r.Cf = inp.Cf || 0;
+  r.qViento = 0.5 * 1.225 * r.V * r.V;                         // Pa
+  r.pViento = r.qViento * r.Cf;                                // Pa
+  r.wViento = r.pViento * D;                                   // N/m
+  r.areaProy = D * H;
+  r.Fw = r.wViento * H;                                        // N
+  r.brazoViento = H / 2;
+  r.Mw = r.Fw * r.brazoViento;                                 // N·m
+  const MwEn = zz => r.wViento * Math.pow(Math.max(0, H - zz), 2) / 2;
+
+  // ---- Discretización (rebanadas) para período y distribución sísmica ----
+  const nS = 60, dz = H > 0 ? H / nS : 0, sl = [];
+  for (let j = 0; j < nS; j++) {
+    const zm = (j + 0.5) * dz, c = cuerpoEn(zm);
+    sl.push({ zb: j * dz, zt: (j + 1) * dz, zm, EI: E * 1e6 * c.I * 1e-12, W: (c.pesoLineal + r.wAcc) * dz * 1000 * 9.81 });
+  }
+
+  // ---- Sismo — NCh2369.Of2003, método estático (5.3) ----
+  // Tabla 5.6 ítem 7.1 (chimeneas con manto continuo hasta el suelo): R máx = 3. Tabla 5.5: xi = 0,02.
+  r.zona = inp.zona || 'Zona 3'; r.suelo = inp.suelo || 'II'; r.categ = inp.categ || 'C2';
+  r.R = Math.min(3, Math.max(1, inp.R || 3)); r.xi = 0.02;
+  const su = N2369_SUELO[r.suelo] || N2369_SUELO.II;
+  r.A0 = N2369_A0[r.zona] || 0.4; r.Tp = su.Tp; r.nS = su.n; r.Iimp = N2369_I[r.categ] || 1;
+  r.WtotalN = r.Wtotal * 1000 * 9.81;                          // N
+  // Período por Rayleigh: fuerzas laterales = pesos; deformada por integración de M/EI desde el empotramiento
+  r.Tcalc = 0;
+  if (r.okGeom) {
+    const M = sl.map(s => sl.reduce((acc, o) => acc + (o.zm > s.zm ? o.W * (o.zm - s.zm) : 0), 0));
+    let th = 0, y = 0; const ys = [];
+    sl.forEach((s, j) => { const k = M[j] / s.EI; y += th * dz + k * dz * dz / 2; th += k * dz; ys.push(y); });
+    let sWy = 0, sWy2 = 0; sl.forEach((s, j) => { sWy += s.W * ys[j]; sWy2 += s.W * ys[j] * ys[j]; });
+    r.Tcalc = sWy > 0 ? 2 * Math.PI * Math.sqrt(sWy2 / (9.81 * sWy)) : 0;
+  }
+  r.Tman = inp.Tman > 0 ? inp.Tman : null;
+  r.T = r.Tman || r.Tcalc;
+  r.Ccalc = r.T > 0 ? 2.75 * r.A0 / r.R * Math.pow(r.Tp / r.T, r.nS) * Math.pow(0.05 / r.xi, 0.4) : Infinity; // (5-2)
+  r.Cmin = 0.25 * r.A0;                                        // 5.3.3.2
+  r.Cmax = n2369Cmax(r.R, 0.02, r.zona);                       // Tabla 5.7 con factor de zona
+  r.C = Math.max(Math.min(r.Ccalc, r.Cmax), r.Cmin);
+  r.Cgob = r.C === r.Cmin ? 'mínimo 0,25·A0 (5.3.3.2)' : (r.C === r.Cmax ? 'máximo Tabla 5.7' : 'expresión (5-2)');
+  r.Vb = r.C * r.Iimp * r.WtotalN;                             // Q0 (5-1), N
+  // Distribución en altura (5-6): Ak = √(1−Zk−1/H) − √(1−Zk/H); un nivel por rebanada
+  let sAP = 0;
+  sl.forEach(s => { s.Ak = H > 0 ? Math.sqrt(Math.max(0, 1 - s.zb / H)) - Math.sqrt(Math.max(0, 1 - s.zt / H)) : 0; sAP += s.Ak * s.W; });
+  sl.forEach(s => { s.Fk = sAP > 0 ? r.Vb * s.Ak * s.W / sAP : 0; });
+  const MsEn = zz => sl.reduce((acc, s) => acc + (s.zt > zz ? s.Fk * (s.zt - zz) : 0), 0);
+  r.Ms = MsEn(0);                                              // N·m
+  r.brazoSismoRel = (r.Vb > 0 && H > 0) ? r.Ms / r.Vb / H : 0;
+  r.Cv = 2 / 3 * r.A0; r.fVert = r.Cv * r.Iimp;              // 5.1.1 d)
+  r.avisoEstatico = H > 20;
+  r.PchimeneaN = r.WtotalN;
+
+  // ---- Cáscara: sección inferior de cada cuerpo ----
+  // Pandeo global: voladizo K = 2, L = H, menor inercia del fuste, todo el peso en el extremo (conservador)
+  r.K = 2;
+  r.Imin = Math.min(...r.cuerpos.map(c => c.I));
+  r.Pe = H > 0 ? Math.PI * Math.PI * E * r.Imin / Math.pow(r.K * H * 1000, 2) : 0; // N
+  const den = r.Pe > 0 ? 1 - 1.6 * r.WtotalN / r.Pe : -1;
+  r.inestable = !(den > 0);
+  r.Bamp = r.inestable ? Infinity : Math.max(1, 1 / den);
+  const cMin = r.cuerpos.find(c => c.I === r.Imin);
+  r.KLr = cMin && cMin.A > 0 ? r.K * H * 1000 / Math.sqrt(r.Imin / cMin.A) : Infinity;
+  r.okEsbeltez = r.KLr <= 200;
+
+  r.cuerpos.forEach(c => {
+    c.P = pesoSobre(c.z0);                                     // N
+    c.Mw = MwEn(c.z0); c.Ms = MsEn(c.z0);                      // N·m
+    c.Q = c.Dt <= r.lambdaRcomp ? 1 : (c.Dt <= r.lambdaMax ? 0.038 * E / (Fy * c.Dt) + 2 / 3 : null); // E7-7
+    c.Fe = c.A > 0 ? r.Pe / c.A : 0;                           // MPa, equivalente a π²E/(KL/r)² del fuste
+    c.Fcr = null;
+    if (c.Q != null && c.Fe > 0) { const q = c.Q * Fy / c.Fe; c.Fcr = q <= 2.25 ? c.Q * Math.pow(0.658, q) * Fy : 0.877 * c.Fe; } // E7-2/E7-3
+    c.Pc = c.Fcr != null ? c.Fcr * c.A / Omega : null;         // N
+    c.Mn = c.Dt <= r.lambdaPflex ? Fy * c.Z : (c.Dt <= r.lambdaRflex ? (0.021 * E / c.Dt + Fy) * c.S : (c.Dt <= r.lambdaMax ? 0.33 * E / c.Dt * c.S : null)); // F8
+    c.Mc = c.Mn != null ? c.Mn / Omega : null;                 // N·mm
+    const chk = M => {
+      if (c.Pc == null || c.Mc == null) return { na: true, ok: false, ratio: null };
+      if (r.inestable) return { na: false, ok: false, ratio: Infinity };
+      const ratioP = c.P / c.Pc, mr = M * 1000 * r.Bamp / c.Mc;
+      const ratio = ratioP >= 0.2 ? ratioP + 8 / 9 * mr : ratioP / 2 + mr;
+      return { na: false, ok: ratio <= 1, ratio, ratioP };
+    };
+    c.vto = chk(c.Mw); c.sis = chk(c.Ms);
+  });
+  const resumenCascara = k => {
+    const arr = r.cuerpos.map(c => c[k]);
+    const peor = arr.reduce((a, b) => ((b.ratio == null ? Infinity : b.ratio) > (a.ratio == null ? Infinity : a.ratio) ? b : a), arr[0]);
+    return { ok: r.okGeom && arr.every(x => x.ok), ratio: peor.ratio, cuerpo: r.cuerpos[arr.indexOf(peor)].n, fueraRango: arr.some(x => x.na) };
+  };
+  r.cascaraViento = resumenCascara('vto');
+  r.cascaraSismo = resumenCascara('sis');
+
+  // ---- Fundación: zapata cuadrada, Meyerhof en un eje + deslizamiento ----
   const B = inp.B || 0, hF = inp.hF || 0, Df = inp.Df || 0, qAdm = inp.qAdm || 0,
         gammaSuelo = inp.gammaSuelo || 0, gammaC = inp.gammaC || 0, mu = inp.mu || 0;
-  r.B = B; r.hF = hF; r.Df = Df; r.qAdm = qAdm; r.gammaSuelo = gammaSuelo; r.gammaC = gammaC; r.mu = mu;
-  r.Wf = B * B * hF * gammaC; // Ton
-  r.hRelleno = Math.max(0, Df - hF); // m
-  r.Wrelleno = B * B * r.hRelleno * gammaSuelo; // Ton
-  r.Pfundacion = r.Wtotal + r.Wf + r.Wrelleno; // Ton, servicio
-
-  function chequeoFundacion(M_Nm, V_N) {
+  Object.assign(r, { B, hF, Df, qAdm, gammaSuelo, gammaC, mu });
+  r.Wf = B * B * hF * gammaC;
+  r.hRelleno = Math.max(0, Df - hF);
+  r.Wrelleno = B * B * r.hRelleno * gammaSuelo;
+  r.Pfundacion = r.Wtotal + r.Wf + r.Wrelleno;                 // Ton
+  function chequeoFundacion(M_Nm, V_N, fP) {
+    const P = r.Pfundacion * (fP || 1);
     const M_Tonm = M_Nm / 9810, V_Ton = V_N / 9810;
-    const e = r.Pfundacion > 0 ? M_Tonm / r.Pfundacion : Infinity;
-    const Bp = B - 2 * Math.abs(e);
-    const areaValida = Bp > 0;
-    const qEq = areaValida ? r.Pfundacion / (Bp * B) : null;
-    const okPresion = areaValida && qEq != null && qEq <= qAdm;
-    const Vres = V_Ton;
-    const Vr = mu * r.Pfundacion;
-    const FSdesliz = Vres > 0 ? Vr / Vres : null;
-    const okDesliz = Vres > 0 ? FSdesliz >= 1.5 : null;
-    return { M_Tonm, V_Ton, e, Bp, areaValida, qEq, okPresion, Vres, Vr, FSdesliz, okDesliz,
-      ok: okPresion && (okDesliz === null || okDesliz) };
+    const e = P > 0 ? M_Tonm / P : Infinity;
+    const Bp = B - 2 * Math.abs(e), areaValida = Bp > 0;
+    const qEq = areaValida ? P / (Bp * B) : null;
+    const okPresion = areaValida && qEq <= qAdm;
+    const Vr = mu * P, FSdesliz = V_Ton > 0 ? Vr / V_Ton : null;
+    const okDesliz = V_Ton > 0 ? FSdesliz >= 1.5 : null;
+    return { P, M_Tonm, V_Ton, e, Bp, areaValida, qEq, okPresion, Vr, FSdesliz, okDesliz, ok: okPresion && (okDesliz === null || okDesliz) };
   }
-  r.fundViento = chequeoFundacion(r.Mw, r.Fw);
-  r.fundSismo = chequeoFundacion(r.Ms, r.Vb);
+  r.fundViento = chequeoFundacion(r.Mw, r.Fw, 1);
+  r.fundSismo = chequeoFundacion(r.Ms, r.Vb, 1 - r.fVert);     // vertical hacia arriba
+  r.fundSismoAbajo = chequeoFundacion(r.Ms, r.Vb, 1 + r.fVert); // vertical hacia abajo (presión)
+  r.fundSismo.ok = r.fundSismo.ok && r.fundSismoAbajo.okPresion;
 
-  // ---- Anclajes: anillo de pernos, T=4M/(N·BC)-P/N (misma fórmula que Estanque de Acero) ----
+  // ---- Anclajes: anillo de pernos ----
   const gp = ESTANQUE_ACERO_PERNOS_GRADO.find(p => p.grado === inp.gradoPerno) || ESTANQUE_ACERO_PERNOS_GRADO[0];
   r.gradoPerno = gp.grado; r.FyPerno = gp.Fy; r.FuPerno = gp.Fu;
   const dp = ESTANQUE_ACERO_PERNOS_DIAM.find(p => p.et === inp.diamPerno) || ESTANQUE_ACERO_PERNOS_DIAM[0];
   r.diamPernoEt = dp.et; r.dPerno = dp.d;
   r.nPernos = Math.max(4, Math.round(inp.nPernos || 4));
-  r.BC = inp.BC || 0; // m
-
-  function chequeoAnclaje(M_Nm) {
+  r.BC = inp.BC || 0;
+  function chequeoAnclaje(M_Nm, fP) {
     if (r.BC <= 0 || r.nPernos <= 0) return { na: true, ok: null };
-    const T = 4 * M_Nm / (r.nPernos * r.BC) - r.PchimeneaN / r.nPernos; // N
-    const autoanclado = T <= 0;
-    const Tuplift = autoanclado ? 0 : T;
-    const sigmaAdm = 0.5 * r.FyPerno; // MPa
-    const Areq = Tuplift > 0 ? Tuplift / sigmaAdm : 0; // mm²
+    const T = 4 * M_Nm / (r.nPernos * r.BC) - r.PchimeneaN * fP / r.nPernos; // N
+    const autoanclado = T <= 0, Tuplift = autoanclado ? 0 : T;
+    const Areq = Tuplift / (0.5 * r.FyPerno);                  // mm²
     const dMin = Areq > 0 ? Math.sqrt(4 * Areq / Math.PI) : 0; // mm
-    const ok = autoanclado ? true : (r.dPerno >= dMin);
-    return { na: false, T, autoanclado, Tuplift, Areq, dMin, ok };
+    return { na: false, T, autoanclado, Tuplift, Areq, dMin, ok: autoanclado || r.dPerno >= dMin };
   }
-  r.anclajeViento = chequeoAnclaje(r.Mw);
-  r.anclajeSismo = chequeoAnclaje(r.Ms);
+  r.anclajeViento = chequeoAnclaje(r.Mw, 1);
+  r.anclajeSismo = chequeoAnclaje(r.Ms, 1 - r.fVert);
 
   const checks = [r.cascaraViento, r.cascaraSismo, r.fundViento, r.fundSismo, r.anclajeViento, r.anclajeSismo];
   const okChecks = checks.filter(c => c && c.ok !== null).map(c => c.ok);
   r.global = okChecks.length ? okChecks.every(v => v === true) : null;
-
   return r;
 }
 
-/* ---- esquema — elevación de la chimenea (D, H, t, viento, sismo, fundación) ---- */
+/* ---- esquema — elevación de la chimenea con sus cuerpos ---- */
 function svgChimeneaElevacion(state, r) {
-  const xL = 150, xR = 250, y0 = 260, yTop = 40;
+  const xL = 150, xR = 250, y0 = 260, yTop = 40, H = r.H || 1;
   const fL = xL - 30, fR = xR + 30, yFooting = y0 + 40, yFootBot = yFooting + 26;
+  const yz = zz => y0 - (y0 - yTop) * zz / H;
+  const tMax = r.tMax || 1;
+  const cuerpos = r.cuerpos.map(c => {
+    const ya = yz(c.z1), yb = yz(c.z0), w = 1.5 + 4.5 * c.t / tMax;
+    return `${ESQ.rect(xL, ya, xR - xL, yb - ya, { fillOpacity: 0.10 + 0.05 * (c.n % 2) })}
+      <line x1="${xL}" y1="${yb}" x2="${xL}" y2="${ya}" stroke="var(--ink)" stroke-width="${w.toFixed(1)}"/>
+      <line x1="${xR}" y1="${yb}" x2="${xR}" y2="${ya}" stroke="var(--ink)" stroke-width="${w.toFixed(1)}"/>
+      ${c.n > 1 ? `<line x1="${xL - 6}" y1="${yb}" x2="${xR + 6}" y2="${yb}" stroke="var(--ink-muted)" stroke-width="1" stroke-dasharray="4,3"/>` : ''}
+      ${ESQ.note((xL + xR) / 2, (ya + yb) / 2 + 3, `C${c.n}: t=${fmt1(c.t)} mm`, { fontSize: 8.5, color: 'var(--ink-muted)' })}
+      ${ESQ.note(xR + 8, (ya + yb) / 2 + 3, `${fmt2(c.h)} m`, { fontSize: 8, anchor: 'start', color: 'var(--ink-muted)' })}`;
+  }).join('');
   return ESQ.svg(m => `
-    ${ESQ.rect(xL, yTop, xR - xL, y0 - yTop, { fillOpacity: 0.18 })}
-    <line x1="${xL}" y1="${y0}" x2="${xL}" y2="${yTop}" stroke="var(--ink)" stroke-width="3.5"/>
-    <line x1="${xR}" y1="${y0}" x2="${xR}" y2="${yTop}" stroke="var(--ink)" stroke-width="3.5"/>
+    ${cuerpos}
     <ellipse cx="${(xL + xR) / 2}" cy="${yTop}" rx="${(xR - xL) / 2}" ry="7" fill="none" stroke="var(--ink)" stroke-width="2"/>
     <line x1="${xL}" y1="${y0}" x2="${xR}" y2="${y0}" stroke="var(--ink)" stroke-width="3"/>
     ${ESQ.rect(fL, yFooting, fR - fL, yFootBot - yFooting, { fill: 'var(--surface-alt)', fillOpacity: 0.6, stroke: 'var(--ink)', strokeWidth: 2 })}
     <line x1="${fL - 16}" y1="${yFooting}" x2="${fR + 16}" y2="${yFooting}" stroke="var(--ink-muted)" stroke-width="1.4"/>
     ${Array.from({ length: 7 }).map((_, i) => { const gx = fL - 14 + i * ((fR - fL + 28) / 6); return `<line x1="${gx.toFixed(1)}" y1="${yFooting}" x2="${(gx - 6).toFixed(1)}" y2="${yFooting + 8}" stroke="var(--ink-muted)" stroke-width="1"/>`; }).join('')}
-    ${ESQ.dim(m, xL, y0 + 16, xR, y0 + 16, `D=${fmt2(state.D)} m`, { labelOffset: -6 })}
-    ${ESQ.dim(m, xL - 26, y0, xL - 26, yTop, `H=${fmt2(state.H)} m`, { labelOffset: -6 })}
-    ${ESQ.note((xL + xR) / 2, yTop + 22, `t=${fmt1(state.t)} mm`, { fontSize: 9.5, color: 'var(--ink-muted)' })}
-    ${ESQ.arrow(m, xR + 46, (y0 + yTop) / 2, 180, 40, `Fw=${fmt2(r.Fw / 1000)} kN`, { anchor: 'end', labelDx: -8, labelDy: -6 })}
-    ${ESQ.note(xR + 46, (y0 + yTop) / 2 + 14, `Mw=${fmt1(r.Mw / 1000)} kN·m`, { anchor: 'end', fontSize: 10.5 })}
+    ${ESQ.dim(m, xL, y0 + 16, xR, y0 + 16, `D=${fmt2(r.D)} m`, { labelOffset: -6 })}
+    ${ESQ.dim(m, xL - 26, y0, xL - 26, yTop, `H=${fmt2(r.H)} m`, { labelOffset: -6 })}
+    ${ESQ.arrow(m, xR + 96, (y0 + yTop) / 2, 180, 40, `Fw=${fmt2(r.Fw / 1000)} kN`, { anchor: 'end', labelDx: -8, labelDy: -6 })}
+    ${ESQ.note(xR + 96, (y0 + yTop) / 2 + 14, `Mw=${fmt1(r.Mw / 1000)} kN·m`, { anchor: 'end', fontSize: 10.5 })}
     <path d="M ${xL - 40} ${y0 - 4} A 16 16 0 1 1 ${xL - 40} ${y0 - 36}" fill="none" stroke="var(--accent-warm)" stroke-width="2.2" marker-end="url(#${m.load})"/>
     ${ESQ.text(xL - 48, y0 - 18, `Ms=${fmt1(r.Ms / 1000)} kN·m`, { color: 'var(--accent-warm)', bold: true, fontSize: 10, anchor: 'end' })}
+    ${ESQ.text(xL - 48, y0 - 4, `Q0=${fmt1(r.Vb / 1000)} kN`, { color: 'var(--accent-warm)', fontSize: 9.5, anchor: 'end' })}
     ${ESQ.dim(m, fL, yFootBot + 18, fR, yFootBot + 18, `B=${fmt2(r.B)} m`, { labelOffset: -6, fontSize: 9.5 })}
-  `, { viewBox: '-90 10 470 340', maxWidth: 440, aria: 'Elevación de la chimenea: diámetro D, altura H, espesor t, fuerza y momento de viento, momento sísmico y ancho de la fundación B' });
+  `, { viewBox: '-90 10 500 340', maxWidth: 460, aria: 'Elevación de la chimenea: cuerpos del manto con su espesor, diámetro D, altura H, viento, sismo y ancho de la fundación B' });
 }
 
 /* ---- esquema — planta de la fundación con el anillo de pernos de anclaje ---- */
 function svgFundacionChimenea(state, r) {
   const halfB = Math.max(0.5, (state.B || 1) / 2);
-  const px = 130 / halfB; // px por metro
+  const px = 130 / halfB;
   const cx = 190, cy = 190;
   const Bpx = state.B * px;
   const x0 = cx - Bpx / 2, y0 = cy - Bpx / 2;
   const DPx = state.D * px, BCpx = (state.BC || 0) * px;
   const n = Math.max(0, Math.round(state.nPernos || 0));
-  const boltR = 5;
   const bolts = Array.from({ length: n }).map((_, i) => {
-    const theta = n > 0 ? i * (2 * Math.PI / n) : 0;
-    return { bx: cx + (BCpx / 2) * Math.sin(theta), by: cy - (BCpx / 2) * Math.cos(theta) };
-  });
-  const boltsSvg = bolts.map(({ bx, by }) => `<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="${boltR}" fill="var(--ink)"/>`).join('');
+    const th = i * (2 * Math.PI / Math.max(1, n));
+    return `<circle cx="${(cx + BCpx / 2 * Math.sin(th)).toFixed(1)}" cy="${(cy - BCpx / 2 * Math.cos(th)).toFixed(1)}" r="5" fill="var(--ink)"/>`;
+  }).join('');
   return ESQ.svg(m => `
     ${ESQ.rect(x0, y0, Bpx, Bpx, { fill: 'var(--surface-alt)', fillOpacity: 0.45, stroke: 'var(--ink)', strokeWidth: 2.4 })}
     <circle cx="${cx}" cy="${cy}" r="${(DPx / 2).toFixed(1)}" fill="none" stroke="var(--ink-muted)" stroke-width="1.6" stroke-dasharray="5,4"/>
     <circle cx="${cx}" cy="${cy}" r="${(BCpx / 2).toFixed(1)}" fill="none" stroke="var(--ink)" stroke-width="1.2" stroke-dasharray="3,3"/>
-    ${boltsSvg}
+    ${bolts}
     ${ESQ.dim(m, x0, y0 + Bpx + 22, x0 + Bpx, y0 + Bpx + 22, `B=${fmt2(state.B)} m`, { labelOffset: -6 })}
     ${ESQ.dim(m, cx - BCpx / 2, y0 - 16, cx + BCpx / 2, y0 - 16, `BC=${fmt2(state.BC)} m`, { labelOffset: -6, fontSize: 9.5 })}
     ${ESQ.note(cx, y0 - 44, `D=${fmt2(state.D)} m (chimenea, referencial)`, { fontSize: 9, color: 'var(--ink-muted)' })}
@@ -42430,14 +42484,12 @@ function svgFundacionChimenea(state, r) {
 
 /* =========================================================================
    IMPRESIÓN ESTILO PLANILLA — CHIMENEA CILÍNDRICA DE ACERO
-   Reutiliza el motor genérico ya existente (xlsxNum, xlsxCalcRowHtml,
-   xlsxBuildCalculoHtml, xlsxSetPrintSheets), mismo criterio que
-   "Selección de Pernos Estructurales" / "Fundaciones Directas".
    ========================================================================= */
 function chimeneaDatosHtml(state, r) {
   function row(label, value, span) {
     return `<tr><td class="xv-label">${label}</td><td class="xv-input" colspan="${span || 3}">${value}</td></tr>`;
   }
+  const filasCuerpos = r.cuerpos.map(c => `<tr><td class="xv-num">${c.n}</td><td class="xv-input">${xlsxNum(c.h, 2)}</td><td class="xv-input">${xlsxNum(c.t, 1)}</td><td class="xv-num">${xlsxNum(c.z0, 2)} – ${xlsxNum(c.z1, 2)}</td></tr>`).join('');
   return `
     <div class="xlsx-title-bar">DATOS DE ENTRADA</div>
 
@@ -42447,13 +42499,17 @@ function chimeneaDatosHtml(state, r) {
       ${row('Elemento / chimenea', '____________________')}
     </tbody></table>
 
-    <div class="xlsx-section">B. GEOMETRÍA Y MATERIAL DE LA CÁSCARA (constantes en toda la altura)</div>
+    <div class="xlsx-section">B. GEOMETRÍA Y MATERIAL DE LA CÁSCARA</div>
     <table class="xlsx-table"><tbody>
-      ${row('D — diámetro exterior (m)', xlsxNum(state.D, 2))}
-      ${row('t — espesor de pared (mm)', xlsxNum(state.t, 1))}
-      ${row('H — altura en voladizo sobre la fundación (m)', xlsxNum(state.H, 2))}
-      ${row('Wacc — peso adicional de accesorios/revestimiento (Ton)', xlsxNum(state.Wacc, 2))}
+      ${row('D — diámetro exterior, constante (m)', xlsxNum(state.D, 2))}
+      ${row('N° de cuerpos del manto', xlsxNum(r.nCuerpos, 0))}
+      ${row('H — altura total en voladizo = Σ alturas de cuerpo (m)', xlsxNum(r.H, 2))}
+      ${row('Wacc — peso adicional de accesorios/revestimiento, repartido en la altura (Ton)', xlsxNum(state.Wacc, 2))}
       ${row('Grado de acero de la cáscara', r.grado + ' — ' + r.matObs)}
+    </tbody></table>
+    <table class="xlsx-table xlsx-calc-table"><tbody>
+      <tr class="xlsx-hdr-de"><td class="xv-num">Cuerpo</td><td class="xv-num">Altura h (m)</td><td class="xv-num">Espesor t (mm)</td><td class="xv-num">Cotas (m)</td></tr>
+      ${filasCuerpos}
     </tbody></table>
 
     <div class="xlsx-section">C. VIENTO</div>
@@ -42462,9 +42518,14 @@ function chimeneaDatosHtml(state, r) {
       ${row('Cf — coeficiente de forma/arrastre', xlsxNum(state.Cf, 2))}
     </tbody></table>
 
-    <div class="xlsx-section">D. SISMO</div>
+    <div class="xlsx-section">D. SISMO — NCh2369.Of2003, MÉTODO ESTÁTICO</div>
     <table class="xlsx-table"><tbody>
-      ${row('Ah — coeficiente sísmico horizontal de diseño (g)', xlsxNum(state.Ah, 2))}
+      ${row('Zona sísmica', esc(r.zona) + ' — A0 = ' + xlsxNum(r.A0, 2) + ' g')}
+      ${row('Tipo de suelo de fundación', esc(r.suelo) + ' — T′ = ' + xlsxNum(r.Tp, 2) + ' s; n = ' + xlsxNum(r.nS, 2))}
+      ${row('Categoría — coeficiente de importancia I', esc(r.categ) + ' — I = ' + xlsxNum(r.Iimp, 2))}
+      ${row('R — factor de modificación de la respuesta (Tabla 5.6, ítem 7.1)', xlsxNum(r.R, 1))}
+      ${row('xi — razón de amortiguamiento (Tabla 5.5)', xlsxNum(r.xi, 2))}
+      ${row('T* — período fundamental (s)', r.Tman ? xlsxNum(r.Tman, 3) + ' (ingresado)' : 'CALCULADO (Rayleigh)')}
     </tbody></table>
 
     <div class="xlsx-section">E. FUNDACIÓN (ZAPATA AISLADA CUADRADA)</div>
@@ -42488,36 +42549,37 @@ function chimeneaDatosHtml(state, r) {
 }
 
 const CHIMENEA_CALC_SECTIONS = [
-  { num: '1', title: 'PROPIEDADES DE LA CÁSCARA Y PESO PROPIO', rows: [
-    { t: 'var1', label: 'Di — diámetro interior, D-2t (m)', f: 'Di', d: 3 },
-    { t: 'var1', label: 'A — área de la sección anular de la cáscara (cm²)', f: 'AreaCm2', d: 2 },
-    { t: 'var1', label: 'D/t — esbeltez de la cáscara', f: 'Dt', d: 1 },
-    { t: 'var1', label: 'Peso lineal teórico, acero 7850 kg/m³ (Ton/m)', f: 'pesoLineal', d: 3 },
-    { t: 'var1', label: 'W,cáscara = peso lineal × H (Ton)', f: 'Wshell', d: 2 },
+  { num: '1', title: 'PESO PROPIO', rows: [
+    { t: 'var1', label: 'W,cáscara = Σ (peso lineal × h) de los cuerpos, acero 7850 kg/m³ (Ton)', f: 'Wshell', d: 2 },
     { t: 'var1', label: 'W,total = W,cáscara + W,accesorios (Ton)', f: 'Wtotal', d: 2 },
   ]},
-  { num: '2', title: 'CARGA DE VIENTO (p = 0.5·rho_aire·V²·Cf)', rows: [
+  { num: '2', title: 'CARGA DE VIENTO (p = 0.5·rho_aire·V²·Cf, uniforme)', rows: [
     { t: 'var1', label: 'q = 0.5·rho_aire·V² (Pa)', f: 'qViento', d: 1 },
     { t: 'var1', label: 'p = q·Cf (Pa)', f: 'pViento', d: 1 },
     { t: 'var1', label: 'Área proyectada = D·H (m²)', f: 'areaProy', d: 2 },
     { t: 'var1', label: 'Fw — fuerza de viento resultante (kN)', f: 'FwKN', d: 2 },
-    { t: 'var1', label: 'Mw — momento de volcamiento por viento, brazo H/2 (kN·m)', f: 'MwKNm', d: 2 },
+    { t: 'var1', label: 'Mw — momento basal por viento, brazo H/2 (kN·m)', f: 'MwKNm', d: 2 },
   ]},
-  { num: '3', title: 'CARGA SÍSMICA (equivalente estático simplificado, Vb = Ah·W,total)', rows: [
-    { t: 'var1', label: 'Vb — corte basal sísmico (kN)', f: 'VbKN', d: 2 },
-    { t: 'var1', label: 'Ms — momento de volcamiento sísmico, brazo 2/3·H (kN·m)', f: 'MsKNm', d: 2 },
+  { num: '3', title: 'CARGA SÍSMICA — NCh2369.Of2003, MÉTODO ESTÁTICO (5.3)', rows: [
+    { t: 'var1', label: 'T* — período fundamental por Rayleigh, voladizo de masa y rigidez variables (s)', f: 'Tcalc', d: 3 },
+    { t: 'var1', label: 'T* de diseño (s)', f: 'T', d: 3 },
+    { t: 'var1', label: 'C = 2,75·A0/(g·R)·(T′/T*)ⁿ·(0,05/xi)^0,4 (5-2)', f: 'Ccalc', d: 3 },
+    { t: 'var1', label: 'Cmín = 0,25·A0/g (5.3.3.2)', f: 'Cmin', d: 3 },
+    { t: 'var1', label: 'Cmáx — Tabla 5.7 con factor de zona', f: 'Cmax', d: 3 },
+    { t: 'var1', label: 'C de diseño', f: 'C', d: 3 },
+    { t: 'var1', label: 'Q0 = C·I·P — corte basal (kN) (5-1)', f: 'VbKN', d: 2 },
+    { t: 'var1', label: 'Ms — momento basal, fuerzas Fk distribuidas con Ak (5-6) (kN·m)', f: 'MsKNm', d: 2 },
+    { t: 'var1', label: 'Brazo equivalente Ms/Q0 dividido por H', f: 'brazoSismoRel', d: 3 },
+    { t: 'var1', label: 'Cv·I — sismo vertical en fundación y anclajes, Cv = 2/3·A0/g (5.1.1 d)', f: 'fVert', d: 3 },
   ]},
-  { num: '4', title: 'VERIFICACIÓN DE LA CÁSCARA — AISC 360-16 E7.2(c)/F8.2/H1.1, ASD Omega=1.67', rows: [
-    { t: 'var1', label: 'lambda_r,comp = 0.11·E/Fy (límite compacta/no compacta, compresión)', f: 'lambdaRcomp', d: 1 },
-    { t: 'var1', label: 'lambda_máx = 0.45·E/Fy (límite superior de aplicabilidad, HSS circular)', f: 'lambdaMax', d: 1 },
-    { t: 'text', label: 'Fcr — esfuerzo crítico de pandeo local en compresión', f: 'FcrTxt' },
-    { t: 'text', label: 'Pc = Fcr·A/Omega — capacidad admisible a compresión axial', f: 'PcTxt' },
-    { t: 'var1', label: 'lambda_p,flex = 0.07·E/Fy', f: 'lambdaPflex', d: 1 },
-    { t: 'text', label: 'Mn — momento nominal con pandeo local', f: 'MnTxt' },
-    { t: 'text', label: 'Mc = Mn/Omega — capacidad admisible a flexión', f: 'McTxt' },
-    { t: 'text', label: 'Pr/Pc bajo viento · bajo sismo', f: 'ratioPTxt' },
-    { t: 'chk', label: 'Interacción H1.1 bajo VIENTO: Pr/Pc + término de M ≤ 1.0', estL: 'okCascaraViento', forceNA: true },
-    { t: 'chk', label: 'Interacción H1.1 bajo SISMO: Pr/Pc + término de M ≤ 1.0', estL: 'okCascaraSismo', forceNA: true },
+  { num: '4', title: 'VERIFICACIÓN DE LA CÁSCARA — AISC 360-16 E3/E7/F8/H1.1, ASD Omega=1.67', rows: [
+    { t: 'var1', label: 'I,mín — menor inercia del fuste (cm⁴)', f: 'IminCm4', d: 0 },
+    { t: 'var1', label: 'KL/r — voladizo K = 2, L = H, con I,mín (recomendado ≤ 200)', f: 'KLr', d: 1 },
+    { t: 'var1', label: 'Pe = π²E·I,mín/(KL)² (kN)', f: 'PeKN', d: 1 },
+    { t: 'text', label: 'B — amplificación P-Δ = 1/(1−1,6·P/Pe)', f: 'Btxt' },
+    { t: 'text', label: 'Cuerpo que gobierna bajo viento · bajo sismo', f: 'gobiernaTxt' },
+    { t: 'chk', label: 'Interacción H1.1 bajo VIENTO, todos los cuerpos: Pr/Pc + término de B·M ≤ 1.0', estL: 'okCascaraViento', forceNA: true },
+    { t: 'chk', label: 'Interacción H1.1 bajo SISMO, todos los cuerpos: Pr/Pc + término de B·M ≤ 1.0', estL: 'okCascaraSismo', forceNA: true },
   ]},
   { num: '5', title: 'PESO Y CARGA AXIAL EN LA BASE DE LA FUNDACIÓN', rows: [
     { t: 'var1', label: 'W,zapata = B²·h·gamma_hormigón (Ton)', f: 'Wf', d: 3 },
@@ -42533,20 +42595,23 @@ const CHIMENEA_CALC_SECTIONS = [
     { t: 'text', label: 'FS deslizamiento = mu·P,fundación/V', f: 'FSdeslizVientoTxt' },
     { t: 'chk', label: 'Deslizamiento: FS ≥ 1.5', estL: 'okDeslizVientoChk', forceNA: true },
   ]},
-  { num: '7', title: "VERIFICACIÓN DE LA FUNDACIÓN (Meyerhof, un eje) — SISMO", rows: [
-    { t: 'var1', label: 'e = M/P,fundación (m)', f: 'eSismo', d: 3 },
+  { num: '7', title: "VERIFICACIÓN DE LA FUNDACIÓN (Meyerhof, un eje) — SISMO, con sismo vertical ±Cv·I", rows: [
+    { t: 'var1', label: 'P,fundación·(1−Cv·I) (Ton)', f: 'PfundSismo', d: 2 },
+    { t: 'var1', label: 'e = M/P (m)', f: 'eSismo', d: 3 },
     { t: 'var1', label: "B' = B-2|e| (m)", f: 'BpSismo', d: 3 },
-    { t: 'text', label: "q_eq = P,fundación/(B'·B) (Ton/m²)", f: 'qEqSismoTxt' },
+    { t: 'text', label: "q_eq = P/(B'·B) (Ton/m²)", f: 'qEqSismoTxt' },
     { t: 'chk', label: 'Presión de contacto: q_eq ≤ q_adm', estL: 'okPresionSismo', forceNA: true },
-    { t: 'text', label: 'FS deslizamiento = mu·P,fundación/V', f: 'FSdeslizSismoTxt' },
+    { t: 'text', label: 'FS deslizamiento = mu·P/V', f: 'FSdeslizSismoTxt' },
     { t: 'chk', label: 'Deslizamiento: FS ≥ 1.5', estL: 'okDeslizSismoChk', forceNA: true },
+    { t: 'text', label: "q_eq con sismo vertical hacia abajo, P·(1+Cv·I) (Ton/m²)", f: 'qEqSismoAbajoTxt' },
+    { t: 'chk', label: 'Presión de contacto con sismo vertical hacia abajo: q_eq ≤ q_adm', estL: 'okPresionSismoAbajo', forceNA: true },
   ]},
   { num: '8', title: 'ANCLAJES — ANILLO DE PERNOS (T = 4M/(N·BC) - P/N)', rows: [
     { t: 'text', label: 'Condición bajo VIENTO (autoanclado / requiere anclaje)', f: 'condAnclajeVientoTxt' },
     { t: 'var1', label: 'T por perno bajo viento (kN)', f: 'TupliftVientoKN', d: 2 },
     { t: 'var1', label: 'Área requerida por perno bajo viento (mm²)', f: 'AreqViento', d: 1 },
     { t: 'chk', label: 'Diámetro seleccionado suficiente — VIENTO', estL: 'okAnclajeViento', forceNA: true },
-    { t: 'text', label: 'Condición bajo SISMO (autoanclado / requiere anclaje)', f: 'condAnclajeSismoTxt' },
+    { t: 'text', label: 'Condición bajo SISMO, con P·(1−Cv·I) (autoanclado / requiere anclaje)', f: 'condAnclajeSismoTxt' },
     { t: 'var1', label: 'T por perno bajo sismo (kN)', f: 'TupliftSismoKN', d: 2 },
     { t: 'var1', label: 'Área requerida por perno bajo sismo (mm²)', f: 'AreqSismo', d: 1 },
     { t: 'chk', label: 'Diámetro seleccionado suficiente — SISMO', estL: 'okAnclajeSismo', forceNA: true },
@@ -42559,104 +42624,130 @@ const CHIMENEA_CALC_SECTIONS = [
   ]},
 ];
 
-function chimeneaCalcHtml(r, opts) {
+// Tabla de verificación por cuerpo (sección inferior de cada cuerpo)
+function chimeneaTablaCuerposHtml(r) {
+  const f = (v, d) => (v == null || !isFinite(v)) ? 'N/A' : xlsxNum(v, d);
+  const est = x => x.ok ? 'CUMPLE' : 'NO CUMPLE';
+  return `<div class="xlsx-section">4a. VERIFICACIÓN POR CUERPO (sección inferior de cada cuerpo)</div>
+  <div style="overflow-x:auto"><table class="xlsx-table xlsx-calc-table"><tbody>
+    <tr class="xlsx-hdr-de"><td class="xv-num">Cuerpo</td><td class="xv-num">z (m)</td><td class="xv-num">t (mm)</td><td class="xv-num">D/t</td><td class="xv-num">Q</td><td class="xv-num">Fcr (kgf/cm²)</td><td class="xv-num">P (kN)</td><td class="xv-num">Pc (kN)</td><td class="xv-num">Mc (kN·m)</td><td class="xv-num">Mw (kN·m)</td><td class="xv-num">Ms (kN·m)</td><td class="xv-num">D/C viento</td><td class="xv-num">D/C sismo</td><td class="xv-num">Estado</td></tr>
+    ${r.cuerpos.map(c => `<tr><td class="xv-num">${c.n}</td><td class="xv-num">${f(c.z0, 2)}</td><td class="xv-num">${f(c.t, 1)}</td><td class="xv-num">${f(c.Dt, 1)}</td><td class="xv-num">${f(c.Q, 3)}</td><td class="xv-num">${c.Fcr != null ? f(c.Fcr * 10.1972, 0) : 'N/A'}</td><td class="xv-num">${f(c.P / 1000, 1)}</td><td class="xv-num">${c.Pc != null ? f(c.Pc / 1000, 1) : 'N/A'}</td><td class="xv-num">${c.Mc != null ? f(c.Mc / 1e6, 1) : 'N/A'}</td><td class="xv-num">${f(c.Mw / 1000, 1)}</td><td class="xv-num">${f(c.Ms / 1000, 1)}</td><td class="xv-num">${f(c.vto.ratio, 3)}</td><td class="xv-num">${f(c.sis.ratio, 3)}</td><td class="xv-num">${est({ ok: c.vto.ok && c.sis.ok })}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+function chimeneaCalcHtml(rr, opts) {
   const resumen = !!(opts && opts.resumen);
-  return xlsxBuildCalculoHtml(CHIMENEA_CALC_SECTIONS, r, {
+  let html = xlsxBuildCalculoHtml(CHIMENEA_CALC_SECTIONS, rr, {
     resumen,
-    intro: 'Chimenea cilíndrica de acero autosoportada: diámetro y espesor de la cáscara constantes en toda la altura. Peso propio, viento y sismo con la misma metodología simplificada de "Estanque de Acero" (verificación preliminar). Cáscara verificada por esfuerzo combinado axial+flexión con pandeo local de tubo circular (AISC 360-16 E7.2(c)/F8.2/H1.1, método de tensiones admisibles Omega=1.67). Fundación tipo zapata aislada cuadrada (área efectiva de Meyerhof y deslizamiento, misma metodología simplificada que "Fundaciones Directas", sin punzonamiento/corte/flexión del hormigón). Anillo de pernos de anclaje (T=4M/(N·BC)-P/N, mismo catálogo ASTM F1554 que "Estanque de Acero"). No reemplaza el diseño final: verificar viento según NCh432/ASCE 7 Cap.29, sismo según NCh2369/NCh433, pandeo de cáscaras muy esbeltas según ASME STS-1/API 620, y anclaje a hormigón (arrancamiento del cono de hormigón, splitting) según ACI 318-19 Cap.17.',
+    intro: 'Chimenea cilíndrica de acero autosoportada, de diámetro exterior constante y manto formado por cuerpos de distinto espesor. Peso propio por cuerpo; viento con la metodología simplificada de "Estanque de Acero"; sismo según NCh2369.Of2003 método estático (período por Rayleigh, C, Q0 = C·I·P, distribución Ak) con acción vertical Cv = 2/3·A0 en fundación y anclajes. Cáscara verificada en la sección inferior de cada cuerpo por pandeo local y global como voladizo K = 2 con la menor inercia del fuste, amplificación P-Δ e interacción H1.1 (AISC 360-16, ASD Omega=1.67). Fundación tipo zapata aislada cuadrada (área efectiva de Meyerhof y deslizamiento, sin punzonamiento/corte/flexión del hormigón). Anillo de pernos de anclaje (T=4M/(N·BC)-P/N, catálogo ASTM F1554 de "Estanque de Acero"). No reemplaza el diseño final: verificar viento según NCh432/ASCE 7 Cap.29 (incluido el desprendimiento de vórtices), sismo con análisis modal espectral cuando corresponda (NCh2369 5.4), pandeo de cáscaras muy esbeltas según ASME STS-1/API 620, y anclaje a hormigón según ACI 318-19 Cap.17.',
   });
+  if (!resumen && rr._tablaCuerpos) {
+    const k = html.indexOf('<div class="xlsx-section">5. ');
+    html = k >= 0 ? html.slice(0, k) + rr._tablaCuerpos + html.slice(k) : html + rr._tablaCuerpos;
+  }
+  return html;
 }
 
 function buildPrintSheetsChimeneaAcero(state, r) {
   function andOrNull(a, b) { return (a === null || b === null) ? null : (a && b); }
   const cv = r.cascaraViento, cs = r.cascaraSismo, fv = r.fundViento, fs = r.fundSismo, av = r.anclajeViento, as_ = r.anclajeSismo;
-
   const okCascaraGlobal = andOrNull(cv.ok, cs.ok);
   const okFundGlobal = andOrNull(fv.ok, fs.ok);
   const okAnclajeGlobal = andOrNull(av.ok, as_.ok);
   const globals = [okCascaraGlobal, okFundGlobal, okAnclajeGlobal].filter(v => v !== null);
   const chkGlobal = globals.length ? globals.every(v => v === true) : null;
-
   const rr = {
-    Di: r.Di, AreaCm2: r.A * 1e4, Dt: r.Dt, pesoLineal: r.pesoLineal, Wshell: r.Wshell, Wtotal: r.Wtotal,
-
+    Wshell: r.Wshell, Wtotal: r.Wtotal,
     qViento: r.qViento, pViento: r.pViento, areaProy: r.areaProy, FwKN: r.Fw / 1000, MwKNm: r.Mw / 1000,
-
+    Tcalc: r.Tcalc, T: r.T, Ccalc: r.Ccalc, Cmin: r.Cmin, Cmax: r.Cmax, C: r.C, brazoSismoRel: r.brazoSismoRel, fVert: r.fVert,
     VbKN: r.Vb / 1000, MsKNm: r.Ms / 1000,
-
-    lambdaRcomp: r.lambdaRcomp, lambdaMax: r.lambdaMax,
-    FcrTxt: r.FcrComp != null ? xlsxNum(r.FcrComp * 10.1972, 0) + ' kgf/cm²' : 'N/A — D/t excede 0.45·E/Fy (fuera del rango de aplicabilidad de AISC 360 para HSS circular)',
-    PcTxt: r.Pc != null ? xlsxNum(r.Pc / 1000, 2) + ' kN' : 'N/A',
-    lambdaPflex: r.lambdaPflex,
-    MnTxt: r.Mn != null ? xlsxNum(r.Mn / 1e6, 2) + ' kN·m' : 'N/A — D/t excede 0.45·E/Fy',
-    McTxt: r.Mc != null ? xlsxNum(r.Mc / 1e6, 2) + ' kN·m' : 'N/A',
-    ratioPTxt: (cv.ratioP != null ? xlsxNum(cv.ratioP, 3) : 'N/A') + ' (viento) · ' + (cs.ratioP != null ? xlsxNum(cs.ratioP, 3) : 'N/A') + ' (sismo)',
+    IminCm4: r.Imin / 1e4, KLr: r.KLr, PeKN: r.Pe / 1000,
+    Btxt: r.inestable ? 'INESTABLE — 1,6·P ≥ Pe' : xlsxNum(r.Bamp, 3),
+    gobiernaTxt: 'Cuerpo ' + cv.cuerpo + ' (D/C = ' + (cv.ratio != null && isFinite(cv.ratio) ? xlsxNum(cv.ratio, 3) : 'N/A') + ') · Cuerpo ' + cs.cuerpo + ' (D/C = ' + (cs.ratio != null && isFinite(cs.ratio) ? xlsxNum(cs.ratio, 3) : 'N/A') + ')',
     okCascaraViento: cv.ok, okCascaraSismo: cs.ok,
-
     Wf: r.Wf, hRelleno: r.hRelleno, Wrelleno: r.Wrelleno, Pfundacion: r.Pfundacion,
-
     eViento: fv.e, BpViento: fv.Bp,
     qEqVientoTxt: fv.areaValida ? xlsxNum(fv.qEq, 2) : "N/A — excentricidad excesiva (B' <= 0)",
     okPresionViento: fv.okPresion,
     FSdeslizVientoTxt: fv.FSdesliz != null ? xlsxNum(fv.FSdesliz, 2) : 'N/A — sin corte horizontal',
     okDeslizVientoChk: fv.okDesliz,
-
-    eSismo: fs.e, BpSismo: fs.Bp,
+    PfundSismo: fs.P, eSismo: fs.e, BpSismo: fs.Bp,
     qEqSismoTxt: fs.areaValida ? xlsxNum(fs.qEq, 2) : "N/A — excentricidad excesiva (B' <= 0)",
     okPresionSismo: fs.okPresion,
     FSdeslizSismoTxt: fs.FSdesliz != null ? xlsxNum(fs.FSdesliz, 2) : 'N/A — sin corte horizontal',
     okDeslizSismoChk: fs.okDesliz,
-
-    condAnclajeVientoTxt: av.autoanclado ? 'AUTOANCLADO' : 'REQUIERE ANCLAJE',
-    TupliftVientoKN: av.Tuplift / 1000, AreqViento: av.Areq, okAnclajeViento: av.ok,
-    condAnclajeSismoTxt: as_.autoanclado ? 'AUTOANCLADO' : 'REQUIERE ANCLAJE',
-    TupliftSismoKN: as_.Tuplift / 1000, AreqSismo: as_.Areq, okAnclajeSismo: as_.ok,
-
+    qEqSismoAbajoTxt: r.fundSismoAbajo.areaValida ? xlsxNum(r.fundSismoAbajo.qEq, 2) : "N/A — excentricidad excesiva (B' <= 0)",
+    okPresionSismoAbajo: r.fundSismoAbajo.okPresion,
+    condAnclajeVientoTxt: av.na ? 'N/A' : (av.autoanclado ? 'AUTOANCLADO' : 'REQUIERE ANCLAJE'),
+    TupliftVientoKN: (av.Tuplift || 0) / 1000, AreqViento: av.Areq || 0, okAnclajeViento: av.ok,
+    condAnclajeSismoTxt: as_.na ? 'N/A' : (as_.autoanclado ? 'AUTOANCLADO' : 'REQUIERE ANCLAJE'),
+    TupliftSismoKN: (as_.Tuplift || 0) / 1000, AreqSismo: as_.Areq || 0, okAnclajeSismo: as_.ok,
     okCascaraGlobal, okFundGlobal, okAnclajeGlobal, chkGlobal,
+    _tablaCuerpos: chimeneaTablaCuerposHtml(r),
   };
-
-  const datosHtml = chimeneaDatosHtml(state, r);
-  xlsxSetPrintSheets(
-    datosHtml,
-    chimeneaCalcHtml(rr, { resumen: false }),
-    chimeneaCalcHtml(rr, { resumen: true })
-  );
+  xlsxSetPrintSheets(chimeneaDatosHtml(state, r), chimeneaCalcHtml(rr, { resumen: false }), chimeneaCalcHtml(rr, { resumen: true }));
 }
 
 function renderChimeneaAcero(container) {
   const state = {
-    D: 1.5, t: 10, H: 15, Wacc: 1.5, grado: 'A36',
+    D: 1.5, Wacc: 1.5, grado: 'A36',
+    nCuerpos: 3, hC: [5, 5, 5, 3, 3, 3, 3, 3], tC: [12, 10, 8, 8, 8, 8, 8, 8],
     V: 30, Cf: 0.7,
-    Ah: 0.30,
+    zona: 'Zona 3', suelo: 'II', categ: 'C2', R: 3, Tman: '',
     B: 3, hF: 0.6, Df: 1.2, qAdm: 15, gammaSuelo: 1.8, gammaC: 2.4, mu: 0.45,
     BC: 1.9, nPernos: 12, gradoPerno: 'ASTM F1554 Gr36', diamPerno: '1 1/4" (32 mm)',
   };
+  const filasCuerpos = state.hC.map((h, i) => `
+        <div class="field" id="ch2_wrap_c${i + 1}" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;align-items:end">
+          <label style="grid-column:1/-1">Cuerpo ${i + 1}${i === 0 ? ' (inferior)' : ''} — altura h (m) · espesor t (mm)</label>
+          <input type="text" inputmode="decimal" id="ch2_h${i + 1}" value="${h}" title="Altura del cuerpo ${i + 1} (m)" aria-label="Altura del cuerpo ${i + 1} (m)">
+          <input type="text" inputmode="decimal" id="ch2_t${i + 1}" value="${state.tC[i]}" title="Espesor del cuerpo ${i + 1} (mm)" aria-label="Espesor del cuerpo ${i + 1} (mm)">
+        </div>`).join('');
 
   container.innerHTML = `
     <div class="calc-head">
       <h1>Chimenea Cilíndrica de Acero Autosoportada</h1>
-      <div class="sub">Chimenea/stack cilíndrica de acero en voladizo, de diámetro y espesor constantes: peso propio, viento y sismo (equivalente estático simplificado), verificación de la cáscara por esfuerzo combinado con pandeo local (AISC 360), diseño de su fundación tipo zapata aislada y de su anillo de pernos de anclaje.</div>
+      <div class="sub">Chimenea/stack cilíndrica de acero en voladizo, de diámetro constante y manto en cuerpos de distinto espesor: peso propio, viento y sismo NCh2369 (método estático), verificación de la cáscara en cada cuerpo por pandeo local y global con interacción (AISC 360), diseño de su fundación tipo zapata aislada y de su anillo de pernos de anclaje.</div>
     </div>
 
     <div class="panel">
       <h3>1 · Geometría y material de la cáscara</h3>
       <div class="field-grid">
-        <div class="field"><label>D — diámetro exterior (m)</label><input type="text" inputmode="decimal" step="0.1" id="ch2_D" value="${state.D}" list="dl_ch2_D"><datalist id="dl_ch2_D"><option value="0.6">0,6 m — chimenea pequeña</option><option value="1.5">1,5 m — típica industrial (default)</option><option value="3">3 m — chimenea grande</option></datalist></div>
-        <div class="field"><label>t — espesor de pared (mm)</label><input type="text" inputmode="decimal" step="0.5" id="ch2_t" value="${state.t}" list="dl_ch2_t"><datalist id="dl_ch2_t"><option value="6">6 mm</option><option value="10">10 mm (default)</option><option value="16">16 mm</option><option value="25">25 mm</option></datalist></div>
-        <div class="field"><label>H — altura en voladizo sobre la fundación (m)</label><input type="text" inputmode="decimal" step="0.5" id="ch2_H" value="${state.H}" list="dl_ch2_H"><datalist id="dl_ch2_H"><option value="10">10 m</option><option value="15">15 m (default)</option><option value="25">25 m</option><option value="35">35 m — límite orientativo, ver disclosure</option></datalist></div>
+        <div class="field"><label>D — diámetro exterior, constante (m)</label><input type="text" inputmode="decimal" step="0.1" id="ch2_D" value="${state.D}" list="dl_ch2_D"><datalist id="dl_ch2_D"><option value="0.6">0,6 m — chimenea pequeña</option><option value="1.5">1,5 m — típica industrial (default)</option><option value="3">3 m — chimenea grande</option></datalist></div>
         <div class="field"><label>Peso adicional de accesorios/revestimiento, Wacc (Ton)</label><input type="text" inputmode="decimal" step="0.1" id="ch2_Wacc" value="${state.Wacc}" list="dl_ch2_Wacc"><datalist id="dl_ch2_Wacc"><option value="0">0 — sin accesorios</option><option value="1.5">1,5 Ton — escalera+plataformas livianas (default)</option><option value="4">4 Ton — revestimiento refractario/aislación</option></datalist></div>
         <div class="field" style="grid-column:1/-1"><label>Grado de acero de la cáscara</label><select id="ch2_grado">${ESTANQUE_ACERO_MATERIALES.map(m => `<option value="${esc(m.grado)}"${m.grado === state.grado ? ' selected' : ''}>${esc(m.grado)} — Fy ${fmt0(m.Fy * 10.1972)} / Fu ${fmt0(m.Fu * 10.1972)} kgf/cm²</option>`).join('')}</select></div>
       </div>
     </div>
 
     <div class="panel">
-      <h3>2 · Viento y sismo</h3>
+      <h3>1b · Manto — cuerpos de distinto espesor</h3>
+      <div class="field-grid">
+        <div class="field"><label>N° de cuerpos (1 a 8)</label><select id="ch2_nCuerpos">${[1,2,3,4,5,6,7,8].map(n => `<option value="${n}"${n === state.nCuerpos ? ' selected' : ''}>${n} ${n === 1 ? 'cuerpo' : 'cuerpos'}</option>`).join('')}</select></div>
+        <div class="field"><label>H — altura total = Σ h (m)</label><div id="ch2_Htxt" class="num" style="padding:.45rem 0;font-weight:600"></div></div>
+      </div>
+      <div class="field-grid">${filasCuerpos}</div>
+      <p class="note">Cuerpo 1 = cuerpo inferior, sobre la fundación. Para cada cuerpo: h = altura (m) y t = espesor del manto (mm). El diámetro exterior es el mismo en toda la altura. Cada cuerpo se verifica en su sección inferior, donde actúan el mayor peso y momento del cuerpo.</p>
+    </div>
+
+    <div class="panel">
+      <h3>2 · Viento</h3>
       <div class="field-grid">
         <div class="field"><label>V — velocidad de viento de diseño (m/s)</label><input type="text" inputmode="decimal" step="1" id="ch2_V" value="${state.V}" list="dl_ch2_V"><datalist id="dl_ch2_V"><option value="25">25 m/s</option><option value="30">30 m/s (default)</option><option value="40">40 m/s — zona costera/expuesta</option></datalist></div>
         <div class="field"><label>Cf — coeficiente de forma/arrastre (sección circular)</label><input type="text" inputmode="decimal" step="0.05" id="ch2_Cf" value="${state.Cf}" list="dl_ch2_Cf"><datalist id="dl_ch2_Cf"><option value="0.5">0,5 — superficie lisa, h/D moderado</option><option value="0.7">0,7 — valor de referencia habitual (default)</option><option value="1.2">1,2 — superficie rugosa / h/D grande</option></datalist></div>
-        <div class="field"><label>Ah — coeficiente sísmico horizontal de diseño (g)</label><input type="text" inputmode="decimal" step="0.05" id="ch2_Ah" value="${state.Ah}" list="dl_ch2_Ah"><datalist id="dl_ch2_Ah">${ESTANQUE_ACERO_AH_OPTS.map(a => `<option value="${a}">Ah = ${a.toFixed(2)} g</option>`).join('')}</datalist></div>
       </div>
-      <p class="note">Metodología simplificada (misma convención que "Estanque de Acero"): viento p=0,5·rho_aire·V²·Cf aplicado uniforme sobre el área proyectada D·H con brazo H/2; sismo Vb=Ah·W,total con brazo 2/3·H (aproximación de cantiléver de masa distribuida). Definir V y Cf según NCh432/ASCE 7 Cap.29 ("Chimneys, Tanks, and Similar Structures"), y Ah según estudio de sitio/NCh2369-NCh433.</p>
+      <p class="note">Misma convención que "Estanque de Acero": p = 0,5·rho_aire·V²·Cf uniforme sobre el área proyectada D·H. Definir V y Cf según NCh432/ASCE 7 Cap.29 ("Chimneys, Tanks, and Similar Structures").</p>
+    </div>
+
+    <div class="panel">
+      <h3>2b · Sismo — NCh2369.Of2003, método estático</h3>
+      <div class="field-grid">
+        <div class="field"><label>Zona sísmica (Tabla 5.2)</label><select id="ch2_zona"><option value="Zona 1">Zona 1 — A0 = 0,20 g</option><option value="Zona 2">Zona 2 — A0 = 0,30 g</option><option value="Zona 3" selected>Zona 3 — A0 = 0,40 g</option></select></div>
+        <div class="field"><label>Tipo de suelo de fundación (Tabla 5.4)</label><select id="ch2_suelo"><option value="I">I — roca (T′ = 0,20 s; n = 1,00)</option><option value="II" selected>II — suelo denso (T′ = 0,35 s; n = 1,33)</option><option value="III">III — suelo medio (T′ = 0,62 s; n = 1,80)</option><option value="IV">IV — suelo blando (T′ = 1,35 s; n = 1,80)</option></select></div>
+        <div class="field"><label>Categoría (4.3) — coeficiente de importancia</label><select id="ch2_categ"><option value="C1">C1 — crítica (I = 1,20)</option><option value="C2" selected>C2 — normal (I = 1,00)</option><option value="C3">C3 — menor (I = 0,80)</option></select></div>
+        <div class="field"><label>R — factor de modificación de la respuesta (Tabla 5.6, ítem 7.1: máx. 3)</label><input type="text" inputmode="decimal" id="ch2_R" value="${state.R}" list="dl_ch2_R"><datalist id="dl_ch2_R"><option value="3">3 — chimenea con manto continuo hasta el suelo (máximo)</option><option value="2">2</option><option value="1">1 — diseño elástico</option></datalist></div>
+        <div class="field"><label>T* — período fundamental (s), opcional: vacío = calculado</label><input type="text" inputmode="decimal" id="ch2_Tman" value="${state.Tman}" placeholder="Calculado por Rayleigh"></div>
+      </div>
+      <p class="note">xi = 0,02 (Tabla 5.5, manto de acero soldado; chimeneas). T* por el método de Rayleigh sobre el voladizo con la masa y la rigidez de cada cuerpo (accesorios repartidos en la altura). C = 2,75·A0/(g·R)·(T′/T*)ⁿ·(0,05/xi)^0,4, acotado entre 0,25·A0/g y Cmáx de la Tabla 5.7. Q0 = C·I·P distribuido en altura con los coeficientes Ak. En fundación y anclajes se agrega la acción sísmica vertical Cv = 2/3·A0/g (5.1.1 d), en el sentido desfavorable.</p>
     </div>
 
     <div class="panel">
@@ -42684,12 +42775,12 @@ function renderChimeneaAcero(container) {
 
     <div class="panel">
       <h3>5 · Esquema — elevación</h3>
-      <div id="ch2_elevacion"></div>
+      <div id="ch2_esqElevacion"></div>
     </div>
 
     <div class="panel">
       <h3>6 · Esquema — planta de la fundación y anillo de pernos</h3>
-      <div id="ch2_planta"></div>
+      <div id="ch2_esqPlanta"></div>
     </div>
 
     <div class="panel">
@@ -42698,7 +42789,7 @@ function renderChimeneaAcero(container) {
     </div>
 
     <div class="panel">
-      <h3>8 · Verificación de la cáscara (AISC 360-16 E7.2(c)/F8.2/H1.1)</h3>
+      <h3>8 · Verificación de la cáscara por cuerpo (AISC 360-16 E3/E7/F8/H1.1)</h3>
       <div id="ch2_cascara"></div>
     </div>
 
@@ -42715,110 +42806,112 @@ function renderChimeneaAcero(container) {
     <div class="panel">
       <h3>11 · Resumen / veredicto</h3>
       <div id="ch2_resumen"></div>
-      <div class="disclosure">Metodología simplificada de referencia (pre-anteproyecto), NO un diseño final de chimenea industrial. Diámetro y espesor de la cáscara constantes en toda la altura (chimenea cilíndrica recta) — para chimeneas tronco-cónicas o escalonadas, verificar cada tramo por separado. Viento y sismo: verificación preliminar con coeficientes globales (Cf, Ah) — el diseño final de viento debe desarrollarse según NCh432/ASCE 7 Cap.29 ("Chimneys, Tanks, and Similar Structures"), y el sísmico según NCh2369/NCh433 (esta planilla no reemplaza a "Fuerzas Sísmicas NCh2369.Of2003"). Cáscara: pandeo local de tubo circular por AISC 360-16 Cap. E7.2(c)/F8.2 con interacción H1.1, método de tensiones admisibles (Omega=1.67) — si D/t excede 0,45·E/Fy la cáscara es demasiado esbelta para este método (ver ASME STS-1/API 620). Fundación: zapata aislada cuadrada, área efectiva de Meyerhof en un eje y deslizamiento — misma metodología simplificada que "Fundaciones Directas" (no incluye punzonamiento, corte ni flexión del hormigón: ver esa calculadora para el diseño estructural completo de la zapata). Anclajes: fórmula clásica del anillo de pernos T=4M/(N·BC)-P/N con tensión admisible 0,5·Fy (igual que "Estanque de Acero") — NO incluye la verificación de anclaje al hormigón (arrancamiento del cono de hormigón, splitting, ACI 318-19 Cap.17): ver "Selector de Anclajes Hilti" para esa verificación.</div>
+      <div class="disclosure">Planilla de referencia (pre-anteproyecto), NO un diseño final de chimenea industrial. Diámetro exterior constante; para chimeneas tronco-cónicas verificar cada tramo por separado. Viento: coeficiente global Cf con presión uniforme — el diseño final de viento debe desarrollarse según NCh432/ASCE 7 Cap.29, incluido el desprendimiento de vórtices. Sismo: NCh2369.Of2003 método estático (5.3) con período por Rayleigh; para chimeneas altas o con masas concentradas corresponde análisis modal espectral (5.4). Cáscara: verificada en la sección inferior de cada cuerpo — pandeo local de tubo circular (AISC 360-16 E7.2(c)/F8.2) y pandeo global por flexión como voladizo K = 2 con la menor inercia del fuste y todo el peso en el extremo libre (conservador), amplificación P-Δ e interacción H1.1, tensiones admisibles (Omega=1.67); si D/t excede 0,45·E/Fy la cáscara es demasiado esbelta para este método (ver ASME STS-1/API 620). No incluye uniones soldadas entre cuerpos ni aberturas en el manto (boca de humos, puertas de inspección). Fundación: zapata aislada cuadrada, área efectiva de Meyerhof en un eje y deslizamiento — sin punzonamiento, corte ni flexión del hormigón (ver "Fundaciones Directas"). Anclajes: T=4M/(N·BC)-P/N con tensión admisible 0,5·Fy — NO incluye el anclaje al hormigón (ACI 318-19 Cap.17): ver "Selector de Anclajes Hilti".</div>
     </div>
 
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>
   `;
 
+  const num = id => parseFloat(document.getElementById(id).value) || 0;
   function readState() {
-    state.D = parseFloat(document.getElementById('ch2_D').value) || 0;
-    state.t = parseFloat(document.getElementById('ch2_t').value) || 0;
-    state.H = parseFloat(document.getElementById('ch2_H').value) || 0;
-    state.Wacc = parseFloat(document.getElementById('ch2_Wacc').value) || 0;
+    state.D = num('ch2_D'); state.Wacc = num('ch2_Wacc');
     state.grado = document.getElementById('ch2_grado').value;
-    state.V = parseFloat(document.getElementById('ch2_V').value) || 0;
-    state.Cf = parseFloat(document.getElementById('ch2_Cf').value) || 0;
-    state.Ah = parseFloat(document.getElementById('ch2_Ah').value) || 0;
-    state.B = parseFloat(document.getElementById('ch2_B').value) || 0;
-    state.hF = parseFloat(document.getElementById('ch2_hF').value) || 0;
-    state.Df = parseFloat(document.getElementById('ch2_Df').value) || 0;
-    state.qAdm = parseFloat(document.getElementById('ch2_qAdm').value) || 0;
-    state.gammaSuelo = parseFloat(document.getElementById('ch2_gammaSuelo').value) || 0;
-    state.gammaC = parseFloat(document.getElementById('ch2_gammaC').value) || 0;
-    state.mu = parseFloat(document.getElementById('ch2_mu').value) || 0;
-    state.BC = parseFloat(document.getElementById('ch2_BC').value) || 0;
-    state.nPernos = parseFloat(document.getElementById('ch2_nPernos').value) || 0;
+    state.nCuerpos = parseInt(document.getElementById('ch2_nCuerpos').value, 10) || 1;
+    state.hC = []; state.tC = [];
+    for (let i = 1; i <= CHIM_MAX_CUERPOS; i++) {
+      state.hC.push(num('ch2_h' + i)); state.tC.push(num('ch2_t' + i));
+      const usado = i <= state.nCuerpos;
+      document.getElementById('ch2_h' + i).disabled = !usado;
+      document.getElementById('ch2_t' + i).disabled = !usado;
+      document.getElementById('ch2_wrap_c' + i).style.opacity = usado ? '' : '0.45';
+    }
+    state.V = num('ch2_V'); state.Cf = num('ch2_Cf');
+    ['zona', 'suelo', 'categ'].forEach(k => { state[k] = document.getElementById('ch2_' + k).value; });
+    state.R = num('ch2_R') || 3;
+    state.Tman = document.getElementById('ch2_Tman').value;
+    ['B', 'hF', 'Df', 'qAdm', 'gammaSuelo', 'gammaC', 'mu', 'BC', 'nPernos'].forEach(k => { state[k] = num('ch2_' + k); });
     state.gradoPerno = document.getElementById('ch2_gradoPerno').value;
     state.diamPerno = document.getElementById('ch2_diamPerno').value;
   }
 
   function recalc() {
     readState();
-    const r = calcChimeneaAcero({
-      D: state.D, t: state.t, H: state.H, Wacc: state.Wacc, grado: state.grado,
-      V: state.V, Cf: state.Cf, Ah: state.Ah,
-      B: state.B, hF: state.hF, Df: state.Df, qAdm: state.qAdm, gammaSuelo: state.gammaSuelo, gammaC: state.gammaC, mu: state.mu,
-      BC: state.BC, nPernos: state.nPernos, gradoPerno: state.gradoPerno, diamPerno: state.diamPerno,
-    });
-
-    document.getElementById('ch2_elevacion').innerHTML = svgChimeneaElevacion(state, r);
-    document.getElementById('ch2_planta').innerHTML = svgFundacionChimenea(state, r);
+    const r = calcChimeneaAcero(Object.assign({}, state, { Tman: parseFloat(state.Tman) || 0 }));
+    document.getElementById('ch2_Htxt').textContent = fmt2(r.H) + ' m';
+    document.getElementById('ch2_esqElevacion').innerHTML = svgChimeneaElevacion(state, r);
+    document.getElementById('ch2_esqPlanta').innerHTML = svgFundacionChimenea(state, r);
 
     document.getElementById('ch2_cargas').innerHTML = `
       <table class="results">
-        <tr><td>Peso lineal de la cáscara (7850 kg/m³)</td><td class="num">${fmt3(r.pesoLineal)} Ton/m</td></tr>
+        <tr><th colspan="2">Peso propio</th></tr>
+        ${r.cuerpos.map(c => `<tr><td>Cuerpo ${c.n}: h = ${fmt2(c.h)} m, t = ${fmt1(c.t)} mm — ${fmt3(c.pesoLineal)} Ton/m</td><td class="num">${fmt2(c.peso)} Ton</td></tr>`).join('')}
         <tr><td>W,cáscara</td><td class="num">${fmt2(r.Wshell)} Ton</td></tr>
         <tr><td>W,total (cáscara + accesorios)</td><td class="num">${fmt2(r.Wtotal)} Ton</td></tr>
         <tr><th colspan="2">Viento</th></tr>
         <tr><td>Fw</td><td class="num">${fmt2(r.Fw / 1000)} kN</td></tr>
         <tr><td>Mw (brazo H/2)</td><td class="num">${fmt1(r.Mw / 1000)} kN·m</td></tr>
-        <tr><th colspan="2">Sismo</th></tr>
-        <tr><td>Vb</td><td class="num">${fmt2(r.Vb / 1000)} kN</td></tr>
-        <tr><td>Ms (brazo 2/3·H)</td><td class="num">${fmt1(r.Ms / 1000)} kN·m</td></tr>
+        <tr><th colspan="2">Sismo — NCh2369.Of2003</th></tr>
+        <tr><td>A0 · I · R · xi</td><td class="num">${fmt2(r.A0)} g · ${fmt2(r.Iimp)} · ${fmt1(r.R)} · ${fmt2(r.xi)}</td></tr>
+        <tr><td>T* — período fundamental${r.Tman ? ' (ingresado)' : ' (Rayleigh)'}</td><td class="num">${fmt3(r.T)} s${r.Tman ? ' · Rayleigh ' + fmt3(r.Tcalc) + ' s' : ''}</td></tr>
+        <tr><td>C calculado (5-2) · Cmín · Cmáx</td><td class="num">${fmt3(r.Ccalc)} · ${fmt3(r.Cmin)} · ${fmt3(r.Cmax)}</td></tr>
+        <tr><td>C de diseño — gobierna ${r.Cgob}</td><td class="num">${fmt3(r.C)}</td></tr>
+        <tr><td>Q0 = C·I·P (5-1)</td><td class="num">${fmt2(r.Vb / 1000)} kN</td></tr>
+        <tr><td>Ms — distribución Ak, brazo ${fmt2(r.brazoSismoRel)}·H</td><td class="num">${fmt1(r.Ms / 1000)} kN·m</td></tr>
+        <tr><td>Cv·I — sismo vertical en fundación y anclajes (Cv = 2/3·A0)</td><td class="num">±${fmt3(r.fVert)}</td></tr>
+        ${r.avisoEstatico ? '<tr><td colspan="2"><span class="chip neutral">H &gt; 20 m</span> verificar la aplicabilidad del método estático (NCh2369 5.3); para chimeneas altas corresponde análisis modal espectral (5.4).</td></tr>' : ''}
       </table>`;
 
-    const cascaraFueraRango = r.Pc == null || r.Mc == null;
+    const fr = (v, d) => (v == null || !isFinite(v)) ? '—' : (d === 0 ? fmt0(v) : d === 1 ? fmt1(v) : d === 2 ? fmt2(v) : fmt3(v));
     document.getElementById('ch2_cascara').innerHTML = `
       <table class="results">
-        <tr><td>D/t</td><td class="num">${fmt1(r.Dt)}</td></tr>
-        <tr><td>Rango de aplicabilidad AISC 360 (D/t ≤ ${fmt1(r.lambdaMax)})</td><td class="num">${cascaraFueraRango ? '<span class="chip bad">FUERA DE RANGO</span>' : '<span class="chip ok">OK</span>'}</td></tr>
-        ${cascaraFueraRango ? '' : `
-        <tr><td>Fcr (compresión, pandeo local)</td><td class="num">${fmt0(r.FcrComp * 10.1972)} kgf/cm²</td></tr>
-        <tr><td>Pc = Fcr·A/Omega</td><td class="num">${fmt2(r.Pc / 1000)} kN</td></tr>
-        <tr><td>Mn (flexión, pandeo local)</td><td class="num">${fmt2(r.Mn / 1e6)} kN·m</td></tr>
-        <tr><td>Mc = Mn/Omega</td><td class="num">${fmt2(r.Mc / 1e6)} kN·m</td></tr>
-        <tr><th colspan="2">Interacción H1.1</th></tr>
-        <tr><td>Bajo viento (Mw)</td><td class="num">${cdChip(r.cascaraViento.ok, r.cascaraViento.ratio)}</td></tr>
-        <tr><td>Bajo sismo (Ms)</td><td class="num">${cdChip(r.cascaraSismo.ok, r.cascaraSismo.ratio)}</td></tr>
-        `}
-      </table>`;
+        <tr><th colspan="2">Pandeo global — voladizo, K = 2, L = H, con la menor inercia del fuste</th></tr>
+        <tr><td>KL/r (recomendado ≤ 200)</td><td class="num">${fr(r.KLr, 1)} ${r.okEsbeltez ? '<span class="chip ok">OK</span>' : '<span class="chip bad">&gt; 200</span>'}</td></tr>
+        <tr><td>Pe = π²E·I,mín/(KL)²</td><td class="num">${fr(r.Pe / 1000, 1)} kN</td></tr>
+        <tr><td>B — amplificación P-Δ, 1/(1−1,6·P/Pe)</td><td class="num">${r.inestable ? '<span class="chip bad">INESTABLE</span>' : fmt3(r.Bamp)}</td></tr>
+      </table>
+      <div style="overflow-x:auto;margin-top:.6rem"><table class="results">
+        <tr><th>Cuerpo</th><th>t (mm)</th><th>D/t</th><th>Fcr (kgf/cm²)</th><th>P (kN)</th><th>Pc (kN)</th><th>Mc (kN·m)</th><th>Viento</th><th>Sismo</th></tr>
+        ${r.cuerpos.map(c => `<tr><td>${c.n} (z = ${fmt2(c.z0)} m)</td><td class="num">${fmt1(c.t)}</td><td class="num">${fr(c.Dt, 1)}</td><td class="num">${c.Fcr != null ? fmt0(c.Fcr * 10.1972) : '<span class="chip bad">FUERA DE RANGO</span>'}</td><td class="num">${fr(c.P / 1000, 1)}</td><td class="num">${c.Pc != null ? fr(c.Pc / 1000, 1) : '—'}</td><td class="num">${c.Mc != null ? fr(c.Mc / 1e6, 1) : '—'}</td><td class="num">${cdChip(c.vto.ok, c.vto.ratio)}</td><td class="num">${cdChip(c.sis.ok, c.sis.ratio)}</td></tr>`).join('')}
+      </table></div>
+      <div class="note">Cada cuerpo se verifica en su sección inferior: P = peso sobre esa cota; Mw y Ms = momentos de viento y sismo en esa cota, amplificados por B. Fcr con el pandeo local (Q, E7-7) y global (Fe = Pe/A del cuerpo).</div>`;
 
+    const fv = r.fundViento, fs = r.fundSismo, fa = r.fundSismoAbajo;
+    const pres = x => x.areaValida ? cdChip(x.okPresion, x.qEq != null ? x.qEq / state.qAdm : null) : '<span class="chip bad">NO CUMPLE</span>';
+    const bp = x => x.areaValida ? fmt3(x.Bp) + ' m' : "<span class=\"chip bad\">B'≤0 — excentricidad excesiva</span>";
     document.getElementById('ch2_fundacion').innerHTML = `
       <table class="results">
         <tr><td>W,zapata</td><td class="num">${fmt3(r.Wf)} Ton</td></tr>
         <tr><td>W,relleno</td><td class="num">${fmt3(r.Wrelleno)} Ton</td></tr>
         <tr><td>P,fundación (servicio)</td><td class="num">${fmt2(r.Pfundacion)} Ton</td></tr>
         <tr><th colspan="2">Viento</th></tr>
-        <tr><td>e = M/P</td><td class="num">${fmt3(r.fundViento.e)} m</td></tr>
-        <tr><td>B' = B-2|e|</td><td class="num">${r.fundViento.areaValida ? fmt3(r.fundViento.Bp) + ' m' : "<span class=\"chip bad\">B'≤0 — excentricidad excesiva</span>"}</td></tr>
-        <tr><td>Presión de contacto q_eq ≤ q_adm</td><td class="num">${r.fundViento.areaValida ? cdChip(r.fundViento.okPresion, r.fundViento.qEq != null ? r.fundViento.qEq / state.qAdm : null) : '<span class="chip bad">NO CUMPLE</span>'}</td></tr>
-        <tr><td>Deslizamiento FS≥1.5</td><td class="num">${cdChip(r.fundViento.okDesliz, r.fundViento.FSdesliz != null ? 1 / r.fundViento.FSdesliz : null)}</td></tr>
-        <tr><th colspan="2">Sismo</th></tr>
-        <tr><td>e = M/P</td><td class="num">${fmt3(r.fundSismo.e)} m</td></tr>
-        <tr><td>B' = B-2|e|</td><td class="num">${r.fundSismo.areaValida ? fmt3(r.fundSismo.Bp) + ' m' : "<span class=\"chip bad\">B'≤0 — excentricidad excesiva</span>"}</td></tr>
-        <tr><td>Presión de contacto q_eq ≤ q_adm</td><td class="num">${r.fundSismo.areaValida ? cdChip(r.fundSismo.okPresion, r.fundSismo.qEq != null ? r.fundSismo.qEq / state.qAdm : null) : '<span class="chip bad">NO CUMPLE</span>'}</td></tr>
-        <tr><td>Deslizamiento FS≥1.5</td><td class="num">${cdChip(r.fundSismo.okDesliz, r.fundSismo.FSdesliz != null ? 1 / r.fundSismo.FSdesliz : null)}</td></tr>
+        <tr><td>e = M/P</td><td class="num">${fmt3(fv.e)} m</td></tr>
+        <tr><td>B' = B-2|e|</td><td class="num">${bp(fv)}</td></tr>
+        <tr><td>Presión de contacto q_eq ≤ q_adm</td><td class="num">${pres(fv)}</td></tr>
+        <tr><td>Deslizamiento FS≥1.5</td><td class="num">${cdChip(fv.okDesliz, fv.FSdesliz != null ? 1 / fv.FSdesliz : null)}</td></tr>
+        <tr><th colspan="2">Sismo (con sismo vertical ±Cv·I)</th></tr>
+        <tr><td>P,fundación·(1−Cv·I)</td><td class="num">${fmt2(fs.P)} Ton</td></tr>
+        <tr><td>e = M/P</td><td class="num">${fmt3(fs.e)} m</td></tr>
+        <tr><td>B' = B-2|e|</td><td class="num">${bp(fs)}</td></tr>
+        <tr><td>Presión de contacto q_eq ≤ q_adm — vertical hacia arriba</td><td class="num">${pres(fs)}</td></tr>
+        <tr><td>Presión de contacto q_eq ≤ q_adm — vertical hacia abajo</td><td class="num">${pres(fa)}</td></tr>
+        <tr><td>Deslizamiento FS≥1.5</td><td class="num">${cdChip(fs.okDesliz, fs.FSdesliz != null ? 1 / fs.FSdesliz : null)}</td></tr>
       </table>`;
 
+    const an = (x, tit) => x.na ? `<tr><th colspan="2">${tit}</th></tr><tr><td colspan="2">N/A — definir BC y N° de pernos</td></tr>` : `
+        <tr><th colspan="2">${tit}</th></tr>
+        <tr><td>Condición</td><td class="num">${x.autoanclado ? '<span class="chip ok">AUTOANCLADO</span>' : '<span class="chip neutral">REQUIERE ANCLAJE</span>'}</td></tr>
+        <tr><td>T por perno</td><td class="num">${fmt2(x.Tuplift / 1000)} kN</td></tr>
+        <tr><td>Diámetro seleccionado suficiente</td><td class="num">${cdChip(x.ok, x.dMin > 0 ? x.dMin / r.dPerno : 0)}</td></tr>`;
     document.getElementById('ch2_anclajes').innerHTML = `
-      <table class="results">
-        <tr><th colspan="2">Viento</th></tr>
-        <tr><td>Condición</td><td class="num">${r.anclajeViento.autoanclado ? '<span class="chip ok">AUTOANCLADO</span>' : '<span class="chip neutral">REQUIERE ANCLAJE</span>'}</td></tr>
-        <tr><td>T por perno</td><td class="num">${fmt2(r.anclajeViento.Tuplift / 1000)} kN</td></tr>
-        <tr><td>Diámetro seleccionado suficiente</td><td class="num">${cdChip(r.anclajeViento.ok, r.anclajeViento.dMin > 0 ? r.anclajeViento.dMin / r.dPerno : 0)}</td></tr>
-        <tr><th colspan="2">Sismo</th></tr>
-        <tr><td>Condición</td><td class="num">${r.anclajeSismo.autoanclado ? '<span class="chip ok">AUTOANCLADO</span>' : '<span class="chip neutral">REQUIERE ANCLAJE</span>'}</td></tr>
-        <tr><td>T por perno</td><td class="num">${fmt2(r.anclajeSismo.Tuplift / 1000)} kN</td></tr>
-        <tr><td>Diámetro seleccionado suficiente</td><td class="num">${cdChip(r.anclajeSismo.ok, r.anclajeSismo.dMin > 0 ? r.anclajeSismo.dMin / r.dPerno : 0)}</td></tr>
-      </table>
-      <div class="note">sigma_adm = 0,5·Fy del perno (misma convención que "Estanque de Acero"). d,perno=${fmt1(r.dPerno)} mm (${esc(r.diamPernoEt)}).</div>`;
+      <table class="results">${an(r.anclajeViento, 'Viento')}${an(r.anclajeSismo, 'Sismo, con P·(1−Cv·I)')}</table>
+      <div class="note">sigma_adm = 0,5·Fy del perno (misma convención que "Estanque de Acero"). d,perno = ${fmt1(r.dPerno)} mm (${esc(r.diamPernoEt)}).</div>`;
 
     document.getElementById('ch2_resumen').innerHTML = `<div class="global-verdict ${r.global ? 'ok' : 'bad'}"><span class="label">ESTATUS GLOBAL</span><span class="label">${r.global == null ? 'N/A' : (r.global ? 'CUMPLE' : 'NO CUMPLE')}</span></div>`;
 
     if (typeof buildPrintSheetsChimeneaAcero === 'function') buildPrintSheetsChimeneaAcero(state, r);
   }
 
+  ['zona', 'suelo', 'categ'].forEach(k => { const e = document.getElementById('ch2_' + k); if (e) e.value = state[k]; });
   container.querySelectorAll('input,select').forEach(el => el.addEventListener('input', recalc));
   recalc();
 }
@@ -43000,7 +43093,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261006-1753. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261006-1810. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
