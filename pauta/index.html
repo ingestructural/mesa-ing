@@ -1,0 +1,286 @@
+<!doctype html><html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2F6B4F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mi Pauta">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html,body{background:#EFF4EE}@media (prefers-color-scheme:dark){html,body{background:#111813}}[hidden]:not([hidden=until-found i]){display:none!important}</style>
+</head><body>
+<title>Mi Pauta Fase 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Una pantalla tipo app: 4 botones grandes de comida arriba, opciones en tarjetas debajo, recordatorios al pie */
+:root{
+ --bg:#EFF4EE; --card:#FFFFFF; --ink:#1C2A22; --muted:#5B6B61; --line:#D3DFD6;
+ --leaf:#2F6B4F; --leaf-soft:#DCEBE1; --citrus:#C9821E; --citrus-soft:#FBEBD3;
+ --ff-d:'Bricolage Grotesque','Arial Narrow',Arial,sans-serif; --ff-b:'Atkinson Hyperlegible',Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#111813;--card:#18221B;--ink:#E5EEE7;--muted:#9AAB9F;--line:#2A3A2F;--leaf:#6FC497;--leaf-soft:#1E3326;--citrus:#F0B35C;--citrus-soft:#3A2A12;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#111813;--card:#18221B;--ink:#E5EEE7;--muted:#9AAB9F;--line:#2A3A2F;--leaf:#6FC497;--leaf-soft:#1E3326;--citrus:#F0B35C;--citrus-soft:#3A2A12;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--ff-b);font-size:17px;line-height:1.45;margin:0;padding-inline:16px;padding-block:18px 40px}
+.wrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header h1{font-family:var(--ff-d);font-weight:800;font-size:1.9rem;margin:0;letter-spacing:-.01em;text-wrap:balance}
+header p{margin:2px 0 0;color:var(--muted);font-size:.95rem}
+nav{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+nav button{font:700 1.05rem var(--ff-b);color:var(--ink);background:var(--card);border:2px solid var(--line);border-radius:14px;padding:16px 12px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;cursor:pointer;text-align:left}
+nav button small{font-weight:400;color:var(--muted);font-size:.82rem}
+nav button[aria-pressed="true"]{background:var(--leaf);border-color:var(--leaf);color:var(--bg)}
+nav button[aria-pressed="true"] small{color:var(--bg);opacity:.85}
+nav button:focus-visible,.opt:focus-visible,.chip:focus-visible,.btn:focus-visible{outline:3px solid var(--citrus);outline-offset:2px}
+.panel{display:flex;flex-direction:column;gap:12px}
+.panel h2{font-family:var(--ff-d);font-weight:800;font-size:1.45rem;margin:4px 0 0}
+.nota{color:var(--muted);margin:0;font-size:.95rem}
+.opt{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%}
+.opt .top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.opt b{font-family:var(--ff-d);font-weight:600;font-size:1.12rem}
+.opt ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:3px}
+.opt.hoy{border:2px solid var(--leaf);background:var(--leaf-soft)}
+.tag{font-size:.75rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.tag.hoy{background:var(--leaf);color:var(--bg)}
+.adapt{font-size:.85rem;color:var(--citrus);background:var(--citrus-soft);border-radius:8px;padding:3px 8px;align-self:flex-start}
+.grupo{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.grupo h3{margin:0;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:inherit;font-size:.98rem;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);border-radius:99px;padding:7px 14px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--leaf);border-color:var(--leaf);color:var(--bg)}
+.plato{background:var(--leaf-soft);border-radius:14px;padding:14px 16px;font-size:1.05rem}
+.plato b{font-family:var(--ff-d)}
+.btn{font:700 1rem var(--ff-b);border-radius:12px;padding:12px 16px;border:2px solid var(--leaf);background:var(--leaf);color:var(--bg);cursor:pointer}
+.btn.sec{background:transparent;color:var(--leaf)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+footer{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:14px;color:var(--muted);font-size:.92rem}
+footer ul{margin:0;padding-left:1.1em}
+details summary{cursor:pointer;font-weight:700;color:var(--ink)}
+@media (prefers-reduced-motion:no-preference){.opt,.chip,nav button{transition:background .15s,border-color .15s}}
+</style>
+<div class="wrap">
+ <header><h1>Mi Pauta · Fase 2</h1><p id="fecha"></p></header>
+ <nav id="nav" aria-label="Comidas"></nav>
+ <section class="panel" id="panel" aria-live="polite"></section>
+ <footer>
+  <ul id="gen"></ul>
+  <details><summary>No incluidos en las opciones</summary><p id="excl" style="margin:6px 0 0"></p></details>
+ </footer>
+</div>
+<script>
+const D={
+ "desayuno": {
+  "titulo": "Desayuno",
+  "nota": "Elige una opción.",
+  "opciones": [
+   {
+    "n": "Pan con jamón y quesillo",
+    "items": [
+     "1 rebanada de pan integral (o 2 rebanadas de pan Perfecto de molde, o 1 pan pita Perfecto)",
+     "1 rebanada de jamón cocido",
+     "1 trozo de quesillo Quillayes Protein, con o sin palta",
+     "1 vaso de leche descremada"
+    ]
+   },
+   {
+    "n": "Cereales o semillas con lácteo",
+    "items": [
+     "1/2 taza de cereales integrales (o 4 cucharaditas colmadas de semillas de maravilla, chía, zapallo y avena)",
+     "1 yogurt descremado o 1 vaso de leche descremada",
+     "6 almendras"
+    ]
+   },
+   {
+    "n": "Huevos con jamón",
+    "items": [
+     "2 huevos con jamón en cubos",
+     "1 rebanada de pan integral",
+     "1 jugo de naranja"
+    ]
+   },
+   {
+    "n": "Taza de frutas con yogurt",
+    "items": [
+     "1 taza de frutas: durazno, ciruelas, pera, piña, manzana verde y berries",
+     "1 yogurt descremado"
+    ],
+    "adapt": "Sin kiwi"
+   }
+  ]
+ },
+ "almuerzo": {
+  "titulo": "Almuerzo",
+  "nota": "Arma tu plato: 1 proteína + 3/4 de taza de verduras + aliño. Puedes agregar 1 extra.",
+  "proteina": [
+   "Vacuno",
+   "Pollo",
+   "Pavo",
+   "Pescado",
+   "Mariscos"
+  ],
+  "verduras": [
+   "Repollo",
+   "Acelga",
+   "Cebolla",
+   "Alcachofas",
+   "Pimiento morrón",
+   "Coliflor",
+   "Tomate",
+   "Zanahoria"
+  ],
+  "alino": "1 cucharadita de aceite de oliva",
+  "extra": [
+   "6 aceitunas",
+   "1/2 palta pequeña",
+   "1 cucharada de mayonesa light"
+  ]
+ },
+ "colacion": {
+  "titulo": "Colación",
+  "nota": "Son 2 al día: elige una opción para la mañana y otra para la tarde.",
+  "opciones": [
+   {
+    "n": "Yogurt descremado",
+    "items": [
+     "1 yogurt descremado (Protein 10, Loncoleche 14 o Colun Protein Plus 11)"
+    ]
+   },
+   {
+    "n": "Leche descremada",
+    "items": [
+     "1 vaso de leche descremada (Protein-Milk o Soprole Protein+)"
+    ]
+   },
+   {
+    "n": "Protein shot",
+    "items": [
+     "1 protein shot"
+    ]
+   },
+   {
+    "n": "Barra de proteína",
+    "items": [
+     "1 barra de proteína de 12 a 15 g"
+    ]
+   }
+  ],
+  "fruta": [
+   "1 manzana verde",
+   "1 naranja",
+   "1 pera",
+   "5 frutillas",
+   "1 durazno"
+  ],
+  "fruta_adapt": "Sin kiwi"
+ },
+ "cena": {
+  "titulo": "Cena",
+  "nota": "Elige una opción.",
+  "opciones": [
+   {
+    "n": "Atún con ensalada",
+    "items": [
+     "1/2 lata de atún al agua",
+     "Ensalada de 1 tomate (con repollo, zanahoria o pimiento si quieres) y 1 cucharadita de aceite de oliva",
+     "1 gelatina light"
+    ],
+    "adapt": "Sin lechuga: la ensalada lleva tomate y verduras permitidas"
+   },
+   {
+    "n": "Carne o pollo con ensalada",
+    "items": [
+     "1 trozo de carne o pollo",
+     "Ensalada de verduras permitidas (tomate, repollo, zanahoria, pimiento, coliflor) con 1 cucharadita de aceite de oliva",
+     "1 naranja"
+    ],
+    "adapt": "Sin lechuga: «ensalada verde» cambiada por verduras permitidas"
+   },
+   {
+    "n": "Sopa de pollo o pavo",
+    "items": [
+     "Sopa de pollo o pavo con verduras permitidas (acelga, cebolla, pimiento morrón…), o 1 porción de sopa gourmet premium con clara de huevo",
+     "1 manzana verde o pera de agua"
+    ]
+   },
+   {
+    "n": "Tortilla u omelette de verduras",
+    "items": [
+     "1 tortilla de verduras, o 1 omelette con verduras, o 1 trozo de budín de verduras con proteína"
+    ],
+    "adapt": "Hacerla con verduras permitidas"
+   }
+  ]
+ },
+ "general": [
+  "5 comidas al día (desayuno, colación, almuerzo, colación y cena).",
+  "2 litros de líquido al día.",
+  "Puedes acompañar cualquier comida con té o café con endulzante.",
+  "Pauta personal: no retomar ni modificar sin control médico."
+ ],
+ "excluidos": [
+  "Kiwi",
+  "Espárragos",
+  "Espinacas",
+  "Lechugas",
+  "Porotos verdes",
+  "Champiñones",
+  "Pepino",
+  "Zapallo italiano",
+  "Brócoli",
+  "Berenjenas",
+  "Betarraga",
+  "Arvejas"
+ ]
+};
+const $=s=>document.querySelector(s);
+const hoyKey="pauta-"+new Date().toISOString().slice(0,10);
+let H={};try{H=JSON.parse(localStorage.getItem(hoyKey)||"{}")}catch(e){}
+const save=()=>{try{localStorage.setItem(hoyKey,JSON.stringify(H))}catch(e){}};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const MEALS=[["desayuno","Desayuno","4 opciones"],["colacion","Colación","mañana y tarde"],["almuerzo","Almuerzo","arma tu plato"],["cena","Cena","4 opciones"]];
+$("#fecha").textContent=new Date().toLocaleDateString("es-CL",{weekday:"long",day:"numeric",month:"long"});
+let cur="desayuno";try{cur=localStorage.getItem("pauta-tab")||defaultTab()}catch(e){cur=defaultTab()}
+function defaultTab(){const h=new Date().getHours();return h<10?"desayuno":h<13?"colacion":h<16?"almuerzo":h<19?"colacion":"cena"}
+function nav(){$("#nav").innerHTML=MEALS.map(([k,t,s])=>`<button type="button" data-k="${k}" aria-pressed="${k===cur}">${t}<small>${H[k]?"✓ elegido hoy":s}</small></button>`).join("");
+ document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>{cur=b.dataset.k;try{localStorage.setItem("pauta-tab",cur)}catch(e){}render()})}
+function opts(k,list,slot){return list.map((o,i)=>{const sel=H[slot||k]===i;return `<button type="button" class="opt${sel?" hoy":""}" data-i="${i}" data-slot="${slot||k}"><span class="top"><b>${esc(o.n)}</b>${sel?'<span class="tag hoy">Hoy</span>':""}</span><ul>${o.items.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>${o.adapt?`<span class="adapt">${esc(o.adapt)}</span>`:""}</button>`}).join("")}
+function bindOpts(){document.querySelectorAll(".opt").forEach(b=>b.onclick=()=>{const s=b.dataset.slot,i=+b.dataset.i;H[s]=H[s]===i?undefined:i;if(s.startsWith("colacion"))H.colacion=(H.colacion_m!==undefined||H.colacion_t!==undefined)?1:undefined;save();render()})}
+function render(){nav();const P=$("#panel");const M=D[cur];let h=`<h2>${M.titulo}</h2><p class="nota">${esc(M.nota)}</p>`;
+ if(cur==="desayuno"||cur==="cena"){h+=opts(cur,M.opciones)}
+ else if(cur==="colacion"){const fr=M.fruta.map(f=>({n:"Fruta: "+f.replace(/^1 /,""),items:[f]}));const all=[...M.opciones,...fr];
+  h+=`<h3 style="margin:6px 0 0;font-family:var(--ff-d)">Mañana</h3>`+opts(cur,all,"colacion_m")+`<h3 style="margin:10px 0 0;font-family:var(--ff-d)">Tarde</h3>`+opts(cur,all,"colacion_t")+`<span class="adapt">${esc(M.fruta_adapt)}</span>`}
+ else{const A=H.alm||{p:null,v:[],x:null};
+  const chip=(g,v,on)=>`<button type="button" class="chip" data-g="${g}" data-v="${esc(v)}" aria-pressed="${on}">${esc(v)}</button>`;
+  h+=`<div class="grupo"><h3>1 · Proteína (elige 1)</h3><div class="chips">${M.proteina.map(v=>chip("p",v,A.p===v)).join("")}</div></div>
+  <div class="grupo"><h3>2 · Verduras · 3/4 de taza en total</h3><div class="chips">${M.verduras.map(v=>chip("v",v,A.v.includes(v))).join("")}</div></div>
+  <div class="grupo"><h3>3 · Aliño</h3><div>${esc(M.alino)}</div></div>
+  <div class="grupo"><h3>4 · Extra opcional (elige 1)</h3><div class="chips">${M.extra.map(v=>chip("x",v,A.x===v)).join("")}</div></div>
+  <div class="row"><button type="button" class="btn" id="sug">Sugerir un plato</button><button type="button" class="btn sec" id="lim">Limpiar</button></div>`;
+  if(A.p||A.v.length){h+=`<div class="plato"><b>Tu plato de hoy:</b> ${esc(A.p||"(falta proteína)")} con ${A.v.length?esc(A.v.join(", ").toLowerCase()):"(faltan verduras)"} (3/4 taza), aliñado con ${esc(M.alino)}${A.x?", más "+esc(A.x):""}.</div>`}}
+ P.innerHTML=h;bindOpts();
+ if(cur==="almuerzo"){const A=H.alm||{p:null,v:[],x:null};const M=D.almuerzo;
+  document.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{const g=c.dataset.g,v=c.dataset.v;if(g==="p")A.p=A.p===v?null:v;else if(g==="x")A.x=A.x===v?null:v;else A.v=A.v.includes(v)?A.v.filter(x=>x!==v):[...A.v,v];H.alm=A;H.almuerzo=(A.p&&A.v.length)?1:undefined;save();render()});
+  $("#sug").onclick=()=>{const r=a=>a[Math.floor(Math.random()*a.length)];const vs=[...M.verduras].sort(()=>Math.random()-.5).slice(0,2+Math.floor(Math.random()*2));H.alm={p:r(M.proteina),v:vs,x:Math.random()<.5?r(M.extra):null};H.almuerzo=1;save();render()};
+  $("#lim").onclick=()=>{H.alm={p:null,v:[],x:null};H.almuerzo=undefined;save();render()}}}
+$("#gen").innerHTML=D.general.map(g=>`<li>${esc(g)}</li>`).join("");$("#excl").textContent=D.excluidos.join(", ")+".";
+render();
+</script>
+
+<script>
+/* App instalable (PWA) — versión 20261006-1101. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      reg.update();
+      reg.addEventListener('updatefound', () => { const w = reg.installing; if (!w) return;
+        w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) {
+          const b = document.createElement('div'); b.textContent = 'Nueva versión de Mi Pauta disponible — toque para actualizar';
+          b.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:99999;background:#2F6B4F;color:#fff;padding:10px 14px;border-radius:8px;font:600 14px system-ui,-apple-system,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer';
+          b.onclick = () => location.reload(); document.body.appendChild(b); } }); });
+    }).catch(() => {});
+  });
+}
+</script>
+</body></html>
