@@ -1730,6 +1730,9 @@ const TOOLS = [
   { id:'perfiles-h', cat:'Acero', name:'Perfiles H / I', file:'Diseno_Perfiles_H_1.xlsx',
     desc:'Perfiles doble T soldados (IN/IP/HN/PH) y laminados internacionales (JIS/IPN/IPE/HEA/HEB/UPN/UPE): tracción, compresión, flexión, corte, esbeltez local e interacción P+M.',
     tag:'AISC 360-16', calc:'perfilesH' },
+  { id:'propiedades-perfiles', cat:'Acero', name:'Propiedades Geométricas de Perfiles', file:null,
+    desc:'Selector de perfiles de uso habitual (soldados ICHA, laminados IPE/HEA/HEB/HEM/IPN/UPN/UPE/JIS, costaneras C/CA/Z, ángulos, tubos SHS/RHS/CHS, barras, pletinas o perfil personalizado): dimensiones, propiedades geométricas (A, I, W, Z, i, J, Cw, ejes principales), esbeltez local y dibujo acotado a escala.',
+    tag:'AISC 360-16 Tabla B4.1 · Catálogos ICHA', calc:'propPerfiles' },
   { id:'flexion-atiesadores', cat:'Acero', name:'Flexión Perfil H/I y Atiesadores por Corte', file:'Flexion_Perfil_H_Atiesadores.xlsx',
     desc:'Diseño a flexión en el eje fuerte (x-x) de un perfil doble T (mismo catálogo de \"Perfiles H / I\"), y determinación / diseño completo de atiesadores transversales por corte con acción de campo de tracción: aplicabilidad, momento de inercia (G2.3), área (G3.3) y esbeltez local de la platina (J10.8).',
     tag:'AISC 360-16 Cap. F y G', calc:'flexionAtiesadores' },
@@ -42991,6 +42994,495 @@ function renderChimeneaAcero(container) {
   recalc();
 }
 
+/* =========================================================================
+   PROPIEDADES GEOMÉTRICAS DE PERFILES
+   Selector de perfiles (catálogos ya presentes en la Mesa + ángulos, tubos,
+   barras y pletinas de uso habitual + perfil personalizado). Las propiedades
+   se calculan a partir del contorno real de la sección (polígono con radios
+   de acuerdo discretizados) mediante las integrales de contorno (teorema de
+   Green): A, centroide, Ix, Iy, Ixy, ejes principales, módulos elásticos y
+   plásticos (eje neutro plástico por bisección con recorte del polígono).
+   J y Cw con fórmulas de pared delgada (AISC Design Guide 9 / Bredt).
+   Esbeltez local según AISC 360-16 Tabla B4.1a (compresión) y B4.1b (flexión).
+   Unidades: dimensiones en mm; propiedades en cm, cm², cm³, cm⁴, cm⁶.
+   ========================================================================= */
+const PP_ACEROS = [
+  { id: 'A270ES', n: 'A270ES (ICHA)', Fy: 270 },
+  { id: 'A345ES', n: 'A345ES (ICHA)', Fy: 345 },
+  { id: 'A36', n: 'ASTM A36', Fy: 250 },
+  { id: 'A572', n: 'ASTM A572 Gr.50', Fy: 345 },
+  { id: 'A500B', n: 'ASTM A500 Gr.B (tubo rect.)', Fy: 315 },
+  { id: 'A500Bc', n: 'ASTM A500 Gr.B (tubo circ.)', Fy: 290 },
+  { id: 'A53', n: 'ASTM A53 Gr.B (cañería)', Fy: 240 },
+  { id: 'A1011', n: 'Plegado ASTM A1011 SS Gr.33', Fy: 230 },
+];
+
+// ---- catálogos adicionales (dimensiones nominales de uso habitual) ----
+const PP_ANG_IG = [[20,3,3.5],[25,3,3.5],[25,4,3.5],[30,3,5],[30,4,5],[35,4,5],[40,4,6],[40,5,6],[45,5,7],[50,5,7],[50,6,7],[60,6,8],[60,8,8],[65,7,9],[70,7,9],[75,8,9],[80,8,10],[80,10,10],[90,9,11],[100,10,12],[100,12,12],[120,12,13],[150,15,16],[200,20,18]];
+const PP_ANG_DES = [[60,40,5,6],[60,40,6,6],[75,50,6,7],[80,40,6,7],[100,50,8,9],[100,65,8,10],[100,75,8,10],[120,80,10,11],[150,90,10,12],[150,100,12,12]];
+const PP_SHS = [[20,2],[25,2],[30,2],[30,3],[40,2],[40,3],[50,2],[50,3],[60,3],[70,3],[75,3],[80,3],[80,4],[100,3],[100,4],[100,5],[120,4],[120,5],[150,5],[150,6],[200,6],[200,8]];
+const PP_RHS = [[40,20,2],[50,25,2],[50,30,2],[60,40,2],[60,40,3],[80,40,3],[100,50,3],[100,50,4],[120,60,4],[150,50,4],[150,100,4],[150,100,5],[200,100,5],[200,100,6]];
+const PP_BARRA_R = [8,10,12,16,18,20,22,25,28,32,36,40,50];
+const PP_BARRA_C = [10,12,16,20,25,30,40,50];
+const PP_PLETINA = [[25,3],[25,5],[30,5],[40,5],[50,5],[50,6],[50,10],[65,6],[75,6],[75,10],[100,6],[100,10],[100,12],[150,10],[150,12],[200,12]];
+
+function ppNorm(s) { return String(s || '').replace(/\*/g, '').replace(/\s+/g, '').toUpperCase(); }
+function ppMasR(desig) { // radio de acuerdo desde el catálogo de masividad (si existe)
+  const m = (typeof CATALOG_MASIVIDAD !== 'undefined') ? CATALOG_MASIVIDAD.find(x => ppNorm(x.desig) === ppNorm(desig)) : null;
+  return m ? (m.r || 0) : 0;
+}
+const PP_FAMILIAS = (function () {
+  const F = [];
+  const fromH = (fam, label, kind, grupo, mapDesig) => {
+    const xs = CATALOG_PERFILES_H.filter(p => p.fam === fam);
+    if (!xs.length) return;
+    F.push({ id: 'H_' + fam, label, grupo, items: xs.map(p => {
+      const r = mapDesig ? ppMasR(mapDesig(p)) : 0;
+      return { n: p.perfil.replace(/\s*\*\s*$/, '').replace(/\s*\*/, ''), kind, d: { h: p.H, b: p.B, tw: p.tw, tf: p.tf, r },
+        cat: { A: p.A, Ix: p.Ix, Wx: p.Wx, ix: p.ix, Iy: p.Iy, Wy: p.Wy, iy: p.iy, peso: p.peso } };
+    }) });
+  };
+  const num = p => (String(p.perfil).match(/\d+/) || [''])[0];
+  fromH('IN', 'IN — doble T soldado (ICHA)', 'I', 'Soldados ICHA');
+  fromH('IP', 'IP — doble T soldado (ICHA)', 'I', 'Soldados ICHA');
+  fromH('HN', 'HN — H soldado (ICHA)', 'I', 'Soldados ICHA');
+  fromH('PH', 'PH — H soldado (ICHA)', 'I', 'Soldados ICHA');
+  fromH('IPE', 'IPE — laminado europeo', 'I', 'Laminados', p => 'IPE' + num(p));
+  fromH('HEA', 'HEA (IPBL) — laminado europeo', 'I', 'Laminados', p => 'HEA' + num(p));
+  fromH('HEB', 'HEB (IPB) — laminado europeo', 'I', 'Laminados', p => 'HEB' + num(p));
+  if (typeof CATALOG_MASIVIDAD !== 'undefined') {
+    const hem = CATALOG_MASIVIDAD.filter(x => x.fam === 'HEM');
+    if (hem.length) F.push({ id: 'HEM', label: 'HEM — laminado europeo', grupo: 'Laminados', items: hem.map(x => ({ n: x.desig.replace(/^HEM/, 'HEM '), kind: 'I', d: { h: x.h, b: x.b, tw: x.tw, tf: x.tf, r: x.r || 0 }, cat: { A: x.A, peso: x.masa } })) });
+  }
+  fromH('IPN', 'IPN — laminado (ala inclinada)', 'I', 'Laminados');
+  fromH('JIS', 'JIS — laminado japonés', 'I', 'Laminados');
+  fromH('UPN', 'UPN — canal laminado', 'U', 'Laminados', p => 'UPN' + num(p));
+  fromH('UPE', 'UPE — canal laminado ala paralela', 'U', 'Laminados');
+  const cs = CATALOG_COSTANERAS;
+  F.push({ id: 'CC', label: 'C — canal plegado', grupo: 'Plegados (costaneras)', items: cs.filter(p => p.fam === 'C').map(p => ({ n: p.perfil, kind: 'CF', d: { h: p.H, b: p.B, e: p.e, c: 0 }, cat: { A: p.A, Ix: p.Ix, Wx: p.Wx, ix: p.ix, Iy: p.Iy, Wy: p.Wy, iy: p.iy, peso: p.peso } })) });
+  F.push({ id: 'CA', label: 'CA — canal atiesado plegado', grupo: 'Plegados (costaneras)', items: cs.filter(p => p.fam === 'CA').map(p => ({ n: p.perfil, kind: 'CF', d: { h: p.H, b: p.B, e: p.e, c: p.clabio || 0 }, cat: { A: p.A, Ix: p.Ix, Wx: p.Wx, ix: p.ix, Iy: p.Iy, Wy: p.Wy, iy: p.iy, peso: p.peso } })) });
+  F.push({ id: 'Z', label: 'Z — costanera Z plegada', grupo: 'Plegados (costaneras)', items: cs.filter(p => p.fam === 'Z').map(p => ({ n: p.perfil, kind: 'Z', d: { h: p.H, b: p.B, e: p.e, c: p.clabio || 0 }, cat: { A: p.A, Ix: p.Ix, Wx: p.Wx, ix: p.ix, Iy: p.Iy, Wy: p.Wy, iy: p.iy, peso: p.peso } })) });
+  F.push({ id: 'LI', label: 'L — ángulo laminado de alas iguales', grupo: 'Ángulos', items: PP_ANG_IG.map(([b, t, r]) => ({ n: `L ${b}x${b}x${t}`, kind: 'L', d: { h: b, b, t, r } })) });
+  F.push({ id: 'LD', label: 'L — ángulo laminado de alas desiguales', grupo: 'Ángulos', items: PP_ANG_DES.map(([h, b, t, r]) => ({ n: `L ${h}x${b}x${t}`, kind: 'L', d: { h, b, t, r } })) });
+  if (typeof CATALOG_MASIVIDAD !== 'undefined') {
+    const lc = CATALOG_MASIVIDAD.filter(x => x.fam === 'Ángulo Cintac');
+    if (lc.length) F.push({ id: 'LC', label: 'L — ángulo plegado', grupo: 'Ángulos', items: lc.map(x => ({ n: x.desig, kind: 'L', d: { h: x.h, b: x.b, t: x.tw, r: x.tw }, cat: { A: x.A, peso: x.masa } })) });
+    const uc = CATALOG_MASIVIDAD.filter(x => x.fam === 'Canal U Cintac');
+    if (uc.length) F.push({ id: 'UC', label: 'U — canal plegado (Cintac)', grupo: 'Plegados (costaneras)', items: uc.map(x => ({ n: x.desig, kind: 'CF', d: { h: x.h, b: x.b, e: x.tw, c: 0 }, cat: { A: x.A, peso: x.masa } })) });
+  }
+  const roRHS = t => (t <= 6 ? 2 : 2.5) * t;
+  F.push({ id: 'SHS', label: 'Tubo cuadrado conformado (SHS)', grupo: 'Tubos', items: PP_SHS.map(([b, t]) => ({ n: `${b}x${b}x${t}`, kind: 'RHS', d: { h: b, b, t, ro: roRHS(t) } })) });
+  F.push({ id: 'RHS', label: 'Tubo rectangular conformado (RHS)', grupo: 'Tubos', items: PP_RHS.map(([h, b, t]) => ({ n: `${h}x${b}x${t}`, kind: 'RHS', d: { h, b, t, ro: roRHS(t) } })) });
+  const chs = [];
+  if (typeof MB_TUBOS !== 'undefined') MB_TUBOS.forEach(x => chs.push({ n: x.nombre, kind: 'CHS', d: { D: x.D, t: x.t }, cat: { peso: x.peso } }));
+  if (typeof CATALOG_MASIVIDAD !== 'undefined') CATALOG_MASIVIDAD.filter(x => x.tipo === 'CHS').forEach(x => chs.push({ n: x.desig, kind: 'CHS', d: { D: x.h, t: x.tw }, cat: { A: x.A, peso: x.masa } }));
+  chs.sort((a, b) => a.d.D - b.d.D || a.d.t - b.d.t);
+  F.push({ id: 'CHS', label: 'Tubo circular / cañería (CHS)', grupo: 'Tubos', items: chs });
+  F.push({ id: 'BR', label: 'Barra redonda lisa', grupo: 'Barras y pletinas', items: PP_BARRA_R.map(d => ({ n: `Ø ${d} mm`, kind: 'RND', d: { D: d } })) });
+  F.push({ id: 'BC', label: 'Barra cuadrada', grupo: 'Barras y pletinas', items: PP_BARRA_C.map(a => ({ n: `□ ${a} mm`, kind: 'REC', d: { h: a, b: a } })) });
+  F.push({ id: 'PL', label: 'Pletina', grupo: 'Barras y pletinas', items: PP_PLETINA.map(([b, t]) => ({ n: `PL ${b}x${t}`, kind: 'REC', d: { h: t, b } })) });
+  F.push({ id: 'CUSTOM', label: 'Perfil personalizado', grupo: 'Personalizado', items: [] });
+  return F;
+})();
+
+// Campos del perfil personalizado por tipo de sección
+const PP_TIPOS = {
+  I: { n: 'Doble T / H (soldado o laminado)', f: [['h', 'h — altura total (mm)', 300], ['b', 'b — ancho de ala (mm)', 150], ['tf', 'tf — espesor de ala (mm)', 10], ['tw', 'tw — espesor de alma (mm)', 6], ['r', 'r — radio de acuerdo (mm; 0 = soldado)', 0]] },
+  U: { n: 'Canal U laminado', f: [['h', 'h — altura (mm)', 200], ['b', 'b — ancho de ala (mm)', 75], ['tf', 'tf — espesor de ala (mm)', 11.5], ['tw', 'tw — espesor de alma (mm)', 8.5], ['r', 'r — radio de acuerdo (mm)', 0]] },
+  T: { n: 'T (soldada o media H)', f: [['h', 'h — altura total (mm)', 150], ['b', 'b — ancho de ala (mm)', 150], ['tf', 'tf — espesor de ala (mm)', 10], ['tw', 'tw — espesor de alma (mm)', 8], ['r', 'r — radio de acuerdo (mm)', 0]] },
+  L: { n: 'Ángulo L', f: [['h', 'h — ala vertical (mm)', 75], ['b', 'b — ala horizontal (mm)', 75], ['t', 't — espesor (mm)', 6], ['r', 'r — radio interior (mm)', 6]] },
+  CF: { n: 'Canal plegado C / CA', f: [['h', 'H — altura (mm)', 150], ['b', 'B — ancho de ala (mm)', 50], ['c', 'c — atiesador (mm; 0 = sin atiesador)', 15], ['e', 'e — espesor (mm)', 2]] },
+  Z: { n: 'Z plegada', f: [['h', 'H — altura (mm)', 200], ['b', 'B — ancho de ala (mm)', 70], ['c', 'c — atiesador (mm; 0 = sin atiesador)', 20], ['e', 'e — espesor (mm)', 2.5]] },
+  RHS: { n: 'Tubo rectangular / cuadrado', f: [['h', 'H — altura (mm)', 150], ['b', 'B — ancho (mm)', 100], ['t', 't — espesor (mm)', 4], ['ro', 'ro — radio exterior (mm)', 8]] },
+  CHS: { n: 'Tubo circular', f: [['D', 'D — diámetro exterior (mm)', 168.3], ['t', 't — espesor (mm)', 7.11]] },
+  REC: { n: 'Rectángulo macizo / pletina', f: [['b', 'b — ancho (mm)', 100], ['h', 'h — alto (mm)', 10]] },
+  RND: { n: 'Barra redonda maciza', f: [['D', 'D — diámetro (mm)', 20]] },
+};
+
+/* ---------- geometría: anillos con radios de esquina → polígonos ---------- */
+function ppRound(pts, nArc) { // pts = [[x,y,r],...] (anillo cerrado)
+  const out = [], n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const [x, y, r] = pts[i];
+    if (!r) { out.push([x, y]); continue; }
+    const p0 = pts[(i - 1 + n) % n], p2 = pts[(i + 1) % n];
+    let v1 = [p0[0] - x, p0[1] - y], v2 = [p2[0] - x, p2[1] - y];
+    const l1 = Math.hypot(...v1), l2 = Math.hypot(...v2);
+    v1 = [v1[0] / l1, v1[1] / l1]; v2 = [v2[0] / l2, v2[1] / l2];
+    const ang = Math.acos(Math.max(-1, Math.min(1, v1[0] * v2[0] + v1[1] * v2[1])));
+    const d = r / Math.tan(ang / 2);
+    const t1 = [x + v1[0] * d, y + v1[1] * d], t2 = [x + v2[0] * d, y + v2[1] * d];
+    const bis = [v1[0] + v2[0], v1[1] + v2[1]], lb = Math.hypot(...bis);
+    const h = r / Math.sin(ang / 2);
+    const c = [x + bis[0] / lb * h, y + bis[1] / lb * h];
+    let a1 = Math.atan2(t1[1] - c[1], t1[0] - c[0]), a2 = Math.atan2(t2[1] - c[1], t2[0] - c[0]);
+    let da = a2 - a1; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+    const k = nArc || 12;
+    for (let j = 0; j <= k; j++) { const a = a1 + da * j / k; out.push([c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)]); }
+  }
+  return out;
+}
+function ppCircle(cx, cy, R, n) { const o = []; n = n || 240; for (let i = 0; i < n; i++) { const a = 2 * Math.PI * i / n; o.push([cx + R * Math.cos(a), cy + R * Math.sin(a)]); } return o; }
+function ppSignedArea(p) { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; } return s / 2; }
+function ppOrient(p, pos) { const s = ppSignedArea(p); return (s > 0) === pos ? p : p.slice().reverse(); }
+function ppMoments(rings) { // integrales sobre el área (anillos con signo)
+  let A = 0, Sx = 0, Sy = 0, Ixx = 0, Iyy = 0, Ixy = 0;
+  rings.forEach(p => { for (let i = 0; i < p.length; i++) {
+    const [x0, y0] = p[i], [x1, y1] = p[(i + 1) % p.length], c = x0 * y1 - x1 * y0;
+    A += c / 2; Sy += (x0 + x1) * c / 6; Sx += (y0 + y1) * c / 6;
+    Ixx += (y0 * y0 + y0 * y1 + y1 * y1) * c / 12; Iyy += (x0 * x0 + x0 * x1 + x1 * x1) * c / 12;
+    Ixy += (x0 * y1 + 2 * x0 * y0 + 2 * x1 * y1 + x1 * y0) * c / 24; } });
+  return { A, Sx, Sy, Ixx, Iyy, Ixy };
+}
+function ppClip(p, axis, cut, keepBelow) { // Sutherland–Hodgman contra un semiplano
+  const k = axis === 'y' ? 1 : 0, ins = q => keepBelow ? q[k] <= cut : q[k] >= cut, out = [];
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i], b = p[(i + 1) % p.length], ia = ins(a), ib = ins(b);
+    if (ia) out.push(a);
+    if (ia !== ib) { const t = (cut - a[k]) / (b[k] - a[k]); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+  }
+  return out.length >= 3 ? out : [];
+}
+function ppPlastic(rings, axis, A) { // módulo plástico respecto del eje neutro plástico paralelo a 'axis'
+  const k = axis === 'y' ? 1 : 0;
+  let lo = Infinity, hi = -Infinity; rings.forEach(p => p.forEach(q => { lo = Math.min(lo, q[k]); hi = Math.max(hi, q[k]); }));
+  const below = c => ppMoments(rings.map(p => ppClip(p, axis, c, true)).filter(p => p.length)).A;
+  let a = lo, b = hi;
+  for (let it = 0; it < 60; it++) { const m = (a + b) / 2; if (below(m) < A / 2) a = m; else b = m; }
+  const pna = (a + b) / 2;
+  const mb = ppMoments(rings.map(p => ppClip(p, axis, pna, true)).filter(p => p.length));
+  const ma = ppMoments(rings.map(p => ppClip(p, axis, pna, false)).filter(p => p.length));
+  const first = m => axis === 'y' ? m.Sx : m.Sy;
+  return { Z: (first(ma) - pna * ma.A) - (first(mb) - pna * mb.A), pna };
+}
+
+/* ---------- contornos por tipo (mm, origen abajo-izquierda) ---------- */
+function ppShape(kind, d) {
+  const rings = [], N = 14;
+  const outer = pts => rings.push(ppOrient(ppRound(pts, N), true));
+  const hole = pts => rings.push(ppOrient(ppRound(pts, N), false));
+  if (kind === 'I') { const { h, b, tw, tf } = d, r = d.r || 0, xl = (b - tw) / 2, xr = (b + tw) / 2;
+    outer([[0, 0, 0], [b, 0, 0], [b, tf, 0], [xr, tf, r], [xr, h - tf, r], [b, h - tf, 0], [b, h, 0], [0, h, 0], [0, h - tf, 0], [xl, h - tf, r], [xl, tf, r], [0, tf, 0]]); }
+  else if (kind === 'U') { const { h, b, tw, tf } = d, r = d.r || 0;
+    outer([[0, 0, 0], [b, 0, 0], [b, tf, 0], [tw, tf, r], [tw, h - tf, r], [b, h - tf, 0], [b, h, 0], [0, h, 0]]); }
+  else if (kind === 'T') { const { h, b, tw, tf } = d, r = d.r || 0, xl = (b - tw) / 2, xr = (b + tw) / 2;
+    outer([[xl, 0, 0], [xr, 0, 0], [xr, h - tf, r], [b, h - tf, 0], [b, h, 0], [0, h, 0], [0, h - tf, 0], [xl, h - tf, r]]); }
+  else if (kind === 'L') { const { h, b, t } = d, r = d.r || 0;
+    outer([[0, 0, 0], [b, 0, 0], [b, t, 0], [t, t, r], [t, h, 0], [0, h, 0]]); }
+  else if (kind === 'CF') { const { h: H, b: B, e } = d, c = d.c || 0, ri = e, ro = 2 * e;
+    if (c > e) outer([[0, 0, ro], [B, 0, ro], [B, c, 0], [B - e, c, 0], [B - e, e, ri], [e, e, ri], [e, H - e, ri], [B - e, H - e, ri], [B - e, H - c, 0], [B, H - c, 0], [B, H, ro], [0, H, ro]]);
+    else outer([[0, 0, ro], [B, 0, 0], [B, e, 0], [e, e, ri], [e, H - e, ri], [B, H - e, 0], [B, H, 0], [0, H, ro]]); }
+  else if (kind === 'Z') { const { h: H, b: B, e } = d, c = d.c || 0, ri = e, ro = 2 * e;
+    if (c > e) outer([[0, 0, ro], [B, 0, ro], [B, H - e, ri], [2 * B - 2 * e, H - e, ri], [2 * B - 2 * e, H - c, 0], [2 * B - e, H - c, 0], [2 * B - e, H, ro], [B - e, H, ro], [B - e, e, ri], [e, e, ri], [e, c, 0], [0, c, 0]]);
+    else outer([[0, 0, 0], [B, 0, ro], [B, H - e, ri], [2 * B - e, H - e, 0], [2 * B - e, H, 0], [B - e, H, ro], [B - e, e, ri], [0, e, 0]]); }
+  else if (kind === 'RHS') { const { h: H, b: B, t } = d, ro = Math.min(d.ro || 0, B / 2 - 0.01, H / 2 - 0.01), ri = Math.max(0, ro - t);
+    outer([[0, 0, ro], [B, 0, ro], [B, H, ro], [0, H, ro]]); hole([[t, t, ri], [B - t, t, ri], [B - t, H - t, ri], [t, H - t, ri]]); }
+  else if (kind === 'CHS') { const { D, t } = d; rings.push(ppOrient(ppCircle(D / 2, D / 2, D / 2), true)); rings.push(ppOrient(ppCircle(D / 2, D / 2, D / 2 - t), false)); }
+  else if (kind === 'REC') { const { h, b } = d; outer([[0, 0, 0], [b, 0, 0], [b, h, 0], [0, h, 0]]); }
+  else if (kind === 'RND') { rings.push(ppOrient(ppCircle(d.D / 2, d.D / 2, d.D / 2), true)); }
+  return rings;
+}
+function ppValida(kind, d) {
+  const pos = k => d[k] > 0, err = [];
+  const need = { I: ['h', 'b', 'tw', 'tf'], U: ['h', 'b', 'tw', 'tf'], T: ['h', 'b', 'tw', 'tf'], L: ['h', 'b', 't'], CF: ['h', 'b', 'e'], Z: ['h', 'b', 'e'], RHS: ['h', 'b', 't'], CHS: ['D', 't'], REC: ['h', 'b'], RND: ['D'] }[kind] || [];
+  need.forEach(k => { if (!pos(k)) err.push(`${k} debe ser mayor que 0`); });
+  if (err.length) return err;
+  if (['I', 'U'].includes(kind) && 2 * d.tf >= d.h) err.push('2·tf debe ser menor que h');
+  if (kind === 'I' && d.tw >= d.b) err.push('tw debe ser menor que b');
+  if (kind === 'U' && d.tw >= d.b) err.push('tw debe ser menor que b');
+  if (kind === 'T' && (d.tf >= d.h || d.tw >= d.b)) err.push('tf < h y tw < b');
+  if (kind === 'L' && (d.t >= d.h || d.t >= d.b)) err.push('t debe ser menor que ambas alas');
+  if (['CF', 'Z'].includes(kind) && (3 * d.e >= d.b || 3 * d.e >= d.h)) err.push('e demasiado grande para B o H');
+  if (kind === 'RHS' && (2 * d.t >= d.b || 2 * d.t >= d.h)) err.push('2·t debe ser menor que B y H');
+  if (kind === 'CHS' && 2 * d.t >= d.D) err.push('2·t debe ser menor que D');
+  return err;
+}
+
+/* ---------- cálculo de propiedades ---------- */
+function calcPropPerfil(kind, d, Fy) {
+  const r = { kind, d };
+  r.err = ppValida(kind, d);
+  if (r.err.length) return r;
+  const rings = ppShape(kind, d); r.rings = rings;
+  const m = ppMoments(rings);
+  r.A = m.A;                                  // mm²
+  r.xc = m.Sy / m.A; r.yc = m.Sx / m.A;       // mm
+  r.Ix = m.Ixx - m.A * r.yc * r.yc;           // mm⁴ (centroidal)
+  r.Iy = m.Iyy - m.A * r.xc * r.xc;
+  r.Ixy = m.Ixy - m.A * r.xc * r.yc;
+  if (Math.abs(r.Ixy) < 1e-6 * Math.max(r.Ix, r.Iy)) r.Ixy = 0;
+  let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+  rings.forEach(p => p.forEach(([x, y]) => { xmin = Math.min(xmin, x); xmax = Math.max(xmax, x); ymin = Math.min(ymin, y); ymax = Math.max(ymax, y); }));
+  Object.assign(r, { xmin, xmax, ymin, ymax });
+  r.Wxs = r.Ix / (ymax - r.yc); r.Wxi = r.Ix / (r.yc - ymin); r.Wx = Math.min(r.Wxs, r.Wxi);
+  r.Wyd = r.Iy / (xmax - r.xc); r.Wyi = r.Iy / (r.xc - xmin); r.Wy = Math.min(r.Wyd, r.Wyi);
+  r.ix = Math.sqrt(r.Ix / r.A); r.iy = Math.sqrt(r.Iy / r.A);
+  const px = ppPlastic(rings, 'y', r.A), py = ppPlastic(rings, 'x', r.A);
+  r.Zx = px.Z; r.ypna = px.pna; r.Zy = py.Z; r.xpna = py.pna;
+  // ejes principales
+  const Im = (r.Ix + r.Iy) / 2, Rr = Math.sqrt(Math.pow((r.Ix - r.Iy) / 2, 2) + r.Ixy * r.Ixy);
+  r.Iu = Im + Rr; r.Iv = Im - Rr; r.iu = Math.sqrt(r.Iu / r.A); r.iv = Math.sqrt(Math.max(0, r.Iv) / r.A);
+  r.alpha = r.Ixy === 0 ? 0 : 0.5 * Math.atan2(-2 * r.Ixy, r.Ix - r.Iy) * 180 / Math.PI; // ángulo del eje u respecto de x
+  r.asim = r.Ixy !== 0;
+  r.peso = r.A * 1e-6 * 7850;                 // kg/m
+  // perímetro exterior (superficie a pintar por metro)
+  const per = p => p.reduce((s, q, i) => s + Math.hypot(p[(i + 1) % p.length][0] - q[0], p[(i + 1) % p.length][1] - q[1]), 0);
+  r.perimetro = per(rings[0]);                // mm
+  r.sup = r.perimetro / 1000;                 // m²/m
+  // torsión y alabeo (pared delgada)
+  const { h, b, tw, tf, t, e, c, D } = d;
+  if (kind === 'I') { const h0 = h - tf; r.J = (2 * b * Math.pow(tf, 3) + (h - 2 * tf) * Math.pow(tw, 3)) / 3; r.Cw = r.Iy * h0 * h0 / 4; r.h0 = h0; }
+  else if (kind === 'U') { const bp = b - tw / 2, hp = h - tf; r.J = (2 * b * Math.pow(tf, 3) + (h - 2 * tf) * Math.pow(tw, 3)) / 3;
+    r.Cw = tf * Math.pow(bp, 3) * hp * hp / 12 * (3 * bp * tf + 2 * hp * tw) / (6 * bp * tf + hp * tw);
+    r.e0 = 3 * bp * bp * tf / (6 * bp * tf + hp * tw); r.x0 = r.xc + r.e0 - tw / 2; }
+  else if (kind === 'T') { r.J = (b * Math.pow(tf, 3) + (h - tf / 2) * Math.pow(tw, 3)) / 3; r.Cw = 0; }
+  else if (kind === 'L') { r.J = (h + b - t) * Math.pow(t, 3) / 3; r.Cw = 0; }
+  else if (kind === 'CF' || kind === 'Z') { const Lm = (h - e) + 2 * (b - e) + (c > e ? 2 * (c - e / 2) : 0); r.J = Lm * Math.pow(e, 3) / 3; r.Cw = null; }
+  else if (kind === 'RHS') { const Ap = (b - t) * (h - t), p = 2 * ((b - t) + (h - t)); r.J = 4 * Ap * Ap * t / p; r.Cw = 0; }
+  else if (kind === 'CHS') { r.J = Math.PI * (Math.pow(D, 4) - Math.pow(D - 2 * t, 4)) / 32; r.Cw = 0; }
+  else if (kind === 'REC') { const bb = Math.max(b, h), tt = Math.min(b, h); r.J = bb * Math.pow(tt, 3) * (1 / 3 - 0.21 * tt / bb * (1 - Math.pow(tt, 4) / (12 * Math.pow(bb, 4)))); r.Cw = 0; }
+  else if (kind === 'RND') { r.J = Math.PI * Math.pow(D, 4) / 32; r.Cw = 0; }
+  // esbeltez local (AISC 360-16 Tabla B4.1a / B4.1b)
+  const E = 200000, s = Math.sqrt(E / Fy), cls = (l, lp, lr) => lp == null ? (l <= lr ? 'NO ESBELTO' : 'ESBELTO') : (l <= lp ? 'COMPACTO' : (l <= lr ? 'NO COMPACTO' : 'ESBELTO'));
+  const E_ = [];
+  const add = (el, lam, lrC, lpF, lrF, def) => E_.push({ el, def, lam, lrC, cC: lrC != null ? cls(lam, null, lrC) : '—', lpF, lrF, cF: lpF != null ? cls(lam, lpF, lrF) : '—' });
+  const rr = d.r || 0;
+  if (kind === 'I') { add('Ala', b / 2 / tf, 0.56 * s, 0.38 * s, 1.0 * s, 'b/2tf'); add('Alma', (h - 2 * tf - 2 * rr) / tw, 1.49 * s, 3.76 * s, 5.70 * s, 'h/tw'); }
+  if (kind === 'U') { add('Ala', b / tf, 0.56 * s, 0.38 * s, 1.0 * s, 'b/tf'); add('Alma', (h - 2 * tf - 2 * rr) / tw, 1.49 * s, 3.76 * s, 5.70 * s, 'h/tw'); }
+  if (kind === 'T') { add('Ala', b / 2 / tf, 0.56 * s, 0.38 * s, 1.0 * s, 'b/2tf'); add('Alma (vástago)', h / tw, 0.75 * s, 0.84 * s, 1.52 * s, 'd/tw'); }
+  if (kind === 'L') { add('Ala mayor', Math.max(h, b) / t, 0.45 * s, 0.54 * s, 0.91 * s, 'b/t'); }
+  if (kind === 'RHS') { add('Pared B', (b - 3 * t) / t, 1.40 * s, 1.12 * s, 1.40 * s, '(B−3t)/t'); add('Pared H', (h - 3 * t) / t, 1.40 * s, 2.42 * s, 5.70 * s, '(H−3t)/t'); }
+  if (kind === 'CHS') { E_.push({ el: 'Pared', def: 'D/t', lam: D / t, lrC: 0.11 * E / Fy, cC: cls(D / t, null, 0.11 * E / Fy), lpF: 0.07 * E / Fy, lrF: 0.31 * E / Fy, cF: cls(D / t, 0.07 * E / Fy, 0.31 * E / Fy) }); }
+  if (kind === 'CF' || kind === 'Z') { add('Ala (plana)', (b - 2 * e) / e, null, null, null, 'w/t'); add('Alma (plana)', (h - 2 * e) / e, null, null, null, 'h/t'); }
+  r.esb = E_;
+  return r;
+}
+
+/* ---------- esquema acotado ---------- */
+function svgPropPerfil(r, nombre) {
+  if (!r || r.err && r.err.length) return '<p class="note">Dimensiones inválidas: ' + esc((r && r.err || []).join('; ')) + '</p>';
+  const W = 300, Hh = 300, PADL = 70, PADB = 78, PADT = 34, PADR = 110;
+  const w = r.xmax - r.xmin, hh = r.ymax - r.ymin, sc = Math.min(W / w, Hh / hh);
+  const X = x => PADL + (x - r.xmin) * sc, Y = y => PADT + (r.ymax - y) * sc;
+  const path = r.rings.map(p => 'M' + p.map(([x, y]) => X(x).toFixed(2) + ',' + Y(y).toFixed(2)).join('L') + 'Z').join(' ');
+  const d = r.d, k = r.kind, vbW = PADL + w * sc + PADR, vbH = PADT + hh * sc + PADB;
+  const f1 = v => (Math.round(v * 10) / 10).toString().replace('.', ',');
+  const dims = m => {
+    const o = [], x0 = X(r.xmin), x1 = X(r.xmax), y0 = Y(r.ymin), y1 = Y(r.ymax);
+    const H = ['CHS', 'RND'].includes(k) ? null : (r.ymax - r.ymin), B = r.xmax - r.xmin;
+    if (['CHS', 'RND'].includes(k)) {
+      o.push(ESQ.dim(m, x0, y0 + 34, x1, y0 + 34, 'D = ' + f1(d.D) + ' mm', { labelOffset: -6, fontSize: 11 }));
+      if (k === 'CHS') o.push(ESQ.note(x1 + 8, Y(r.yc), 't = ' + f1(d.t) + ' mm', { anchor: 'start', fontSize: 11 }));
+      return o.join('');
+    }
+    o.push(ESQ.dim(m, x0 - 38, y0, x0 - 38, y1, (['CF', 'Z', 'RHS'].includes(k) ? 'H' : 'h') + ' = ' + f1(H) + ' mm', { labelOffset: -6, fontSize: 11 }));
+    const bLabel = k === 'Z' ? 'B = ' + f1(d.b) + ' mm (c/ala)' : (['CF', 'RHS'].includes(k) ? 'B' : 'b') + ' = ' + f1(k === 'REC' ? d.b : (k === 'L' ? d.b : (d.b || B))) + ' mm';
+    if (k === 'Z') o.push(ESQ.dim(m, X(0), y0 + 34, X(d.b), y0 + 34, bLabel, { labelOffset: -6, fontSize: 10.5 }));
+    else o.push(ESQ.dim(m, x0, y0 + 34, x1, y0 + 34, bLabel, { labelOffset: -6, fontSize: 11 }));
+    const notes = [];
+    if (['I', 'U', 'T'].includes(k)) notes.push('tf = ' + f1(d.tf) + ' mm', 'tw = ' + f1(d.tw) + ' mm');
+    if (k === 'L' || k === 'RHS') notes.push('t = ' + f1(d.t) + ' mm');
+    if (['CF', 'Z'].includes(k)) { notes.push('e = ' + f1(d.e) + ' mm'); if (d.c > 0) notes.push('c = ' + f1(d.c) + ' mm'); }
+    if (d.r > 0) notes.push('r = ' + f1(d.r) + ' mm');
+    if (k === 'RHS' && d.ro > 0) notes.push('ro = ' + f1(d.ro) + ' mm');
+    notes.forEach((t, i) => o.push(ESQ.note(x1 + 10, y1 + 14 + i * 15, t, { anchor: 'start', fontSize: 10.5 })));
+    return o.join('');
+  };
+  const gx = X(r.xc), gy = Y(r.yc), ax0 = X(r.xmin) - 12, ax1 = X(r.xmax) + 24, ay0 = Y(r.ymax) - 22, ay1 = Y(r.ymin) + 12;
+  let ejes = `<line x1="${ax0.toFixed(1)}" y1="${gy.toFixed(1)}" x2="${ax1.toFixed(1)}" y2="${gy.toFixed(1)}" stroke="var(--accent-warm)" stroke-width="1" stroke-dasharray="9,3,2,3"/>
+    <line x1="${gx.toFixed(1)}" y1="${ay0.toFixed(1)}" x2="${gx.toFixed(1)}" y2="${ay1.toFixed(1)}" stroke="var(--accent-warm)" stroke-width="1" stroke-dasharray="9,3,2,3"/>
+    ${ESQ.text(ax1 + 3, gy + 4, 'x', { color: 'var(--accent-warm)', fontSize: 11, anchor: 'start' })}${ESQ.text(gx + 5, ay0 + 4, 'y', { color: 'var(--accent-warm)', fontSize: 11, anchor: 'start' })}`;
+  if (r.asim) { const a = -r.alpha * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), L = Math.min(w, hh) * sc * 0.5 + 18;
+    ejes += `<line x1="${(gx - L * ca).toFixed(1)}" y1="${(gy - L * sa).toFixed(1)}" x2="${(gx + L * ca).toFixed(1)}" y2="${(gy + L * sa).toFixed(1)}" stroke="var(--ink-muted)" stroke-width="1" stroke-dasharray="4,3"/>
+      <line x1="${(gx + L * sa).toFixed(1)}" y1="${(gy - L * ca).toFixed(1)}" x2="${(gx - L * sa).toFixed(1)}" y2="${(gy + L * ca).toFixed(1)}" stroke="var(--ink-muted)" stroke-width="1" stroke-dasharray="4,3"/>
+      ${ESQ.text(gx + L * ca + 6 * ca, gy + L * sa + 6 * sa + 4, 'u', { fontSize: 11, color: 'var(--ink-muted)' })}${ESQ.text(gx + L * sa + 6 * sa, gy - L * ca - 6 * ca + 4, 'v', { fontSize: 11, color: 'var(--ink-muted)' })}`; }
+  return ESQ.svg(m => `
+    <path d="${path}" fill="var(--surface-alt)" fill-opacity="0.85" fill-rule="evenodd" stroke="var(--ink)" stroke-width="1.6"/>
+    ${ejes}
+    <circle cx="${gx.toFixed(1)}" cy="${gy.toFixed(1)}" r="3.2" fill="var(--accent-warm)"/>
+    ${ESQ.text(gx + 6, gy + 14, 'G', { color: 'var(--accent-warm)', fontSize: 11, anchor: 'start', bold: true })}
+    ${dims(m)}
+    ${ESQ.text(PADL + w * sc / 2, vbH - 10, nombre || '', { fontSize: 12, bold: true })}
+  `, { viewBox: `0 0 ${vbW.toFixed(0)} ${vbH.toFixed(0)}`, maxWidth: 460, aria: 'Sección transversal del perfil a escala con sus dimensiones, centroide G y ejes x, y' });
+}
+
+/* ---------- impresión estilo planilla ---------- */
+function ppTablaPropsHtml(r, cat, forPrint) {
+  const cm = (v, p) => v / Math.pow(10, p);
+  const n = (v, dd) => v == null || !isFinite(v) ? '—' : (forPrint ? xlsxNum(v, dd) : v.toLocaleString('es-CL', { minimumFractionDigits: dd, maximumFractionDigits: dd }));
+  const rows = [];
+  const R = (grp, nom, sim, v, u, dd, kc) => rows.push({ grp, nom, sim, v, u, dd, c: kc && cat && cat[kc] != null ? cat[kc] : null });
+  R('Generales', 'Área de la sección', 'A', cm(r.A, 2), 'cm²', 2, 'A');
+  R('Generales', 'Peso propio (acero 7.850 kg/m³)', 'P', r.peso, 'kg/m', 2, 'peso');
+  R('Generales', 'Superficie exterior (pintura)', 'Sp', r.sup, 'm²/m', 3);
+  R('Generales', 'Centroide desde el borde izquierdo', 'xG', cm(r.xc - r.xmin, 1), 'cm', 2);
+  R('Generales', 'Centroide desde el borde inferior', 'yG', cm(r.yc - r.ymin, 1), 'cm', 2);
+  R('Eje x-x', 'Momento de inercia', 'Ix', cm(r.Ix, 4), 'cm⁴', 1, 'Ix');
+  R('Eje x-x', 'Módulo elástico, fibra superior', 'Wx,sup', cm(r.Wxs, 3), 'cm³', 1);
+  R('Eje x-x', 'Módulo elástico, fibra inferior', 'Wx,inf', cm(r.Wxi, 3), 'cm³', 1);
+  R('Eje x-x', 'Módulo elástico mínimo', 'Wx', cm(r.Wx, 3), 'cm³', 1, 'Wx');
+  R('Eje x-x', 'Módulo plástico', 'Zx', cm(r.Zx, 3), 'cm³', 1);
+  R('Eje x-x', 'Radio de giro', 'ix', cm(r.ix, 1), 'cm', 2, 'ix');
+  R('Eje y-y', 'Momento de inercia', 'Iy', cm(r.Iy, 4), 'cm⁴', 1, 'Iy');
+  R('Eje y-y', 'Módulo elástico, fibra derecha', 'Wy,der', cm(r.Wyd, 3), 'cm³', 1);
+  R('Eje y-y', 'Módulo elástico, fibra izquierda', 'Wy,izq', cm(r.Wyi, 3), 'cm³', 1);
+  R('Eje y-y', 'Módulo elástico mínimo', 'Wy', cm(r.Wy, 3), 'cm³', 1, 'Wy');
+  R('Eje y-y', 'Módulo plástico', 'Zy', cm(r.Zy, 3), 'cm³', 1);
+  R('Eje y-y', 'Radio de giro', 'iy', cm(r.iy, 1), 'cm', 2, 'iy');
+  if (r.asim) {
+    R('Ejes principales', 'Producto de inercia', 'Ixy', cm(r.Ixy, 4), 'cm⁴', 1);
+    R('Ejes principales', 'Inercia máxima', 'Iu', cm(r.Iu, 4), 'cm⁴', 1);
+    R('Ejes principales', 'Inercia mínima', 'Iv', cm(r.Iv, 4), 'cm⁴', 1);
+    R('Ejes principales', 'Radio de giro máximo', 'iu', cm(r.iu, 1), 'cm', 2);
+    R('Ejes principales', 'Radio de giro mínimo', 'iv', cm(r.iv, 1), 'cm', 2);
+    R('Ejes principales', 'Ángulo del eje u respecto de x', 'α', r.alpha, '°', 1);
+  } else if (['L'].includes(r.kind)) {
+    R('Ejes principales', 'Radio de giro mínimo', 'iv', cm(r.iv, 1), 'cm', 2);
+  }
+  R('Torsión', 'Constante de torsión de St. Venant', 'J', cm(r.J, 4), 'cm⁴', 2);
+  if (r.Cw != null) R('Torsión', 'Constante de alabeo', 'Cw', cm(r.Cw, 6), 'cm⁶', 0);
+  if (r.e0 != null) R('Torsión', 'Centro de corte, distancia desde el eje del alma', 'e0', cm(r.e0, 1), 'cm', 2);
+  if (r.h0 != null) R('Torsión', 'Distancia entre centroides de alas', 'h0', cm(r.h0, 1), 'cm', 2);
+  let html = '', g = '';
+  if (forPrint) {
+    html += '<table class="xlsx-table xlsx-calc-table"><tbody><tr class="xlsx-hdr-de"><td class="xv-label">Propiedad</td><td class="xv-num">Símbolo</td><td class="xv-num">Valor</td><td class="xv-num">Unidad</td><td class="xv-num">Catálogo</td></tr>';
+    rows.forEach(x => { if (x.grp !== g) { g = x.grp; html += `<tr><td class="xv-label" colspan="5"><b>${esc(g)}</b></td></tr>`; }
+      html += `<tr><td class="xv-label">${esc(x.nom)}</td><td class="xv-num">${esc(x.sim)}</td><td class="xv-num">${n(x.v, x.dd)}</td><td class="xv-num">${esc(x.u)}</td><td class="xv-num">${x.c != null ? n(x.c, x.dd) : ''}</td></tr>`; });
+    return html + '</tbody></table>';
+  }
+  html += '<div style="overflow-x:auto"><table class="results"><tr><th>Propiedad</th><th>Símbolo</th><th class="num">Calculado</th><th>Unidad</th><th class="num">Catálogo</th><th class="num">Dif.</th></tr>';
+  rows.forEach(x => { if (x.grp !== g) { g = x.grp; html += `<tr><th colspan="6">${esc(g)}</th></tr>`; }
+    const dif = x.c != null && x.c !== 0 ? (x.v - x.c) / x.c * 100 : null;
+    html += `<tr><td>${esc(x.nom)}</td><td><b>${esc(x.sim)}</b></td><td class="num">${n(x.v, x.dd)}</td><td>${esc(x.u)}</td><td class="num">${x.c != null ? n(x.c, x.dd) : '—'}</td><td class="num">${dif == null ? '' : (Math.abs(dif) < 2 ? '<span class="chip ok">' : '<span class="chip neutral">') + (dif > 0 ? '+' : '') + dif.toFixed(1).replace('.', ',') + ' %</span>'}</td></tr>`; });
+  return html + '</table></div>';
+}
+function ppTablaEsbHtml(r, Fy, forPrint) {
+  if (!r.esb || !r.esb.length) return forPrint ? '' : '<p class="note">No aplica a secciones macizas.</p>';
+  const n = (v, dd) => v == null || !isFinite(v) ? '—' : (forPrint ? xlsxNum(v, dd) : v.toLocaleString('es-CL', { minimumFractionDigits: dd, maximumFractionDigits: dd }));
+  if (forPrint) return '<table class="xlsx-table xlsx-calc-table"><tbody><tr class="xlsx-hdr-de"><td class="xv-label">Elemento</td><td class="xv-num">λ</td><td class="xv-num">λr compr.</td><td class="xv-num">Compresión</td><td class="xv-num">λp / λr flexión</td><td class="xv-num">Flexión</td></tr>' +
+    r.esb.map(x => `<tr><td class="xv-label">${esc(x.el)} (${esc(x.def)})</td><td class="xv-num">${n(x.lam, 1)}</td><td class="xv-num">${n(x.lrC, 1)}</td><td class="xv-num">${esc(x.cC)}</td><td class="xv-num">${n(x.lpF, 1)} / ${n(x.lrF, 1)}</td><td class="xv-num">${esc(x.cF)}</td></tr>`).join('') + '</tbody></table>';
+  const chip = c => c === '—' ? '—' : `<span class="chip ${c === 'COMPACTO' || c === 'NO ESBELTO' ? 'ok' : c === 'NO COMPACTO' ? 'neutral' : 'bad'}">${c}</span>`;
+  return '<div style="overflow-x:auto"><table class="results"><tr><th>Elemento</th><th class="num">λ</th><th class="num">λr compresión</th><th>Compresión</th><th class="num">λp / λr flexión</th><th>Flexión</th></tr>' +
+    r.esb.map(x => `<tr><td>${esc(x.el)} <span class="note">(${esc(x.def)})</span></td><td class="num">${n(x.lam, 1)}</td><td class="num">${n(x.lrC, 1)}</td><td>${chip(x.cC)}</td><td class="num">${n(x.lpF, 1)} / ${n(x.lrF, 1)}</td><td>${chip(x.cF)}</td></tr>`).join('') + '</table></div>';
+}
+function buildPrintSheetsPropPerfil(st, r, item, fam, acero) {
+  const row = (l, v) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${v}</td></tr>`;
+  const dimsTxt = Object.entries(r.d).filter(([k, v]) => v != null && v !== '' && !(k === 'r' && !v) && !(k === 'c' && !v)).map(([k, v]) => `${k} = ${xlsxNum(+v, 2)} mm`).join(' · ');
+  const datos = `<div class="xlsx-title-bar">DATOS DEL PERFIL</div>
+    <table class="xlsx-table"><tbody>
+      ${row('Familia', esc(fam ? fam.label : ''))}
+      ${row('Perfil', esc(item ? item.n : 'Personalizado'))}
+      ${row('Tipo de sección', esc(PP_TIPOS[r.kind] ? PP_TIPOS[r.kind].n : r.kind))}
+      ${row('Dimensiones', dimsTxt)}
+      ${row('Acero para esbeltez local', esc(acero.n) + ' — Fy = ' + xlsxNum(acero.Fy * 10.1972, 0) + ' kgf/cm²')}
+    </tbody></table>`;
+  const esq = `<div class="xlsx-section">1. SECCIÓN TRANSVERSAL</div><div style="display:flex;justify-content:center;padding:.4rem 0">${svgPropPerfil(r, item ? item.n : 'Perfil personalizado')}</div>`;
+  const props = `<div class="xlsx-section">2. PROPIEDADES GEOMÉTRICAS</div>${ppTablaPropsHtml(r, item && item.cat, true)}`;
+  const esb = r.esb && r.esb.length ? `<div class="xlsx-section">3. ESBELTEZ LOCAL — AISC 360-16 TABLA B4.1</div>${ppTablaEsbHtml(r, acero.Fy, true)}` : '';
+  const nota = `<div class="xlsx-desc-row" style="padding:.3rem">Propiedades calculadas del contorno de la sección con radios de acuerdo (alas de caras paralelas; los perfiles IPN y UPN reales tienen alas inclinadas, por lo que su catálogo prevalece). J y Cw con fórmulas de pared delgada. Ángulos, tubos SHS/RHS, barras y pletinas con dimensiones nominales de uso habitual: verificar disponibilidad y tolerancias con el fabricante.</div>`;
+  xlsxSetPrintSheets(datos, `<div class="xlsx-title-bar">CÁLCULO</div>${esq}${props}${esb}${nota}`, `<div class="xlsx-title-bar">RESUMEN</div>${esq}${props}`);
+}
+
+/* ---------- interfaz ---------- */
+function renderPropPerfiles(container) {
+  const st = { fam: 'H_IN', idx: 0, q: '', acero: 'A270ES', tipo: 'I', cd: {} };
+  Object.keys(PP_TIPOS).forEach(t => { st.cd[t] = {}; PP_TIPOS[t].f.forEach(([k, , v]) => st.cd[t][k] = v); });
+  const grupos = [...new Set(PP_FAMILIAS.map(f => f.grupo))];
+  const famOpts = grupos.map(g => `<optgroup label="${esc(g)}">${PP_FAMILIAS.filter(f => f.grupo === g).map(f => `<option value="${f.id}">${esc(f.label)}${f.items.length ? ' (' + f.items.length + ')' : ''}</option>`).join('')}</optgroup>`).join('');
+  const customFields = Object.entries(PP_TIPOS).map(([t, o]) => `<div class="field-grid" data-pptipo="${t}" hidden>${o.f.map(([k, l, v]) => `<div class="field"><label>${esc(l)}</label><input type="text" inputmode="decimal" id="pp_c_${t}_${k}" value="${v}"></div>`).join('')}</div>`).join('');
+  container.innerHTML = `
+    <div class="calc-head">
+      <h1>Propiedades Geométricas de Perfiles</h1>
+      <div class="sub">Elige un perfil de los catálogos de uso habitual (soldados ICHA, laminados europeos y japoneses, costaneras plegadas, ángulos, tubos, barras y pletinas) o define uno personalizado: entrega todas sus dimensiones, propiedades geométricas, esbeltez local y el dibujo acotado a escala.</div>
+    </div>
+
+    <div class="panel">
+      <h3>1 · Selección del perfil</h3>
+      <div class="field-grid">
+        <div class="field"><label>Familia</label><select id="pp_fam">${famOpts}</select></div>
+        <div class="field" id="pp_wrapBuscar"><label>Buscar en la familia</label><input type="text" id="pp_q" data-noupper placeholder="Ej.: 400x200, 32, 100x50"></div>
+        <div class="field" id="pp_wrapPerfil" style="grid-column:1/-1"><label>Perfil</label><select id="pp_perfil"></select></div>
+        <div class="field" id="pp_wrapTipo" hidden><label>Tipo de sección</label><select id="pp_tipo">${Object.entries(PP_TIPOS).map(([t, o]) => `<option value="${t}">${esc(o.n)}</option>`).join('')}</select></div>
+        <div class="field"><label>Acero (para clasificar la esbeltez local)</label><select id="pp_acero">${PP_ACEROS.map(a => `<option value="${a.id}">${esc(a.n)} — Fy ${fmt0(a.Fy * 10.1972)} kgf/cm²</option>`).join('')}</select></div>
+      </div>
+      <div id="pp_custom" hidden>${customFields}</div>
+      <div id="pp_msg"></div>
+    </div>
+
+    <div class="panel">
+      <h3>2 · Sección transversal acotada</h3>
+      <div id="pp_esqSeccion" style="display:flex;justify-content:center"></div>
+      <p class="note">Dibujo a escala. G = centroide; x-x e y-y = ejes centroidales; u-u y v-v = ejes principales (secciones asimétricas).</p>
+    </div>
+
+    <div class="panel">
+      <h3>3 · Dimensiones</h3>
+      <div id="pp_dims"></div>
+    </div>
+
+    <div class="panel">
+      <h3>4 · Propiedades geométricas</h3>
+      <div id="pp_props"></div>
+      <p class="note">Calculadas del contorno real con radios de acuerdo. La columna Catálogo muestra el valor tabulado cuando existe; diferencias pequeñas se deben a radios de acuerdo, alas inclinadas (IPN, UPN) o redondeos del fabricante, y en ese caso prevalece el catálogo.</p>
+    </div>
+
+    <div class="panel">
+      <h3>5 · Esbeltez local — AISC 360-16 Tabla B4.1</h3>
+      <div id="pp_esb"></div>
+      <p class="note">E = 200.000 MPa. Compresión: elemento no esbelto si λ ≤ λr (B4.1a). Flexión: compacto si λ ≤ λp, no compacto si λp &lt; λ ≤ λr, esbelto si λ &gt; λr (B4.1b). Perfiles plegados: se informa la razón ancho plano / espesor; su verificación corresponde a AISI S100 (NCh427/2).</p>
+    </div>
+
+    <div class="panel">
+      <div class="disclosure">Fuentes de datos: catálogos de la Mesa (ICHA para IN, IP, HN y PH; tablas de laminados IPE, HEA, HEB, HEM, IPN, UPN, UPE y JIS; costaneras C, CA y Z; Cintac; cañerías ASTM A53). Ángulos laminados (EN 10056-1), tubos conformados SHS/RHS (EN 10219, radio exterior 2t para t ≤ 6 mm y 2,5t sobre ese espesor), barras y pletinas: dimensiones nominales de uso habitual, verificar disponibilidad con el proveedor. Las propiedades se calculan con alas de caras paralelas.</div>
+    </div>
+
+    <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>
+  `;
+
+  const fam = () => PP_FAMILIAS.find(f => f.id === st.fam) || PP_FAMILIAS[0];
+  function fillPerfiles() {
+    const f = fam(), q = st.q.trim().toLowerCase().replace(/\s+/g, '');
+    const items = f.items.map((it, i) => ({ it, i })).filter(({ it }) => !q || it.n.toLowerCase().replace(/\s+/g, '').includes(q));
+    const sel = document.getElementById('pp_perfil');
+    sel.innerHTML = items.map(({ it, i }) => `<option value="${i}"${i === st.idx ? ' selected' : ''}>${esc(it.n)}</option>`).join('') || '<option value="">Sin coincidencias</option>';
+    if (items.length && !items.some(x => x.i === st.idx)) { st.idx = items[0].i; sel.value = String(st.idx); }
+  }
+  function recalc() {
+    const f = fam(), custom = f.id === 'CUSTOM';
+    document.getElementById('pp_wrapPerfil').hidden = custom; document.getElementById('pp_wrapBuscar').hidden = custom;
+    document.getElementById('pp_wrapTipo').hidden = !custom; document.getElementById('pp_custom').hidden = !custom;
+    document.querySelectorAll('[data-pptipo]').forEach(el => el.hidden = el.dataset.pptipo !== st.tipo);
+    let kind, d, item = null;
+    if (custom) { kind = st.tipo; d = {}; PP_TIPOS[kind].f.forEach(([k]) => { d[k] = parseFloat(String(document.getElementById(`pp_c_${kind}_${k}`).value).replace(',', '.')) || 0; }); }
+    else { item = f.items[st.idx] || f.items[0]; if (!item) return; kind = item.kind; d = { ...item.d }; }
+    const acero = PP_ACEROS.find(a => a.id === st.acero) || PP_ACEROS[0];
+    const r = calcPropPerfil(kind, d, acero.Fy);
+    const nombre = item ? item.n : 'Perfil personalizado — ' + PP_TIPOS[kind].n;
+    document.getElementById('pp_msg').innerHTML = r.err.length ? `<div class="global-verdict bad"><span class="label">REVISAR DIMENSIONES</span><span class="label">${esc(r.err.join('; '))}</span></div>` : '';
+    document.getElementById('pp_esqSeccion').innerHTML = svgPropPerfil(r, nombre);
+    if (r.err.length) { ['pp_dims', 'pp_props', 'pp_esb'].forEach(id => document.getElementById(id).innerHTML = ''); return; }
+    const lab = { h: 'Altura', b: 'Ancho de ala', tf: 'Espesor de ala', tw: 'Espesor de alma', r: 'Radio de acuerdo', t: 'Espesor', e: 'Espesor', c: 'Atiesador (labio)', ro: 'Radio exterior de esquina', D: 'Diámetro exterior' };
+    const sim = { h: kind === 'CF' || kind === 'Z' || kind === 'RHS' ? 'H' : 'h', b: kind === 'CF' || kind === 'Z' || kind === 'RHS' ? 'B' : 'b' };
+    document.getElementById('pp_dims').innerHTML = `<table class="results"><tr><th>Dimensión</th><th>Símbolo</th><th class="num">Valor</th></tr>${Object.entries(d).filter(([k, v]) => v != null && !((k === 'r' || k === 'c') && !v)).map(([k, v]) => `<tr><td>${lab[k] || k}</td><td><b>${sim[k] || k}</b></td><td class="num">${fmt2(v)} mm</td></tr>`).join('')}
+      ${kind === 'CF' || kind === 'Z' ? `<tr><td>Radio interior de plegado (asumido = e)</td><td><b>ri</b></td><td class="num">${fmt2(d.e)} mm</td></tr>` : ''}
+      ${kind === 'RHS' ? `<tr><td>Radio interior de esquina</td><td><b>ri</b></td><td class="num">${fmt2(Math.max(0, (d.ro || 0) - d.t))} mm</td></tr>` : ''}
+      ${kind === 'CHS' ? `<tr><td>Diámetro interior</td><td><b>Di</b></td><td class="num">${fmt2(d.D - 2 * d.t)} mm</td></tr><tr><td>Relación D/t</td><td><b>D/t</b></td><td class="num">${fmt1(d.D / d.t)}</td></tr>` : ''}
+      <tr><td>Peso propio</td><td><b>P</b></td><td class="num">${fmt2(r.peso)} kg/m</td></tr></table>`;
+    document.getElementById('pp_props').innerHTML = ppTablaPropsHtml(r, item && item.cat, false);
+    document.getElementById('pp_esb').innerHTML = ppTablaEsbHtml(r, acero.Fy, false);
+    if (typeof buildPrintSheetsPropPerfil === 'function') buildPrintSheetsPropPerfil(st, r, item, f, acero);
+  }
+  const elFam = document.getElementById('pp_fam'), elQ = document.getElementById('pp_q'), elP = document.getElementById('pp_perfil');
+  elFam.value = st.fam;
+  elFam.addEventListener('change', () => { st.fam = elFam.value; st.idx = 0; st.q = ''; elQ.value = ''; fillPerfiles(); recalc(); });
+  elQ.addEventListener('input', () => { st.q = elQ.value; fillPerfiles(); recalc(); });
+  elP.addEventListener('change', () => { st.idx = parseInt(elP.value, 10) || 0; recalc(); });
+  document.getElementById('pp_tipo').addEventListener('change', e => { st.tipo = e.target.value; recalc(); });
+  document.getElementById('pp_acero').addEventListener('change', e => { st.acero = e.target.value; recalc(); });
+  document.getElementById('pp_custom').addEventListener('input', recalc);
+  fillPerfiles(); recalc();
+}
+
 const CALC_RENDERERS = { memorias: renderMemorias, eett: renderEETT, vigaFundTorsion: renderVigaFundTorsion, costaneras: renderCostaneras, perfilesH: renderPerfilesH, flexionAtiesadores: renderFlexionAtiesadores,
   estanqueAcero: renderEstanqueAcero, fundacionEquipoDinamico: renderFundacionEquipoDinamico,
   muroBerlines: renderMuroBerlines, costanerasMadera: renderCostanerasMadera,
@@ -43004,7 +43496,8 @@ const CALC_RENDERERS = { memorias: renderMemorias, eett: renderEETT, vigaFundTor
   sismo: renderSismo, combustible: renderCombustible, puenteGrua: renderPuenteGrua, sismoIndustrial: renderSismoNCh2369,
   fundacionesDirectas: renderFundacionesDirectas, cuerdaVida: renderCuerdaVida, factorMasividad: renderFactorMasividad,
   proteccionFuego: renderProteccionFuego, asimilacionFuego: renderAsimilacionFuego, bibliotecaNormas: renderBibliotecaNormas, sobreanchoMadera: renderSobreanchoMadera, seleccionPernos: renderSeleccionPernos,
-  chimeneaAcero: renderChimeneaAcero };
+  chimeneaAcero: renderChimeneaAcero,
+  propPerfiles: renderPropPerfiles };
 
 function renderHome(container) {
   const ready = TOOLS.filter(t => t.calc).length;
@@ -43168,7 +43661,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261006-1821. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261006-1916. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
