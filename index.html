@@ -43996,11 +43996,257 @@ route();
   window.addEventListener('afterprint', pronto);
   pronto();
 })();
+
+/* =========================================================================
+   REDISEÑO — asistente genérico para todas las planillas
+   Detecta las verificaciones que no cumplen en la planilla abierta
+   (textos "NO CUMPLE", chips y veredictos en rojo), y busca, variable por
+   variable, el valor más cercano al actual con el que la planilla queda
+   CUMPLE: búsqueda por pasos crecientes y luego bisección sobre los campos
+   numéricos, y recorrido ordenado de las listas (perfiles, diámetros,
+   calidades). Si ninguna variable sola resuelve, arma una combinación
+   (método codicioso, hasta 4 variables). Siempre restaura los valores
+   originales; el usuario aplica la sugerencia con un botón.
+   ========================================================================= */
+(function () {
+  const FAIL_RE = /\bNO CUMPLE\b|\bINESTABLE\b|FUERA DE RANGO|excentricidad excesiva|NO VERIFICA/i;
+  const LOAD_RE = /carga|fuerza|momento|corte|cortante|axial|\bP[uút]\b|\bV[uúr]\b|\bM[uúr]\b|\bN[uú]\b|\bT[uú]\b|reacci|sobrecarga|viento|velocidad|sism|zona|suelo|categor|importancia|exposici|q_?adm|presi[oó]n admisible|densidad|gamma|peso (propio|espec)|coeficiente|factor|\bR\b —|amortig|per[ií]odo|luz|vano|longitud (libre|no arriostrada|de pandeo)|altura (de piso|libre|total del edificio)|t[ií]tulo|proyecto|fecha|n[°º] de pisos|temperatura|tiempo|resistencia al fuego|humedad|absorci|m[oó]dulo de finura|asentamiento|Ω|φ|\bphi\b|omega|m[oó]dulo de elasticidad|\bE —|\bK —|factor de longitud|m[eé]todo|norma|criterio|unidad|combinaci/i;
+  const INT_RE = /\bn[°º]|n[uú]mero|cantidad|\bN —|pernos|barras|filas|columnas de pernos|ramas|estribos|n\s*=|nPernos/i;
+
+  const main = () => document.getElementById('mainView');
+  const visible = el => !!(el && (el.offsetParent !== null || el.getClientRects().length));
+  const inPrint = el => !!el.closest('#printSheetCompleto,#printSheetResumen,.xlsx-sheet,#esqLive');
+
+  function fallas() {
+    const m = main(); if (!m) return { n: 0, items: [] };
+    const set = new Set();
+    m.querySelectorAll('.chip.bad,.global-verdict.bad').forEach(el => { if (!inPrint(el) && visible(el)) set.add(el); });
+    const tw = document.createTreeWalker(m, NodeFilter.SHOW_TEXT);
+    let t; while ((t = tw.nextNode())) {
+      if (!FAIL_RE.test(t.nodeValue)) continue;
+      const el = t.parentElement; if (!el || inPrint(el) || !visible(el)) continue;
+      if (![...set].some(s => s.contains(el) || el.contains(s))) set.add(el);
+    }
+    const items = [...set].map(el => {
+      const row = el.closest('tr,.verdict-row,.global-verdict,li,.msg,.field') || el;
+      const txt = (row.innerText || row.textContent || '').replace(/\s+/g, ' ').trim();
+      return txt.length > 160 ? txt.slice(0, 157) + '…' : txt;
+    }).filter((x, i, a) => x && a.indexOf(x) === i);
+    return { n: set.size, items };
+  }
+  function cumpleAlgo() { const m = main(); return m && /\bCUMPLE\b/.test(m.innerText || ''); }
+
+  function etiqueta(el) {
+    const f = el.closest('.field');
+    let l = f && f.querySelector('label') ? f.querySelector('label').textContent : '';
+    if (!l) { const tr = el.closest('tr'); if (tr) l = (tr.querySelector('td,th') || {}).textContent || ''; }
+    if (!l) l = el.getAttribute('aria-label') || el.title || el.id;
+    const h3 = el.closest('.panel') && el.closest('.panel').querySelector('h3');
+    return { label: (l || el.id).replace(/\s+/g, ' ').trim(), panel: h3 ? h3.textContent.trim() : '' };
+  }
+  function candidatos() {
+    const m = main(); if (!m) return [];
+    const out = [];
+    m.querySelectorAll('input,select').forEach(el => {
+      if (inPrint(el) || el.disabled || !visible(el) || !el.id) return;
+      if (/^meta|^fs|^pp_q|^dh_criterio$/.test(el.id)) return;
+      const { label, panel } = etiqueta(el);
+      if (el.tagName === 'SELECT') {
+        if (el.options.length < 2) return;
+        out.push({ el, tipo: 'select', label, panel, def: !LOAD_RE.test(label + ' ' + panel) });
+        return;
+      }
+      if (el.type === 'checkbox' || el.type === 'radio' || el.type === 'file' || el.type === 'color' || el.type === 'date') return;
+      const v = parseFloat(String(el.value).replace(',', '.'));
+      if (!isFinite(v) || String(el.value).trim() === '') return;
+      out.push({ el, tipo: 'num', label, panel, v0: v, entero: INT_RE.test(label) || (Number.isInteger(v) && /n[°º]|cantidad|número/i.test(label)), def: v !== 0 && !LOAD_RE.test(label + ' ' + panel) });
+    });
+    return out;
+  }
+  function fijar(el, val) {
+    el.value = val;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  const pausa = () => new Promise(r => setTimeout(r, 0));
+  function redondeo(x, haciaArriba, entero) {
+    if (entero) return haciaArriba ? Math.ceil(x - 1e-9) : Math.floor(x + 1e-9);
+    const ax = Math.abs(x); if (ax === 0) return 0;
+    const p = Math.pow(10, Math.floor(Math.log10(ax)) - 1);
+    const paso = ax >= 10 && ax < 20 ? p / 2 : p;
+    const r = (haciaArriba ? Math.ceil(x / paso - 1e-9) : Math.floor(x / paso + 1e-9)) * paso;
+    return Math.round(r * 1e6) / 1e6;
+  }
+
+  async function evaluar(c, val) { fijar(c.el, val); await pausa(); return fallas().n; }
+
+  async function buscarNum(c, f0, prog) {
+    const v0 = c.v0, res = [];
+    for (const dir of [1, -1]) {
+      let prev = v0, hallado = null, mejor = { n: f0, v: v0 };
+      for (let k = 1; k <= 14; k++) {
+        let v = c.entero ? v0 + dir * Math.max(1, Math.round(Math.abs(v0) * (Math.pow(1.25, k) - 1))) : v0 * (dir > 0 ? Math.pow(1.25, k) : Math.pow(0.8, k));
+        if (c.entero && v < 1) break;
+        if (!c.entero && Math.abs(v) < 1e-9) break;
+        if (dir < 0 && v0 > 0 && v <= 0) break;
+        const n = await evaluar(c, v); prog();
+        if (n < mejor.n) mejor = { n, v };
+        if (n === 0) { hallado = v; break; }
+        prev = v;
+      }
+      if (hallado != null) {
+        let a = prev, b = hallado;                     // a: falla, b: cumple
+        for (let i = 0; i < 14; i++) {
+          if (c.entero && Math.abs(b - a) <= 1) break;
+          const m = c.entero ? Math.round((a + b) / 2) : (a + b) / 2;
+          if (m === a || m === b) break;
+          const n = await evaluar(c, m); prog();
+          if (n === 0) b = m; else a = m;
+        }
+        let r = redondeo(b, dir > 0, c.entero);
+        if ((dir > 0 && r < b) || (dir < 0 && r > b)) r = b;
+        if ((await evaluar(c, r)) !== 0) r = b;
+        res.push({ ok: true, v: r, dir, cambio: Math.abs(r - v0) / Math.max(Math.abs(v0), 1e-9) });
+      } else if (mejor.n < f0) res.push({ ok: false, v: redondeo(mejor.v, dir > 0, c.entero), n: mejor.n, dir, cambio: Math.abs(mejor.v - v0) / Math.max(Math.abs(v0), 1e-9) });
+    }
+    fijar(c.el, c.v0);
+    res.sort((x, y) => (y.ok - x.ok) || (x.ok ? x.cambio - y.cambio : x.n - y.n));
+    return res[0] || null;
+  }
+  async function buscarSel(c, f0, prog) {
+    const el = c.el, i0 = el.selectedIndex, opts = [...el.options], res = [];
+    for (const dir of [1, -1]) {
+      let mejor = null;
+      for (let k = 1; k <= 160; k++) {
+        const i = i0 + dir * k; if (i < 0 || i >= opts.length) break;
+        if (opts[i].disabled || opts[i].value === '') continue;
+        el.selectedIndex = i; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
+        await pausa(); prog();
+        const n = fallas().n;
+        if (n === 0) { res.push({ ok: true, i, txt: opts[i].text, dist: k }); break; }
+        if (!mejor || n < mejor.n) mejor = { n, i, txt: opts[i].text, dist: k };
+      }
+      if (mejor && mejor.n < f0 && !res.some(r => r.ok && r.dir === dir)) res.push({ ok: false, i: mejor.i, txt: mejor.txt, n: mejor.n, dist: mejor.dist });
+    }
+    el.selectedIndex = i0; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
+    res.sort((x, y) => (y.ok - x.ok) || (x.ok ? x.dist - y.dist : x.n - y.n));
+    const oks = res.filter(x => x.ok);
+    return oks.length ? oks : (res[0] ? [res[0]] : []);
+  }
+
+  /* ---------- ventana ---------- */
+  const css = document.createElement('style');
+  css.textContent = `
+  #solBtn{background:#B4561C}
+  #solOv{position:fixed;inset:0;background:rgba(10,20,30,.45);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px;overflow:auto}
+  #solBox{background:var(--surface,#fff);color:var(--ink,#111);max-width:860px;width:100%;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.35);padding:18px 20px;display:grid;gap:12px;font-family:'IBM Plex Sans',system-ui,sans-serif}
+  #solBox h2{margin:0;font-size:1.15rem}
+  #solBox .sol-sub{font-size:.85rem;color:var(--ink-muted,#555)}
+  #solBox table{width:100%;border-collapse:collapse;font-size:.85rem}
+  #solBox th,#solBox td{padding:6px 8px;border-bottom:1px solid var(--line,#ddd);text-align:left;vertical-align:top}
+  #solBox th{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted,#555)}
+  #solBox td.n{text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap}
+  #solBox .sol-fallas{margin:0;padding-left:18px;font-size:.84rem;color:#A3271F;display:grid;gap:3px}
+  #solBox .sol-ok{color:#1F6B45;font-weight:700}
+  #solBox .sol-par{color:#8A5A00;font-weight:700}
+  #solBox .sol-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  #solBox button{font:600 .82rem 'IBM Plex Sans',sans-serif;border-radius:6px;padding:6px 12px;cursor:pointer;border:1px solid var(--line,#ccc);background:var(--surface,#fff);color:var(--ink,#111)}
+  #solBox button.pri{background:var(--accent,#0060c1);color:#fff;border-color:var(--accent,#0060c1)}
+  #solBox details{font-size:.84rem}
+  #solBox details label{display:flex;gap:6px;align-items:flex-start;padding:2px 0}
+  #solBox .sol-vars{max-height:220px;overflow:auto;border:1px solid var(--line,#ddd);border-radius:6px;padding:6px 8px;margin-top:6px}
+  #solBox .sol-tbl{overflow-x:auto}
+  @media print{#solOv{display:none!important}}`;
+  document.head.appendChild(css);
+
+  function abrir() {
+    const f = fallas(), cands = candidatos();
+    const ov = document.createElement('div'); ov.id = 'solOv';
+    const fmt = v => (typeof v === 'number' ? v.toLocaleString('es-CL', { maximumFractionDigits: 4 }) : String(v));
+    ov.innerHTML = `<div id="solBox" role="dialog" aria-label="Rediseño">
+      <div class="sol-row" style="justify-content:space-between"><h2>Rediseño</h2><button id="solX">Cerrar</button></div>
+      ${f.n === 0 ? `<p class="sol-ok">${cumpleAlgo() ? 'Todas las verificaciones de esta planilla cumplen. No hay nada que corregir.' : 'No se detectan verificaciones con NO CUMPLE en esta planilla.'}</p>` :
+      `<div><b>${f.n === 1 ? '1 verificación no cumple' : f.n + ' verificaciones no cumplen'}:</b><ul class="sol-fallas">${f.items.slice(0, 12).map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>
+      <p class="sol-sub">El asistente prueba cada variable marcada, una a la vez, y busca el valor más cercano al actual con el que toda la planilla queda CUMPLE. Las cargas y los datos del sitio (zona, suelo, exposición, luces) quedan fuera por defecto: márcalos si también se pueden cambiar. Al terminar se restauran tus valores; tú eliges qué sugerencia aplicar.</p>
+      <details><summary>Variables que se pueden modificar (${cands.filter(c => c.def).length} de ${cands.length} marcadas)</summary>
+        <div class="sol-vars">${cands.map((c, i) => `<label><input type="checkbox" data-i="${i}" ${c.def ? 'checked' : ''}> <span>${esc(c.label)}${c.panel ? ` <span class="sol-sub">· ${esc(c.panel)}</span>` : ''} <span class="sol-sub">= ${esc(c.tipo === 'select' ? c.el.options[c.el.selectedIndex].text : c.el.value)}</span></span></label>`).join('')}</div>
+      </details>
+      <div class="sol-row"><button class="pri" id="solGo">Buscar rediseño</button><span class="sol-sub" id="solProg"></span></div>
+      <div id="solRes"></div>`}
+    </div>`;
+    document.body.appendChild(ov);
+    const cerrar = () => ov.remove();
+    ov.querySelector('#solX').onclick = cerrar;
+    ov.addEventListener('click', e => { if (e.target === ov) cerrar(); });
+    const go = ov.querySelector('#solGo'); if (!go) return;
+    go.onclick = async () => {
+      go.disabled = true;
+      const sel = [...ov.querySelectorAll('.sol-vars input:checked')].map(x => cands[+x.dataset.i]);
+      const f0 = fallas().n; let evals = 0;
+      const prog = ov.querySelector('#solProg'), out = [];
+      const tick = () => { evals++; if (evals % 5 === 0) prog.textContent = `Probando… ${evals} cálculos`; };
+      cands.forEach(c => { if (c.tipo === 'num') c.v0 = parseFloat(String(c.el.value).replace(',', '.')); else c.i0 = c.el.selectedIndex; });
+      for (let k = 0; k < sel.length; k++) {
+        const c = sel[k]; prog.textContent = `Probando ${k + 1} de ${sel.length}: ${c.label}`;
+        if (c.tipo === 'num') { const r = await buscarNum(c, f0, tick); if (r) out.push({ c, r }); }
+        else (await buscarSel(c, f0, tick)).forEach(r => out.push({ c, r }));
+      }
+      // combinación codiciosa si ninguna variable sola resuelve
+      let combo = null;
+      if (!out.some(x => x.r.ok) && out.length) {
+        const aplicados = []; let fAct = f0;
+        const pend = out.slice().sort((a, b) => a.r.n - b.r.n);
+        for (const x of pend.slice(0, 4)) {
+          if (x.c.tipo === 'num') fijar(x.c.el, x.r.v); else { x.c.el.selectedIndex = x.r.i; x.c.el.dispatchEvent(new Event('change', { bubbles: true })); x.c.el.dispatchEvent(new Event('input', { bubbles: true })); }
+          await pausa(); const n = fallas().n; evals++;
+          if (n < fAct) { aplicados.push(x); fAct = n; } else { if (x.c.tipo === 'num') fijar(x.c.el, x.c.v0); else { x.c.el.selectedIndex = x.c.i0; x.c.el.dispatchEvent(new Event('change', { bubbles: true })); } }
+          if (fAct === 0) break;
+        }
+        combo = { items: aplicados, n: fAct };
+        // restaurar
+        cands.forEach(c => { if (c.tipo === 'num') fijar(c.el, c.v0); else if (c.el.selectedIndex !== c.i0) { c.el.selectedIndex = c.i0; c.el.dispatchEvent(new Event('change', { bubbles: true })); c.el.dispatchEvent(new Event('input', { bubbles: true })); } });
+        await pausa();
+      }
+      prog.textContent = `Listo: ${evals} cálculos. Tus valores originales se restauraron.`;
+      const valTxt = (c, r) => c.tipo === 'num' ? fmt(r.v) : esc(r.txt);
+      const actTxt = c => c.tipo === 'num' ? fmt(c.v0) : esc(c.el.options[c.i0].text);
+      const ok = out.filter(x => x.r.ok).sort((a, b) => (a.c.tipo === 'num' ? a.r.cambio : a.r.dist / 10) - (b.c.tipo === 'num' ? b.r.cambio : b.r.dist / 10));
+      const par = out.filter(x => !x.r.ok);
+      const fila = (x, i) => `<tr><td>${esc(x.c.label)}${x.c.panel ? `<div class="sol-sub">${esc(x.c.panel)}</div>` : ''}</td><td class="n">${actTxt(x.c)}</td><td class="n"><b>${valTxt(x.c, x.r)}</b></td><td>${x.r.ok ? '<span class="sol-ok">CUMPLE todo</span>' : `<span class="sol-par">Quedan ${x.r.n}</span>`}${x.c.tipo === 'num' ? `<div class="sol-sub">${x.r.dir > 0 ? '+' : '−'}${(x.r.cambio * 100).toFixed(0)} %</div>` : ''}</td><td><button data-ap="${i}">Aplicar</button></td></tr>`;
+      const lista = [...ok, ...par];
+      let html = '';
+      if (ok.length) html += `<p class="sol-ok">Variables que, cambiadas solas, hacen cumplir toda la planilla (de menor a mayor cambio):</p>`;
+      else html += `<p class="sol-par">Ninguna variable sola resuelve todas las verificaciones.${combo && combo.items.length ? ` Combinación propuesta (${combo.n === 0 ? 'CUMPLE todo' : 'quedan ' + combo.n}):` : ''}</p>`;
+      if (!ok.length && combo && combo.items.length) html += `<div class="sol-tbl"><table><tr><th>Variable</th><th class="n">Actual</th><th class="n">Sugerido</th></tr>${combo.items.map(x => `<tr><td>${esc(x.c.label)}</td><td class="n">${actTxt(x.c)}</td><td class="n"><b>${valTxt(x.c, x.r)}</b></td></tr>`).join('')}</table></div><div class="sol-row"><button class="pri" id="solCombo">Aplicar combinación</button></div>`;
+      if (lista.length) html += `<div class="sol-tbl"><table><tr><th>Variable</th><th class="n">Actual</th><th class="n">Sugerido</th><th>Resultado</th><th></th></tr>${lista.map(fila).join('')}</table></div>`;
+      else html += '<p class="sol-sub">Ninguna de las variables marcadas mejora el resultado en un rango razonable (hasta ×18 o ÷18 del valor actual). Marca otras variables o revisa las cargas.</p>';
+      html += `<p class="sol-sub">Las sugerencias son valores mínimos para cumplir con los datos actuales, redondeados. Revísalas con criterio de diseño (disponibilidad comercial, detalles constructivos, otras combinaciones de carga) antes de adoptarlas.</p>`;
+      const res = ov.querySelector('#solRes'); res.innerHTML = html;
+      res.querySelectorAll('[data-ap]').forEach(b => b.onclick = () => {
+        const x = lista[+b.dataset.ap];
+        if (x.c.tipo === 'num') fijar(x.c.el, x.r.v); else { x.c.el.selectedIndex = x.r.i; x.c.el.dispatchEvent(new Event('input', { bubbles: true })); x.c.el.dispatchEvent(new Event('change', { bubbles: true })); }
+        cerrar(); if (typeof fsToast === 'function') fsToast(`Aplicado: ${x.c.label} = ${x.c.tipo === 'num' ? fmt(x.r.v) : x.r.txt}`);
+        x.c.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      const bc = res.querySelector('#solCombo');
+      if (bc) bc.onclick = () => { combo.items.forEach(x => { if (x.c.tipo === 'num') fijar(x.c.el, x.r.v); else { x.c.el.selectedIndex = x.r.i; x.c.el.dispatchEvent(new Event('input', { bubbles: true })); x.c.el.dispatchEvent(new Event('change', { bubbles: true })); } }); cerrar(); if (typeof fsToast === 'function') fsToast('Combinación aplicada'); };
+    };
+  }
+
+  const pa = document.querySelector('.print-actions');
+  if (pa) {
+    const b = document.createElement('button');
+    b.id = 'solBtn'; b.className = 'print-btn'; b.type = 'button'; b.textContent = '🛠 Rediseño';
+    b.title = 'Buscar los valores de las variables con los que las verificaciones que no cumplen pasan a CUMPLE';
+    b.onclick = abrir;
+    pa.insertBefore(b, pa.firstChild);
+  }
+})();
 </script>
 
 
 <script>
-/* App instalable (PWA) — versión 20261006-1930. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261007-1135. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
