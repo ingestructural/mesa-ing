@@ -44010,7 +44010,7 @@ route();
    ========================================================================= */
 (function () {
   const FAIL_RE = /\bNO CUMPLE\b|\bINESTABLE\b|FUERA DE RANGO|excentricidad excesiva|NO VERIFICA/i;
-  const LOAD_RE = /carga|fuerza|momento|corte|cortante|axial|\bP[uút]\b|\bV[uúr]\b|\bM[uúr]\b|\bN[uú]\b|\bT[uú]\b|reacci|sobrecarga|viento|velocidad|sism|zona|suelo|categor|importancia|exposici|q_?adm|presi[oó]n admisible|densidad|gamma|peso (propio|espec)|coeficiente|factor|\bR\b —|amortig|per[ií]odo|luz|vano|longitud (libre|no arriostrada|de pandeo)|altura (de piso|libre|total del edificio)|t[ií]tulo|proyecto|fecha|n[°º] de pisos|temperatura|tiempo|resistencia al fuego|humedad|absorci|m[oó]dulo de finura|asentamiento|Ω|φ|\bphi\b|omega|m[oó]dulo de elasticidad|\bE —|\bK —|factor de longitud|m[eé]todo|norma|criterio|unidad|combinaci/i;
+  const LOAD_RE = /carga|fuerza|momento|corte|cortante|axial|\bP[uút]\b|\bV[uúr]\b|\bM[uúr]\b|\bN[uú]\b|\bT[uú]\b|reacci|sobrecarga|viento|velocidad|sism|zona|suelo|categor|importancia|exposici|q_?adm|presi[oó]n admisible|densidad|gamma|peso (propio|espec)|coeficiente|factor|\bR\b —|amortig|per[ií]odo|luz|vano|longitud (libre|no arriostrada|de pandeo)|altura (de piso|libre|total del edificio)|t[ií]tulo|proyecto|fecha|n[°º] de pisos|temperatura|tiempo|resistencia al fuego|humedad|absorci|m[oó]dulo de finura|asentamiento|mayorad|solicitaci|servicio|Ω|φ|\bphi\b|omega|m[oó]dulo de elasticidad|\bE —|\bK —|factor de longitud|m[eé]todo|norma|criterio|unidad|combinaci/i;
   const INT_RE = /\bn[°º]|n[uú]mero|cantidad|\bN —|pernos|barras|filas|columnas de pernos|ramas|estribos|n\s*=|nPernos/i;
 
   const main = () => document.getElementById('mainView');
@@ -44138,24 +44138,36 @@ route();
   const css = document.createElement('style');
   css.textContent = `
   #solBtn{background:#B4561C}
-  #solOv{position:fixed;inset:0;background:rgba(10,20,30,.45);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px;overflow:auto}
-  #solBox{background:var(--surface,#fff);color:var(--ink,#111);max-width:860px;width:100%;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.35);padding:18px 20px;display:grid;gap:12px;font-family:'IBM Plex Sans',system-ui,sans-serif}
-  #solBox h2{margin:0;font-size:1.15rem}
-  #solBox .sol-sub{font-size:.85rem;color:var(--ink-muted,#555)}
-  #solBox table{width:100%;border-collapse:collapse;font-size:.85rem}
-  #solBox th,#solBox td{padding:6px 8px;border-bottom:1px solid var(--line,#ddd);text-align:left;vertical-align:top}
-  #solBox th{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted,#555)}
-  #solBox td.n{text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap}
-  #solBox .sol-fallas{margin:0;padding-left:18px;font-size:.84rem;color:#A3271F;display:grid;gap:3px}
-  #solBox .sol-ok{color:#1F6B45;font-weight:700}
-  #solBox .sol-par{color:#8A5A00;font-weight:700}
-  #solBox .sol-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  #solBox button{font:600 .82rem 'IBM Plex Sans',sans-serif;border-radius:6px;padding:6px 12px;cursor:pointer;border:1px solid var(--line,#ccc);background:var(--surface,#fff);color:var(--ink,#111)}
+  #solOv{position:fixed;inset:0;background:rgba(10,20,30,.45);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:4vh 12px;overflow:auto}
+  #solBox{box-sizing:border-box;background:var(--surface,#fff);color:var(--ink,#111);max-width:760px;width:100%;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.35);padding:16px 18px;display:grid;gap:10px;font:400 .8rem/1.4 'IBM Plex Sans',system-ui,sans-serif;overflow:hidden}
+  #solBox *{box-sizing:border-box}
+  #solBox h2{margin:0;font-size:1.1rem;text-align:center;flex:1}
+  #solBox .sol-sub{font-size:.74rem;color:var(--ink-muted,#555)}
+  #solBox .sol-c{text-align:center}
+  #solBox .sol-tit{text-align:center;font-weight:700;font-size:.86rem;margin:2px 0}
+  #solBox table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:.78rem}
+  #solBox th,#solBox td{padding:5px 6px;border-bottom:1px solid var(--line,#ddd);text-align:center;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #solBox th{font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted,#555);font-weight:600}
+  #solBox td.v,#solBox th.v{text-align:left}
+  #solBox td.v .p{display:block;font-size:.68rem;color:var(--ink-muted,#666);overflow:hidden;text-overflow:ellipsis}
+  #solBox td.n{font-family:'IBM Plex Mono',monospace}
+  #solBox .rojo{color:#C0261B;font-weight:600}
+  #solBox .verde{color:#1E7A45;font-weight:700}
+  #solBox .falla-tbl td{color:#C0261B;text-align:left}
+  #solBox .falla-tbl td.e{text-align:center;font-weight:700;width:96px}
+  #solBox .sol-ok{color:#1E7A45;font-weight:700;text-align:center}
+  #solBox .sol-par{color:#C0261B;font-weight:700;text-align:center}
+  #solBox .sol-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center}
+  #solBox button{font:600 .78rem 'IBM Plex Sans',sans-serif;border-radius:6px;padding:5px 10px;cursor:pointer;border:1px solid var(--line,#ccc);background:var(--surface,#fff);color:var(--ink,#111)}
   #solBox button.pri{background:var(--accent,#0060c1);color:#fff;border-color:var(--accent,#0060c1)}
-  #solBox details{font-size:.84rem}
-  #solBox details label{display:flex;gap:6px;align-items:flex-start;padding:2px 0}
-  #solBox .sol-vars{max-height:220px;overflow:auto;border:1px solid var(--line,#ddd);border-radius:6px;padding:6px 8px;margin-top:6px}
-  #solBox .sol-tbl{overflow-x:auto}
+  #solBox button.ap{background:#1E7A45;color:#fff;border-color:#1E7A45;padding:4px 8px}
+  #solBox button.ap .m{display:none}
+  #solBox details{font-size:.78rem}
+  #solBox details summary{text-align:center;cursor:pointer}
+  #solBox details label{display:flex;gap:6px;align-items:center;padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #solBox .sol-vars{max-height:200px;overflow:auto;border:1px solid var(--line,#ddd);border-radius:6px;padding:6px 8px;margin-top:6px}
+  #solBox .leyenda{display:flex;gap:14px;justify-content:center;font-size:.72rem}
+  @media (max-width:560px){#solBox{padding:12px 10px}#solBox td.v .p{display:none}#solBox .c-res{display:none}#solBox table{font-size:.72rem}#solBox button.ap .t{display:none}#solBox button.ap .m{display:inline}}
   @media print{#solOv{display:none!important}}`;
   document.head.appendChild(css);
 
@@ -44164,14 +44176,14 @@ route();
     const ov = document.createElement('div'); ov.id = 'solOv';
     const fmt = v => (typeof v === 'number' ? v.toLocaleString('es-CL', { maximumFractionDigits: 4 }) : String(v));
     ov.innerHTML = `<div id="solBox" role="dialog" aria-label="Rediseño">
-      <div class="sol-row" style="justify-content:space-between"><h2>Rediseño</h2><button id="solX">Cerrar</button></div>
+      <div class="sol-row" style="justify-content:space-between;flex-wrap:nowrap"><span style="width:62px"></span><h2>Rediseño</h2><button id="solX">Cerrar</button></div>
       ${f.n === 0 ? `<p class="sol-ok">${cumpleAlgo() ? 'Todas las verificaciones de esta planilla cumplen. No hay nada que corregir.' : 'No se detectan verificaciones con NO CUMPLE en esta planilla.'}</p>` :
-      `<div><b>${f.n === 1 ? '1 verificación no cumple' : f.n + ' verificaciones no cumplen'}:</b><ul class="sol-fallas">${f.items.slice(0, 12).map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>
-      <p class="sol-sub">El asistente prueba cada variable marcada, una a la vez, y busca el valor más cercano al actual con el que toda la planilla queda CUMPLE. Las cargas y los datos del sitio (zona, suelo, exposición, luces) quedan fuera por defecto: márcalos si también se pueden cambiar. Al terminar se restauran tus valores; tú eliges qué sugerencia aplicar.</p>
+      `<div><p class="sol-tit rojo">${f.n === 1 ? '1 verificación no cumple' : f.n + ' verificaciones no cumplen'}</p><table class="falla-tbl">${f.items.slice(0, 12).map(t => { const m = t.match(/^(.*?)(NO CUMPLE.*|INESTABLE.*|FUERA DE RANGO.*|B'≤0.*)$/i); const a = m ? m[1].trim() : t, e = m ? m[2].replace(/\s+/g, ' ').trim() : ''; return `<tr><td title="${esc(t)}">${esc(a || e)}</td><td class="e">${esc(a ? e : '')}</td></tr>`; }).join('')}</table></div>
+      <p class="sol-sub sol-c">El asistente prueba cada variable marcada, una a la vez, y busca el valor más cercano al actual con el que toda la planilla queda CUMPLE. Las cargas y los datos del sitio (zona, suelo, exposición, luces) quedan fuera por defecto: márcalos si también se pueden cambiar. Al terminar se restauran tus valores; tú eliges qué sugerencia aplicar.</p>
       <details><summary>Variables que se pueden modificar (${cands.filter(c => c.def).length} de ${cands.length} marcadas)</summary>
-        <div class="sol-vars">${cands.map((c, i) => `<label><input type="checkbox" data-i="${i}" ${c.def ? 'checked' : ''}> <span>${esc(c.label)}${c.panel ? ` <span class="sol-sub">· ${esc(c.panel)}</span>` : ''} <span class="sol-sub">= ${esc(c.tipo === 'select' ? c.el.options[c.el.selectedIndex].text : c.el.value)}</span></span></label>`).join('')}</div>
+        <div class="sol-vars">${cands.map((c, i) => `<label title="${esc(c.label)}"><input type="checkbox" data-i="${i}" ${c.def ? 'checked' : ''}> <span>${esc(c.label)}${c.panel ? ` <span class="sol-sub">· ${esc(c.panel)}</span>` : ''} <span class="sol-sub">= ${esc(c.tipo === 'select' ? c.el.options[c.el.selectedIndex].text : c.el.value)}</span></span></label>`).join('')}</div>
       </details>
-      <div class="sol-row"><button class="pri" id="solGo">Buscar rediseño</button><span class="sol-sub" id="solProg"></span></div>
+      <div class="sol-row"><button class="pri" id="solGo">Buscar rediseño</button></div><div class="sol-sub sol-c" id="solProg"></div>
       <div id="solRes"></div>`}
     </div>`;
     document.body.appendChild(ov);
@@ -44212,15 +44224,15 @@ route();
       const actTxt = c => c.tipo === 'num' ? fmt(c.v0) : esc(c.el.options[c.i0].text);
       const ok = out.filter(x => x.r.ok).sort((a, b) => (a.c.tipo === 'num' ? a.r.cambio : a.r.dist / 10) - (b.c.tipo === 'num' ? b.r.cambio : b.r.dist / 10));
       const par = out.filter(x => !x.r.ok);
-      const fila = (x, i) => `<tr><td>${esc(x.c.label)}${x.c.panel ? `<div class="sol-sub">${esc(x.c.panel)}</div>` : ''}</td><td class="n">${actTxt(x.c)}</td><td class="n"><b>${valTxt(x.c, x.r)}</b></td><td>${x.r.ok ? '<span class="sol-ok">CUMPLE todo</span>' : `<span class="sol-par">Quedan ${x.r.n}</span>`}${x.c.tipo === 'num' ? `<div class="sol-sub">${x.r.dir > 0 ? '+' : '−'}${(x.r.cambio * 100).toFixed(0)} %</div>` : ''}</td><td><button data-ap="${i}">Aplicar</button></td></tr>`;
+      const fila = (x, i) => `<tr><td class="v" title="${esc(x.c.label)}${x.c.panel ? ' · ' + esc(x.c.panel) : ''}">${esc(x.c.label)}${x.c.panel ? `<span class="p">${esc(x.c.panel)}</span>` : ''}</td><td class="n rojo" title="${actTxt(x.c)}">${actTxt(x.c)}</td><td class="n verde" title="${valTxt(x.c, x.r)}">${valTxt(x.c, x.r)}${x.c.tipo === 'num' ? `<span class="sol-sub" style="display:block;font-weight:400">${x.r.dir > 0 ? '+' : '−'}${(x.r.cambio * 100).toFixed(0)} %</span>` : ''}</td><td class="c-res">${x.r.ok ? '<span class="verde">CUMPLE</span>' : `<span class="rojo">Quedan ${x.r.n}</span>`}</td><td><button class="ap" data-ap="${i}" title="Aplicar este valor"><span class="t">Aplicar</span><span class="m">✓</span></button></td></tr>`;
       const lista = [...ok, ...par];
       let html = '';
-      if (ok.length) html += `<p class="sol-ok">Variables que, cambiadas solas, hacen cumplir toda la planilla (de menor a mayor cambio):</p>`;
+      if (ok.length) html += `<p class="sol-ok">Variables que, cambiadas solas, hacen cumplir toda la planilla (de menor a mayor cambio)</p>`;
       else html += `<p class="sol-par">Ninguna variable sola resuelve todas las verificaciones.${combo && combo.items.length ? ` Combinación propuesta (${combo.n === 0 ? 'CUMPLE todo' : 'quedan ' + combo.n}):` : ''}</p>`;
-      if (!ok.length && combo && combo.items.length) html += `<div class="sol-tbl"><table><tr><th>Variable</th><th class="n">Actual</th><th class="n">Sugerido</th></tr>${combo.items.map(x => `<tr><td>${esc(x.c.label)}</td><td class="n">${actTxt(x.c)}</td><td class="n"><b>${valTxt(x.c, x.r)}</b></td></tr>`).join('')}</table></div><div class="sol-row"><button class="pri" id="solCombo">Aplicar combinación</button></div>`;
-      if (lista.length) html += `<div class="sol-tbl"><table><tr><th>Variable</th><th class="n">Actual</th><th class="n">Sugerido</th><th>Resultado</th><th></th></tr>${lista.map(fila).join('')}</table></div>`;
+      if (!ok.length && combo && combo.items.length) html += `<div class="sol-tbl"><table><colgroup><col style="width:56%"><col style="width:22%"><col style="width:22%"></colgroup><tr><th class="v">Variable</th><th>Actual</th><th>Sugerido</th></tr>${combo.items.map(x => `<tr><td class="v" title="${esc(x.c.label)}">${esc(x.c.label)}</td><td class="n rojo">${actTxt(x.c)}</td><td class="n verde">${valTxt(x.c, x.r)}</td></tr>`).join('')}</table></div><div class="sol-row"><button class="pri" id="solCombo">Aplicar combinación</button></div>`;
+      if (lista.length) html += `<div class="leyenda"><span class="rojo">■ Valor actual (no cumple)</span><span class="verde">■ Valor sugerido</span></div><div class="sol-tbl"><table><colgroup><col style="width:44%"><col style="width:15%"><col style="width:17%"><col class="c-res" style="width:12%"><col style="width:12%"></colgroup><tr><th class="v">Variable</th><th>Actual</th><th>Sugerido</th><th class="c-res">Resultado</th><th></th></tr>${lista.map(fila).join('')}</table></div>`;
       else html += '<p class="sol-sub">Ninguna de las variables marcadas mejora el resultado en un rango razonable (hasta ×18 o ÷18 del valor actual). Marca otras variables o revisa las cargas.</p>';
-      html += `<p class="sol-sub">Las sugerencias son valores mínimos para cumplir con los datos actuales, redondeados. Revísalas con criterio de diseño (disponibilidad comercial, detalles constructivos, otras combinaciones de carga) antes de adoptarlas.</p>`;
+      html += `<p class="sol-sub sol-c">Las sugerencias son valores mínimos para cumplir con los datos actuales, redondeados. Revísalas con criterio de diseño (disponibilidad comercial, detalles constructivos, otras combinaciones de carga) antes de adoptarlas.</p>`;
       const res = ov.querySelector('#solRes'); res.innerHTML = html;
       res.querySelectorAll('[data-ap]').forEach(b => b.onclick = () => {
         const x = lista[+b.dataset.ap];
@@ -44246,7 +44258,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261007-1135. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261007-1142. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
