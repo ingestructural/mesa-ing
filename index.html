@@ -44168,28 +44168,75 @@ route();
   #solBox .sol-vars{max-height:200px;overflow:auto;border:1px solid var(--line,#ddd);border-radius:6px;padding:6px 8px;margin-top:6px}
   #solBox .leyenda{display:flex;gap:14px;justify-content:center;font-size:.72rem}
   @media (max-width:560px){#solBox{padding:12px 10px}#solBox td.v .p{display:none}#solBox .c-res{display:none}#solBox table{font-size:.72rem}#solBox button.ap .t{display:none}#solBox button.ap .m{display:inline}}
-  @media print{#solOv{display:none!important}}`;
+  #solBox .sol-dk{display:none}
+  #solOv.dock{background:none;pointer-events:none;inset:auto;padding:0;display:block}
+  #solOv.dock #solBox{position:fixed;pointer-events:auto;max-width:none;overflow:auto;padding:8px 10px;gap:6px;font-size:.74rem;box-shadow:0 6px 18px rgba(20,40,70,.22);border:1px solid var(--line,#c9d6e3);z-index:45}
+  #solOv.dock .sol-intro,#solOv.dock .sol-nodk,#solOv.dock .c-res,#solOv.dock td.v .p,#solOv.dock .leyenda,#solOv.dock #solRes>p.sol-sub{display:none!important}
+  #solOv.dock .sol-dk{display:inline-block}
+  #solOv.dock h2{font-size:.9rem}
+  #solOv.dock table{font-size:.7rem}
+  #solOv.dock th,#solOv.dock td{padding:4px 3px}
+  #solOv.dock button.ap{padding:3px 6px}
+  #solOv.dock button.ap .t{display:none}#solOv.dock button.ap .m{display:inline}
+  #solOv.dock #solRes>p.sol-ok,#solOv.dock #solRes>p.sol-par{font-size:.7rem;margin:2px 0}
+  #solBox tr.aplicado td{background:rgba(30,122,69,.08)}
+  html.sol-dock #esqLive{max-height:52vh!important}
+  .esq-estado{position:absolute;top:6px;left:8px;z-index:3;font:700 .74rem/1 'IBM Plex Sans',system-ui,sans-serif;letter-spacing:.04em;padding:5px 9px;border-radius:5px;color:#fff;pointer-events:none}
+  .esq-estado.ok{background:#1E7A45}
+  .esq-estado.nok{background:#C0261B}
+  #esqLive .el-b{position:relative}
+  @media print{#solOv{display:none!important}.esq-estado{display:none!important}}`;
   document.head.appendChild(css);
+
+  function fallasHtml(f) {
+    if (f.n === 0) return `<p class="sol-ok">${cumpleAlgo() ? 'Diseño OK — todas las verificaciones cumplen.' : 'No se detectan verificaciones con NO CUMPLE en esta planilla.'}</p>`;
+    return `<p class="sol-tit rojo">${f.n === 1 ? '1 verificación no cumple' : f.n + ' verificaciones no cumplen'}</p><table class="falla-tbl">${f.items.slice(0, 12).map(t => { const m = t.match(/^(.*?)(NO CUMPLE.*|INESTABLE.*|FUERA DE RANGO.*|B'≤0.*)$/i); const a = m ? m[1].trim() : t, e = m ? m[2].replace(/\s+/g, ' ').trim() : ''; return `<tr><td title="${esc(t)}">${esc(a || e)}</td><td class="e">${esc(a ? e : '')}</td></tr>`; }).join('')}</table>`;
+  }
+  let DOCK = null;   // ventana anclada bajo el esquema
+  function posDock() {
+    if (!DOCK || !document.body.contains(DOCK)) return;
+    const box = DOCK.querySelector('#solBox'), e = document.getElementById('esqLive'), m = main();
+    let left, width, top;
+    if (e && getComputedStyle(e).display !== 'none') { const r = e.getBoundingClientRect(); left = r.left; width = r.width; top = r.bottom + 8; }
+    else if (m) { const r = m.getBoundingClientRect(); left = r.right + 20; width = Math.min(760, window.innerWidth - left - 20); top = 64; }
+    if (!m || width < 200 || top > window.innerHeight - 150) {   // sin espacio a la derecha: franja inferior
+      box.style.left = '8px'; box.style.width = (window.innerWidth - 16) + 'px'; box.style.top = 'auto'; box.style.bottom = '8px'; box.style.maxHeight = '42vh';
+    } else {
+      box.style.left = left + 'px'; box.style.width = width + 'px'; box.style.top = top + 'px'; box.style.bottom = 'auto'; box.style.maxHeight = Math.max(160, window.innerHeight - top - 12) + 'px';
+    }
+  }
+  setInterval(posDock, 400);
+  window.addEventListener('resize', posDock); window.addEventListener('scroll', posDock, { passive: true });
+  window.addEventListener('hashchange', () => { if (DOCK) { DOCK.remove(); DOCK = null; document.documentElement.classList.remove('sol-dock'); } });
 
   function abrir() {
     const f = fallas(), cands = candidatos();
     const ov = document.createElement('div'); ov.id = 'solOv';
     const fmt = v => (typeof v === 'number' ? v.toLocaleString('es-CL', { maximumFractionDigits: 4 }) : String(v));
     ov.innerHTML = `<div id="solBox" role="dialog" aria-label="Rediseño">
-      <div class="sol-row" style="justify-content:space-between;flex-wrap:nowrap"><span style="width:62px"></span><h2>Rediseño</h2><button id="solX">Cerrar</button></div>
+      <div class="sol-row" style="justify-content:space-between;flex-wrap:nowrap"><button id="solAmp" class="sol-dk" title="Volver a la ventana completa">⤢</button><span class="sol-nodk" style="width:62px"></span><h2>Rediseño</h2><button id="solX">Cerrar</button></div>
       ${f.n === 0 ? `<p class="sol-ok">${cumpleAlgo() ? 'Todas las verificaciones de esta planilla cumplen. No hay nada que corregir.' : 'No se detectan verificaciones con NO CUMPLE en esta planilla.'}</p>` :
-      `<div><p class="sol-tit rojo">${f.n === 1 ? '1 verificación no cumple' : f.n + ' verificaciones no cumplen'}</p><table class="falla-tbl">${f.items.slice(0, 12).map(t => { const m = t.match(/^(.*?)(NO CUMPLE.*|INESTABLE.*|FUERA DE RANGO.*|B'≤0.*)$/i); const a = m ? m[1].trim() : t, e = m ? m[2].replace(/\s+/g, ' ').trim() : ''; return `<tr><td title="${esc(t)}">${esc(a || e)}</td><td class="e">${esc(a ? e : '')}</td></tr>`; }).join('')}</table></div>
-      <p class="sol-sub sol-c">El asistente prueba cada variable marcada, una a la vez, y busca el valor más cercano al actual con el que toda la planilla queda CUMPLE. Las cargas y los datos del sitio (zona, suelo, exposición, luces) quedan fuera por defecto: márcalos si también se pueden cambiar. Al terminar se restauran tus valores; tú eliges qué sugerencia aplicar.</p>
-      <details><summary>Variables que se pueden modificar (${cands.filter(c => c.def).length} de ${cands.length} marcadas)</summary>
+      `<div id="solFallas">${fallasHtml(f)}</div>
+      <p class="sol-sub sol-c sol-intro">El asistente prueba cada variable marcada, una a la vez, y busca el valor más cercano al actual con el que toda la planilla queda CUMPLE. Las cargas y los datos del sitio (zona, suelo, exposición, luces) quedan fuera por defecto: márcalos si también se pueden cambiar. Al terminar se restauran tus valores; tú eliges qué sugerencia aplicar.</p>
+      <details class="sol-intro"><summary>Variables que se pueden modificar (${cands.filter(c => c.def).length} de ${cands.length} marcadas)</summary>
         <div class="sol-vars">${cands.map((c, i) => `<label title="${esc(c.label)}"><input type="checkbox" data-i="${i}" ${c.def ? 'checked' : ''}> <span>${esc(c.label)}${c.panel ? ` <span class="sol-sub">· ${esc(c.panel)}</span>` : ''} <span class="sol-sub">= ${esc(c.tipo === 'select' ? c.el.options[c.el.selectedIndex].text : c.el.value)}</span></span></label>`).join('')}</div>
       </details>
-      <div class="sol-row"><button class="pri" id="solGo">Buscar rediseño</button></div><div class="sol-sub sol-c" id="solProg"></div>
+      <div class="sol-row sol-intro"><button class="pri" id="solGo">Buscar rediseño</button></div><div class="sol-sub sol-c sol-intro" id="solProg"></div>
       <div id="solRes"></div>`}
     </div>`;
+    if (DOCK) { DOCK.remove(); DOCK = null; }
     document.body.appendChild(ov);
-    const cerrar = () => ov.remove();
+    let obs = null, tmr = null;
+    const vivo = () => { clearTimeout(tmr); tmr = setTimeout(() => { const box = ov.querySelector('#solFallas'); if (box) box.innerHTML = fallasHtml(fallas()); }, 200); };
+    const cerrar = () => { ov.remove(); if (DOCK === ov) DOCK = null; document.documentElement.classList.remove('sol-dock'); if (obs) obs.disconnect(); };
+    const anclar = () => {
+      ov.classList.add('dock'); DOCK = ov; document.documentElement.classList.add('sol-dock'); posDock();
+      if (!obs && window.MutationObserver && main()) { obs = new MutationObserver(vivo); obs.observe(main(), { childList: true, subtree: true, characterData: true }); }
+      vivo();
+    };
     ov.querySelector('#solX').onclick = cerrar;
-    ov.addEventListener('click', e => { if (e.target === ov) cerrar(); });
+    ov.querySelector('#solAmp').onclick = () => { ov.classList.remove('dock'); DOCK = null; document.documentElement.classList.remove('sol-dock'); const b = ov.querySelector('#solBox'); ['left', 'width', 'top', 'bottom', 'maxHeight'].forEach(k => b.style[k] = ''); };
+    ov.addEventListener('click', e => { if (e.target === ov && !ov.classList.contains('dock')) cerrar(); });
     const go = ov.querySelector('#solGo'); if (!go) return;
     go.onclick = async () => {
       go.disabled = true;
@@ -44237,13 +44284,34 @@ route();
       res.querySelectorAll('[data-ap]').forEach(b => b.onclick = () => {
         const x = lista[+b.dataset.ap];
         if (x.c.tipo === 'num') fijar(x.c.el, x.r.v); else { x.c.el.selectedIndex = x.r.i; x.c.el.dispatchEvent(new Event('input', { bubbles: true })); x.c.el.dispatchEvent(new Event('change', { bubbles: true })); }
-        cerrar(); if (typeof fsToast === 'function') fsToast(`Aplicado: ${x.c.label} = ${x.c.tipo === 'num' ? fmt(x.r.v) : x.r.txt}`);
-        x.c.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        b.innerHTML = '✓'; b.title = 'Aplicado'; b.closest('tr').classList.add('aplicado');
+        anclar(); if (typeof fsToast === 'function') fsToast(`Aplicado: ${x.c.label} = ${x.c.tipo === 'num' ? fmt(x.r.v) : x.r.txt}`);
       });
       const bc = res.querySelector('#solCombo');
-      if (bc) bc.onclick = () => { combo.items.forEach(x => { if (x.c.tipo === 'num') fijar(x.c.el, x.r.v); else { x.c.el.selectedIndex = x.r.i; x.c.el.dispatchEvent(new Event('input', { bubbles: true })); x.c.el.dispatchEvent(new Event('change', { bubbles: true })); } }); cerrar(); if (typeof fsToast === 'function') fsToast('Combinación aplicada'); };
+      if (bc) bc.onclick = () => { combo.items.forEach(x => { if (x.c.tipo === 'num') fijar(x.c.el, x.r.v); else { x.c.el.selectedIndex = x.r.i; x.c.el.dispatchEvent(new Event('input', { bubbles: true })); x.c.el.dispatchEvent(new Event('change', { bubbles: true })); } }); bc.textContent = '✓ Combinación aplicada'; anclar(); if (typeof fsToast === 'function') fsToast('Combinación aplicada'); };
     };
   }
+
+  // Estado de diseño en la esquina superior izquierda del esquema (y de su copia flotante)
+  let estTmr = null, estUlt = '';
+  function marcarEsquema() {
+    const m = main(); if (!m) return;
+    const src = [...m.querySelectorAll('[id*="_esq"],[id$="_plot"],[id$="_diagrama"],#ch_seccion,#ah_figura')].filter(el => el.querySelector('svg') && !inPrint(el));
+    m.querySelectorAll('.esq-estado').forEach(b => { if (!src.length || b.parentElement !== src[0]) b.remove(); });
+    if (!src.length) return;
+    const f = fallas(), est = f.n > 0 ? 'nok' : (cumpleAlgo() ? 'ok' : '');
+    const host = src[0]; let b = host.querySelector(':scope > .esq-estado');
+    if (!est) { if (b) b.remove(); return; }
+    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    const txt = est === 'ok' ? 'DISEÑO OK' : 'DISEÑO NOK';
+    if (b && b.textContent === txt && estUlt === est) return;
+    if (!b) { b = document.createElement('div'); host.insertBefore(b, host.firstChild); }
+    b.className = 'esq-estado ' + est; b.textContent = txt; b.title = est === 'ok' ? 'Todas las verificaciones cumplen' : f.n + ' verificación(es) no cumplen — usa 🛠 Rediseño';
+    estUlt = est;
+  }
+  const estProg = () => { clearTimeout(estTmr); estTmr = setTimeout(marcarEsquema, 180); };
+  if (window.MutationObserver && main()) new MutationObserver(estProg).observe(main(), { childList: true, subtree: true, characterData: true });
+  window.addEventListener('hashchange', estProg); estProg();
 
   const pa = document.querySelector('.print-actions');
   if (pa) {
@@ -44258,7 +44326,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261007-1142. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261007-1155. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
