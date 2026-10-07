@@ -1793,9 +1793,6 @@ const TOOLS = [
   { id:'estanque-ha', cat:'Hormigón armado', name:'Estanque HA Semienterrado', file:'Estanque_HA_Semienterrado_2.xlsx',
     desc:'Estanque circular de hormigón armado semienterrado para reserva de agua contra incendio, con sismo según NCh2369 §11.8 (Housner, ACI 350.3) y presiones hidrodinámicas en el muro.',
     tag:'ACI 350 · NCh430 · NCh2369', calc:'estanqueHA' },
-  { id:'fuego-losas', cat:'Hormigón armado', name:'Resistencia al Fuego de Losas — Macizas y Colaborantes', file:null,
-    desc:'Verificación de la exigencia F-30 a F-240 (OGUC 4.3.3) para losas macizas de H.A. por el método tabulado (espesor y distancia al eje de la armadura) y para losas con placa colaborante (Instadeck u otra) por EN 1994-1-2 Anexo D: espesor efectivo, temperaturas de placa y barras, momentos resistentes en incendio, barra mínima por nervio e informe con tabla comparativa de soluciones.',
-    tag:'EN 1992-1-2 §5.7 · EN 1994-1-2 Anexo D · OGUC 4.3.3', calc:'fuegoLosas' },
   { id:'losa-colaborante', cat:'Hormigón armado', name:'Losa Colaborante y Vigas', file:'Losa_Colaborante_Vigas_1.xlsx',
     desc:'Losa con placa colaborante (etapa constructiva y compuesta) sobre viga de acero compuesta o viga de hormigón armado.',
     tag:'AISC 360 · NCh430', calc:'losaColab' },
@@ -1859,6 +1856,9 @@ const TOOLS = [
   { id:'proteccion-fuego', cat:'Cargas y normativa', name:'Soluciones de Protección al Fuego (MINVU)', file:null,
     desc:'Consulta de soluciones tabuladas (sin ensayo de laboratorio) de resistencia al fuego para muros y pilares, según elemento, material y F-xx requerido — a partir del Listado Oficial de Comportamiento al Fuego MINVU-DITEC.',
     tag:'MINVU-DITEC ED17-2025', calc:'proteccionFuego' },
+  { id:'fuego-losas', cat:'Cargas y normativa', name:'Resistencia al Fuego de Losas — Macizas y Colaborantes', file:null,
+    desc:'Verificación de la exigencia F-30 a F-240 (OGUC 4.3.3) para losas macizas de H.A. por el método tabulado (espesor y distancia al eje de la armadura) y para losas con placa colaborante (Instadeck u otra) por EN 1994-1-2 Anexo D: espesor efectivo, temperaturas de placa y barras, momentos resistentes en incendio, barra mínima por nervio e informe con tabla comparativa de soluciones.',
+    tag:'EN 1992-1-2 §5.7 · EN 1994-1-2 Anexo D · OGUC 4.3.3', calc:'fuegoLosas' },
   { id:'sobreancho-madera-fuego', cat:'Cargas y normativa', name:'Sobreancho por Carbonización en Madera', file:null,
     desc:'Sobreancho de sección (mm por cara) que debe agregarse a un elemento de madera aserrada o laminada encolada para compensar la carbonización bajo exposición al fuego, según tipo de madera, número de caras expuestas y resistencia al fuego F-xx requerida — método de la sección de madera reducida del Eurocódigo 5.',
     tag:'EN 1995-1-2', calc:'sobreanchoMadera' },
@@ -43859,6 +43859,71 @@ function flTablaVersionesHtml(inp, forPrint) {
   return h;
 }
 
+// ---------- Listado Oficial MINVU-DITEC (LOFC) ED16-2024 — Asimilaciones ASIM.5 (losas de H.A.) ----------
+// Losa de H.A. simplemente apoyada, flexión en dos direcciones, densidad ≥ 2300 kg/m³, μfi ≤ 0,7 (IDIEM 29-12-2022).
+// Cada fila: tipo, ly/lx (≤1,5 o 1,5–2), rango de diámetro de la armadura inferior (mm), [F, recubrimiento mínimo (mm)]
+const FL_ASIM5 = {
+  11: { cod: 'ASIM.5.01', inf: '1.813.026', desc: 'Losa de H.A. e = 11 cm', pag: 163, rows: [
+    ['A', 1, [16, 36], [[90, 20]]], ['B', 2, [28, 36], [[90, 20]]], ['B', 2, [16, 25], [[90, 20]]],
+    ['C', 1, [10, 12], [[90, 15]]], ['C', 1, [6, 8], [[90, 15]]],
+    ['D', 2, [10, 12], [[90, 15]]], ['D', 2, [6, 8], [[60, 15], [90, 17]]]] },
+  14: { cod: 'ASIM.5.02 a 5.09', inf: '1.813.027 a 1.813.034', desc: 'Losa de H.A. e = 14 cm (con cielo falso de yeso-cartón ST 10 mm, con pisos combustibles de 2 a 25 mm o con sobrelosa de 50 mm sobre EPS o lana de vidrio)', pag: '164–171', rows: [
+    ['A', 1, [16, 36], [[150, 15]]], ['B', 2, [28, 36], [[150, 15]]], ['B', 2, [16, 25], [[120, 15], [150, 25]]],
+    ['C', 1, [10, 12], [[120, 15], [150, 20]]], ['C', 1, [6, 8], [[90, 15], [120, 17], [150, 22]]],
+    ['D', 2, [10, 12], [[90, 15], [120, 20], [150, 28]]], ['D', 2, [6, 8], [[60, 15], [90, 17], [120, 22], [150, 30]]]] },
+};
+function flLofcMaciza(inp) {
+  const D = inp.h / 1000 * inp.gc + inp.scp, L = inp.sc;
+  const mufi = (D + inp.psi * L) / Math.max(1e-9, 1.2 * D + 1.6 * L);
+  const out = { mufi, items: [] };
+  [11, 14].forEach(e => {
+    const t = FL_ASIM5[e], it = { e, cod: t.cod, inf: t.inf, desc: t.desc, pag: t.pag };
+    const motivos = [];
+    if (inp.apoyo !== 'S2') motivos.push('solo cubre losas simplemente apoyadas en dos direcciones');
+    if (inp.lyLx > 2) motivos.push('ly/lx > 2');
+    if (inp.h < e * 10) motivos.push(`espesor ${inp.h} mm < ${e * 10} mm`);
+    if (mufi > 0.7) motivos.push(`μfi ≈ ${mufi.toFixed(2).replace('.', ',')} > 0,7`);
+    const banda = inp.lyLx <= 1.5 ? 1 : 2;
+    const row = t.rows.find(r => r[1] === banda && inp.diam >= r[2][0] && inp.diam <= r[2][1]);
+    if (!row) motivos.push(`barra de ${inp.diam} mm fuera de los rangos del cuadro`);
+    it.tipo = row ? row[0] : '—'; it.res = row ? row[3] : [];
+    it.Falc = row ? Math.max(0, ...row[3].filter(x => inp.rec >= x[1]).map(x => x[0])) : 0;
+    const req = row ? row[3].filter(x => x[0] >= inp.F).sort((a, b) => a[1] - b[1])[0] : null;
+    it.recReq = req ? req[1] : null;
+    it.aplica = motivos.length === 0; it.motivos = motivos;
+    it.ok = it.aplica && it.Falc >= inp.F;
+    out.items.push(it);
+  });
+  return out;
+}
+function flLofcHtml(inp, rc, forPrint) {
+  const n = (v, d) => v == null || !isFinite(v) ? '—' : (forPrint ? xlsxNum(v, d) : v.toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d }));
+  const si = ok => forPrint ? (ok ? 'Sí' : 'No') : `<span class="fl-v ${ok ? 'ok' : 'no'}">${ok ? '✓ Sí' : '✗ No'}</span>`;
+  const T = forPrint ? 'xlsx-table xlsx-calc-table' : 'results', hdr = forPrint ? ' class="xlsx-hdr-de"' : '';
+  const th = (t, l) => forPrint ? `<td class="${l ? 'xv-label' : 'xv-num'}">${t}</td>` : `<th${l ? '' : ' class="num"'}>${t}</th>`;
+  const tl = forPrint ? 'td class="xv-label"' : 'td', td = forPrint ? 'td class="xv-num"' : 'td class="num"';
+  let h = '';
+  if (inp.tipo === 'M') {
+    const L = flLofcMaciza(inp);
+    h += `<table class="${T}"><tbody><tr${hdr}>${th('Asimilación MINVU (losa maciza H.A.)', 1)}${th('Tipo')}${th('F con rec. ' + n(inp.rec, 0) + ' mm')}${th('Rec. mín. para F-' + inp.F)}${th('Aplicable', 1)}${th('F-' + inp.F, 1)}</tr>`;
+    L.items.forEach(it => {
+      h += `<tr><${tl}><b>${it.cod}</b> — ${esc(it.desc)} (informe IDIEM ${it.inf}, pág. ${it.pag})</td><${td}>${it.tipo}</td><${td}>${it.Falc ? 'F-' + it.Falc : '—'}</td><${td}>${it.recReq != null ? n(it.recReq, 0) + ' mm' : 'No alcanza'}</td><${tl}>${it.aplica ? si(true) : (forPrint ? 'No: ' : '<span class="fl-v no">✗</span> ') + esc(it.motivos.join('; '))}</td><${tl}>${si(it.ok)}</td></tr>`;
+    });
+    h += `</tbody></table><p class="${forPrint ? 'xlsx-desc-row' : 'note'}" style="padding:.3rem 0">Condiciones de las asimilaciones ASIM.5 (IDIEM, 29-12-2022): losa simplemente apoyada en dos direcciones, densidad ≥ 2300 kg/m³, μfi ≤ 0,7, recubrimiento según NCh430 y ly/lx según EN 1992-1-2. Para espesores mayores al asimilado se aplica por criterio conservador del calculista (más espesor da más aislación); el listado no lo dice expresamente. μfi estimado = (G + ψ·Q)/(1,2·G + 1,6·Q) = ${n(L.mufi, 2)}, suponiendo la losa diseñada justo para la combinación última.</p>`;
+  } else {
+    const t = inp.placa.t, mas = 1000 / t;
+    h += `<table class="${T}"><tbody><tr${hdr}>${th('Alternativa del Listado Oficial MINVU ED16-2024', 1)}${th('Aplicable a la losa colaborante', 1)}</tr>
+      <tr><${tl}>Losas D.2.2 (productos de marca, ensayo NCh935/1)</td><${tl}>No: solo hay losas nervadas con EPS (Crupe, Syntheon). No hay losas con placa colaborante listadas.</td></tr>
+      <tr><${tl}>Mortero proyectado (Cap. IV: Sikacrete 215F, Promaspray P-300) y tabla B.1.3 de hormigón o mortero sobre malla</td><${tl}>No: tablas ensayadas en columnas y vigas, con masividad hasta unos 350 m⁻¹. La placa tiene Hp/A ≈ 1/t = ${n(mas, 0)} m⁻¹ con una cara expuesta.</td></tr>
+      <tr><${tl}>Pintura intumescente (Cap. II, nota 3)</td><${tl}>No: el listado exige masividad ≤ 390 m⁻¹ y no tiene tablas para placa colaborante.</td></tr>
+      <tr><${tl}><b>ASIM.3.120.01</b> — Cielo falso Panel ISOLANA (Cintac), lana mineral 100 kg/m³, informe IDIEM 1.916.392, pág. 156</td><${tl}>Clasificado F-120 como cielo o revestimiento. Usarlo como protección de la losa es criterio del calculista y conviene validarlo con la DOM.</td></tr>
+      <tr><${tl}>Ensayo NCh935/1 de la losa con la protección elegida</td><${tl}>Sí: es la vía formal para una solución nueva.</td></tr>
+      <tr><${tl}>Cálculo EN 1994-1-2 Anexo D (esta planilla)</td><${tl}>${rc.ok ? si(true) + ' Cumple F-' + inp.F + ' por cálculo con la armadura indicada' : (forPrint ? 'No cumple con los datos actuales' : '<span class="fl-v no">✗ No cumple con los datos actuales</span>')}</td></tr>
+      </tbody></table>`;
+  }
+  return h;
+}
+
 function flEsquema(inp, rm, rc) {
   const fuego = (x0, x1, y) => { let s = ''; for (let x = x0 + 20; x < x1; x += 46) s += `<path d="M${x},${y + 26} q-7,-10 0,-20 q3,8 7,4 q2,-8 -2,-14 q12,8 9,22 q-2,8 -14,8z" fill="#E4572E" fill-opacity="0.75"/>`; return s; };
   if (inp.tipo === 'M') {
@@ -43970,8 +44035,9 @@ function renderFuegoLosas(container) {
     <div class="panel"><h3>5 · Esquema de la sección</h3><div id="fl_esqSeccion"></div></div>
     <div class="panel"><h3>6 · Soluciones para F-<span id="fl_Ft">120</span> — losas macizas y colaborantes</h3><div id="fl_tabla" style="overflow-x:auto"></div>
       <p class="note">Mismas cargas, luz y exigencia. En las colaborantes se indica la barra mínima por nervio con el u₃ adoptado y la armadura superior ingresada. Útil para elegir la solución y comparar pesos.</p></div>
+    <div class="panel"><h3>7 · Soluciones del Listado Oficial MINVU (LOFC ED16-2024)</h3><div id="fl_lofc" style="overflow-x:auto"></div></div>
     <div class="panel">
-      <div class="disclosure">Métodos de cálculo de EN 1992-1-2 (tabulado) y EN 1994-1-2 Anexo D, aceptados como respaldo técnico cuando no existe una solución ensayada (LOFC MINVU / ensayo NCh935/1). La exigencia F-xx de la OGUC Art. 4.3.3 se verifica para los criterios R (capacidad portante), E (integridad) e I (aislación). Para losas colaborantes el Anexo D vale para R60–R120 con hormigón de peso normal; R30 se acepta sin armadura adicional según EN 1994-1-2 §4.3.2(3) si la losa está diseñada a temperatura ambiente. El momento negativo usa la isoterma de 500 °C del nervio (EN 1992-1-2 Anexo B.1) con las temperaturas de la Tabla D.3; la armadura superior debe prolongarse al menos 0,3·L desde el apoyo. Las placas con marca usan datos de la ficha del fabricante: verificar con su documentación vigente.</div>
+      <div class="disclosure">Métodos de cálculo de EN 1992-1-2 (tabulado) y EN 1994-1-2 Anexo D, aceptados como respaldo técnico cuando no existe una solución ensayada (LOFC MINVU / ensayo NCh935/1). La sección 7 contrasta con el Listado Oficial ED16-2024 (mayo 2024): asimilaciones ASIM.5 para losas de H.A. y alternativas para losas colaborantes; verificar que la edición siga vigente. La exigencia F-xx de la OGUC Art. 4.3.3 se verifica para los criterios R (capacidad portante), E (integridad) e I (aislación). Para losas colaborantes el Anexo D vale para R60–R120 con hormigón de peso normal; R30 se acepta sin armadura adicional según EN 1994-1-2 §4.3.2(3) si la losa está diseñada a temperatura ambiente. El momento negativo usa la isoterma de 500 °C del nervio (EN 1992-1-2 Anexo B.1) con las temperaturas de la Tabla D.3; la armadura superior debe prolongarse al menos 0,3·L desde el apoyo. Las placas con marca usan datos de la ficha del fabricante: verificar con su documentación vigente.</div>
     </div>
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>
   `;
@@ -44007,6 +44073,8 @@ function renderFuegoLosas(container) {
       if (rm.lyLxNota) av.push(['warn', rm.lyLxNota]);
       if (inp.apoyo === 'C' && F >= 90) av.push(['info', 'Losa continua R90 o más (§5.7.3(3)): la armadura superior sobre apoyos intermedios debe prolongarse 0,3·L y cumplir As,req(x) ≥ As,req(0)·(1 − 2,5·x/L).']);
       if (inp.apoyo === 'P') av.push(['info', 'Losa plana (§5.7.4): para REI 90 o más, al menos el 20 % de la armadura superior de cada dirección sobre los apoyos debe ser continua en todo el vano y ubicarse en la franja de columnas.']);
+      const lo = flLofcMaciza(inp).items.filter(it => it.ok);
+      if (lo.length) av.push(['info', `También cumple F-${F} por el Listado Oficial MINVU: ${lo.map(it => it.cod).join(' y ')} (asimilación IDIEM).`]);
       av.push([rm.ok ? 'ok' : 'bad', rm.ok ? `Solución F-${F}: losa de ${n(inp.h, 0)} mm con recubrimiento libre inferior de ${n(inp.rec, 0)} mm.` : `Solución F-${F}: espesor ≥ ${n(Math.max(rm.hsMin, inp.h), 0)} mm y recubrimiento libre inferior ≥ ${n(rm.recMin, 0)} mm (barra de ${n(inp.diam, 0)} mm).`]);
     } else {
       const g = rc.g;
@@ -44051,6 +44119,7 @@ function renderFuegoLosas(container) {
     $('fl_av').innerHTML = av.map(([k, t]) => `<div class="global-verdict ${k === 'bad' ? 'bad' : 'ok'}" style="${k === 'bad' || k === 'ok' ? '' : 'background:var(--surface-alt);color:var(--ink)'}"><span class="label" style="font-size:.85rem;text-transform:none;letter-spacing:0">${esc(t)}</span></div>`).join('');
     $('fl_esqSeccion').innerHTML = flEsquema(inp, rm, rc);
     $('fl_tabla').innerHTML = flTablaVersionesHtml(inp, false);
+    $('fl_lofc').innerHTML = flLofcHtml(inp, rc, false);
     // impresión
     const row = (l, val) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${val}</td></tr>`;
     const datos = `<div class="xlsx-title-bar">DATOS DE ENTRADA</div><table class="xlsx-table"><tbody>
@@ -44091,8 +44160,9 @@ function renderFuegoLosas(container) {
       <div class="xlsx-section">ESQUEMA DE LA SECCIÓN</div><div style="padding:.4rem 0">${flEsquema(inp, rm, rc)}</div>
       <div class="xlsx-section">${inp.tipo === 'M' ? '2' : '3'}. SOLUCIÓN ADOPTADA</div><div class="xlsx-desc-row" style="padding:.3rem">${esc(sols)}</div>
       <div class="xlsx-section">${inp.tipo === 'M' ? '3' : '4'}. SOLUCIONES ALTERNATIVAS PARA F-${F}</div>${flTablaVersionesHtml(inp, true)}
+      <div class="xlsx-section">${inp.tipo === 'M' ? '4' : '5'}. LISTADO OFICIAL MINVU (LOFC ED16-2024)</div>${flLofcHtml(inp, rc, true)}
       <div class="xlsx-desc-row" style="padding:.3rem">EN 1992-1-2 §5.7 (losas macizas) y EN 1994-1-2 Anexo D (losas colaborantes). Exigencia F-xx según OGUC Art. 4.3.3; a falta de solución ensayada (LOFC MINVU, NCh935/1) estos métodos constituyen el respaldo técnico del cálculo.</div>`;
-    const resum = `<div class="xlsx-title-bar">RESUMEN</div><div class="xlsx-section">SOLUCIÓN F-${F}</div><div class="xlsx-desc-row" style="padding:.3rem">${esc(sols)}</div><div class="xlsx-section">SOLUCIONES ALTERNATIVAS</div>${flTablaVersionesHtml(inp, true)}`;
+    const resum = `<div class="xlsx-title-bar">RESUMEN</div><div class="xlsx-section">SOLUCIÓN F-${F}</div><div class="xlsx-desc-row" style="padding:.3rem">${esc(sols)}</div><div class="xlsx-section">SOLUCIONES ALTERNATIVAS</div>${flTablaVersionesHtml(inp, true)}<div class="xlsx-section">LISTADO OFICIAL MINVU</div>${flLofcHtml(inp, rc, true)}`;
     xlsxSetPrintSheets(datos, calc, resum);
   }
   container.querySelectorAll('input,select').forEach(el => el.addEventListener('input', recalc));
@@ -44781,7 +44851,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261007-1300. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261007-1320. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
