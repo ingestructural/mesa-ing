@@ -1737,7 +1737,7 @@ const TOOLS = [
     desc:'Diseño a flexión en el eje fuerte (x-x) de un perfil doble T (mismo catálogo de \"Perfiles H / I\"), y determinación / diseño completo de atiesadores transversales por corte con acción de campo de tracción: aplicabilidad, momento de inercia (G2.3), área (G3.3) y esbeltez local de la platina (J10.8).',
     tag:'AISC 360-16 Cap. F y G', calc:'flexionAtiesadores' },
   { id:'acero-inoxidable', cat:'Acero', name:'Diseño en Acero Inoxidable (AISC 370-21)', file:null,
-    desc:'Acero inoxidable austenítico (304, 316) y dúplex (2101, 2304, 2205) según ANSI/AISC 370-21: barras con tracción, compresión (curvas de pandeo propias del inoxidable), flexión con pandeo lateral-torsional, corte, interacción y deformación con módulo secante; conexiones apernadas y soldadas; placa base con anclajes; barandas y pasamanos con cargas ASCE 7. Tubos, perfiles I y U, ángulos, barras y pletinas.',
+    desc:'Acero inoxidable austenítico (304, 316) y dúplex (2101, 2304, 2205) según ANSI/AISC 370-21: barras con tracción, compresión (curvas de pandeo propias del inoxidable), flexión con pandeo lateral-torsional, corte e interacción; conexiones apernadas y soldadas; placa base con anclajes; barandas y pasamanos con cargas ASCE 7. Tubos, perfiles I y U, ángulos, barras y pletinas.',
     tag:'AISC 370-21 · ASCE 7-02 §4.4', calc:'inoxidable' },
   { id:'factor-masividad', cat:'Acero', name:'Factor de Masividad de Perfiles', file:'Factor_Masividad_Perfiles_1.xlsx',
     desc:'Factor de masividad F = P/A (equivalente a Am/V) para el diseño de protección pasiva contra incendio: perfiles I/H, canales U, ángulos L, tubos CHS/RHS/SHS, cajón armado y perfiles conformados en frío (C/CA), según condición de exposición al fuego (catálogos europeo, nacional, de tubos y serie completa Tubest Cintac de 63 perfiles).',
@@ -44178,7 +44178,7 @@ function renderFuegoLosas(container) {
    DISEÑO EN ACERO INOXIDABLE — ANSI/AISC 370-21
    (Specification for Structural Stainless Steel Buildings)
    Módulos: barra (tracción D, compresión E, flexión F, corte G, interacción
-   H1, deformación L2 con módulo secante A-7-5), conexión apernada (J3, J4),
+   H1), conexión apernada (J3, J4),
    conexión soldada de filete (J2, J4), placa base y anclajes (J9, J10, J3.6)
    y baranda/pasamanos (cargas ASCE 7-02 §4.4.2). Aceros austeníticos y
    dúplex de la Tabla A3.1; Fy y Fu de las Tablas C-A3.2 a C-A3.4.
@@ -44735,7 +44735,7 @@ function renderIxInox(container) {
   container.innerHTML = `
     <div class="calc-head">
       <h1>Diseño en Acero Inoxidable — AISC 370-21</h1>
-      <div class="sub">Barras (tracción, compresión con las curvas de pandeo del inoxidable, flexión con pandeo lateral-torsional, corte, interacción y deformación con módulo secante), conexiones apernadas y soldadas, placa base con anclajes y barandas, para aceros austeníticos (304, 316) y dúplex (2101, 2304, 2205) según ANSI/AISC 370-21. Solicitaciones mayoradas (LRFD) o de servicio (ASD) ingresadas por el usuario.</div>
+      <div class="sub">Barras (tracción, compresión con las curvas de pandeo del inoxidable, flexión con pandeo lateral-torsional, corte e interacción), conexiones apernadas y soldadas, placa base con anclajes y barandas, para aceros austeníticos (304, 316) y dúplex (2101, 2304, 2205) según ANSI/AISC 370-21. Solicitaciones mayoradas (LRFD) o de servicio (ASD) ingresadas por el usuario.</div>
     </div>
     <div class="panel"><h3>1 · Elemento, método y material</h3><div class="field-grid">
       ${sel('ix_modo', 'Elemento a verificar (método de cálculo)', opt([['BAR', 'Barra: tracción, compresión, flexión, corte e interacción'], ['BOLT', 'Conexión apernada'], ['WELD', 'Conexión soldada de filete'], ['BASE', 'Placa base y anclajes'], ['RAIL', 'Baranda y pasamanos']], 'BAR'))}
@@ -44762,9 +44762,6 @@ function renderIxInox(container) {
       ${f('ix_Vy', 'Corte Vy (tonf)', 0.5)}${f('ix_Vx', 'Corte Vx (tonf)', 0)}
       ${f('ix_red', 'Factor de reducción de área por perforaciones en tracción (%)', 0)}${f('ix_U', 'Coeficiente de rezago de corte U (Tabla D3.1)', 1)}
       ${sel('ix_e5', 'Ángulo cargado por un ala (E5) — criterio', opt([['No', 'No'], ['a', 'Sí — barra individual o reticulado plano (E5-1/2)'], ['b', 'Sí — reticulado espacial o cajón (E5-3/4)']], 'No'))}
-      ${f('ix_wS', 'Carga de servicio uniforme para deformación (tonf/m; 0 = se omite)', 0.1)}
-      ${sel('ix_apoyo', 'Condición de apoyo para la deformación (criterio)', opt([['S', 'Simplemente apoyada'], ['V', 'Voladizo']], 'S'))}
-      ${f('ix_limDef', 'Límite de deformación L/ (criterio)', 250)}
     </div></div>
 
     <div class="panel" id="ix_pBolt"><h3>3 · Conexión apernada (traslapo en corte)</h3><div class="field-grid">
@@ -44807,15 +44804,15 @@ function renderIxInox(container) {
       ${sel('ix_cont', 'Pasamanos (criterio)', opt([['Si', 'Continuo sobre varios montantes'], ['No', 'Tramo simple entre montantes']], 'Si'))}
       ${sel('ix_pkind', 'Sección del pasamanos', opt([['CHS', 'Tubo circular'], ['RHS', 'Tubo cuadrado o rectangular'], ['RND', 'Barra redonda']], 'CHS'))}
       ${f('ix_pD', 'Pasamanos: D o H exterior (mm)', 42.4)}${f('ix_pB', 'Pasamanos: B exterior (mm, tubo rectangular)', 40)}${f('ix_pt', 'Pasamanos: espesor (mm)', 2)}
-      ${f('ix_dAdm', 'Deformación admisible del montante y pasamanos (mm, criterio)', 25)}
       <p class="note" style="grid-column:1/-1">El montante usa la sección del punto 2.</p>
     </div></div>
 
     <div class="panel"><h3>4 · Resultado</h3><div id="ix_res"></div><div id="ix_av" style="display:grid;gap:.4rem;margin-top:.6rem"></div></div>
     <div class="panel"><h3>5 · Esquema</h3><div id="ix_esqModo"></div></div>
     <div class="panel"><h3>6 · Detalle del cálculo</h3><div id="ix_det" style="overflow-x:auto"></div></div>
-    <div class="panel"><div class="disclosure">ANSI/AISC 370-21, Specification for Structural Stainless Steel Buildings: material (A3, Comentario Tablas C-A3.2 a C-A3.4), espesor de diseño (B4.2), esbeltez local (Tablas B4.1a y B4.1b), tracción (D2), compresión (E3 con las curvas A, B y C de la Tabla E3.1, E4, E5, E7), flexión (F2 a F9 con coeficientes de la Tabla F2.1), corte (G2 a G6), interacción (H1), conexiones (J2, J3, J4, J9, J10) y deformaciones con módulo secante (L2, Apéndice 7). Chile no tiene norma propia de diseño en acero inoxidable. La resistencia de pernos y consumibles proviene de la norma de producto (ASTM, ISO 3506, AWS A5), como indica AISC 370. Cargas de baranda según ASCE 7-02 §4.4.2. Ángulos simples en flexión, corte o fuerza combinada, y canales con alma no compacta, quedan fuera del alcance de la norma y se informan como tales.</div></div>
+    <div class="panel"><div class="disclosure">ANSI/AISC 370-21, Specification for Structural Stainless Steel Buildings: material (A3, Comentario Tablas C-A3.2 a C-A3.4), espesor de diseño (B4.2), esbeltez local (Tablas B4.1a y B4.1b), tracción (D2), compresión (E3 con las curvas A, B y C de la Tabla E3.1, E4, E5, E7), flexión (F2 a F9 con coeficientes de la Tabla F2.1), corte (G2 a G6), interacción (H1) y conexiones (J2, J3, J4, J9, J10). Verificación de resistencia de la sección para las solicitaciones ingresadas; las deformaciones se obtienen del análisis estructural. Chile no tiene norma propia de diseño en acero inoxidable. La resistencia de pernos y consumibles proviene de la norma de producto (ASTM, ISO 3506, AWS A5), como indica AISC 370. Cargas de baranda según ASCE 7-02 §4.4.2. Ángulos simples en flexión, corte o fuerza combinada, y canales con alma no compacta, quedan fuera del alcance de la norma y se informan como tales.</div></div>
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>`;
+  ixDatalists(container);
   const $ = id => document.getElementById(id);
   const v = id => { const x = parseFloat(String($(id).value).replace(',', '.')); return isNaN(x) ? 0 : x; };
   const dims = () => ({ D: v('ix_D'), t: v('ix_t'), h: $('ix_kind').value === 'RHS' ? v('ix_H') : v('ix_h'), b: $('ix_kind').value === 'RHS' ? v('ix_B') : v('ix_b'), tw: v('ix_tw'), tf: v('ix_tf'), ro: v('ix_ro') });
@@ -44857,7 +44854,7 @@ function renderIxInox(container) {
     if (sec && !(sec.err && sec.err.length)) datosRows.push(row('Sección', esc(sname) + ' (' + esc($('ix_kind').selectedOptions[0].text) + ')'));
     if (modo === 'BAR' && sec && !(sec.err && sec.err.length)) {
       const inp = Object.assign(bi, { kind: k, dim: dims(), L: v('ix_L'), Kx: v('ix_Kx') || 1, Ky: v('ix_Ky') || 1, Kz: v('ix_Kz') || 1, Lb: v('ix_Lb'), Cb: v('ix_Cb') || 1, Lv: v('ix_Lv') || v('ix_L') / 2,
-        N: v('ix_N'), Mx: v('ix_Mx'), My: v('ix_My'), Vy: v('ix_Vy'), Vx: v('ix_Vx'), red: v('ix_red'), U: v('ix_U') || 1, e5: $('ix_e5').value !== 'No' && k === 'L', e5tipo: $('ix_e5').value, wS: v('ix_wS'), apoyo: $('ix_apoyo').value, limDef: v('ix_limDef') || 250 });
+        N: v('ix_N'), Mx: v('ix_Mx'), My: v('ix_My'), Vy: v('ix_Vy'), Vx: v('ix_Vx'), red: v('ix_red'), U: v('ix_U') || 1, e5: $('ix_e5').value !== 'No' && k === 'L', e5tipo: $('ix_e5').value, wS: 0, apoyo: 'S', limDef: 250 });
       const r = calcIxBarra(inp); av = r.av; chkAll = r.chk; okAll = r.ok;
       res = ixChkTabla(r.chk, false);
       // detalle
@@ -44881,8 +44878,8 @@ function renderIxInox(container) {
       [['vy', 'y'], ['vx', 'x']].forEach(([key, ax]) => { const o = r[key]; if (!o || o.fuera) return; det += `<table class="results" style="margin-top:.6rem"><tr><th colspan="2">Corte en dirección ${ax} — ${esc(o.ec)}</th></tr><tr><td>Aw · Cv${o.lam ? ' · λ' : ''}</td><td class="num">${n(o.Aw / 100, 2)} cm² · ${n(o.Cv, 3)}${o.lam ? ' · ' + n(o.lam, 1) : ''}</td></tr><tr><td>Vn → disponible (${metodo === 'LRFD' ? 'φv = 0,90' : 'Ωv = 1,67'})</td><td class="num">${fF(o.Vc)}</td></tr></table>`; });
       if (r.H) det += `<table class="results" style="margin-top:.6rem"><tr><th colspan="2">Interacción (${r.H.ec})</th></tr><tr><td>Pr/Pc · Mrx/Mcx · Mry/Mcy</td><td class="num">${n(r.H.pr, 3)} · ${n(r.H.mx, 3)} · ${n(r.H.my, 3)}</td></tr><tr><td>Valor de la interacción</td><td class="num"><b>${n(r.H.val, 3)}</b></td></tr></table>`;
       if (r.def) det += `<table class="results" style="margin-top:.6rem"><tr><th colspan="2">Deformación de servicio (L2, A-7-5)</th></tr><tr><td>Momento de servicio · tensión máxima f = M/S</td><td class="num">${fM(r.def.Ms)} · ${n(r.def.f, 1)} MPa</td></tr><tr><td>Módulo secante Es = E/[1 + 0,002·(E/f)·(f/Fy)ⁿ] = Er</td><td class="num">${n(r.def.Es, 0)} MPa (${n(r.def.Es / r.m.E * 100, 1)} % de E)</td></tr><tr><td>Deformación con Er (con E sería)</td><td class="num">${n(r.def.dl, 1)} mm (${n(r.def.dlE, 1)} mm)</td></tr><tr><td>Límite L/${inp.limDef}</td><td class="num">${n(r.def.lim, 1)} mm</td></tr></table>`;
-      esq = ixEsqBarra(inp, r);
-      datosRows.push(row('L / Lb / Kx / Ky / Kz / Cb', `${n(inp.L, 2)} m / ${n(inp.Lb, 2)} m / ${n(inp.Kx, 2)} / ${n(inp.Ky, 2)} / ${n(inp.Kz, 2)} / ${n(inp.Cb, 2)}`), row('N / Mx / My', `${n(inp.N, 3)} tonf / ${n(inp.Mx, 3)} tonf·m / ${n(inp.My, 3)} tonf·m`), row('Vy / Vx', `${n(inp.Vy, 3)} / ${n(inp.Vx, 3)} tonf`), row('Carga de servicio / límite', inp.wS > 0 ? `${n(inp.wS, 3)} tonf/m / L/${inp.limDef}` : 'No se verifica'));
+      esq = ''; // sin dibujo de la barra: la condición de apoyo no es necesariamente simple
+      datosRows.push(row('L / Lb / Kx / Ky / Kz / Cb', `${n(inp.L, 2)} m / ${n(inp.Lb, 2)} m / ${n(inp.Kx, 2)} / ${n(inp.Ky, 2)} / ${n(inp.Kz, 2)} / ${n(inp.Cb, 2)}`), row('N / Mx / My', `${n(inp.N, 3)} tonf / ${n(inp.Mx, 3)} tonf·m / ${n(inp.My, 3)} tonf·m`), row('Vy / Vx', `${n(inp.Vy, 3)} / ${n(inp.Vx, 3)} tonf`));
       calcHtml = `<div class="xlsx-section">1. PROPIEDADES DE LA SECCIÓN</div>${propsHtml(sec, r.m, true)}<div class="xlsx-section">2. VERIFICACIONES</div>${ixChkTabla(r.chk, true)}<div class="xlsx-section">3. DETALLE</div>${det.replace(/class="results"/g, 'class="xlsx-table xlsx-calc-table"')}`;
     } else if (modo === 'BOLT') {
       const inp = Object.assign(bi, { perno: $('ix_perno').value, FubU: v('ix_FubU'), db: +$('ix_db').value, planos: +$('ix_planos').value, roscaExcl: $('ix_rosca').value === 'exc', deform: $('ix_deform').value === 'Si',
@@ -44932,15 +44929,9 @@ function renderIxInox(container) {
       const pk = $('ix_pkind').value, pd = pk === 'CHS' ? { D: v('ix_pD'), t: v('ix_pt') } : pk === 'RHS' ? { h: v('ix_pD'), b: v('ix_pB'), t: v('ix_pt'), ro: 0 } : { D: v('ix_pD') };
       const pBase = Object.assign({}, bi, { forma: pk === 'RND' ? 'BAR' : 'HSS', kind: pk, dim: pd, L: inp.s, Kx: 1, Ky: 1, Kz: 1, Lb: inp.s, Cb: 1, Lv: inp.s / 2, N: 0, Mx: rb.pas.Mu / 1000, My: 0, Vy: rb.pas.Vu / 1000, Vx: 0, red: 0, U: 1, e5: false, wS: 0, apoyo: 'S', limDef: 250 });
       const rp = calcIxBarra(pBase);
-      // deformaciones de servicio con módulo secante
-      const dAdm = v('ix_dAdm') || 25, chk = [];
+      const chk = [];
       const pushChks = (rr, pref) => rr.chk.forEach(c => chk.push(Object.assign({}, c, { nom: pref + c.nom })));
       pushChks(rm, 'Montante — '); pushChks(rp, 'Pasamanos — ');
-      if (rm.sec && rm.sec.Ix) { const F = rb.mon.F * 9.80665, hmm = inp.h * 1000, f = rb.mon.Ms * 9.80665 * 1000 / rm.sec.Wx, Es = ixEs(rm.m.E, rm.m.Fy, rm.m.nRO, f), dl = F * Math.pow(hmm, 3) / (3 * Es * rm.sec.Ix);
-        chk.push({ nom: `Montante — deformación de servicio en la punta (Es = ${n(Es, 0)} MPa, A-7-5)`, dem: dl, cap: dAdm, u: 'mm' }); }
-      if (rp.sec && rp.sec.Ix) { const smm = inp.s * 1000, w = rb.wkN, P = rb.PkN * 1000, f = rb.pas.Ms * 9.80665 * 1000 / rp.sec.Wx, Es = ixEs(rp.m.E, rp.m.Fy, rp.m.nRO, f);
-        const dW = (inp.continuo ? 2.6 : 5) * w * Math.pow(smm, 4) / (384 * Es * rp.sec.Ix), dP = (inp.continuo ? 0.7 : 1) * P * Math.pow(smm, 3) / (48 * Es * rp.sec.Ix), dl = Math.max(dW, dP);
-        chk.push({ nom: `Pasamanos — deformación de servicio en el vano (Es = ${n(Es, 0)} MPa)`, dem: dl, cap: dAdm, u: 'mm' }); }
       chk.forEach(c => { if (c.ratio == null && !c.fuera) { c.ratio = c.u === '-' ? c.dem : c.dem / Math.max(1e-9, c.cap); c.ok = c.ratio <= 1 + 1e-9; } });
       chkAll = chk; okAll = chk.every(c => c.ok !== false) && !chk.some(c => c.fuera);
       res = ixChkTabla(chk, false);
@@ -44949,13 +44940,13 @@ function renderIxInox(container) {
       if (k === 'RHS' || k === 'I' || k === 'U' || k === 'REC') av.push(['info', 'La carga actúa en cualquier dirección: se verifica el montante respecto del eje x de la sección; oriéntalo con su mayor inercia perpendicular al plano de la baranda o verifica también el eje y.']);
       det = `<table class="results"><tr><th colspan="2">Solicitaciones (${metodo}${metodo === 'LRFD' ? ', γ = ' + n(rb.g, 2) : ''})</th></tr><tr><td>Pasamanos: M por w (${inp.continuo ? 'w·s²/10' : 'w·s²/8'}) · M por P (${inp.continuo ? 'P·s/5' : 'P·s/4'})</td><td class="num">${n(rb.pas.Mw, 1)} · ${n(rb.pas.MP, 1)} kgf·m</td></tr><tr><td>Pasamanos: Mu · Vu</td><td class="num">${n(rb.pas.Mu, 1)} kgf·m · ${n(rb.pas.Vu, 1)} kgf</td></tr><tr><td>Montante: F = máx(w·s, P) · Mu = γ·F·h · Vu</td><td class="num">${n(rb.mon.F, 1)} kgf · ${n(rb.mon.Mu, 1)} kgf·m · ${n(rb.mon.Vu, 1)} kgf</td></tr></table>`;
       esq = ixEsqBaranda(inp, rb);
-      datosRows.push(row('Uso / carga', `${inp.vivienda ? 'Vivienda' : 'General'}: ${n(rb.wkN, 2)} kN/m o 0,89 kN (ASCE 7-02 §4.4.2)`), row('Montantes', `${esc(sname)}, h = ${n(inp.h, 2)} m, s = ${n(inp.s, 2)} m`), row('Pasamanos', `${pk === 'CHS' ? 'Tubo Ø' + v('ix_pD') + '×' + v('ix_pt') : pk === 'RHS' ? 'Tubo ' + v('ix_pD') + '×' + v('ix_pB') + '×' + v('ix_pt') : 'Barra Ø' + v('ix_pD')} — ${inp.continuo ? 'continuo' : 'tramo simple'}`), row('Deformación admisible', dAdm + ' mm'));
+      datosRows.push(row('Uso / carga', `${inp.vivienda ? 'Vivienda' : 'General'}: ${n(rb.wkN, 2)} kN/m o 0,89 kN (ASCE 7-02 §4.4.2)`), row('Montantes', `${esc(sname)}, h = ${n(inp.h, 2)} m, s = ${n(inp.s, 2)} m`), row('Pasamanos', `${pk === 'CHS' ? 'Tubo Ø' + v('ix_pD') + '×' + v('ix_pt') : pk === 'RHS' ? 'Tubo ' + v('ix_pD') + '×' + v('ix_pB') + '×' + v('ix_pt') : 'Barra Ø' + v('ix_pD')} — ${inp.continuo ? 'continuo' : 'tramo simple'}`));
       calcHtml = `<div class="xlsx-section">1. SOLICITACIONES</div>${det.replace(/class="results"/g, 'class="xlsx-table xlsx-calc-table"')}<div class="xlsx-section">2. VERIFICACIONES</div>${ixChkTabla(chk, true)}`;
     }
     const nOk = chkAll.filter(c => c.ok === false).length;
     if (chkAll.length) av.push([okAll ? 'ok' : 'bad', okAll ? `Diseño conforme a AISC 370-21: todas las verificaciones cumplen (razón máxima ${fmtPct(Math.max(...chkAll.filter(c => c.ratio != null).map(c => c.ratio)))}).` : `${nOk} ${nOk === 1 ? 'verificación no cumple' : 'verificaciones no cumplen'}${chkAll.some(c => c.fuera) ? ' o quedan fuera del alcance de la norma' : ''}: revisar la sección, el material o la geometría.`]);
     $('ix_res').innerHTML = res; $('ix_av').innerHTML = avHtml(av); $('ix_det').innerHTML = det;
-    $('ix_esqModo').innerHTML = esq;
+    $('ix_esqModo').innerHTML = esq; $('ix_esqModo').closest('.panel').hidden = !esq;
     const datos = `<div class="xlsx-title-bar">DATOS DE ENTRADA</div><table class="xlsx-table"><tbody>${datosRows.join('')}</tbody></table>`;
     const calc = `<div class="xlsx-title-bar">CÁLCULO — ANSI/AISC 370-21 (${metodo})</div><div style="display:flex;gap:6mm;align-items:center;justify-content:center;padding:.3rem 0">${sec && !(sec.err && sec.err.length) ? `<div style="width:62mm">${svgPropPerfil(sec, sname)}</div>` : ''}<div style="width:${sec && !(sec.err && sec.err.length) ? '110mm' : '150mm'}">${esq}</div></div>${calcHtml}<div class="xlsx-desc-row" style="padding:.3rem">${esc(av.map(a => a[1]).join(' '))}</div>`;
     const resum = `<div class="xlsx-title-bar">RESUMEN</div>${ixChkTabla(chkAll, true)}<div class="xlsx-desc-row" style="padding:.3rem">${esc((av[av.length - 1] || ['', ''])[1])}</div>`;
@@ -44964,6 +44955,82 @@ function renderIxInox(container) {
   container.querySelectorAll('input,select').forEach(el => el.addEventListener('input', recalc));
   container.querySelectorAll('select').forEach(el => el.addEventListener('change', recalc));
   recalc();
+}
+
+/* ---------- valores sugeridos (datalist) para cada casilla ---------- */
+const IX_SUG = {
+  ix_FyU: [['205', '304 / 316 — A240, A554, A276 (Tabla C-A3.2 a C-A3.4)'], ['170', '304L / 316L'], ['450', 'S32101, S32202, S32205 (dúplex)'], ['530', 'S32101 tubo A554 con t < 10 mm'], ['400', 'S32304 (2304)'], ['310', '304/316 barra terminada en frío ≤ 13 mm, cond. A']],
+  ix_FuU: [['515', '304 / 316'], ['485', '304L / 316L'], ['650', 'S32101 / S32202'], ['655', 'S32205 (2205)'], ['600', 'S32304 (2304)'], ['700', 'S32101 tubo A554 con t < 10 mm']],
+  ix_D: [['21.3', 'Tubo ½" — pasamanos liviano'], ['33.7', 'Tubo 1"'], ['42.4', 'Tubo 1¼" — pasamanos típico'], ['48.3', 'Tubo 1½" — montante o pasamanos'], ['60.3', 'Tubo 2"'], ['76.1', 'Tubo 2½"'], ['88.9', 'Tubo 3"'], ['114.3', 'Tubo 4"'], ['168.3', 'Tubo 6"'], ['16', 'Barra redonda Ø16'], ['20', 'Barra redonda Ø20'], ['25', 'Barra redonda Ø25']],
+  ix_H: [['40', 'Tubo 40 mm'], ['50', 'Tubo 50 mm'], ['60', 'Tubo 60 mm'], ['80', 'Tubo 80 mm'], ['100', 'Tubo 100 mm'], ['120', 'Tubo 120 mm'], ['150', 'Tubo 150 mm'], ['200', 'Tubo 200 mm']],
+  ix_B: [['20', 'Tubo rectangular 20 mm'], ['30', 'Tubo rectangular 30 mm'], ['40', 'Tubo 40 mm'], ['50', 'Tubo 50 mm'], ['60', 'Tubo 60 mm'], ['80', 'Tubo 80 mm'], ['100', 'Tubo 100 mm'], ['150', 'Tubo 150 mm']],
+  ix_h: [['100', 'Pletina o perfil de 100 mm'], ['150', 'Perfil de 150 mm'], ['200', 'Perfil de 200 mm'], ['250', 'Perfil de 250 mm'], ['300', 'Perfil de 300 mm'], ['400', 'Perfil de 400 mm'], ['50', 'Pletina de 50 mm'], ['75', 'Pletina de 75 mm']],
+  ix_b: [['50', 'Ala o ángulo de 50 mm'], ['75', 'Ala o ángulo de 75 mm'], ['100', 'Ala de 100 mm'], ['150', 'Ala de 150 mm'], ['200', 'Ala de 200 mm'], ['6', 'Pletina de 6 mm de espesor'], ['10', 'Pletina de 10 mm de espesor'], ['12', 'Pletina de 12 mm de espesor']],
+  ix_tw: [['4', 'Plancha de 4 mm'], ['5', 'Plancha de 5 mm'], ['6', 'Plancha de 6 mm'], ['8', 'Plancha de 8 mm'], ['10', 'Plancha de 10 mm']],
+  ix_tf: [['6', 'Plancha de 6 mm'], ['8', 'Plancha de 8 mm'], ['10', 'Plancha de 10 mm'], ['12', 'Plancha de 12 mm'], ['16', 'Plancha de 16 mm'], ['20', 'Plancha de 20 mm']],
+  ix_t: [['1.5', 'Tubo de pared 1,5 mm (barandas livianas)'], ['2', 'Pared 2 mm'], ['2.6', 'Pared 2,6 mm (Sch 10S en Ø48,3)'], ['3', 'Pared 3 mm'], ['4', 'Pared 4 mm'], ['5', 'Pared 5 mm'], ['6', 'Ángulo o pared 6 mm'], ['8', 'Ángulo o pared 8 mm']],
+  ix_ro: [['', 'Vacío: ro = 2·t (B4.3)'], ['4', '2·t para t = 2 mm'], ['6', '2·t para t = 3 mm'], ['8', '2·t para t = 4 mm']],
+  ix_L: [['1', 'Montante o elemento corto'], ['2', 'Viga corta'], ['3', 'Columna o viga típica de piso'], ['4', 'Luz de 4 m'], ['6', 'Luz de 6 m']],
+  ix_Kx: [['1', 'Rotulado en ambos extremos (E2)'], ['0.65', 'Empotrado en ambos extremos'], ['0.8', 'Empotrado-rotulado'], ['2', 'Voladizo (empotrado-libre)'], ['1.2', 'Pórtico desplazable (estimado)']],
+  ix_Ky: [['1', 'Rotulado en ambos extremos (E2)'], ['0.65', 'Empotrado en ambos extremos'], ['0.8', 'Empotrado-rotulado'], ['2', 'Voladizo (empotrado-libre)'], ['0.5', 'Arriostrado a media altura en el eje débil']],
+  ix_Kz: [['1', 'Giro torsional impedido en ambos extremos'], ['0.5', 'Alabeo impedido en ambos extremos'], ['2', 'Voladizo libre en torsión']],
+  ix_Lb: [['3', 'Sin arriostramiento lateral intermedio (= L)'], ['1.5', 'Arriostrado a media luz'], ['1', 'Arriostrado cada 1 m'], ['0', 'Ala comprimida arriostrada en forma continua']],
+  ix_Cb: [['1', 'Momento uniforme o conservador (F1)'], ['1.14', 'Carga uniforme, viga simplemente apoyada'], ['1.32', 'Carga puntual al centro'], ['1.67', 'Momento lineal de M a 0'], ['2.27', 'Momentos extremos iguales de signo contrario']],
+  ix_Lv: [['1.5', 'Mitad de la luz (viga simplemente apoyada)'], ['1', 'Distancia de corte máximo a corte nulo'], ['3', 'Voladizo: largo completo']],
+  ix_N: [['0', 'Sin carga axial'], ['2', 'Compresión de 2 tonf'], ['-2', 'Tracción de 2 tonf (signo negativo)'], ['10', 'Compresión de columna típica']],
+  ix_Mx: [['0', 'Sin momento'], ['0.3', 'Momento de 0,3 tonf·m'], ['1', 'Momento de 1 tonf·m']],
+  ix_My: [['0', 'Sin momento en el eje débil'], ['0.1', 'Momento de 0,1 tonf·m']],
+  ix_Vy: [['0', 'Sin corte'], ['0.5', 'Corte de 0,5 tonf'], ['2', 'Corte de 2 tonf']],
+  ix_Vx: [['0', 'Sin corte en x'], ['0.2', 'Corte de 0,2 tonf']],
+  ix_red: [['0', 'Sin perforaciones (unión soldada)'], ['10', 'Un agujero pequeño en la sección'], ['15', 'Unión apernada típica'], ['25', 'Varias perforaciones en la sección crítica']],
+  ix_U: [['1', 'Carga transmitida a todos los elementos (caso 1)'], ['0.9', 'Perfil I por las alas, ≥ 3 pernos, bf ≥ 2d/3 (caso 7)'], ['0.85', 'Perfil I por las alas, bf < 2d/3 (caso 7)'], ['0.8', 'Ángulo con ≥ 4 pernos por línea (caso 8)'], ['0.7', 'Perfil I por el alma, ≥ 4 pernos (caso 7)'], ['0.6', 'Ángulo con 3 pernos por línea (caso 8)']],
+  ix_FubU: [['700', 'ISO 3506 A2-70 / A4-70'], ['800', 'ISO 3506 A2-80 / A4-80'], ['500', 'ISO 3506 A2-50 / A4-50'], ['515', 'ASTM A193 B8/B8M clase 1'], ['860', 'ASTM A193 B8 clase 2 (≤ 3/4")'], ['690', 'ASTM F593 CW1 (≤ 5/8")']],
+  ix_nL: [['1', 'Un perno por fila'], ['2', 'Dos pernos por fila'], ['3', 'Tres pernos por fila'], ['4', 'Cuatro pernos por fila']],
+  ix_nT: [['1', 'Una fila'], ['2', 'Dos filas'], ['3', 'Tres filas']],
+  ix_sL: [['50', '3·d para M16 (J3.3, recomendado)'], ['60', '3·d para M20'], ['75', '3·d para M24'], ['45', '≈ 2⅔·d para M16 (mínimo)']],
+  ix_sT: [['50', '3·d para M16'], ['60', '3·d para M20'], ['75', '3·d para M24'], ['100', 'Gramil típico']],
+  ix_le: [['22', 'Mínimo M16 (Tabla J3.2M)'], ['26', 'Mínimo M20'], ['30', 'Mínimo M24 / recomendado M16'], ['38', 'Mínimo M30'], ['40', 'Holgado']],
+  ix_lt: [['22', 'Mínimo M16 (Tabla J3.2M)'], ['26', 'Mínimo M20'], ['30', 'Mínimo M24'], ['40', 'Holgado']],
+  ix_W: [['80', 'Plancha de 80 mm'], ['100', 'Plancha de 100 mm'], ['110', '2·30 + 50 (dos filas M16)'], ['150', 'Plancha de 150 mm'], ['200', 'Plancha de 200 mm']],
+  ix_tp: [['5', 'Plancha 5 mm (diseño 0,95·t)'], ['6', 'Plancha 6 mm'], ['8', 'Plancha 8 mm'], ['10', 'Plancha 10 mm'], ['12', 'Plancha 12 mm']],
+  ix_tm: [['5', 'Elemento 5 mm'], ['6', 'Elemento 6 mm'], ['8', 'Elemento 8 mm'], ['10', 'Elemento 10 mm']],
+  ix_V: [['1', 'Corte de 1 tonf'], ['3', 'Corte de 3 tonf'], ['5', 'Corte de 5 tonf']],
+  ix_T: [['0', 'Sin tracción en los pernos'], ['1', 'Tracción de 1 tonf (incluir efecto palanca)']],
+  ix_FexxU: [['520', 'E308L / ER308L (AWS A5.4)'], ['490', 'E316L / ER316L'], ['520', 'E309L / ER309L'], ['690', 'E2209 / ER2209 (dúplex)']],
+  ix_w: [['3', 'Mínimo para t ≤ 6 mm (Tabla J2.4)'], ['5', 'Mínimo para 6 < t ≤ 13 mm'], ['6', 'Mínimo para 13 < t ≤ 19 mm'], ['8', 'Mínimo para t > 19 mm']],
+  ix_Lw: [['50', 'Cordón de 50 mm'], ['80', 'Cordón de 80 mm'], ['100', 'Cordón de 100 mm'], ['150', 'Cordón de 150 mm'], ['200', 'Cordón de 200 mm']],
+  ix_nw: [['1', 'Un cordón'], ['2', 'Dos cordones laterales'], ['3', 'Tres cordones (dos laterales y uno frontal)']],
+  ix_theta: [['0', 'Cordón longitudinal (paralelo a la carga)'], ['90', 'Cordón transversal (perpendicular a la carga)'], ['45', 'Cordón inclinado']],
+  ix_t1: [['5', 'Plancha 5 mm'], ['6', 'Plancha 6 mm'], ['8', 'Plancha 8 mm'], ['10', 'Plancha 10 mm'], ['12', 'Plancha 12 mm']],
+  ix_t2: [['6', 'Elemento 6 mm'], ['8', 'Elemento 8 mm'], ['10', 'Elemento 10 mm'], ['12', 'Elemento 12 mm']],
+  ix_Wsol: [['50', 'Plancha de 50 mm'], ['80', 'Plancha de 80 mm'], ['100', 'Plancha de 100 mm'], ['150', 'Plancha de 150 mm']],
+  ix_P: [['2', 'Fuerza de 2 tonf'], ['5', 'Fuerza de 5 tonf'], ['10', 'Fuerza de 10 tonf']],
+  ix_Bp: [['150', 'Placa para tubo de 100 mm'], ['200', 'Placa de 200 mm'], ['250', 'Placa de 250 mm'], ['350', 'Placa para perfil de 250-300 mm'], ['400', 'Placa de 400 mm']],
+  ix_Np: [['150', 'Placa de 150 mm'], ['200', 'Placa de 200 mm'], ['250', 'Placa de 250 mm'], ['400', 'Placa para perfil de 300 mm'], ['450', 'Placa de 450 mm']],
+  ix_tpb: [['8', 'Placa de 8 mm (montantes de baranda)'], ['10', 'Placa de 10 mm'], ['12', 'Placa de 12 mm'], ['16', 'Placa de 16 mm'], ['20', 'Placa de 20 mm'], ['25', 'Placa de 25 mm']],
+  ix_fc: [['20', 'Hormigón G20'], ['25', 'Hormigón G25'], ['30', 'Hormigón G30'], ['35', 'Hormigón G35']],
+  ix_A2A1: [['1', 'Placa del tamaño del pedestal (conservador)'], ['2', 'Pedestal holgado'], ['4', 'Máximo de J9-2 (√(A2/A1) ≤ 2)']],
+  ix_FubA: [['700', 'ISO 3506 A4-70'], ['800', 'ISO 3506 A4-80'], ['515', 'ASTM A193 B8M clase 1'], ['860', 'ASTM A193 B8 clase 2']],
+  ix_da: [['10', 'Anclaje M10 (barandas)'], ['12', 'Anclaje M12'], ['16', 'Anclaje M16'], ['20', 'Anclaje M20'], ['24', 'Anclaje M24']],
+  ix_ea: [['30', 'Borde de 30 mm'], ['40', 'Borde de 40 mm'], ['50', 'Borde de 50 mm']],
+  ix_Nb: [['0', 'Sin compresión'], ['5', 'Compresión de 5 tonf'], ['10', 'Compresión de 10 tonf'], ['20', 'Compresión de 20 tonf']],
+  ix_Vb: [['0', 'Sin corte'], ['0.5', 'Corte de 0,5 tonf'], ['1', 'Corte de 1 tonf']],
+  ix_Tb: [['0', 'Sin tracción en los anclajes'], ['1', 'Tracción de 1 tonf'], ['2', 'Tracción de 2 tonf']],
+  ix_gamma: [['1.6', 'Sobrecarga, combinación LRFD (1,2D + 1,6L)'], ['1.0', 'Servicio / ASD']],
+  ix_sR: [['1', 'Montantes cada 1,0 m'], ['1.2', 'Montantes cada 1,2 m (usual)'], ['1.5', 'Montantes cada 1,5 m'], ['2', 'Montantes cada 2,0 m']],
+  ix_hR: [['0.9', 'Altura mínima usual en escaleras'], ['0.95', '0,95 m'], ['1.0', '1,0 m'], ['1.1', 'Barandas de altura (≥ 1,1 m)']],
+  ix_pD: [['33.7', 'Tubo 1" (Ø33,7)'], ['42.4', 'Tubo 1¼" (Ø42,4) — pasamanos usual'], ['48.3', 'Tubo 1½" (Ø48,3)'], ['40', 'Tubo cuadrado 40 mm'], ['50', 'Tubo cuadrado 50 mm'], ['20', 'Barra redonda Ø20']],
+  ix_pB: [['20', 'Tubo 40×20'], ['30', 'Tubo 50×30'], ['40', 'Tubo 40×40'], ['50', 'Tubo 50×50']],
+  ix_pt: [['1.5', 'Pared 1,5 mm'], ['2', 'Pared 2 mm'], ['2.6', 'Pared 2,6 mm'], ['3', 'Pared 3 mm']],
+};
+function ixDatalists(container) {
+  Object.entries(IX_SUG).forEach(([id, list]) => {
+    const el = container.querySelector('#' + id); if (!el) return;
+    const dl = document.createElement('datalist'); dl.id = 'dl_' + id;
+    dl.innerHTML = list.map(([val, txt]) => `<option value="${val}">${esc(txt)}</option>`).join('');
+    el.setAttribute('list', dl.id); el.insertAdjacentElement('afterend', dl);
+    const lab = el.parentElement && el.parentElement.querySelector('label'); if (lab && !lab.querySelector('.sug')) lab.insertAdjacentHTML('beforeend', ' <span class="sug" title="Haz clic en la casilla para ver valores sugeridos" style="color:var(--accent,#0060c1);font-size:.8em">▾</span>');
+  });
 }
 
 
@@ -45648,7 +45715,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261007-1945. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261007-2030. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
