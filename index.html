@@ -44037,7 +44037,7 @@ function renderFuegoLosas(container) {
       <p class="note">Mismas cargas, luz y exigencia. En las colaborantes se indica la barra mínima por nervio con el u₃ adoptado y la armadura superior ingresada. Útil para elegir la solución y comparar pesos.</p></div>
     <div class="panel"><h3>7 · Soluciones del Listado Oficial MINVU (LOFC ED16-2024)</h3><div id="fl_lofc" style="overflow-x:auto"></div></div>
     <div class="panel">
-      <div class="disclosure">Métodos de cálculo de EN 1992-1-2 (tabulado) y EN 1994-1-2 Anexo D, aceptados como respaldo técnico cuando no existe una solución ensayada (LOFC MINVU / ensayo NCh935/1). La sección 7 contrasta con el Listado Oficial ED16-2024 (mayo 2024): asimilaciones ASIM.5 para losas de H.A. y alternativas para losas colaborantes; verificar que la edición siga vigente. La exigencia F-xx de la OGUC Art. 4.3.3 se verifica para los criterios R (capacidad portante), E (integridad) e I (aislación). Para losas colaborantes el Anexo D vale para R60–R120 con hormigón de peso normal; R30 se acepta sin armadura adicional según EN 1994-1-2 §4.3.2(3) si la losa está diseñada a temperatura ambiente. El momento negativo usa la isoterma de 500 °C del nervio (EN 1992-1-2 Anexo B.1) con las temperaturas de la Tabla D.3; la armadura superior debe prolongarse al menos 0,3·L desde el apoyo. Las placas con marca usan datos de la ficha del fabricante: verificar con su documentación vigente.</div>
+      <div class="disclosure">Marco normativo chileno: la OGUC Art. 4.3.3 fija la resistencia exigida F-xx, NCh935/1 define el ensayo y el Listado Oficial MINVU-DITEC (LOFC) es el respaldo formal ante la DOM. Chile no tiene norma propia de cálculo estructural en incendio: EN 1992-1-2 (tabulado) y EN 1994-1-2 Anexo D son Eurocódigos y se usan aquí como respaldo técnico. El propio LOFC los acepta como base cuando un laboratorio (IDIEM, DICTUC) emite una asimilación: las ASIM.5 de losas de H.A. se basan en EN 1992-1-2. Un cálculo de esta planilla no reemplaza por sí solo una solución listada o un ensayo; su aceptación queda a criterio de la DOM o del revisor, y la vía formal es tramitar una asimilación con un laboratorio. La sección 7 contrasta con el Listado Oficial ED16-2024 (mayo 2024): asimilaciones ASIM.5 para losas de H.A. y alternativas para losas colaborantes; verificar que la edición siga vigente. La exigencia F-xx de la OGUC Art. 4.3.3 se verifica para los criterios R (capacidad portante), E (integridad) e I (aislación). Para losas colaborantes el Anexo D vale para R60–R120 con hormigón de peso normal; R30 se acepta sin armadura adicional según EN 1994-1-2 §4.3.2(3) si la losa está diseñada a temperatura ambiente. El momento negativo usa la isoterma de 500 °C del nervio (EN 1992-1-2 Anexo B.1) con las temperaturas de la Tabla D.3; la armadura superior debe prolongarse al menos 0,3·L desde el apoyo. Las placas con marca usan datos de la ficha del fabricante: verificar con su documentación vigente.</div>
     </div>
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>
   `;
@@ -44101,7 +44101,7 @@ function renderFuegoLosas(container) {
       if (!rc.okX && rc.metodoR === 'D') av.push(['warn', 'El bloque de compresión supera h₁: aumentar el espesor de hormigón sobre la cresta.']);
       if (rc.metodoR === 'D' && inp.apoyoC !== 'S' && inp.dNeg > 0 && !rc.okNeg) av.push(['warn', 'La armadura superior no se equilibra con el hormigón del nervio sobre la isoterma 500 °C: se desprecia M⁻.']);
       if (inp.nb > 0 && (inp.u3 < 25 || inp.u3 > g.h2 - 10)) av.push(['warn', `u₃ fuera del rango práctico (25 a ${n(g.h2 - 10, 0)} mm): la barra debe quedar dentro del nervio con recubrimiento a las almas.`]);
-      if (inp.placa.id !== 'CUS') av.push(['info', 'Geometría de la placa tomada de la ficha técnica Cintac (Instadeck). La ficha no entrega resistencia al fuego ni solución LOFC: el respaldo es este cálculo según EN 1994-1-2.']);
+      if (inp.placa.id !== 'CUS') av.push(['info', 'Geometría de la placa tomada de la ficha técnica Cintac (Instadeck). La ficha no entrega resistencia al fuego y el LOFC no lista losas colaborantes. Este cálculo según EN 1994-1-2 (Eurocódigo) es un respaldo técnico; para un respaldo formal ante la DOM, tramitar una asimilación con IDIEM o DICTUC basada en este cálculo, o un ensayo NCh935/1.']);
       // solución
       const pts = [];
       if (!rc.okI) pts.push(`espesor total ≥ ${n(htMin, 1)} mm (h_eff ≥ ${n(rc.heffReq, 0)} mm)`);
@@ -44161,7 +44161,7 @@ function renderFuegoLosas(container) {
       <div class="xlsx-section">${inp.tipo === 'M' ? '2' : '3'}. SOLUCIÓN ADOPTADA</div><div class="xlsx-desc-row" style="padding:.3rem">${esc(sols)}</div>
       <div class="xlsx-section">${inp.tipo === 'M' ? '3' : '4'}. SOLUCIONES ALTERNATIVAS PARA F-${F}</div>${flTablaVersionesHtml(inp, true)}
       <div class="xlsx-section">${inp.tipo === 'M' ? '4' : '5'}. LISTADO OFICIAL MINVU (LOFC ED16-2024)</div>${flLofcHtml(inp, rc, true)}
-      <div class="xlsx-desc-row" style="padding:.3rem">EN 1992-1-2 §5.7 (losas macizas) y EN 1994-1-2 Anexo D (losas colaborantes). Exigencia F-xx según OGUC Art. 4.3.3; a falta de solución ensayada (LOFC MINVU, NCh935/1) estos métodos constituyen el respaldo técnico del cálculo.</div>`;
+      <div class="xlsx-desc-row" style="padding:.3rem">Exigencia F-xx según OGUC Art. 4.3.3; ensayo según NCh935/1; respaldo formal: Listado Oficial MINVU-DITEC. Chile no tiene norma propia de cálculo en incendio: EN 1992-1-2 §5.7 (losas macizas) y EN 1994-1-2 Anexo D (losas colaborantes) son Eurocódigos, usados como respaldo técnico (el LOFC los acepta como base de las asimilaciones de laboratorio, p. ej. ASIM.5). Este cálculo no reemplaza por sí solo una solución listada o un ensayo; para un respaldo formal, tramitar una asimilación con IDIEM o DICTUC.</div>`;
     const resum = `<div class="xlsx-title-bar">RESUMEN</div><div class="xlsx-section">SOLUCIÓN F-${F}</div><div class="xlsx-desc-row" style="padding:.3rem">${esc(sols)}</div><div class="xlsx-section">SOLUCIONES ALTERNATIVAS</div>${flTablaVersionesHtml(inp, true)}<div class="xlsx-section">LISTADO OFICIAL MINVU</div>${flLofcHtml(inp, rc, true)}`;
     xlsxSetPrintSheets(datos, calc, resum);
   }
@@ -44851,7 +44851,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261007-1320. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261007-1325. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
