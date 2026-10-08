@@ -347,7 +347,13 @@
      encabezado/pie de Chrome igual aparece, la forma 100% segura de quitarlo es desmarcar la casilla
      "Encabezados y pies de página" en el diálogo de impresión (Más opciones/configuración) — Chrome recuerda
      esa elección para las próximas impresiones en ese navegador. */
-  @page{ size: A4; margin: 7mm; }
+  /* Pie de página ING en TODAS las impresiones (Imprimir completo / Resumen): nombre de la empresa, dirección y celular a la
+     izquierda y «Página X de Y» a la derecha. Al definir cajas de margen propias, Chrome no dibuja su encabezado/pie. */
+  @page{ size: A4; margin: 7mm 7mm 15mm 7mm;
+    @bottom-left{ content: "ING ESTRUCTURAL — Proyectos Civiles e Industriales\A Angol 47, of. 404, Concepción · +56 9 9884 7164"; white-space: pre; font-family: Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: bold; color: #1F3864; border-top: 1px solid #1F3864; vertical-align: top; padding-top: 1.5mm; }
+    @bottom-center{ content: ""; border-top: 1px solid #1F3864; }
+    @bottom-right{ content: "Página " counter(page) " de " counter(pages); font-family: Arial, Helvetica, sans-serif; font-size: 8pt; color: #1F3864; border-top: 1px solid #1F3864; vertical-align: top; padding-top: 1.5mm; }
+  }
   /* Hoja oficial ING (HOJA CARTA ING): Carta; márgenes izq. 902 twips (16 mm), der. 1418 (25 mm), inf. 1418 (25 mm);
      el margen superior oficial (2269 twips = 40 mm) lo ocupa el membrete repetido en cada hoja (thead). */
   @page hojaING{
@@ -2656,7 +2662,7 @@ function costanerasOptions() {
   return fams.map(fam => {
     const opts = CATALOG_COSTANERAS.filter(p => p.fam===fam)
       .map(p => `<option value="${p.perfil}">${p.perfil}</option>`).join('');
-    return `<optgroup label="${fam === 'OMA' ? 'Serie Omega — Metalcon (AISI S100, sección efectiva)' : 'Serie ' + fam}">${opts}</optgroup>`;
+    return `<optgroup label="${fam === 'OMA' ? 'Serie Omega — Metalcon y a medida (AISI S100, sección efectiva)' : 'Serie ' + fam}">${opts}${fam === 'OMA' ? '<option value="OMEGA_MEDIDA">Omega a medida (plegada) — ingresar dimensiones</option>' : ''}</optgroup>`;
   }).join('');
 }
 /* Costaneras omega Metalcon: propiedades brutas calculadas con el motor del Verificador Metalcon (línea media,
@@ -2670,6 +2676,16 @@ function costOmegasCat() {
       H: c.h, B: c.b, clabio: c.d, ala: c.c, e: c.t, peso: c.peso || sec.peso, A: sec.A / 100, Ix: sec.Ix / 1e4, Wx: sec.Sx / 1e3, ix: sec.rx / 10,
       Iy: sec.Iy / 1e4, Wy: sec.Sy / 1e3, iy: sec.ry / 10, Mtab: null, sec });
   });
+}
+// Omega a medida (plegada) a partir de los campos de la planilla de costaneras
+function costOmegaMedida() {
+  const v = id => { const el = document.getElementById(id); const x = parseFloat(String(el ? el.value : '').replace(',', '.')); return isNaN(x) ? 0 : x; };
+  const g = { id: 'OMEGA', k: 'OMA', h: v('co_omH'), b: v('co_omB'), c: v('co_omA'), d: v('co_omL'), t: v('co_omE') };
+  if (!(g.h > 3 * g.t && g.b > 3 * g.t && g.c > 2 * g.t && g.t > 0)) return null;
+  const sec = mcSeccion({ g, ri: 0, conf: 'S' }); if (sec.err && sec.err.length) return null;
+  const f = x => String(x).replace('.', ',');
+  return { fam: 'OMA', perfil: `OMEGA ${f(g.b)}x${f(g.h)}x${f(g.c)}x${f(g.d)}x${f(g.t)} (a medida)`, id: 'MEDIDA', H: g.h, B: g.b, clabio: g.d, ala: g.c, e: g.t,
+    peso: sec.peso, A: sec.A / 100, Ix: sec.Ix / 1e4, Wx: sec.Sx / 1e3, ix: sec.rx / 10, Iy: sec.Iy / 1e4, Wy: sec.Sy / 1e3, iy: sec.ry / 10, Mtab: null, sec };
 }
 // Módulos efectivos de la omega a la tensión Fy (AISI S100, ancho efectivo): cresta comprimida (+), alas y labios comprimidos (−) y eje débil
 function costOmegaEf(perfil, FyKgf) {
@@ -2730,7 +2746,7 @@ function costanerasDatosHtml(state) {
 
     <div class="xlsx-section">1. SELECCIÓN DE PERFIL</div>
     <table class="xlsx-table"><tbody>
-      ${row('Catálogo C / CA / Z', state.perfilName)}
+      ${row('Perfil (catálogo C / CA / Z / Omega o a medida)', (state.perfil && state.perfil.perfil) || state.perfilName)}
     </tbody></table>
 
     <div class="xlsx-section">2. GEOMETRÍA Y ESPACIAMIENTO</div>
@@ -2936,8 +2952,15 @@ function renderCostaneras(container) {
           <select id="co_perfil">${costanerasOptions()}</select>
         </div>
       </div>
+      <div class="field-grid" id="co_omWrap" hidden style="margin-top:.5rem">
+        <div class="field"><label>Omega — altura total H (mm)</label><input type="text" inputmode="decimal" id="co_omH" value="50" list="dl_co_omH"><datalist id="dl_co_omH"><option value="35">omega Metalcon</option><option value="40">omega liviana</option><option value="50">costanera omega usual</option><option value="60">costanera omega</option><option value="75">costanera omega de mayor luz</option><option value="100">costanera omega pesada</option></datalist></div>
+        <div class="field"><label>Omega — ancho de la cresta (mm)</label><input type="text" inputmode="decimal" id="co_omB" value="50" list="dl_co_omB"><datalist id="dl_co_omB"><option value="38">omega Metalcon</option><option value="40">cresta de 40 mm</option><option value="50">cresta de 50 mm</option><option value="60">cresta de 60 mm</option><option value="80">cresta de 80 mm</option></datalist></div>
+        <div class="field"><label>Omega — ancho de cada ala (mm)</label><input type="text" inputmode="decimal" id="co_omA" value="25" list="dl_co_omA"><datalist id="dl_co_omA"><option value="15">omega Metalcon</option><option value="20">ala de 20 mm</option><option value="25">ala de 25 mm</option><option value="30">ala de 30 mm</option><option value="40">ala de 40 mm</option></datalist></div>
+        <div class="field"><label>Omega — labio de las alas (mm; 0 = sin labio)</label><input type="text" inputmode="decimal" id="co_omL" value="10" list="dl_co_omL"><datalist id="dl_co_omL"><option value="0">sin labio</option><option value="8">omega Metalcon</option><option value="10">labio de 10 mm</option><option value="12">labio de 12 mm</option><option value="15">labio de 15 mm</option></datalist></div>
+        <div class="field"><label>Omega — espesor e (mm)</label><input type="text" inputmode="decimal" id="co_omE" value="1.5" list="dl_co_omE"><datalist id="dl_co_omE"><option value="0.85">lámina 0,85 mm</option><option value="1">lámina 1,0 mm</option><option value="1.5">plancha 1,5 mm</option><option value="2">plancha 2 mm</option><option value="2.5">plancha 2,5 mm</option><option value="3">plancha 3 mm</option></datalist></div>
+        <p class="note" style="grid-column:1/-1;margin:0">Dimensiones exteriores. Radio interior de plegado = e. Las propiedades y la sección efectiva se calculan con el motor del Verificador Metalcon (AISI S100-16).</p>
+      </div>
       <div id="co_propOut" class="note mono"></div>
-      <div class="note">Ingreso manual de un perfil fuera de catálogo: disponible en el Excel, pendiente en esta versión web.</div>
     </div>
 
     <div class="panel">
@@ -3030,7 +3053,10 @@ function renderCostaneras(container) {
 
   function recalc() {
     readState();
-    const perfil = CATALOG_COSTANERAS.find(p => p.perfil===state.perfilName);
+    const medida = state.perfilName === 'OMEGA_MEDIDA';
+    document.getElementById('co_omWrap').hidden = !medida;
+    const perfil = medida ? costOmegaMedida() : CATALOG_COSTANERAS.find(p => p.perfil===state.perfilName);
+    if (!perfil) { document.getElementById('co_propOut').textContent = 'Dimensiones de la omega inválidas: revise H, cresta, ala, labio y espesor.'; return; }
     const r = calcCostaneras({...state, perfil});
 
     document.getElementById('co_propOut').innerHTML =
@@ -46717,7 +46743,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261008-2010. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261008-2040. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
