@@ -1870,8 +1870,8 @@ const TOOLS = [
   { id:'proteccion-fuego', cat:'Cargas y normativa', name:'Soluciones de Protección al Fuego (MINVU)', file:null,
     desc:'Consulta de soluciones tabuladas (sin ensayo de laboratorio) de resistencia al fuego para muros y pilares, según elemento, material y F-xx requerido — a partir del Listado Oficial de Comportamiento al Fuego MINVU-DITEC.',
     tag:'MINVU-DITEC ED17-2025', calc:'proteccionFuego' },
-  { id:'fuego-losas', cat:'Cargas y normativa', name:'Resistencia al Fuego de Losas — Macizas y Colaborantes', file:null,
-    desc:'Verificación de la exigencia F-30 a F-240 (OGUC 4.3.3) para losas macizas de H.A. por el método tabulado (espesor y distancia al eje de la armadura) y para losas con placa colaborante (Instadeck u otra) por EN 1994-1-2 Anexo D: espesor efectivo, temperaturas de placa y barras, momentos resistentes en incendio, barra mínima por nervio e informe con tabla comparativa de soluciones.',
+  { id:'fuego-losas', cat:'Cargas y normativa', name:'Resistencia al Fuego de Losas — Macizas, Nervadas y Colaborantes', file:null,
+    desc:'Verificación de la exigencia F-30 a F-240 (OGUC 4.3.3) para losas macizas y nervadas de H.A. por el método tabulado (espesor, ancho de nervio y distancia al eje de la armadura) y para losas con placa colaborante (Instadeck u otra) por EN 1994-1-2 Anexo D: espesor efectivo, temperaturas de placa y barras, momentos resistentes en incendio, barra mínima por nervio e informe con tabla comparativa de soluciones.',
     tag:'EN 1992-1-2 §5.7 · EN 1994-1-2 Anexo D · OGUC 4.3.3', calc:'fuegoLosas' },
   { id:'sobreancho-madera-fuego', cat:'Cargas y normativa', name:'Sobreancho por Carbonización en Madera', file:null,
     desc:'Sobreancho de sección (mm por cara) que debe agregarse a un elemento de madera aserrada o laminada encolada para compensar la carbonización bajo exposición al fuego, según tipo de madera, número de caras expuestas y resistencia al fuego F-xx requerida — método de la sección de madera reducida del Eurocódigo 5.',
@@ -35390,7 +35390,7 @@ function renderProteccionFuego(container) {
         <table class="results" style="margin-top:.3rem"><tr><th>ly/lx</th><th>Ø inferior (mm)</th><th>Recubrimiento mín. (mm)</th><th>F</th></tr>
         ${filasTabla.map(t => `<tr${res.filas.includes(t) ? ' style="font-weight:700"' : ''}><td class="num">${t[2] ? '> ' + t[2] + ' y ' : ''}≤ ${t[3]}</td><td class="num">${t[4]}–${t[5]}</td><td class="num">${t[6]}</td><td class="num">F-${t[7]}</td></tr>`).join('')}
         </table></details>` : ''}
-      <div class="note" style="margin-top:.4rem">Cuadro transcrito de las páginas 204 a 212 del Listado (en el PDF figura como imagen) — <a href="${PF_LISTADO_PDF}#page=${e === 14 ? 205 : 204}" target="_blank" rel="noopener">abrir p. ${e === 14 ? 205 : 204}</a>. No aplica a losas colaborantes (EN 1994-1-2).</div>`;
+      <div class="note" style="margin-top:.4rem">Cuadro transcrito de las páginas 204 a 212 del Listado (en el PDF figura como imagen) — <a href="${PF_LISTADO_PDF}#page=${e === 14 ? 205 : 204}" target="_blank" rel="noopener">abrir p. ${e === 14 ? 205 : 204}</a>. No aplica a losas colaborantes (EN 1994-1-2). Verificación completa con cargas (μfi), losas nervadas y colaborantes: planilla <a href="#fuego-losas">Resistencia al Fuego de Losas</a>.</div>`;
   }
   container.querySelectorAll('#pf_a5_e,#pf_a5_r,#pf_a5_fi,#pf_a5_c,#pf_a5_mu,#pf_Freq').forEach(el => el.addEventListener('input', recalcA5));
   recalcA5();
@@ -43904,6 +43904,40 @@ function flMaciza(F, apoyo, h, rec, diam, lyLx) {
   return r;
 }
 
+// ---------- Losa nervada de H.A.: método tabulado EN 1992-1-2 §5.7.5 ----------
+// Combinaciones [b mín del nervio (mm), a mín (mm)]; se permite interpolar linealmente entre columnas.
+const FL_NERV = {
+  T510: { n: 'Tabla 5.10 — nervada en dos direcciones, simplemente apoyada', asdSiempre: true,
+    c: { 30: [[80, 15]], 60: [[100, 35], [120, 25], [200, 15]], 90: [[120, 45], [160, 40], [250, 30]], 120: [[160, 60], [190, 55], [300, 40]], 180: [[220, 75], [260, 70], [410, 60]], 240: [[280, 90], [350, 75], [500, 70]] },
+    hs: { 30: 80, 60: 80, 90: 100, 120: 120, 180: 150, 240: 175 }, af: { 30: 10, 60: 10, 90: 15, 120: 20, 180: 30, 240: 40 } },
+  T511: { n: 'Tabla 5.11 — nervada en dos direcciones, al menos un borde continuo', asdSiempre: true,
+    c: { 30: [[80, 10]], 60: [[100, 25], [120, 15], [200, 10]], 90: [[120, 35], [160, 25], [250, 15]], 120: [[160, 45], [190, 40], [300, 30]], 180: [[310, 60], [600, 50]], 240: [[450, 70], [700, 60]] },
+    hs: { 30: 80, 60: 80, 90: 100, 120: 120, 180: 150, 240: 175 }, af: { 30: 10, 60: 10, 90: 15, 120: 20, 180: 30, 240: 40 } },
+  T55: { n: 'Tabla 5.5 — nervada en una dirección, simplemente apoyada (nervios como vigas; losa superior por Tabla 5.8)', asdSiempre: false,
+    c: { 30: [[80, 25], [120, 20], [160, 15], [200, 15]], 60: [[120, 40], [160, 35], [200, 30], [300, 25]], 90: [[150, 55], [200, 45], [300, 40], [400, 35]], 120: [[200, 65], [240, 60], [300, 55], [500, 50]], 180: [[240, 80], [300, 70], [400, 65], [600, 60]], 240: [[280, 90], [350, 80], [500, 75], [700, 70]] },
+    hs: FL_T58.hs, af: FL_T58.acont },
+  T56: { n: 'Tabla 5.6 — nervada en una dirección, continua (nervios como vigas; losa superior por Tabla 5.8)', asdSiempre: false,
+    c: { 30: [[80, 15], [160, 12]], 60: [[120, 25], [200, 12]], 90: [[150, 35], [250, 25]], 120: [[200, 45], [300, 35], [450, 35], [500, 30]], 180: [[240, 60], [400, 50], [550, 50], [600, 40]], 240: [[280, 75], [500, 60], [650, 60], [700, 50]] },
+    hs: FL_T58.hs, af: FL_T58.acont },
+};
+function flNervada(F, sis, b, hs, rec, diam, nCapas, aLosa) {
+  const T = FL_NERV[sis], cs = T.c[F], r = { tabla: T.n, combos: cs };
+  r.bMin = cs[0][0]; r.okB = b >= r.bMin - 1e-9;
+  if (!r.okB) r.aReq = null;
+  else if (b >= cs[cs.length - 1][0]) r.aReq = cs[cs.length - 1][1];
+  else { for (let i = 0; i < cs.length - 1; i++) { const [b0, a0] = cs[i], [b1, a1] = cs[i + 1]; if (b <= b1) { r.aReq = a0 + (a1 - a0) * (b - b0) / (b1 - b0); break; } } }
+  r.asdAplica = nCapas === 1 && (T.asdSiempre || b < cs[cs.length - 1][0]);
+  r.asd = r.aReq != null && r.asdAplica ? r.aReq + 10 : null;
+  r.a = rec + diam / 2;
+  r.okA = r.aReq != null && r.a >= r.aReq - 1e-9;
+  r.okSd = r.asd == null || r.a >= r.asd - 1e-9;
+  r.hsMin = T.hs[F]; r.afMin = T.af[F];
+  r.okHs = hs >= r.hsMin - 1e-9; r.okAf = aLosa >= r.afMin - 1e-9;
+  r.recMin = r.aReq != null ? Math.max(0, Math.max(r.aReq, r.asd || 0) - diam / 2) : null;
+  r.ok = r.okB && r.okA && r.okSd && r.okHs && r.okAf;
+  return r;
+}
+
 // ---------- Losa colaborante: EN 1994-1-2 Anexo D ----------
 function flGeo(p) {
   const h2 = p.h2, l1 = p.l1, l2 = p.l2, l3 = p.l3, P = l1 + l3;
@@ -44041,15 +44075,15 @@ function flTablaVersionesHtml(inp, forPrint) {
   return h;
 }
 
-// ---------- Listado Oficial MINVU-DITEC (LOFC) ED16-2024 — Asimilaciones ASIM.5 (losas de H.A.) ----------
+// ---------- Listado Oficial MINVU-DITEC (LOFC) ED17-2025 — Asimilaciones ASIM.5 (losas de H.A.) ----------
 // Losa de H.A. simplemente apoyada, flexión en dos direcciones, densidad ≥ 2300 kg/m³, μfi ≤ 0,7 (IDIEM 29-12-2022).
 // Cada fila: tipo, ly/lx (≤1,5 o 1,5–2), rango de diámetro de la armadura inferior (mm), [F, recubrimiento mínimo (mm)]
 const FL_ASIM5 = {
-  11: { cod: 'ASIM.5.01', inf: '1.813.026', desc: 'Losa de H.A. e = 11 cm', pag: 163, rows: [
+  11: { cod: 'ASIM.5.01', inf: '1.813.026', desc: 'Losa de H.A. e = 11 cm', pag: 204, rows: [
     ['A', 1, [16, 36], [[90, 20]]], ['B', 2, [28, 36], [[90, 20]]], ['B', 2, [16, 25], [[90, 20]]],
     ['C', 1, [10, 12], [[90, 15]]], ['C', 1, [6, 8], [[90, 15]]],
     ['D', 2, [10, 12], [[90, 15]]], ['D', 2, [6, 8], [[60, 15], [90, 17]]]] },
-  14: { cod: 'ASIM.5.02 a 5.09', inf: '1.813.027 a 1.813.034', desc: 'Losa de H.A. e = 14 cm (con cielo falso de yeso-cartón ST 10 mm, con pisos combustibles de 2 a 25 mm o con sobrelosa de 50 mm sobre EPS o lana de vidrio)', pag: '164–171', rows: [
+  14: { cod: 'ASIM.5.02 a 5.09', inf: '1.813.027 a 1.813.034', desc: 'Losa de H.A. e = 14 cm (con cielo falso de yeso-cartón ST 10 mm, con pisos combustibles de 2 a 25 mm o con sobrelosa de 50 mm sobre EPS o lana de vidrio)', pag: '205–212', rows: [
     ['A', 1, [16, 36], [[150, 15]]], ['B', 2, [28, 36], [[150, 15]]], ['B', 2, [16, 25], [[120, 15], [150, 25]]],
     ['C', 1, [10, 12], [[120, 15], [150, 20]]], ['C', 1, [6, 8], [[90, 15], [120, 17], [150, 22]]],
     ['D', 2, [10, 12], [[90, 15], [120, 20], [150, 28]]], ['D', 2, [6, 8], [[60, 15], [90, 17], [120, 22], [150, 30]]]] },
@@ -44085,7 +44119,12 @@ function flLofcHtml(inp, rc, forPrint) {
   const th = (t, l) => forPrint ? `<td class="${l ? 'xv-label' : 'xv-num'}">${t}</td>` : `<th${l ? '' : ' class="num"'}>${t}</th>`;
   const tl = forPrint ? 'td class="xv-label"' : 'td', td = forPrint ? 'td class="xv-num"' : 'td class="num"';
   let h = '';
-  if (inp.tipo === 'M') {
+  if (inp.tipo === 'N') {
+    const D22 = (typeof PF_LISTADO !== 'undefined' ? PF_LISTADO : []).filter(x => x.codigo.startsWith('D.2.2'));
+    h += `<table class="${T}"><tbody><tr${hdr}>${th('Losa nervada del Listado ED17-2025 (capítulo D.2.2, solución de marca ensayada)', 1)}${th('F')}${th('Informe', 1)}${th('F-' + inp.F, 1)}</tr>`;
+    D22.forEach(x => { h += `<tr><${tl}><b>${esc(x.codigo)}</b> — ${esc(x.titulo)} (${esc(x.inst)}, pág. ${x.pag})</td><${td}>F-${x.F}</td><${tl}>${esc(x.lab)} N° ${esc(x.informe)} · ${esc(x.fecha)}</td><${tl}>${si(x.F >= inp.F)}</td></tr>`; });
+    h += `</tbody></table><p class="${forPrint ? 'xlsx-desc-row' : 'note'}" style="padding:.3rem 0">El Listado ED17-2025 no tiene soluciones genéricas ni asimilaciones MINVU para losas nervadas de hormigón armado convencional: solo estas soluciones de marca (Crupe, Syntheon), válidas únicamente con el sistema ensayado. Una losa nervada convencional se respalda por cálculo según EN 1992-1-2 §5.7.5 (este cálculo), con el mismo criterio que el MINVU aplica a las losas macizas en las asimilaciones ASIM.5; para un respaldo formal, tramitar una asimilación con un laboratorio o profesional especialista.</p>`;
+  } else if (inp.tipo === 'M') {
     const L = flLofcMaciza(inp);
     h += `<table class="${T}"><tbody><tr${hdr}>${th('Asimilación MINVU (losa maciza H.A.)', 1)}${th('Tipo')}${th('F con rec. ' + n(inp.rec, 0) + ' mm')}${th('Rec. mín. para F-' + inp.F)}${th('Aplicable', 1)}${th('F-' + inp.F, 1)}</tr>`;
     L.items.forEach(it => {
@@ -44094,11 +44133,11 @@ function flLofcHtml(inp, rc, forPrint) {
     h += `</tbody></table><p class="${forPrint ? 'xlsx-desc-row' : 'note'}" style="padding:.3rem 0">Condiciones de las asimilaciones ASIM.5 (IDIEM, 29-12-2022): losa simplemente apoyada en dos direcciones, densidad ≥ 2300 kg/m³, μfi ≤ 0,7, recubrimiento según NCh430 y ly/lx según EN 1992-1-2. Para espesores mayores al asimilado se aplica por criterio conservador del calculista (más espesor da más aislación); el listado no lo dice expresamente. μfi estimado = (G + ψ·Q)/(1,2·G + 1,6·Q) = ${n(L.mufi, 2)}, suponiendo la losa diseñada justo para la combinación última.</p>`;
   } else {
     const t = inp.placa.t, mas = 1000 / t;
-    h += `<table class="${T}"><tbody><tr${hdr}>${th('Alternativa del Listado Oficial MINVU ED16-2024', 1)}${th('Aplicable a la losa colaborante', 1)}</tr>
+    h += `<table class="${T}"><tbody><tr${hdr}>${th('Alternativa del Listado Oficial MINVU ED17-2025', 1)}${th('Aplicable a la losa colaborante', 1)}</tr>
       <tr><${tl}>Losas D.2.2 (productos de marca, ensayo NCh935/1)</td><${tl}>No: solo hay losas nervadas con EPS (Crupe, Syntheon). No hay losas con placa colaborante listadas.</td></tr>
       <tr><${tl}>Mortero proyectado (Cap. IV: Sikacrete 215F, Promaspray P-300) y tabla B.1.3 de hormigón o mortero sobre malla</td><${tl}>No: tablas ensayadas en columnas y vigas, con masividad hasta unos 350 m⁻¹. La placa tiene Hp/A ≈ 1/t = ${n(mas, 0)} m⁻¹ con una cara expuesta.</td></tr>
       <tr><${tl}>Pintura intumescente (Cap. II, nota 3)</td><${tl}>No: el listado exige masividad ≤ 390 m⁻¹ y no tiene tablas para placa colaborante.</td></tr>
-      <tr><${tl}><b>ASIM.3.120.01</b> — Cielo falso Panel ISOLANA (Cintac), lana mineral 100 kg/m³, informe IDIEM 1.916.392, pág. 156</td><${tl}>Clasificado F-120 como cielo o revestimiento. Usarlo como protección de la losa es criterio del calculista y conviene validarlo con la DOM.</td></tr>
+      <tr><${tl}><b>ASIM.3.120.01</b> — Cielo falso Panel ISOLANA (Cintac), lana mineral 100 kg/m³, informe IDIEM 1.916.392, Listado ED17-2025</td><${tl}>Clasificado F-120 como cielo o revestimiento. Usarlo como protección de la losa es criterio del calculista y conviene validarlo con la DOM.</td></tr>
       <tr><${tl}>Ensayo NCh935/1 de la losa con la protección elegida</td><${tl}>Sí: es la vía formal para una solución nueva.</td></tr>
       <tr><${tl}>Cálculo EN 1994-1-2 Anexo D (esta planilla)</td><${tl}>${rc.ok ? si(true) + ' Cumple F-' + inp.F + ' por cálculo con la armadura indicada' : (forPrint ? 'No cumple con los datos actuales' : '<span class="fl-v no">✗ No cumple con los datos actuales</span>')}</td></tr>
       </tbody></table>`;
@@ -44152,19 +44191,37 @@ function flEsquema(inp, rm, rc) {
     { viewBox: `0 0 700 ${Math.round(yb + 64)}`, maxWidth: 700, aria: 'Sección de losa colaborante con placa, barras en los nervios, armadura superior e isoterma de 500 °C' });
 }
 
+function flEsquemaN(inp, rn) {
+  const fuego = (x0, x1, y) => { let s = ''; for (let x = x0 + 20; x < x1; x += 46) s += `<path d="M${x},${y + 26} q-7,-10 0,-20 q3,8 7,4 q2,-8 -2,-14 q12,8 9,22 q-2,8 -14,8z" fill="#E4572E" fill-opacity="0.75"/>`; return s; };
+  const hr = Math.max(inp.nHs + 120, 2.2 * inp.nB, 200), s = Math.min(0.9, 190 / (inp.nHs + hr)), x0 = 90, W = 520, y0 = 66;
+  const hs = inp.nHs * s, H = (inp.nHs + hr) * s, b = inp.nB * s, yb = y0 + H, a = rn.a * s, r = Math.max(3, inp.nDiam * s / 2);
+  const xs = [x0 + W * 0.25, x0 + W * 0.75];
+  const ribs = xs.map(xc => `<rect x="${(xc - b / 2).toFixed(1)}" y="${(y0 + hs).toFixed(1)}" width="${b.toFixed(1)}" height="${(H - hs).toFixed(1)}" fill="#BFC5CC" fill-opacity="0.55" stroke="var(--ink)" stroke-width="1.2"/>` +
+    (inp.nCapas === 1 && inp.nB >= 2 * rn.a + 20 ? [-1, 1].map(sg => `<circle cx="${(xc + sg * (b / 2 - a)).toFixed(1)}" cy="${(yb - a).toFixed(1)}" r="${r.toFixed(1)}" fill="var(--ink)"/>`).join('') : `<circle cx="${xc.toFixed(1)}" cy="${(yb - a).toFixed(1)}" r="${r.toFixed(1)}" fill="var(--ink)"/>`)).join('');
+  return ESQ.svg(m => `${ESQ.text(340, 46, `Losa nervada H.A. — ${rn.tabla.split(' — ')[0]} — F-${inp.F}`, { fontSize: 12, bold: true })}
+    <rect x="${x0}" y="${y0}" width="${W}" height="${hs.toFixed(1)}" fill="#BFC5CC" fill-opacity="0.55" stroke="var(--ink)" stroke-width="1.2"/>
+    ${ribs}
+    ${ESQ.vdim(m, x0 - 14, y0, y0 + hs, `hs = ${inp.nHs} mm`, { side: 'left' })}
+    ${ESQ.vdim(m, xs[1] + b / 2 + 14, yb - a, yb, `a = ${fmt1(rn.a)} mm`, { side: 'right' })}
+    ${ESQ.note(xs[0], yb + 16, `b = ${inp.nB} mm`, { color: 'var(--ink-muted)' })}
+    ${fuego(x0, x0 + W, yb + 20)}
+    ${ESQ.note(340, yb + 70, `mín. F-${inp.F}: b ≥ ${rn.bMin} mm · a ≥ ${rn.aReq != null ? fmt1(rn.aReq) : '—'} mm${rn.asd != null ? ' · a_sd ≥ ' + fmt1(rn.asd) + ' mm' : ''} · hs ≥ ${rn.hsMin} mm`, { color: rn.ok ? 'var(--good)' : '#C0261B', fontSize: 11 })}`,
+    { viewBox: '0 0 680 ' + Math.round(yb + 84), maxWidth: 680, aria: 'Sección de losa nervada con nervios, armadura inferior y exposición al fuego por la cara inferior' });
+}
+
 function renderFuegoLosas(container) {
   const opt = (arr, sel) => arr.map(([v, t]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${t}</option>`).join('');
   container.innerHTML = `<style>.fl-v.ok{color:#1E7A45;font-weight:600}.fl-v.no{color:#C0261B;font-weight:600}</style>
     <div class="calc-head">
-      <h1>Resistencia al Fuego de Losas — Macizas y Colaborantes</h1>
-      <div class="sub">Verificación de la exigencia F-xx (OGUC Art. 4.3.3) para losas macizas de hormigón armado por el método tabulado de EN 1992-1-2 y para losas con placa colaborante por EN 1994-1-2 Anexo D: aislación por espesor efectivo, temperatura de la placa y de las barras en los nervios, momento resistente en incendio y tabla comparativa de soluciones.</div>
+      <h1>Resistencia al Fuego de Losas — Macizas, Nervadas y Colaborantes</h1>
+      <div class="sub">Verificación de la exigencia F-xx (OGUC Art. 4.3.3) para losas macizas y nervadas de hormigón armado por el método tabulado de EN 1992-1-2 y para losas con placa colaborante por EN 1994-1-2 Anexo D: aislación por espesor efectivo, temperatura de la placa y de las barras en los nervios, momento resistente en incendio y tabla comparativa de soluciones.</div>
     </div>
 
     <div class="panel">
       <h3>1 · Exigencia, tramo y cargas en incendio</h3>
       <div class="field-grid">
         <div class="field"><label>Resistencia al fuego exigida (OGUC 4.3.3)</label><select id="fl_F">${opt(FL_F.map(f => [String(f), 'F-' + f]), '120')}</select></div>
-        <div class="field"><label>Tipo de losa a verificar</label><select id="fl_tipo"><option value="C" selected>Losa colaborante (placa + hormigón)</option><option value="M">Losa maciza de hormigón armado</option></select></div>
+        <div class="field"><label>Tipo de losa a verificar</label><select id="fl_tipo"><option value="C" selected>Losa colaborante (placa + hormigón)</option><option value="M">Losa maciza de hormigón armado</option><option value="N">Losa nervada de hormigón armado</option></select></div>
         <div class="field"><label>Luz del tramo L (m)</label><input type="text" inputmode="decimal" id="fl_L" value="3.0"></div>
         <div class="field"><label>Sobrecarga permanente adicional (kgf/m²)</label><input type="text" inputmode="decimal" id="fl_scp" value="150"></div>
         <div class="field"><label>Sobrecarga de uso (kgf/m²)</label><input type="text" inputmode="decimal" id="fl_sc" value="250"></div>
@@ -44185,6 +44242,20 @@ function renderFuegoLosas(container) {
         <div class="field"><label>Recubrimiento libre inferior (mm)</label><input type="text" inputmode="decimal" id="fl_rec" value="20"></div>
         <div class="field"><label>Diámetro de la barra inferior (mm)</label><select id="fl_diam">${opt(FL_DIAM.map(d => [String(d), d + ' mm']), '10')}</select></div>
       </div>
+    </div>
+
+    <div class="panel" id="fl_pN">
+      <h3>2 · Losa nervada de hormigón armado</h3>
+      <div class="field-grid">
+        <div class="field"><label>Sistema y condición de apoyo</label><select id="fl_nSis">${opt(Object.entries(FL_NERV).map(([k, t]) => [k, t.n.replace(/^Tabla [\d.]+ — /, '').replace(/ \(.*$/, '') + ' (' + t.n.split(' — ')[0] + ')']), 'T510')}</select></div>
+        <div class="field"><label>Ancho del nervio b a la altura de la armadura (mm)</label><input type="text" inputmode="decimal" id="fl_nb_b" value="300"></div>
+        <div class="field"><label>Espesor de la losa superior hs (mm, incluye sobrelosa no combustible)</label><input type="text" inputmode="decimal" id="fl_nHs" value="120"></div>
+        <div class="field"><label>Recubrimiento libre del nervio, inferior y lateral (mm)</label><input type="text" inputmode="decimal" id="fl_nRec" value="45"></div>
+        <div class="field"><label>Diámetro de la barra inferior del nervio (mm)</label><select id="fl_nDiam">${opt(FL_DIAM.map(d => [String(d), d + ' mm']), '12')}</select></div>
+        <div class="field"><label>Armadura inferior del nervio</label><select id="fl_nCapas"><option value="1" selected>Una capa (barras de esquina: a_sd = a + 10 mm)</option><option value="2">Dos o más capas</option></select></div>
+        <div class="field"><label>Distancia al eje de la armadura de la losa superior (mm)</label><input type="text" inputmode="decimal" id="fl_nAf" value="25"></div>
+      </div>
+      <p class="note">EN 1992-1-2 §5.7.5: en dos direcciones, Tablas 5.10 y 5.11; en una dirección, los nervios se verifican como vigas (Tablas 5.5 y 5.6) y la losa superior como losa continua (Tabla 5.8). Se interpola linealmente entre las columnas de ancho b. Tablas válidas para μfi ≤ 0,7, hormigón de peso normal y exposición por la cara inferior. Valores transcritos de la norma: verificar contra su copia.</p>
     </div>
 
     <div class="panel" id="fl_pC">
@@ -44217,9 +44288,9 @@ function renderFuegoLosas(container) {
     <div class="panel"><h3>5 · Esquema de la sección</h3><div id="fl_esqSeccion"></div></div>
     <div class="panel"><h3>6 · Soluciones para F-<span id="fl_Ft">120</span> — losas macizas y colaborantes</h3><div id="fl_tabla" style="overflow-x:auto"></div>
       <p class="note">Mismas cargas, luz y exigencia. En las colaborantes se indica la barra mínima por nervio con el u₃ adoptado y la armadura superior ingresada. Útil para elegir la solución y comparar pesos.</p></div>
-    <div class="panel"><h3>7 · Soluciones del Listado Oficial MINVU (LOFC ED16-2024)</h3><div id="fl_lofc" style="overflow-x:auto"></div></div>
+    <div class="panel"><h3>7 · Soluciones del Listado Oficial MINVU (LOFC ED17-2025)</h3><div id="fl_lofc" style="overflow-x:auto"></div></div>
     <div class="panel">
-      <div class="disclosure">Marco normativo chileno: la OGUC Art. 4.3.3 fija la resistencia exigida F-xx, NCh935/1 define el ensayo y el Listado Oficial MINVU-DITEC (LOFC) es el respaldo formal ante la DOM. Chile no tiene norma propia de cálculo estructural en incendio: EN 1992-1-2 (tabulado) y EN 1994-1-2 Anexo D son Eurocódigos y se usan aquí como respaldo técnico. El propio LOFC los acepta como base cuando un laboratorio (IDIEM, DICTUC) emite una asimilación: las ASIM.5 de losas de H.A. se basan en EN 1992-1-2. Un cálculo de esta planilla no reemplaza por sí solo una solución listada o un ensayo; su aceptación queda a criterio de la DOM o del revisor, y la vía formal es tramitar una asimilación con un laboratorio. La sección 7 contrasta con el Listado Oficial ED16-2024 (mayo 2024): asimilaciones ASIM.5 para losas de H.A. y alternativas para losas colaborantes; verificar que la edición siga vigente. La exigencia F-xx de la OGUC Art. 4.3.3 se verifica para los criterios R (capacidad portante), E (integridad) e I (aislación). Para losas colaborantes el Anexo D vale para R60–R120 con hormigón de peso normal; R30 se acepta sin armadura adicional según EN 1994-1-2 §4.3.2(3) si la losa está diseñada a temperatura ambiente. El momento negativo usa la isoterma de 500 °C del nervio (EN 1992-1-2 Anexo B.1) con las temperaturas de la Tabla D.3; la armadura superior debe prolongarse al menos 0,3·L desde el apoyo. Las placas con marca usan datos de la ficha del fabricante: verificar con su documentación vigente.</div>
+      <div class="disclosure">Marco normativo chileno: la OGUC Art. 4.3.3 fija la resistencia exigida F-xx, NCh935/1 define el ensayo y el Listado Oficial MINVU-DITEC (LOFC) es el respaldo formal ante la DOM. Chile no tiene norma propia de cálculo estructural en incendio: EN 1992-1-2 (tabulado) y EN 1994-1-2 Anexo D son Eurocódigos y se usan aquí como respaldo técnico. El propio LOFC los acepta como base cuando un laboratorio (IDIEM, DICTUC) emite una asimilación: las ASIM.5 de losas de H.A. se basan en EN 1992-1-2. Un cálculo de esta planilla no reemplaza por sí solo una solución listada o un ensayo; su aceptación queda a criterio de la DOM o del revisor, y la vía formal es tramitar una asimilación con un laboratorio. La sección 7 contrasta con el Listado Oficial ED17-2025 (Res. Ex. N°182 del 31.01.2025): asimilaciones ASIM.5 para losas de H.A. y alternativas para losas colaborantes; verificar que la edición siga vigente. La exigencia F-xx de la OGUC Art. 4.3.3 se verifica para los criterios R (capacidad portante), E (integridad) e I (aislación). Para losas colaborantes el Anexo D vale para R60–R120 con hormigón de peso normal; R30 se acepta sin armadura adicional según EN 1994-1-2 §4.3.2(3) si la losa está diseñada a temperatura ambiente. El momento negativo usa la isoterma de 500 °C del nervio (EN 1992-1-2 Anexo B.1) con las temperaturas de la Tabla D.3; la armadura superior debe prolongarse al menos 0,3·L desde el apoyo. Las placas con marca usan datos de la ficha del fabricante: verificar con su documentación vigente.</div>
     </div>
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>
   `;
@@ -44229,6 +44300,7 @@ function renderFuegoLosas(container) {
     const pid = $('fl_placa').value;
     const placa = pid === 'CUS' ? { id: 'CUS', n: 'Placa personalizada', h2: v('fl_ch2') || 60, l1: v('fl_cl1') || 200, l2: v('fl_cl2') || 120, l3: v('fl_cl3') || 100, t: v('fl_ct') || 0.75, fy: v('fl_cfy') || 250, peso: v('fl_cpeso') } : FL_PLACAS.find(p => p.id === pid);
     return { F: +$('fl_F').value, tipo: $('fl_tipo').value, L: v('fl_L'), scp: v('fl_scp'), sc: v('fl_sc'), psi: v('fl_psi'), gc: v('fl_gc') || 2400, fc: v('fl_fc') || 25, fy: v('fl_fy') || 420,
+      nSis: $('fl_nSis').value, nB: v('fl_nb_b'), nHs: v('fl_nHs'), nRec: v('fl_nRec'), nDiam: v('fl_nDiam'), nCapas: +$('fl_nCapas').value, nAf: v('fl_nAf'),
       apoyo: $('fl_apoyo').value, lyLx: v('fl_lyLx') || 1, h: v('fl_h'), rec: v('fl_rec'), diam: v('fl_diam'),
       placa, ht: v('fl_ht'), h3: v('fl_h3'), apoyoC: $('fl_apoyoC').value, nb: +$('fl_nb').value, dRib: v('fl_dRib'), u3: v('fl_u3') || 40,
       dNeg: v('fl_dNeg'), sNeg: v('fl_sNeg') || 150, recSup: v('fl_recSup'), ...(() => { const m = FL_MALLAS.find(x => x.id === $('fl_dNeg').value); return m ? { negMalla: m, dNeg: m.d, sNeg: m.s, fyNeg: FL_FY_MALLA } : { negMalla: null, fyNeg: v('fl_fy') || 420 }; })() };
@@ -44236,7 +44308,8 @@ function renderFuegoLosas(container) {
   const n = (x, d) => x == null || !isFinite(x) ? '—' : x.toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d });
   function recalc() {
     const inp = leer(), F = inp.F;
-    $('fl_pM').hidden = inp.tipo !== 'M'; $('fl_pC').hidden = inp.tipo !== 'C';
+    $('fl_pM').hidden = inp.tipo !== 'M'; $('fl_pC').hidden = inp.tipo !== 'C'; $('fl_pN').hidden = inp.tipo !== 'N';
+    const rn = flNervada(F, inp.nSis, inp.nB, inp.nHs, inp.nRec, inp.nDiam, inp.nCapas, inp.nAf);
     $('fl_wLy').hidden = inp.apoyo !== 'S2'; $('fl_cus').hidden = inp.placa.id !== 'CUS';
     ['fl_wNeg1', 'fl_wNeg2', 'fl_wNeg3'].forEach(id => $(id).hidden = inp.apoyoC === 'S');
     if (inp.negMalla) $('fl_wNeg2').hidden = true;
@@ -44246,7 +44319,26 @@ function renderFuegoLosas(container) {
     const rc = flColab(inp, inp.placa, inp.ht, inp.nb > 0 ? inp.dRib : 0, inp.nb);
     const sol = flDiamReq(inp, inp.placa, inp.ht), htMin = flHtMin(inp, inp.placa);
     let res = '';
-    if (inp.tipo === 'M') {
+    if (inp.tipo === 'N') {
+      const cmb = rn.combos.map(c => `b ${c[0]} / a ${c[1]}`).join(' · ');
+      res = `<table class="results">
+        <tr><th>Verificación (EN 1992-1-2 ${esc(rn.tabla.split(' — ')[0])})</th><th class="num">Mínimo</th><th class="num">Proyecto</th><th>Estado</th></tr>
+        <tr><td>Ancho del nervio b (combinaciones F-${F}: ${cmb} mm)</td><td class="num">${n(rn.bMin, 0)} mm</td><td class="num">${n(inp.nB, 0)} mm</td><td>${chip(rn.okB)}</td></tr>
+        <tr><td>Distancia al eje de la armadura del nervio a = rec + Ø/2 — capacidad portante (R)${rn.combos.length > 1 && rn.okB ? ' (interpolada según b)' : ''}</td><td class="num">${rn.aReq != null ? n(rn.aReq, 1) + ' mm' : '—'}</td><td class="num">${n(rn.a, 1)} mm</td><td>${rn.okB ? chip(rn.okA) : '<span class="chip neutral">N/A</span>'}</td></tr>
+        ${rn.asdAplica ? `<tr><td>Distancia al eje lateral de la barra de esquina a_sd = a + 10 mm (una sola capa)</td><td class="num">${rn.asd != null ? n(rn.asd, 1) + ' mm' : '—'}</td><td class="num">${n(rn.a, 1)} mm</td><td>${rn.okB ? chip(rn.okSd) : '<span class="chip neutral">N/A</span>'}</td></tr>` : ''}
+        <tr><td>Espesor de la losa superior hs — aislación (I) e integridad (E)</td><td class="num">${n(rn.hsMin, 0)} mm</td><td class="num">${n(inp.nHs, 0)} mm</td><td>${chip(rn.okHs)}</td></tr>
+        <tr><td>Distancia al eje de la armadura de la losa superior</td><td class="num">${n(rn.afMin, 0)} mm</td><td class="num">${n(inp.nAf, 0)} mm</td><td>${chip(rn.okAf)}</td></tr>
+        <tr><td><b>Estado: resistencia al fuego F-${F}</b></td><td></td><td></td><td>${chip(rn.ok)}</td></tr>
+      </table>`;
+      if (inp.nSis === 'T511' || inp.nSis === 'T56') av.push(['info', 'Losa continua: la armadura superior sobre los apoyos debe prolongarse al menos 0,3·L (EN 1992-1-2 §5.7.3 y §5.6.3).']);
+      av.push(['info', 'El Listado Oficial ED17-2025 no tiene soluciones genéricas para losas nervadas de H.A. convencional (solo sistemas de marca D.2.2, ver sección 7). Este cálculo por EN 1992-1-2 es un respaldo técnico; su aceptación queda a criterio de la DOM.']);
+      const pts = [];
+      if (!rn.okB) pts.push(`ancho de nervio ≥ ${n(rn.bMin, 0)} mm`);
+      if (rn.okB && (!rn.okA || !rn.okSd)) pts.push(`recubrimiento libre del nervio ≥ ${n(Math.ceil(rn.recMin), 0)} mm con barra de ${n(inp.nDiam, 0)} mm (o un nervio más ancho)`);
+      if (!rn.okHs) pts.push(`losa superior hs ≥ ${n(rn.hsMin, 0)} mm`);
+      if (!rn.okAf) pts.push(`distancia al eje de la armadura de la losa superior ≥ ${n(rn.afMin, 0)} mm`);
+      av.push([rn.ok ? 'ok' : 'bad', rn.ok ? `Solución F-${F}: losa nervada con nervio de ${n(inp.nB, 0)} mm, recubrimiento libre de ${n(inp.nRec, 0)} mm (barra de ${n(inp.nDiam, 0)} mm) y losa superior de ${n(inp.nHs, 0)} mm.` : `Solución F-${F}: ${pts.join('; ')}.`]);
+    } else if (inp.tipo === 'M') {
       res = `<table class="results">
         <tr><th>Verificación (EN 1992-1-2 ${rm.tabla})</th><th class="num">Mínimo</th><th class="num">Proyecto</th><th>Estado</th></tr>
         <tr><td>Espesor hs — aislación (I) e integridad (E)</td><td class="num">${n(rm.hsMin, 0)} mm</td><td class="num">${n(inp.h, 0)} mm</td><td>${chip(rm.okH)}</td></tr>
@@ -44301,18 +44393,18 @@ function renderFuegoLosas(container) {
     }
     $('fl_res').innerHTML = res;
     $('fl_av').innerHTML = av.map(([k, t]) => `<div class="global-verdict ${k === 'bad' ? 'bad' : 'ok'}" style="${k === 'bad' || k === 'ok' ? '' : 'background:var(--surface-alt);color:var(--ink)'}"><span class="label" style="font-size:.85rem;text-transform:none;letter-spacing:0">${esc(t)}</span></div>`).join('');
-    $('fl_esqSeccion').innerHTML = flEsquema(inp, rm, rc);
+    $('fl_esqSeccion').innerHTML = inp.tipo === 'N' ? flEsquemaN(inp, rn) : flEsquema(inp, rm, rc);
     $('fl_tabla').innerHTML = flTablaVersionesHtml(inp, false);
     $('fl_lofc').innerHTML = flLofcHtml(inp, rc, false);
     // impresión
     const row = (l, val) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${val}</td></tr>`;
     const datos = `<div class="xlsx-title-bar">DATOS DE ENTRADA</div><table class="xlsx-table"><tbody>
       ${row('Resistencia al fuego exigida (OGUC Art. 4.3.3)', 'F-' + F)}
-      ${row('Tipo de losa verificada', inp.tipo === 'M' ? 'Losa maciza de hormigón armado' : 'Losa colaborante')}
-      ${row('Luz L / condición', `${xlsxNum(inp.L, 2)} m / ${inp.tipo === 'M' ? esc(FL_APOYOS.find(a => a.id === inp.apoyo).n) : esc($('fl_apoyoC').selectedOptions[0].text)}`)}
+      ${row('Tipo de losa verificada', inp.tipo === 'M' ? 'Losa maciza de hormigón armado' : inp.tipo === 'N' ? 'Losa nervada de hormigón armado' : 'Losa colaborante')}
+      ${row('Luz L / condición', `${xlsxNum(inp.L, 2)} m / ${inp.tipo === 'M' ? esc(FL_APOYOS.find(a => a.id === inp.apoyo).n) : inp.tipo === 'N' ? esc(rn.tabla) : esc($('fl_apoyoC').selectedOptions[0].text)}`)}
       ${row('SC permanente / SC de uso / ψ', `${xlsxNum(inp.scp, 0)} kgf/m² / ${xlsxNum(inp.sc, 0)} kgf/m² / ${xlsxNum(inp.psi, 2)}`)}
       ${row("Hormigón f'c / γ — acero barras fy", `${xlsxNum(inp.fc, 0)} MPa / ${xlsxNum(inp.gc, 0)} kgf/m³ — ${xlsxNum(inp.fy, 0)} MPa`)}
-      ${inp.tipo === 'M' ? `${row('Espesor h / recubrimiento inferior / barra', `${xlsxNum(inp.h, 0)} mm / ${xlsxNum(inp.rec, 0)} mm / ${xlsxNum(inp.diam, 0)} mm`)}${inp.apoyo === 'S2' ? row('ly/lx', xlsxNum(inp.lyLx, 2)) : ''}`
+      ${inp.tipo === 'N' ? `${row('Nervio b / recubrimiento libre / barra / capas', `${xlsxNum(inp.nB, 0)} mm / ${xlsxNum(inp.nRec, 0)} mm / ${xlsxNum(inp.nDiam, 0)} mm / ${inp.nCapas === 1 ? 'una capa' : 'dos o más capas'}`)}${row('Losa superior hs / eje armadura losa superior', `${xlsxNum(inp.nHs, 0)} mm / ${xlsxNum(inp.nAf, 0)} mm`)}` : inp.tipo === 'M' ? `${row('Espesor h / recubrimiento inferior / barra', `${xlsxNum(inp.h, 0)} mm / ${xlsxNum(inp.rec, 0)} mm / ${xlsxNum(inp.diam, 0)} mm`)}${inp.apoyo === 'S2' ? row('ly/lx', xlsxNum(inp.lyLx, 2)) : ''}`
         : `${row('Placa', esc(inp.placa.n))}
       ${row('Geometría h₂ / ℓ₁ / ℓ₂ / ℓ₃ / espesor / fy', `${xlsxNum(rc.g.h2, 1)} / ${xlsxNum(rc.g.l1, 1)} / ${xlsxNum(rc.g.l2, 1)} / ${xlsxNum(rc.g.l3, 1)} mm / ${xlsxNum(inp.placa.t, 2)} mm / ${xlsxNum(inp.placa.fy, 0)} MPa`)}
       ${row('Espesor total / sobrelosa h₃', `${xlsxNum(inp.ht, 1)} mm / ${xlsxNum(inp.h3, 0)} mm`)}
@@ -44324,6 +44416,12 @@ function renderFuegoLosas(container) {
       ${lin('Espesor mínimo hs (mm) · adoptado', `${xlsxNum(rm.hsMin, 0)} · ${xlsxNum(inp.h, 0)} → ${rm.okH ? 'CUMPLE' : 'NO CUMPLE'}`)}
       ${lin('Distancia al eje mínima a (mm) · adoptada = rec + d/2', `${xlsxNum(rm.aMin, 0)} · ${xlsxNum(rm.a, 1)} → ${rm.okA ? 'CUMPLE' : 'NO CUMPLE'}`)}
       ${lin('Recubrimiento libre mínimo (mm)', xlsxNum(rm.recMin, 0))}</tbody></table>`;
+    const calcN = `<div class="xlsx-section">1. LOSA NERVADA — EN 1992-1-2 §5.7.5, ${esc(rn.tabla.split(' — ')[0].toUpperCase())}</div><table class="xlsx-table xlsx-calc-table"><tbody>
+      ${lin('Ancho mínimo del nervio b (mm) · adoptado', `${xlsxNum(rn.bMin, 0)} · ${xlsxNum(inp.nB, 0)} → ${rn.okB ? 'CUMPLE' : 'NO CUMPLE'}`)}
+      ${lin('Distancia al eje a mínima (mm) · adoptada = rec + Ø/2', `${rn.aReq != null ? xlsxNum(rn.aReq, 1) : '—'} · ${xlsxNum(rn.a, 1)} → ${rn.okA ? 'CUMPLE' : 'NO CUMPLE'}`)}
+      ${rn.asdAplica ? lin('a_sd = a + 10 (barra de esquina, una capa) (mm)', `${rn.asd != null ? xlsxNum(rn.asd, 1) : '—'} · ${xlsxNum(rn.a, 1)} → ${rn.okSd ? 'CUMPLE' : 'NO CUMPLE'}`) : ''}
+      ${lin('Espesor mínimo losa superior hs (mm) · adoptado', `${xlsxNum(rn.hsMin, 0)} · ${xlsxNum(inp.nHs, 0)} → ${rn.okHs ? 'CUMPLE' : 'NO CUMPLE'}`)}
+      ${lin('Eje armadura losa superior mínimo (mm) · adoptado', `${xlsxNum(rn.afMin, 0)} · ${xlsxNum(inp.nAf, 0)} → ${rn.okAf ? 'CUMPLE' : 'NO CUMPLE'}`)}</tbody></table>`;
     const calcC = `<div class="xlsx-section">1. AISLACIÓN — EN 1994-1-2 D.4 Y TABLA D.6</div><table class="xlsx-table xlsx-calc-table"><tbody>
       ${lin('h₁ = e − h₂ (mm)', xlsxNum(rc.h1, 1))}
       ${lin('h_eff = h₁ + 0,5·h₂·(ℓ₁+ℓ₂)/(ℓ₁+ℓ₃) (mm)', xlsxNum(rc.heff, 1))}
@@ -44340,12 +44438,13 @@ function renderFuegoLosas(container) {
         : lin('Capacidad portante', rc.metodoR === 'R30' ? 'R30 según §4.3.2(3) → CUMPLE' : 'Fuera del Anexo D: ensayo / LOFC')}
       </tbody></table>`;
     const sols = av.filter(a => /^Solución/.test(a[1])).map(a => a[1]).join(' ');
-    const calc = `<div class="xlsx-title-bar">CÁLCULO</div>${inp.tipo === 'M' ? calcM : calcC}
-      <div class="xlsx-section">ESQUEMA DE LA SECCIÓN</div><div style="padding:.4rem 0">${flEsquema(inp, rm, rc)}</div>
-      <div class="xlsx-section">${inp.tipo === 'M' ? '2' : '3'}. SOLUCIÓN ADOPTADA</div><div class="xlsx-desc-row" style="padding:.3rem">${esc(sols)}</div>
-      <div class="xlsx-section">${inp.tipo === 'M' ? '3' : '4'}. SOLUCIONES ALTERNATIVAS PARA F-${F}</div>${flTablaVersionesHtml(inp, true)}
-      <div class="xlsx-section">${inp.tipo === 'M' ? '4' : '5'}. LISTADO OFICIAL MINVU (LOFC ED16-2024)</div>${flLofcHtml(inp, rc, true)}
-      <div class="xlsx-desc-row" style="padding:.3rem">Exigencia F-xx según OGUC Art. 4.3.3; ensayo según NCh935/1; respaldo formal: Listado Oficial MINVU-DITEC. Chile no tiene norma propia de cálculo en incendio: EN 1992-1-2 §5.7 (losas macizas) y EN 1994-1-2 Anexo D (losas colaborantes) son Eurocódigos, usados como respaldo técnico (el LOFC los acepta como base de las asimilaciones de laboratorio, p. ej. ASIM.5). Este cálculo no reemplaza por sí solo una solución listada o un ensayo; para un respaldo formal, tramitar una asimilación con IDIEM o DICTUC.</div>`;
+    const NM = inp.tipo !== 'C';
+    const calc = `<div class="xlsx-title-bar">CÁLCULO</div>${inp.tipo === 'M' ? calcM : inp.tipo === 'N' ? calcN : calcC}
+      <div class="xlsx-section">ESQUEMA DE LA SECCIÓN</div><div style="padding:.4rem 0">${inp.tipo === 'N' ? flEsquemaN(inp, rn) : flEsquema(inp, rm, rc)}</div>
+      <div class="xlsx-section">${NM ? '2' : '3'}. SOLUCIÓN ADOPTADA</div><div class="xlsx-desc-row" style="padding:.3rem">${esc(sols)}</div>
+      <div class="xlsx-section">${NM ? '3' : '4'}. SOLUCIONES ALTERNATIVAS PARA F-${F}</div>${flTablaVersionesHtml(inp, true)}
+      <div class="xlsx-section">${NM ? '4' : '5'}. LISTADO OFICIAL MINVU (LOFC ED17-2025)</div>${flLofcHtml(inp, rc, true)}
+      <div class="xlsx-desc-row" style="padding:.3rem">Exigencia F-xx según OGUC Art. 4.3.3; ensayo según NCh935/1; respaldo formal: Listado Oficial MINVU-DITEC. Chile no tiene norma propia de cálculo en incendio: EN 1992-1-2 §5.7 (losas macizas y nervadas) y EN 1994-1-2 Anexo D (losas colaborantes) son Eurocódigos, usados como respaldo técnico (el LOFC los acepta como base de las asimilaciones de laboratorio, p. ej. ASIM.5). Este cálculo no reemplaza por sí solo una solución listada o un ensayo; para un respaldo formal, tramitar una asimilación con IDIEM o DICTUC.</div>`;
     const resum = `<div class="xlsx-title-bar">RESUMEN</div><div class="xlsx-section">SOLUCIÓN F-${F}</div><div class="xlsx-desc-row" style="padding:.3rem">${esc(sols)}</div><div class="xlsx-section">SOLUCIONES ALTERNATIVAS</div>${flTablaVersionesHtml(inp, true)}<div class="xlsx-section">LISTADO OFICIAL MINVU</div>${flLofcHtml(inp, rc, true)}`;
     xlsxSetPrintSheets(datos, calc, resum);
   }
@@ -46815,7 +46914,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261008-2020. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261008-2040. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
