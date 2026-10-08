@@ -35248,6 +35248,17 @@ const PROTECCION_FUEGO_DATA = PF_TABULADAS.filter(d => d.tipo === 'Tabulada (sin
 function pfPagina(d) { const m = /p\.\s*(\d+)/.exec(d.fuente || ''); return m ? +m[1] : null; }
 // Desfase entre el número de página impreso en el Listado y la página del archivo PDF (portada e índice sin numerar). Ajustar si no calza.
 const PF_DESFASE_PAG = 0;
+// Cuadro ASIM.5 (Listado ED17-2025 p.204-212, EN 1992-1-2): [espesor cm, tipo, ly/lx >, ly/lx ≤, Ømin, Ømax, rec mín mm, F]
+const PF_ASIM5 = [
+  [14,'A',0,1.5,16,36,15,150],[14,'B',1.5,2,28,36,15,150],[14,'B',1.5,2,16,25,15,120],[14,'B',1.5,2,16,25,25,150],
+  [14,'C',0,1.5,10,12,15,120],[14,'C',0,1.5,10,12,20,150],[14,'C',0,1.5,6,8,15,90],[14,'C',0,1.5,6,8,17,120],[14,'C',0,1.5,6,8,22,150],
+  [14,'D',1.5,2,10,12,15,90],[14,'D',1.5,2,10,12,20,120],[14,'D',1.5,2,10,12,28,150],[14,'D',1.5,2,6,8,15,60],[14,'D',1.5,2,6,8,17,90],[14,'D',1.5,2,6,8,22,120],[14,'D',1.5,2,6,8,30,150],
+  [11,'A',0,1.5,16,36,20,90],[11,'B',1.5,2,16,36,20,90],[11,'C',0,1.5,6,12,15,90],[11,'D',1.5,2,10,12,15,90],[11,'D',1.5,2,6,8,15,60],[11,'D',1.5,2,6,8,17,90]];
+function pfAsim5(e, r, fi, c, mu) {
+  if (!(r > 0) || r > 2 || !(mu >= 0) || mu > 0.7) return { F:0, filas:[] };
+  const ok = PF_ASIM5.filter(t => t[0]===e && r > t[2] && r <= t[3] && fi >= t[4] && fi <= t[5] && c >= t[6]);
+  return { F: ok.reduce((m,t) => Math.max(m,t[7]), 0), filas: ok };
+}
 function proteccionFuegoOptionsMaterial(elemento){
   const mats = Array.from(new Set(PROTECCION_FUEGO_DATA.filter(d => elemento==='Todos' || d.elemento===elemento).map(d => d.material)));
   return '<option value="Todos">Todos los materiales</option>' + mats.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
@@ -35295,7 +35306,20 @@ function renderProteccionFuego(container) {
     </div>
 
     <div class="panel">
-      <h3>3 · Alcance y fuente</h3>
+      <h3>3 · Asimilación ASIM.5 — Losa maciza de hormigón armado (Eurocódigo 2)</h3>
+      <div class="note" style="margin-bottom:.5rem">Verifica el F que el MINVU asigna a una losa maciza de hormigón armado según el cuadro de las asimilaciones ASIM.5.01 (e=11 cm) y ASIM.5.02 a 5.09 (e=14 cm) del Listado ED17-2025. Condiciones del cuadro: losa simplemente apoyada, flexión en dos direcciones, densidad ≥ 2300 kg/m³, recubrimiento según NCh430, μfi ≤ 0,7. El F exigido es el de la sección 1.</div>
+      <div class="field-grid">
+        <div class="field"><label>Espesor de hormigón</label><select id="pf_a5_e"><option value="14" selected>14 cm (ASIM.5.02–5.09)</option><option value="11">11 cm (ASIM.5.01)</option></select></div>
+        <div class="field"><label>Razón de luces ly/lx (luz mayor / menor)</label><input type="number" id="pf_a5_r" value="1.3" step="0.05" min="1"></div>
+        <div class="field"><label>Ø armadura inferior (mm)</label><input type="number" id="pf_a5_fi" value="10" step="1"></div>
+        <div class="field"><label>Recubrimiento a la armadura inferior (mm)</label><input type="number" id="pf_a5_c" value="20" step="1"></div>
+        <div class="field"><label>Grado de utilización en incendio μfi</label><input type="number" id="pf_a5_mu" value="0.6" step="0.05" min="0"></div>
+      </div>
+      <div id="pf_a5_res" style="margin-top:.6rem"></div>
+    </div>
+
+    <div class="panel">
+      <h3>4 · Alcance y fuente</h3>
       <div class="disclosure">Fuente: Listado Oficial de Comportamiento al Fuego de Elementos y Componentes de la Construcción, MINVU-DITEC, Edición 17-2025 (febrero 2025, Resolución Exenta N°182 del 31.01.2025) — <a href="${PROTECCION_FUEGO_FUENTE_PDF}" target="_blank" rel="noopener">descargar PDF vigente</a>. Filas "Tabulada (sin ensayo)": asimilación genérica del Título I (muros A.1.1-A.1.5 p.17, pilar de madera B.1.1 p.18, acero con revestimiento B.1.3 p.18 — esta última aplica a pilares Y vigas, según el propio encabezado de la tabla), sin marca ni certificado asociado; verificadas contrastando 3 extracciones independientes del documento que coincidieron. Filas "Solución de marca (ensayo)": las 473 soluciones ensayadas del Título II y asimilaciones del Título IV, transcritas del PDF del Listado con su descripción, institución, laboratorio, N° de informe, fecha y página (<a href="${PF_LISTADO_PDF}" target="_blank" rel="noopener">copia del Listado ED17-2025 incluida en la Mesa</a>). Filas "Asimilación": soluciones asimiladas por informe de profesional o laboratorio; las ASIM.5 son losas y muros de hormigón armado asimilados por el propio MINVU según el Eurocódigo 2 parte 1-2, cuyo F depende de la razón de luces, el diámetro de la armadura, el grado de utilización μfi y el recubrimiento (ver el cuadro en la descripción; en la tabla se indica el F máximo). El espesor se muestra cuando el Listado lo indica (título «e=…» o «espesor total»); si no, revisar la descripción. Verificar siempre la vigencia de la inscripción y que ED17-2025 siga siendo la edición vigente: MINVU actualiza el listado periódicamente.</div>
     </div>
   `;
@@ -35341,6 +35365,35 @@ function renderProteccionFuego(container) {
           </tr>`).join('')}
       </table></div>`;
   }
+
+  function recalcA5() {
+    const g = id => parseFloat(document.getElementById(id).value);
+    const e = +document.getElementById('pf_a5_e').value, r = g('pf_a5_r'), fi = g('pf_a5_fi'), c = g('pf_a5_c'), mu = g('pf_a5_mu');
+    const Freq = parseFloat(document.getElementById('pf_Freq').value) || 0;
+    const res = pfAsim5(e, r, fi, c, mu);
+    const tipo = fi >= 16 ? (r <= 1.5 ? 'A' : 'B') : (r <= 1.5 ? 'C' : 'D');
+    let motivo = '';
+    if (!res.F) motivo = r > 2 ? 'ly/lx > 2: el cuadro no aplica.' : mu > 0.7 ? 'μfi > 0,7: el cuadro no aplica.'
+      : 'Ø o recubrimiento fuera de los rangos del cuadro (p.ej. Ø14 mm o recubrimiento menor al mínimo).';
+    const codigos = e === 14 ? 'ASIM.5.02 a 5.09 (según la terminación de piso o cielo; ver tabla de la sección 2)' : 'ASIM.5.01';
+    const filasTabla = PF_ASIM5.filter(t => t[0] === e && t[1] === tipo);
+    document.getElementById('pf_a5_res').innerHTML = `
+      <table class="results">
+        <tr><th>Resultado</th><th>Valor</th></tr>
+        <tr><td>Tipo de losa del cuadro</td><td class="num">${res.F ? tipo : '—'}</td></tr>
+        <tr><td>F alcanzado según cuadro ASIM.5</td><td class="num"><b>${res.F ? 'F-' + res.F : 'Fuera del cuadro'}</b></td></tr>
+        <tr><td><b>Estado: resistencia al fuego F-${Freq}</b></td><td class="num">${res.F ? chip(res.F >= Freq) : '<span class="chip neutral">N/A</span>'}</td></tr>
+        <tr><td>Asimilación aplicable</td><td>${res.F ? codigos : '—'}</td></tr>
+      </table>
+      ${motivo ? `<div class="note">${motivo} Verificar por cálculo según EN 1992-1-2.</div>` : ''}
+      ${filasTabla.length ? `<details style="margin-top:.4rem"><summary style="cursor:pointer;color:var(--accent);font-size:.9em">Ver cuadro Tipo ${tipo}, e=${e} cm</summary>
+        <table class="results" style="margin-top:.3rem"><tr><th>ly/lx</th><th>Ø inferior (mm)</th><th>Recubrimiento mín. (mm)</th><th>F</th></tr>
+        ${filasTabla.map(t => `<tr${res.filas.includes(t) ? ' style="font-weight:700"' : ''}><td class="num">${t[2] ? '> ' + t[2] + ' y ' : ''}≤ ${t[3]}</td><td class="num">${t[4]}–${t[5]}</td><td class="num">${t[6]}</td><td class="num">F-${t[7]}</td></tr>`).join('')}
+        </table></details>` : ''}
+      <div class="note" style="margin-top:.4rem">Cuadro transcrito de las páginas 204 a 212 del Listado (en el PDF figura como imagen) — <a href="${PF_LISTADO_PDF}#page=${e === 14 ? 205 : 204}" target="_blank" rel="noopener">abrir p. ${e === 14 ? 205 : 204}</a>. No aplica a losas colaborantes (EN 1994-1-2).</div>`;
+  }
+  container.querySelectorAll('#pf_a5_e,#pf_a5_r,#pf_a5_fi,#pf_a5_c,#pf_a5_mu,#pf_Freq').forEach(el => el.addEventListener('input', recalcA5));
+  recalcA5();
 
   document.getElementById('pf_elemento').addEventListener('change', () => {
     document.getElementById('pf_material').innerHTML = proteccionFuegoOptionsMaterial(document.getElementById('pf_elemento').value);
@@ -46762,7 +46815,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261008-2100. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261008-2020. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
