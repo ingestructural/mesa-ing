@@ -593,6 +593,7 @@
 
   /* ---- teléfono / app instalada: lista de herramientas o herramienta a pantalla completa ---- */
   .mob-bar{display:none;}
+  @media print{ .mob-bar, html.tool-open .mob-bar{display:none !important;} }
   @media (max-width:820px){
     html{-webkit-text-size-adjust:100%;}
     body{padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);}
@@ -43702,6 +43703,18 @@ const FL_PLACAS = [
 ];
 const FL_ET_INSTADECK = [113.5, 123.5, 143.5, 163.5, 183.5];       // espesores totales de la ficha Cintac (mm)
 const FL_DIAM = [8, 10, 12, 16, 18, 20, 22, 25];
+// Mallas electrosoldadas ACMA, acero AT56-50H (trefilado, fy = 500 MPa). La designación es la sección en la
+// dirección principal: C-92 = 0,92 cm²/m. C = cuadrada (igual en ambas direcciones); R = rectangular (la sección
+// indicada va en la dirección principal, que se coloca paralela a los nervios). φ y separación nominales.
+const FL_MALLAS = [
+  ['C92', 92, 4.2, 150], ['C111', 111, 4.2, 125], ['C131', 131, 5.0, 150], ['C139', 139, 4.2, 100], ['C158', 158, 5.5, 150],
+  ['C166', 166, 4.6, 100], ['C188', 188, 6.0, 150], ['C196', 196, 5.0, 100], ['C221', 221, 6.5, 150], ['C257', 257, 7.0, 150],
+  ['C283', 283, 6.0, 100], ['C295', 295, 7.5, 150], ['C335', 335, 8.0, 150], ['C378', 378, 8.5, 150], ['C385', 385, 7.0, 100],
+  ['C443', 443, 9.2, 150], ['C503', 503, 8.0, 100], ['C567', 567, 8.5, 100], ['C665', 665, 9.2, 100],
+  ['R92', 92, 4.2, 150], ['R158', 158, 5.5, 150], ['R188', 188, 6.0, 150], ['R221', 221, 6.5, 150], ['R257', 257, 7.0, 150],
+].map(([id, as, d, s]) => ({ id, n: id[0] + '-' + id.slice(1), as, d, s, rect: id[0] === 'R' }));
+const FL_FY_MALLA = 500;
+const flNegTxt = inp => inp.negMalla ? `malla ACMA ${inp.negMalla.n} (As = ${(inp.negMalla.as / 100).toFixed(2).replace('.', ',')} cm²/m${inp.negMalla.rect ? ' en la dirección principal, paralela a los nervios' : ''}, AT56-50H)` : `${inp.dNeg} mm a ${inp.sNeg} mm`;
 const FL_G = 9.80665;
 
 function flKy(th) {
@@ -43786,9 +43799,9 @@ function flColab(inp, p, ht, diam, nb) {
   // momento negativo (apoyos continuos)
   r.Mneg = 0;
   if (inp.apoyoC !== 'S' && inp.dNeg > 0 && inp.sNeg > 0 && r.metodoR === 'D') {
-    const AsM = Math.PI * inp.dNeg * inp.dNeg / 4 * 1000 / inp.sNeg;      // mm²/m
+    const AsM = inp.negMalla ? inp.negMalla.as : Math.PI * inp.dNeg * inp.dNeg / 4 * 1000 / inp.sNeg;      // mm²/m
     const dNeg = inp.recSup + inp.dNeg / 2;
-    const Tn = AsM * inp.fy * Pm / 1000;                                   // N por nervio (barra superior fría)
+    const Tn = AsM * (inp.fyNeg || inp.fy) * Pm / 1000;                                   // N por nervio (barra superior fría)
     // isoterma 500 °C en el eje del nervio
     let y500;
     const t0 = flThetaNervio(g, R, g.h2).th;
@@ -44018,7 +44031,7 @@ function renderFuegoLosas(container) {
         <div class="field"><label>Barras adicionales por nervio (cantidad)</label><select id="fl_nb"><option value="0">0 — sin barras</option><option value="1" selected>1 barra por nervio</option><option value="2">2 barras por nervio</option></select></div>
         <div class="field"><label>Diámetro de la barra en el nervio (mm)</label><select id="fl_dRib">${opt(FL_DIAM.map(d => [String(d), d + ' mm']), '12')}</select></div>
         <div class="field"><label>u₃ — eje de la barra sobre el fondo de la placa (mm)</label><input type="text" inputmode="decimal" id="fl_u3" value="40"></div>
-        <div class="field" id="fl_wNeg1"><label>Diámetro armadura superior en apoyos (mm)</label><select id="fl_dNeg">${opt([['0', 'Sin armadura superior'], ...FL_DIAM.map(d => [String(d), d + ' mm'])], '10')}</select></div>
+        <div class="field" id="fl_wNeg1"><label>Armadura superior en apoyos (barra o malla)</label><select id="fl_dNeg">${opt([['0', 'Sin armadura superior'], ...FL_DIAM.map(d => [String(d), 'Barras de ' + d + ' mm (fy del proyecto)']), ...FL_MALLAS.map(m => [m.id, 'Malla ACMA ' + m.n + ' — As ' + (m.as / 100).toFixed(2).replace('.', ',') + ' cm²/m' + (m.rect ? ' (rectangular)' : '') + ', AT56-50H'])], '10')}</select></div>
         <div class="field" id="fl_wNeg2"><label>Espaciamiento armadura superior (mm)</label><input type="text" inputmode="decimal" id="fl_sNeg" value="150"></div>
         <div class="field" id="fl_wNeg3"><label>Recubrimiento superior (mm)</label><input type="text" inputmode="decimal" id="fl_recSup" value="20"></div>
       </div>
@@ -44052,7 +44065,7 @@ function renderFuegoLosas(container) {
     return { F: +$('fl_F').value, tipo: $('fl_tipo').value, L: v('fl_L'), scp: v('fl_scp'), sc: v('fl_sc'), psi: v('fl_psi'), gc: v('fl_gc') || 2400, fc: v('fl_fc') || 25, fy: v('fl_fy') || 420,
       apoyo: $('fl_apoyo').value, lyLx: v('fl_lyLx') || 1, h: v('fl_h'), rec: v('fl_rec'), diam: v('fl_diam'),
       placa, ht: v('fl_ht'), h3: v('fl_h3'), apoyoC: $('fl_apoyoC').value, nb: +$('fl_nb').value, dRib: v('fl_dRib'), u3: v('fl_u3') || 40,
-      dNeg: v('fl_dNeg'), sNeg: v('fl_sNeg') || 150, recSup: v('fl_recSup') };
+      dNeg: v('fl_dNeg'), sNeg: v('fl_sNeg') || 150, recSup: v('fl_recSup'), ...(() => { const m = FL_MALLAS.find(x => x.id === $('fl_dNeg').value); return m ? { negMalla: m, dNeg: m.d, sNeg: m.s, fyNeg: FL_FY_MALLA } : { negMalla: null, fyNeg: v('fl_fy') || 420 }; })() };
   }
   const n = (x, d) => x == null || !isFinite(x) ? '—' : x.toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d });
   function recalc() {
@@ -44060,6 +44073,7 @@ function renderFuegoLosas(container) {
     $('fl_pM').hidden = inp.tipo !== 'M'; $('fl_pC').hidden = inp.tipo !== 'C';
     $('fl_wLy').hidden = inp.apoyo !== 'S2'; $('fl_cus').hidden = inp.placa.id !== 'CUS';
     ['fl_wNeg1', 'fl_wNeg2', 'fl_wNeg3'].forEach(id => $(id).hidden = inp.apoyoC === 'S');
+    if (inp.negMalla) $('fl_wNeg2').hidden = true;
     $('fl_Ft').textContent = F;
     const av = [];
     const rm = flMaciza(F, inp.apoyo, inp.h, inp.rec, inp.diam, inp.lyLx);
@@ -44102,6 +44116,7 @@ function renderFuegoLosas(container) {
       </table>
       <p class="note">Parámetros del Anexo D: A/Lr = ${n(g.ALr, 1)} mm · Φ = ${n(g.phi, 3)} · α = ${n(g.alfa, 1)}° · ℓ₃ = ${n(g.l3, 1)} mm. Placa: área por nervio ${n((g.l2 + 2 * g.Lw + g.l3) * inp.placa.t, 0)} mm², fy = ${n(inp.placa.fy, 0)} MPa.</p></div>` : ''}`;
       if (!rc.okX && rc.metodoR === 'D') av.push(['warn', 'El bloque de compresión supera h₁: aumentar el espesor de hormigón sobre la cresta.']);
+      if (rc.metodoR === 'D' && inp.apoyoC !== 'S' && inp.negMalla) av.push(['warn', `La malla ${inp.negMalla.n} es acero trefilado AT56-50H, de ductilidad limitada. Para contar con la rótula del apoyo, EN 1992-1-2 §5.7.3(2) pide en losas continuas con acero trabajado en frío una armadura negativa As ≥ 0,005·Ac sobre los apoyos intermedios. ${(() => { const Ac = (inp.ht - rc.g.h2) * 1000 + rc.g.h2 * (rc.g.l1 + rc.g.l2) / 2 * 1000 / (rc.g.l1 + rc.g.l3); const req = 0.005 * Ac; return rc.AsNeg >= req ? `Con ${xlsxNum(rc.AsNeg, 0)} mm²/m ≥ ${xlsxNum(req, 0)} mm²/m se cumple.` : `Se requieren ${xlsxNum(req, 0)} mm²/m y la malla aporta ${xlsxNum(rc.AsNeg, 0)} mm²/m: verificar también la losa como simplemente apoyada.`; })()}`]);
       if (rc.metodoR === 'D' && inp.apoyoC !== 'S' && inp.dNeg > 0 && !rc.okNeg) av.push(['warn', 'La armadura superior no se equilibra con el hormigón del nervio sobre la isoterma 500 °C: se desprecia M⁻.']);
       if (inp.nb > 0 && (inp.u3 < 25 || inp.u3 > g.h2 - 10)) av.push(['warn', `u₃ fuera del rango práctico (25 a ${n(g.h2 - 10, 0)} mm): la barra debe quedar dentro del nervio con recubrimiento a las almas.`]);
       if (inp.placa.id !== 'CUS') av.push(['info', 'Geometría de la placa tomada de la ficha técnica Cintac (Instadeck). La ficha no entrega resistencia al fuego y el LOFC no lista losas colaborantes. Este cálculo según EN 1994-1-2 (Eurocódigo) es un respaldo técnico; para un respaldo formal ante la DOM, tramitar una asimilación con IDIEM o DICTUC basada en este cálculo, o un ensayo NCh935/1.']);
@@ -44114,7 +44129,7 @@ function renderFuegoLosas(container) {
       }
       if (rc.metodoR === 'fuera') pts.push('F-' + F + ' requiere una solución ensayada (LOFC / NCh935/1) o protección inferior certificada');
       const okTot = rc.okI && rc.okR === true;
-      av.push([okTot ? 'ok' : 'bad', okTot ? `Solución F-${F}: ${inp.placa.n.replace(/ —.*$/, '')}, espesor total ${n(inp.ht, 1)} mm${rc.metodoR === 'D' ? (rc.nb > 0 ? `, ${rc.nb === 2 ? '2 barras' : '1 barra'} de ${n(rc.diam, 0)} mm por nervio (u₃ = ${n(inp.u3, 0)} mm)` : ', sin barras adicionales') : ''}${inp.apoyoC !== 'S' && inp.dNeg > 0 && rc.metodoR === 'D' ? ` y armadura superior de ${n(inp.dNeg, 0)} mm a ${n(inp.sNeg, 0)} mm en apoyos` : ''}.` : `Solución F-${F}: ${pts.join('; ')}.`]);
+      av.push([okTot ? 'ok' : 'bad', okTot ? `Solución F-${F}: ${inp.placa.n.replace(/ —.*$/, '')}, espesor total ${n(inp.ht, 1)} mm${rc.metodoR === 'D' ? (rc.nb > 0 ? `, ${rc.nb === 2 ? '2 barras' : '1 barra'} de ${n(rc.diam, 0)} mm por nervio (u₃ = ${n(inp.u3, 0)} mm)` : ', sin barras adicionales') : ''}${inp.apoyoC !== 'S' && inp.dNeg > 0 && rc.metodoR === 'D' ? ` y armadura superior ${inp.negMalla ? flNegTxt(inp) : `de ${n(inp.dNeg, 0)} mm a ${n(inp.sNeg, 0)} mm`} en apoyos` : ''}.` : `Solución F-${F}: ${pts.join('; ')}.`]);
       if (sol.d != null && sol.d > 0 && rc.okR && (sol.nb < rc.nb || (sol.nb === rc.nb && sol.d < rc.diam))) av.push(['info', `Bastaría ${sol.nb === 2 ? '2 barras' : '1 barra'} de ${sol.d} mm por nervio.`]);
       if (sol.d === 0 && rc.metodoR === 'D') av.push(['info', 'La placa y la armadura superior cubren R' + F + ' sin barras adicionales en los nervios.']);
     }
@@ -44136,7 +44151,7 @@ function renderFuegoLosas(container) {
       ${row('Geometría h₂ / ℓ₁ / ℓ₂ / ℓ₃ / espesor / fy', `${xlsxNum(rc.g.h2, 1)} / ${xlsxNum(rc.g.l1, 1)} / ${xlsxNum(rc.g.l2, 1)} / ${xlsxNum(rc.g.l3, 1)} mm / ${xlsxNum(inp.placa.t, 2)} mm / ${xlsxNum(inp.placa.fy, 0)} MPa`)}
       ${row('Espesor total / sobrelosa h₃', `${xlsxNum(inp.ht, 1)} mm / ${xlsxNum(inp.h3, 0)} mm`)}
       ${row('Barras en el nervio / u₃', inp.nb > 0 ? `${inp.nb} × ${xlsxNum(inp.dRib, 0)} mm / ${xlsxNum(inp.u3, 0)} mm` : 'Sin barras')}
-      ${inp.apoyoC !== 'S' ? row('Armadura superior en apoyos', inp.dNeg > 0 ? `${xlsxNum(inp.dNeg, 0)} mm a ${xlsxNum(inp.sNeg, 0)} mm, recubrimiento ${xlsxNum(inp.recSup, 0)} mm` : 'Sin armadura superior') : ''}`}
+      ${inp.apoyoC !== 'S' ? row('Armadura superior en apoyos', inp.dNeg > 0 ? `${inp.negMalla ? esc(flNegTxt(inp)) + ', fy ' + FL_FY_MALLA + ' MPa' : xlsxNum(inp.dNeg, 0) + ' mm a ' + xlsxNum(inp.sNeg, 0) + ' mm'}, recubrimiento ${xlsxNum(inp.recSup, 0)} mm` : 'Sin armadura superior') : ''}`}
     </tbody></table>`;
     const lin = (l, val) => `<tr><td class="xv-label">${l}</td><td class="xv-num">${val}</td></tr>`;
     const calcM = `<div class="xlsx-section">1. LOSA MACIZA — EN 1992-1-2 ${esc(rm.tabla.toUpperCase())}</div><table class="xlsx-table xlsx-calc-table"><tbody>
@@ -45715,7 +45730,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261007-2030. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261008-1030. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
