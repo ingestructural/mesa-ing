@@ -1726,8 +1726,8 @@ const TOOLS = [
   { id:'eett', cat:'Documentos', name:'Especificaciones Técnicas', file:null,
     desc:'Arma las especificaciones técnicas de estructuras de acero, hormigón armado, madera, albañilería reforzada y perfiles Metalcon en formato ING Estructural, con la biblioteca de EETT de la oficina; toma los datos del proyecto y las calidades de materiales desde la memoria de cálculo. Emite Word y PDF.',
     tag:'EETT · Formato ING · Word · PDF', calc:'eett' },
-  { id:'costaneras', cat:'Acero', name:'Costaneras C / CA / Z', file:'Diseno_Costaneras_C_CA_Z_4.xlsx',
-    desc:'Perfiles conformados en frío (costaneras): selección por catálogo, flexión biaxial por inclinación de techo, combinaciones con viento, deformaciones.',
+  { id:'costaneras', cat:'Acero', name:'Costaneras C / CA / Z / Omega', file:'Diseno_Costaneras_C_CA_Z_4.xlsx',
+    desc:'Perfiles conformados en frío (costaneras C, CA, Z y omega Metalcon): selección por catálogo, flexión biaxial por inclinación de techo, combinaciones con viento, deformaciones. Las omega usan la sección efectiva de AISI S100-16.',
     tag:'AISI · catálogo CINTAC', calc:'costaneras' },
   { id:'metalcon', cat:'Acero', name:'Verificador de Secciones Metalcon', file:null,
     desc:'Perfiles Metalcon de Cintac (montantes C, canales U, omegas, ángulos, tirantes; estructural, tabiquería y cielos), simples, doble C espalda con espalda o cajón C dentro de U, según AISI S100-16 por el método del ancho efectivo: tracción, compresión con pandeo global, local y distorsional, flexión con pandeo lateral-torsional, local y distorsional, corte, abolladura del alma e interacciones; y uniones con tornillos autoperforantes.',
@@ -2133,10 +2133,18 @@ function calcCostaneras(inp) {
   const My_II = Math.abs(paralelaII)*L*L/8;
   const Mx_max = Math.max(Mx_I, Mx_II);
 
-  const MxAdmBase = (Mtab!=null && Mtab!==0) ? Mtab : (Fy*Wx*phiAprox/omega/100);
-  const MyAdmBase = Fy*Wy*phiAprox/omega/100;
-  const MxAdmI = MxAdmBase;
-  const MxAdmII = MxAdmBase*1.33;
+  const esOmega = inp.perfil.fam === 'OMA';
+  let MxAdmBase = (Mtab!=null && Mtab!==0) ? Mtab : (Fy*Wx*phiAprox/omega/100);
+  let MyAdmBase = Fy*Wy*phiAprox/omega/100;
+  let MxAdmI = MxAdmBase, MxAdmII = MxAdmBase*1.33, ef = null;
+  if (esOmega) {
+    // Omega: momento admisible con el módulo efectivo de AISI S100 (sin φ_aprox). Comb. I (gravitacional): cresta comprimida.
+    // Comb. II: con succión quedan comprimidas las alas y labios inferiores; con presión, la cresta.
+    ef = costOmegaEf(inp.perfil, Fy);
+    MxAdmBase = Fy*ef.WxeTop/omega/100; MyAdmBase = Fy*ef.Wye/omega/100;
+    MxAdmI = MxAdmBase;
+    MxAdmII = Fy*((totalNormalII < 0) ? ef.WxeBot : ef.WxeTop)/omega/100*1.33;
+  }
   const MyAdmI = MyAdmBase;
   const MyAdmII = MyAdmBase*1.33;
 
@@ -2159,7 +2167,7 @@ function calcCostaneras(inp) {
     UxI, UyI, UcombI, UxII, UyII, UcombII,
     deltaI, deltaII, deltaAdm,
     okCombI, okCombII, okDeflI, okDeflII, global,
-    usaMtab: Mtab!=null && Mtab!==0,
+    usaMtab: Mtab!=null && Mtab!==0, esOmega, WxeTop: ef ? ef.WxeTop : null, WxeBot: ef ? ef.WxeBot : null, Wye: ef ? ef.Wye : null,
     Hperfil: H, Bperfil: B, ePerfil: e, Aperfil: A, IxPerfil: Ix, WxPerfil: Wx,
     ixPerfil: inp.perfil.ix, IyPerfil: Iy, WyPerfil: Wy, iyPerfil: inp.perfil.iy, MtabPerfil: Mtab,
     UdeflI: deltaAdm ? deltaI/deltaAdm : null, UdeflII: deltaAdm ? deltaII/deltaAdm : null,
@@ -2643,12 +2651,31 @@ function renderPerfilesH(container) {
    UI — COSTANERAS C / CA / Z
    ========================================================================= */
 function costanerasOptions() {
-  const fams = ['C','CA','Z'];
+  costOmegasCat();
+  const fams = ['C','CA','Z','OMA'];
   return fams.map(fam => {
     const opts = CATALOG_COSTANERAS.filter(p => p.fam===fam)
       .map(p => `<option value="${p.perfil}">${p.perfil}</option>`).join('');
-    return `<optgroup label="Serie ${fam}">${opts}</optgroup>`;
+    return `<optgroup label="${fam === 'OMA' ? 'Serie Omega — Metalcon (AISI S100, sección efectiva)' : 'Serie ' + fam}">${opts}</optgroup>`;
   }).join('');
+}
+/* Costaneras omega Metalcon: propiedades brutas calculadas con el motor del Verificador Metalcon (línea media,
+   radio interior = e), instaladas con la cresta hacia arriba (la cubierta se fija a la cresta). Se agregan al
+   catálogo la primera vez que se abre la planilla. */
+function costOmegasCat() {
+  if (CATALOG_COSTANERAS.some(p => p.fam === 'OMA') || typeof MC_CAT === 'undefined') return;
+  MC_CAT.filter(c => c.k === 'OMA').forEach(c => {
+    const sec = mcSeccion({ g: c, ri: 0, conf: 'S' }); if (sec.err && sec.err.length) return;
+    CATALOG_COSTANERAS.push({ fam: 'OMA', perfil: `OMEGA ${c.b}x${c.h}x${c.c}x${c.d}x${String(c.t).replace('.', ',')} (${c.id})`, id: c.id,
+      H: c.h, B: c.b, clabio: c.d, ala: c.c, e: c.t, peso: c.peso || sec.peso, A: sec.A / 100, Ix: sec.Ix / 1e4, Wx: sec.Sx / 1e3, ix: sec.rx / 10,
+      Iy: sec.Iy / 1e4, Wy: sec.Sy / 1e3, iy: sec.ry / 10, Mtab: null, sec });
+  });
+}
+// Módulos efectivos de la omega a la tensión Fy (AISI S100, ancho efectivo): cresta comprimida (+), alas y labios comprimidos (−) y eje débil
+function costOmegaEf(perfil, FyKgf) {
+  const Fy = FyKgf * 0.0980665, sec = perfil.sec;
+  const top = mcFlexEf(sec, 'x', 1, Fy, Fy), bot = mcFlexEf(sec, 'x', -1, Fy, Fy), y = mcFlexEf(sec, 'y', 1, Fy, Fy);
+  return { WxeTop: top.Se / 1e3, WxeBot: bot.Se / 1e3, Wye: y.Se / 1e3 };
 }
 
 /* =========================================================================
@@ -2762,6 +2789,9 @@ const COSTANERAS_CALC_SECTIONS = [
     { t: 'var1', label: 'Wy (cm³)', f: 'WyPerfil', d: 2 },
     { t: 'var1', label: 'iy (cm)', f: 'iyPerfil', d: 2 },
     { t: 'var1', label: 'M tab. Z (kgf·m)', f: 'MtabPerfil', d: 0 },
+    { t: 'var1', label: 'Omega — Wxe cresta comprimida, AISI S100 (cm³)', f: 'WxeTop', d: 2 },
+    { t: 'var1', label: 'Omega — Wxe alas comprimidas, AISI S100 (cm³)', f: 'WxeBot', d: 2 },
+    { t: 'var1', label: 'Omega — Wye efectivo, AISI S100 (cm³)', f: 'Wye', d: 2 },
   ]},
   { num: '3', title: 'CARGAS', hdrDE: false, rows: [
     { t: 'var1', label: 'Peso propio costanera (kgf/m) — automático:', f: 'pesoPropio', d: 2 },
@@ -2894,8 +2924,8 @@ function renderCostaneras(container) {
 
   container.innerHTML = `
     <div class="calc-head">
-      <h1>Costaneras C / CA / Z</h1>
-      <div class="sub">Flexión biaxial por inclinación de techo, combinaciones con viento y verificación de deformaciones.</div>
+      <h1>Costaneras C / CA / Z / Omega</h1>
+      <div class="sub">Flexión biaxial por inclinación de techo, combinaciones con viento y verificación de deformaciones. Incluye costaneras omega Metalcon con sección efectiva según AISI S100-16.</div>
     </div>
 
     <div class="panel">
@@ -2967,6 +2997,8 @@ function renderCostaneras(container) {
       <div id="co_resumen"></div>
       <div class="disclosure">
         Herramienta de apoyo al predimensionamiento. Perfiles Z usan el momento admisible tabulado por CINTAC;
+        las omega Metalcon usan Fy·Wxe/Ω con el módulo efectivo de AISI S100-16 (no usan φ_aprox; se supone la cresta arriostrada por la cubierta atornillada
+        y no se evalúa el pandeo lateral de las alas comprimidas por succión: para ese caso use el Verificador de Secciones Metalcon);
         perfiles C/CA usan Fy·Wx·φ_aprox/Ω (φ_aprox calibrado contra 24 perfiles Z-TuBest, con sesgo conservador
         conocido de hasta ~15%). La deflexión solo combina la componente normal a la cubierta — la componente
         paralela (eje débil) no se combina ni verifica.
@@ -3003,7 +3035,8 @@ function renderCostaneras(container) {
 
     document.getElementById('co_propOut').innerHTML =
       `${perfil.fam} · H=${perfil.H} B=${perfil.B}${perfil.clabio?(' labio='+perfil.clabio):''} e=${perfil.e} mm · A=${fmt2(perfil.A)} cm² · Peso=${fmt2(perfil.peso)} kgf/m` +
-      (perfil.Mtab ? ` · M tab. fábrica = ${fmt3(perfil.Mtab/KGF_POR_TON)} ton·m` : '');
+      (perfil.Mtab ? ` · M tab. fábrica = ${fmt3(perfil.Mtab/KGF_POR_TON)} ton·m` : '') +
+      (perfil.fam === 'OMA' ? `<br>Omega con cresta hacia arriba (ala ${perfil.ala} mm) · Ix=${fmt2(perfil.Ix)} cm⁴ · Wx=${fmt2(perfil.Wx)} cm³ · Wy=${fmt2(perfil.Wy)} cm³ · módulos efectivos a Fy (AISI S100): Wxe cresta comprimida = ${fmt2(r.WxeTop)} cm³, Wxe alas comprimidas = ${fmt2(r.WxeBot)} cm³, Wye = ${fmt2(r.Wye)} cm³. Para Metalcon use Fy = 2.812 kgf/cm² (A653 Gr 40). Las omega se usan en luces cortas (cerchas o vigas cada 0,6 a 1,2 m aprox.): ajuste L y la separación sep.` : '');
 
     document.getElementById('co_esquema').innerHTML = svgCostaneras(state, r);
 
@@ -3021,7 +3054,7 @@ function renderCostaneras(container) {
         <tr><td>I</td><td class="num">${fmtPct(r.UxI)}</td><td class="num">${fmtPct(r.UyI)}</td><td class="num">${fmtPct(r.UcombI)}</td><td>${chip(r.okCombI,'VERIFICA','NO VERIFICA')}</td></tr>
         <tr><td>II (incremento ASD ×1.33)</td><td class="num">${fmtPct(r.UxII)}</td><td class="num">${fmtPct(r.UyII)}</td><td class="num">${fmtPct(r.UcombII)}</td><td>${chip(r.okCombII,'VERIFICA','NO VERIFICA')}</td></tr>
       </table>
-      <div class="note">Mx admisible base: ${fmt3(r.MxAdmBase/KGF_POR_TON)} ton·m ${r.usaMtab?'(tabulado de fábrica)':'(Fy·Wx·φ_aprox/Ω)'} · My admisible base: ${fmt3(r.MyAdmBase/KGF_POR_TON)} ton·m</div>`;
+      <div class="note">Mx admisible base: ${fmt3(r.MxAdmBase/KGF_POR_TON)} ton·m ${r.usaMtab?'(tabulado de fábrica)':r.esOmega?'(Fy·Wxe/Ω, sección efectiva AISI S100 — cresta comprimida; en la Comb. II con succión se usa el Wxe con las alas comprimidas)':'(Fy·Wx·φ_aprox/Ω)'} · My admisible base: ${fmt3(r.MyAdmBase/KGF_POR_TON)} ton·m</div>`;
 
     document.getElementById('co_deform').innerHTML = `
       <table class="results">
@@ -45320,7 +45353,7 @@ const MC_CAT = [
   { id: '39C05', com: 'Tabique canal económico 39x20x0,5', k: 'U', h: 39, b: 20, c: 0, t: 0.5, peso: null, lin: 'TAB' },
   { id: '61C05', com: 'Tabique canal normal 61x20x0,5', k: 'U', h: 61, b: 20, c: 0, t: 0.5, peso: null, lin: 'TAB' },
 ];
-const MC_LINEAS = [['EST', 'Metalcon estructural (0,85 · 1,0 · 1,6 mm)'], ['TAB', 'Metalcon tabiquería (0,5 mm — no estructural)'], ['CIE', 'Metalcon cielos (omega)'], ['COM', 'Complementarios (tirantes, pletinas, ángulo)']];
+const MC_LINEAS = [['EST', 'Metalcon estructural (0,85 · 1,0 · 1,6 mm)'], ['CIE', 'Omegas Metalcon — costaneras y cielos (38x35x15x8)'], ['TAB', 'Metalcon tabiquería (0,5 mm — no estructural)'], ['COM', 'Complementarios (tirantes, pletinas, ángulo)']];
 // Canal que recibe a cada montante en el «cajón» C dentro de U
 const MC_PAR_U = { 40: '42C085', 60: '62C085', 90: '92C085', 100: '103C085', 150: '153C10', 200: '203C10', 250: '253C10' };
 // Tornillos autoperforantes: d nominal (mm), diámetro de cabeza o golilla dw (mm); Pss y Pts (kN) referenciales — usar los del fabricante
@@ -46684,7 +46717,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261008-1945. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261008-2010. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
