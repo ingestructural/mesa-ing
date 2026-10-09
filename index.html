@@ -323,6 +323,7 @@
   }
   .print-btn:hover{filter:brightness(1.08);}
   .print-btn.alt{background:var(--surface); color:var(--accent); border:1px solid var(--accent);}
+  @media (max-width:820px){ #printBtn, #printResumenBtn{display:none !important;} }
   #pdfMenu{position:fixed; z-index:200; background:var(--surface); border:1px solid var(--line); border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,.2); padding:.35rem; display:flex; flex-direction:column; gap:.25rem; width:170px;}
   #pdfMenu button{font:inherit; font-size:.85rem; padding:.55rem .7rem; border:none; border-radius:7px; background:transparent; color:var(--ink); text-align:left; cursor:pointer;}
   #pdfMenu button:hover{background:var(--surface-alt);}
@@ -649,6 +650,7 @@
     <button id="printBtn" class="print-btn" onclick="printCompleto()" title="Imprimir el detalle completo de esta calculadora">🖨 Imprimir completo</button>
     <button id="printResumenBtn" class="print-btn alt" onclick="printResumen()" title="Imprimir solo un resumen de una hoja (inputs relevantes y resultados)">📄 Resumen</button>
     <button id="pdfBtn" class="print-btn" onclick="pdfMenu(this)" title="Descargar PDF (sirve en iPad y celular)">⬇ PDF</button>
+    <button id="memBtn" class="print-btn alt" onclick="mvsCapturar()" title="Llevar este cálculo al Constructor de Memorias: memoria resumida + planilla Excel">📑 Memoria</button>
   </div>
   <div class="fs-overlay" id="fsOverlay"></div>
   <div class="fs-panel" id="fsPanel">
@@ -41997,6 +41999,8 @@ const MCM_CSS = `
 .mcm-ui .field input,.mcm-ui .field select{width:100%;max-width:none;text-align:left;font-family:inherit}
 .mcm-ui .mem-row input[type=text],.mcm-ui .mem-row select{padding:.3rem .4rem;border:1px solid var(--line,#ccd6e0);border-radius:4px;font:inherit;font-size:.85rem;background:var(--surface,#fff);color:var(--ink)}
 html.mcm-on .print-actions{display:none !important}
+.mvs-tipo{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1rem;font-size:.88rem;color:var(--ink-muted)}
+.mvs-tipo span{font-weight:600}
 .mcm-drop{margin-top:.8rem;border:2px dashed var(--accent,#0060c1);border-radius:8px;padding:.8rem;display:grid;gap:.3rem;cursor:pointer;background:color-mix(in srgb,var(--accent,#0060c1) 5%,transparent);font-size:.85rem}
 .mcm-drop span{color:var(--ink-muted)} .mcm-drop.over{background:color-mix(in srgb,var(--accent,#0060c1) 16%,transparent)} .mcm-drop:focus{outline:2px solid var(--accent)}
 .mcm-thumbs{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:.3rem} .mcm-th{display:grid;gap:.2rem;width:180px;cursor:default} .mcm-th img{width:180px;height:110px;object-fit:cover;border-radius:4px;border:1px solid var(--line,#ccd)}
@@ -42037,7 +42041,7 @@ function mcmLoadDocx() {
   return new Promise((ok, fail) => { const s = document.createElement('script'); s.src = 'docx.iife.js'; s.onload = () => window.docx ? ok(window.docx) : fail(new Error('librería Word no disponible')); s.onerror = () => fail(new Error('no se pudo cargar la librería Word (¿sin conexión?)')); document.head.appendChild(s); });
 }
 function mcmB64(dataUrl) { const b = atob(dataUrl.split(',')[1] || ''); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
-async function mcmDocx(S) {
+async function mcmDocx(S, Bx) {
   const d = await mcmLoadDocx();
   const {Document, Packer, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, Header, Footer, AlignmentType, WidthType, BorderStyle, ShadingType, PageNumber, HeadingLevel, PageBreak, TabStopType, VerticalAlign, LevelFormat, TableLayoutType, TableOfContents, HeightRule} = d;
   const NAVY = '1F3864', BLUE = '2E5395', GREY = '595959', W = 9920, FONT = 'Arial';
@@ -42079,7 +42083,7 @@ async function mcmDocx(S) {
   K.push(new Paragraph({spacing:{after:200}, children:[run('ÍNDICE', {size:30, bold:true, color:NAVY})]}));
   K.push(new TableOfContents('Índice', {hyperlink:true, headingStyleRange:'1-2'}));
   K.push(new Paragraph({children:[new PageBreak()]}));
-  for (const b of mcmBuild(S)) {
+  for (const b of (Bx || mcmBuild(S))) {
     if (b.t === 'h1' || b.t === 'ha') K.push(new Paragraph({heading:HeadingLevel.HEADING_1, keepNext:true, spacing:{before:280, after:140}, children:[run((b.num ? b.num + ' ' : '') + b.text, {size:30, bold:true, color:NAVY})]}));
     else if (b.t === 'h2') K.push(new Paragraph({heading:HeadingLevel.HEADING_2, keepNext:true, spacing:{before:200, after:100}, children:[run(b.num + ' ' + b.text, {size:26, bold:true, color:BLUE})]}));
     else if (b.t === 'h3') K.push(new Paragraph({heading:HeadingLevel.HEADING_3, keepNext:true, spacing:{before:160, after:80}, children:[run(b.num + ' ' + b.text, {size:24, bold:true, color:BLUE})]}));
@@ -42151,10 +42155,359 @@ function mcmCapDef(S, where, file) {
     const it = R.items.find(x => x.k === p[2]); if (it) return typeof it.cap === 'function' ? it.cap(S) : it.cap; }
   return ((file && file.name) || 'imagen').replace(/\.[^.]+$/, '');
 }
+/* =========================================================================
+   MEMORIA DE UNA VERIFICACIÓN (tipo 2 del Constructor de Memorias)
+   Toma el resultado de cualquier planilla de la Mesa (botón «📑 Memoria» junto a Imprimir), arma una
+   memoria resumida (objetivo, introducción, normativa, datos y materiales, cargas, verificaciones,
+   esquemas, conclusiones) y genera la planilla Excel (.xlsx) con los mismos datos y cálculos como anexo.
+   ========================================================================= */
+const MVS_LS = 'mesaMemVerif.v1', MVS_TIPO = 'mesaMemTipo';
+function mvsLista() { try { const a = JSON.parse(localStorage.getItem(MVS_LS) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function mvsGuardarLista(a) {
+  for (let n = a.length; n >= 1; n--) { try { localStorage.setItem(MVS_LS, JSON.stringify(a.slice(0, n))); return true; } catch (e) { /* cuota: se descartan las más antiguas */ } }
+  try { localStorage.setItem(MVS_LS, JSON.stringify(a.slice(0, 1).map(c => Object.assign({}, c, {figs:[]})))); } catch (e) {}
+  return false;
+}
+const mvsTxt = el => (el ? el.textContent : '').replace(/\s+/g, ' ').trim();
+// Lee la hoja de impresión de la planilla activa (DATOS + CÁLCULO) y la deja como secciones de filas
+function mvsLeerHoja(sheet) {
+  const secs = []; let grupo = 'datos', cur = null;
+  const nueva = (t) => { cur = {grupo, titulo:t, filas:[], notas:[]}; secs.push(cur); };
+  sheet.querySelectorAll('.xlsx-title-bar, .xlsx-section, table.xlsx-table > tbody > tr, table.xlsx-table > tr, .xlsx-desc-row').forEach(n => {
+    if (n.closest('.print-esq-wrap')) return;
+    if (n.classList.contains('xlsx-title-bar')) { grupo = /c[aá]lculo|resultado|verificac/i.test(n.textContent) ? 'calculo' : 'datos'; cur = null; return; }
+    if (n.classList.contains('xlsx-section')) { nueva(mvsTxt(n)); return; }
+    if (n.classList.contains('xlsx-desc-row')) { if (cur && mvsTxt(n)) cur.notas.push(mvsTxt(n)); return; }
+    if (n.tagName === 'TR') {
+      if (!cur) nueva(grupo === 'datos' ? 'Datos' : 'Cálculo');
+      const cells = Array.from(n.cells).map(c => ({t:mvsTxt(c), k:c.classList.contains('xv-input') ? 'i' : (c.classList.contains('xv-label') ? 'l' : (c.classList.contains('xv-dc') ? 'd' : 'n'))}));
+      while (cells.length && !cells[cells.length - 1].t) cells.pop();
+      if (cells.length && cells.some(c => c.t)) cur.filas.push(cells);
+    }
+  });
+  return secs.filter(s => s.filas.length);
+}
+// Planillas sin hoja de impresión: se leen los campos y tablas de los paneles
+function mvsLeerPaneles(main) {
+  const secs = [];
+  main.querySelectorAll('.panel').forEach(p => {
+    if (p.offsetParent === null || p.closest('#printSheetCompleto, #printSheetResumen, #printSheetInforme')) return;
+    const h = p.querySelector('h3'), t = h ? mvsTxt(h).replace(/^\s*\d+\s*·\s*/, '') : 'Datos';
+    const filas = [];
+    p.querySelectorAll('.field').forEach(f => { const l = f.querySelector('label'), c = f.querySelector('input, select'); if (!l || !c || c.type === 'file') return;
+      const v = c.tagName === 'SELECT' ? (c.selectedOptions[0] ? c.selectedOptions[0].text : '') : (c.type === 'checkbox' ? (c.checked ? 'Sí' : 'No') : c.value);
+      if (v !== '') filas.push([{t:mvsTxt(l), k:'l'}, {t:v, k:'i'}]); });
+    const tieneCampos = filas.length > 0;
+    p.querySelectorAll('table').forEach(tb => tb.querySelectorAll('tr').forEach(tr => { const cs = Array.from(tr.cells).map(c => ({t:mvsTxt(c), k:c.tagName === 'TH' ? 'h' : 'n'})); if (cs.some(c => c.t)) filas.push(cs); }));
+    if (filas.length) secs.push({grupo: tieneCampos && !p.querySelector('table') ? 'datos' : 'calculo', titulo:t, filas, notas:[]});
+  });
+  return secs;
+}
+// SVG → PNG (para Word y PDF), resolviendo las variables CSS de colores
+function mvsSvgPng(svgHtml) {
+  return new Promise(res => {
+    const cs = getComputedStyle(document.documentElement);
+    let t = svgHtml.replace(/var\((--[\w-]+)(?:,\s*([^)]+))?\)/g, (_, v, d) => cs.getPropertyValue(v).trim() || d || '#000')
+      .replace(/color-mix\(in srgb,\s*([^,]+?)\s+(\d+)%,\s*transparent\)/g, (_, c, p) => c);
+    const tmp = document.createElement('div'); tmp.innerHTML = t; const svg = tmp.querySelector('svg'); if (!svg) return res(null);
+    if (!svg.getAttribute('xmlns')) svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    const vb = svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width ? svg.viewBox.baseVal : null;
+    const w = vb ? vb.width : (parseFloat(svg.getAttribute('width')) || 700), h = vb ? vb.height : (parseFloat(svg.getAttribute('height')) || 400);
+    svg.setAttribute('width', w); svg.setAttribute('height', h); svg.style.fontFamily = 'Arial, Helvetica, sans-serif';
+    const img = new Image(), k = Math.min(2, 1600 / w);
+    img.onload = () => { const c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k); const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+      try { res({src:c.toDataURL('image/png'), w:c.width, h:c.height}); } catch (e) { res(null); } };
+    img.onerror = () => res(null);
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
+  });
+}
+async function mvsCapturar() {
+  const main = document.getElementById('mainView'), id = (location.hash || '').replace('#', '');
+  const tool = (typeof TOOLS !== 'undefined' ? TOOLS : []).find(t => t.id === id);
+  if (!tool || id === 'memorias') { fsToast('Abre primero la planilla que quieres llevar a la memoria.'); return; }
+  const sheet = document.getElementById('printSheetCompleto');
+  const secs = sheet && sheet.innerHTML.trim() ? mvsLeerHoja(sheet) : mvsLeerPaneles(main);
+  if (!secs.length) { fsToast('Esta planilla no tiene resultados para llevar a la memoria.'); return; }
+  const figs = [];
+  try {
+    const html = typeof printEsquemasHtml === 'function' ? printEsquemasHtml() : '';
+    const tmp = document.createElement('div'); tmp.innerHTML = html;
+    const blq = Array.from(tmp.querySelectorAll('.print-esq-bloque'));
+    for (const b of blq.slice(0, 6)) {
+      const cap = mvsTxt(b.querySelector('.xlsx-section')).replace(/^ESQUEMA\s*—?\s*/i, '') || 'Esquema';
+      for (const s of Array.from(b.querySelectorAll('svg')).slice(0, 2)) { const png = await mvsSvgPng(s.outerHTML); if (png) figs.push(Object.assign(png, {cap:cap.charAt(0) + cap.slice(1).toLowerCase()})); }
+    }
+  } catch (e) {}
+  const meta = Array.from(main.querySelectorAll('.calc-meta input')).map(i => i.value).filter(Boolean);
+  const cap = {id:'c' + Date.now(), tool:id, nombre:mvsTxt(main.querySelector('.calc-head h1')) || tool.name, tag:tool.tag || '', desc:tool.desc || '', fecha:MCM_HOY(), meta, secs, figs, txt:{}};
+  const L = mvsLista().filter(c => !(c.tool === id && c.fecha === cap.fecha && JSON.stringify(c.secs) === JSON.stringify(secs)));
+  L.unshift(cap); mvsGuardarLista(L.slice(0, 12));
+  try { localStorage.setItem(MVS_TIPO, 'simple'); localStorage.setItem('mesaMemSel', cap.id); } catch (e) {}
+  fsToast('Resultado de «' + cap.nombre + '» enviado al Constructor de Memorias.');
+  location.hash = 'memorias';
+}
+/* ---------- contenido de la memoria ---------- */
+const mvsEsCarga = s => /carga|solicitac|acci[oó]n|sism|viento|presi[oó]n|empuje|fuerza/i.test(s);
+const mvsFilaCarga = f => /\b(Pu|Vu|Mu[xyz]?|Nua|Vua|Tu|Nu|P|Q|W|E)\b.*(\[|tonf|ton|kN|kgf)|carga|sobrecarga|viento|sism|presi[oó]n|peso/i.test(f[0] ? f[0].t : '');
+const mvsIdent = s => /identificaci[oó]n/i.test(s.titulo);
+const mvsVacio = v => !v || /^_+$/.test(v) || v === '—';
+function mvsEstados(C) {
+  const out = [];
+  C.secs.filter(s => s.grupo === 'calculo').forEach(s => s.filas.forEach(f => {
+    const e = f.find(c => /^(NO CUMPLE|CUMPLE|N\/A)\b/i.test(c.t));
+    if (!e) return;
+    const est = /^NO CUMPLE/i.test(e.t) ? 'NO CUMPLE' : (/^N\/A/i.test(e.t) ? 'N/A' : 'CUMPLE');
+    const lab = (f[0] && f[0] !== e ? f[0].t : s.titulo).replace(/^Estado:\s*/i, '');
+    const val = f.filter(c => c !== e && c !== f[0] && c.t && !/^(NO CUMPLE|CUMPLE|N\/A)/i.test(c.t)).map(c => c.t).join(' · ');
+    out.push({sec:s.titulo, lab, val, est});
+  }));
+  return out;
+}
+function mvsNormas(C) { return String(C.tag || '').split(/\s*·\s*/).map(x => x.trim()).filter(Boolean); }
+function mvsDefTxt(C, P) {
+  const E = mvsEstados(C), malos = E.filter(e => e.est === 'NO CUMPLE'), ok = E.filter(e => e.est === 'CUMPLE');
+  const norm = mvsNormas(C), elem = C.meta[1] || C.meta[0] || '';
+  return {
+    objetivo: `El objetivo de la presente memoria es verificar el diseño ${elem ? 'de ' + elem : 'del elemento estructural indicado'} del proyecto «${mcmV(P.proyecto)}», mediante la planilla «${C.nombre}» de la Mesa de Cálculo de ING Estructural${norm.length ? ', de acuerdo con ' + mcmList(norm) : ''}.`,
+    intro: `La presente memoria de cálculo fue elaborada por ING Estructural para ${mcmV(P.mandante)}${P.ubicacion ? ', en ' + P.ubicacion : ''}. Resume los datos de entrada, los materiales, las cargas consideradas y las verificaciones realizadas, con sus conclusiones. El detalle completo del cálculo se entrega como planilla Excel adjunta (Anexo A).`,
+    alcance: C.desc ? `La verificación comprende: ${C.desc.charAt(0).toLowerCase() + C.desc.slice(1)}` : '',
+    concl: !E.length ? 'De acuerdo con los cálculos realizados, el elemento verificado cumple con los requisitos de la normativa indicada. [completar]'
+      : (!malos.length ? `De acuerdo con los cálculos realizados, ${elem ? elem : 'el elemento verificado'} cumple con las ${ok.length} verificaciones realizadas según la normativa indicada.`
+      : `De acuerdo con los cálculos realizados, ${ok.length} de ${ok.length + malos.length} verificaciones cumplen. No cumplen: ${malos.map(m => m.lab).join('; ')}. Se debe modificar el diseño antes de su construcción.`),
+  };
+}
+const mvsT = (C, P, k) => (C.txt && C.txt[k] != null ? C.txt[k] : mvsDefTxt(C, P)[k]);
+function mvsBuild(C, P) {
+  const B = []; let nT = 0, nF = 0;
+  const tab = (cap, head, rows, widths, align) => B.push({t:'table', cap:`Tabla ${++nT}: ${cap}`, head, rows, widths, align});
+  const par = t => String(t || '').split(/\n\s*\n/).map(x => x.trim()).filter(Boolean).forEach(x => B.push({t:'p', text:x}));
+  B.push({t:'h1', text:'OBJETIVO'}); par(mvsT(C, P, 'objetivo'));
+  B.push({t:'h1', text:'INTRODUCCIÓN'}); par(mvsT(C, P, 'intro'));
+  if (mvsT(C, P, 'alcance')) { B.push({t:'h2', text:'Alcance'}); par(mvsT(C, P, 'alcance')); }
+  const N = mvsNormas(C);
+  B.push({t:'h1', text:'NORMATIVA'}); B.push({t:'p', text:'El cálculo se desarrolla según las siguientes normas y referencias:'});
+  B.push({t:'ul', items: (N.length ? N : ['[completar]']).concat(String(C.txt && C.txt.normExtra || '').split('\n').map(x => x.trim()).filter(Boolean))});
+  // datos y materiales / cargas
+  const D = C.secs.filter(s => s.grupo === 'datos' && !mvsIdent(s));
+  const dosCol = s => s.filas.filter(f => f.length >= 2 && !mvsVacio(f[1].t)).map(f => [f[0].t, f.slice(1).map(c => c.t).join(' · ')]);
+  const cargasS = D.filter(s => mvsEsCarga(s.titulo)), otrasS = D.filter(s => !mvsEsCarga(s.titulo));
+  let cargasF = []; cargasS.forEach(s => cargasF = cargasF.concat(dosCol(s)));
+  if (!cargasS.length) otrasS.forEach(s => s.filas.filter(f => f.length >= 2 && mvsFilaCarga(f)).forEach(f => cargasF.push([f[0].t, f.slice(1).map(c => c.t).join(' · ')])));
+  B.push({t:'h1', text:'DATOS DE ENTRADA Y MATERIALES'});
+  B.push({t:'p', text:'Los datos de entrada y las propiedades de los materiales considerados son los siguientes:'});
+  otrasS.forEach(s => { const rows = dosCol(s).filter(r => cargasS.length || !cargasF.some(c => c[0] === r[0])); if (rows.length) { B.push({t:'h2', text:s.titulo.replace(/^[A-Z]\.\s*/, '')}); tab(s.titulo.replace(/^[A-Z]\.\s*/, ''), ['Parámetro', 'Valor'], rows, [6200, 3720], ['l','c']); } });
+  B.push({t:'h1', text:'CARGAS'});
+  if (cargasF.length) { B.push({t:'p', text:'Las cargas y solicitaciones de diseño consideradas en la verificación son las siguientes:'}); tab('Cargas y solicitaciones de diseño', ['Carga / solicitación', 'Valor'], cargasF, [6200, 3720], ['l','c']); }
+  else B.push({t:'p', text:'[completar: cargas consideradas]'});
+  if (C.txt && C.txt.cargasNota) par(C.txt.cargasNota);
+  // verificaciones
+  B.push({t:'h1', text:'VERIFICACIONES'});
+  const E = mvsEstados(C);
+  if (E.length) { B.push({t:'p', text:'La siguiente tabla resume las verificaciones realizadas y su estado:'}); tab('Resumen de verificaciones', ['Verificación', 'Resultado', 'Estado'], E.map(e => [e.lab, e.val || '—', e.est]), [4700, 3620, 1600], ['l','c','c']); }
+  else {
+    const R = C.secs.filter(s => s.grupo === 'calculo').slice(0, 6);
+    R.forEach(s => { const rows = s.filas.filter(f => f.length >= 2).slice(0, 15).map(f => [f[0].t, f.slice(1).map(c => c.t).filter(Boolean).join(' · ')]); if (rows.length) { B.push({t:'h2', text:s.titulo.replace(/^\d+\.\s*/, '')}); tab(s.titulo.replace(/^\d+\.\s*/, ''), ['Concepto', 'Valor'], rows, [6200, 3720], ['l','c']); } });
+  }
+  (C.figs || []).forEach(f => B.push({t:'fig', src:f.src, w:f.w, h:f.h, ancho:90, cap:`Figura ${++nF}: ${f.cap}`}));
+  B.push({t:'h1', text:'CONCLUSIONES'}); par(mvsT(C, P, 'concl'));
+  B.push({t:'pb'}); B.push({t:'ha', text:'ANEXO A — PLANILLA DE CÁLCULO'});
+  B.push({t:'p', text:`Se adjunta la planilla de cálculo en formato Excel «${mvsNombreXlsx(C, P)}», con los datos de entrada y el desarrollo completo de las verificaciones realizadas con la planilla «${C.nombre}» de la Mesa de Cálculo de ING Estructural.`});
+  let n1 = 0, n2 = 0;
+  B.forEach(b => { if (b.t === 'h1') { n1++; n2 = 0; b.num = `${n1}.`; } else if (b.t === 'h2') { n2++; b.num = `${n1}.${n2}`; } });
+  return B;
+}
+const mvsNombreBase = (C, P) => 'Memoria_' + (mcmSlug(C.nombre.replace(/\(.*?\)/g, '')) || 'Verificacion') + (P.codigo ? '_' + mcmSlug(P.codigo) : '');
+const mvsNombreXlsx = (C, P) => mvsNombreBase(C, P).replace(/^Memoria_/, 'Planilla_') + '.xlsx';
+/* ---------- planilla Excel (.xlsx) sin librerías: XML + ZIP sin compresión ---------- */
+const MVS_CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function mvsCrc(u) { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = MVS_CRC[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function mvsZip(files) {
+  const enc = new TextEncoder(), parts = [], cen = []; let off = 0;
+  const u16 = v => [v & 255, v >>> 8 & 255], u32 = v => [v & 255, v >>> 8 & 255, v >>> 16 & 255, v >>> 24 & 255];
+  files.forEach(f => {
+    const name = enc.encode(f.name), data = typeof f.data === 'string' ? enc.encode(f.data) : f.data, crc = mvsCrc(data);
+    const loc = new Uint8Array([0x50, 0x4b, 3, 4, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)]);
+    parts.push(loc, name, data);
+    cen.push(new Uint8Array([0x50, 0x4b, 1, 2, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)]), name);
+    off += loc.length + name.length + data.length;
+  });
+  const cenLen = cen.reduce((a, b) => a + b.length, 0);
+  const end = new Uint8Array([0x50, 0x4b, 5, 6, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cenLen), ...u32(off), ...u16(0)]);
+  return new Blob([...parts, ...cen, end], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+const mvsX = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+function mvsColL(i) { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+// estilos: 0 normal · 1 título · 2 encabezado de sección (blanco/negrita sobre A5622E) · 3 etiqueta · 4 ingreso (azul sobre amarillo) · 5 calculado · 6 CUMPLE · 7 NO CUMPLE · 8 nota · 9 encabezado de tabla
+const MVS_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="3"><numFmt numFmtId="164" formatCode="#,##0.0"/><numFmt numFmtId="165" formatCode="#,##0.00"/><numFmt numFmtId="166" formatCode="#,##0.000"/></numFmts>
+<fonts count="7"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="14"/><color rgb="FF1F3864"/><name val="Arial"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><sz val="10"/><color rgb="FF0000FF"/><name val="Arial"/></font><font><b/><sz val="10"/><color rgb="FF15803D"/><name val="Arial"/></font><font><b/><sz val="10"/><color rgb="FFB91C1C"/><name val="Arial"/></font><font><i/><sz val="9"/><color rgb="FF595959"/><name val="Arial"/></font></fonts>
+<fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFA5622E"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F3864"/></patternFill></fill></fills>
+<borders count="2"><border/><border><left style="thin"><color rgb="FFBFBFBF"/></left><right style="thin"><color rgb="FFBFBFBF"/></right><top style="thin"><color rgb="FFBFBFBF"/></top><bottom style="thin"><color rgb="FFBFBFBF"/></bottom></border></borders>
+<cellStyleXfs count="1"><xf/></cellStyleXfs>
+<cellXfs count="16"><xf/><xf fontId="1" applyFont="1"/><xf fontId="2" fillId="2" applyFont="1" applyFill="1"/><xf borderId="1" applyBorder="1"><alignment wrapText="1" vertical="center"/></xf><xf fontId="3" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf borderId="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf fontId="4" borderId="1" applyFont="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf><xf fontId="5" borderId="1" applyFont="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf><xf fontId="6" applyFont="1"><alignment wrapText="1" vertical="top"/></xf><xf fontId="2" fillId="4" borderId="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="164" applyNumberFormat="1" fontId="3" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="165" applyNumberFormat="1" fontId="3" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="166" applyNumberFormat="1" fontId="3" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="164" applyNumberFormat="1" borderId="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="165" applyNumberFormat="1" borderId="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="166" applyNumberFormat="1" borderId="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf></cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+function mvsNum(t) { const s = String(t).trim(); if (/^-?\d{1,3}(\.\d{3})*(,\d+)?$/.test(s) || /^-?\d+(,\d+)?$/.test(s)) return parseFloat(s.replace(/\./g, '').replace(',', '.')); return null; }
+function mvsSheetXml(filas, cols, merges) {
+  const rows = filas.map((f, r) => `<row r="${r + 1}"${f.h ? ` ht="${f.h}" customHeight="1"` : ''}>${f.c.map((c, i) => {
+    if (c == null || c.v == null || c.v === '') return c && c.s ? `<c r="${mvsColL(i)}${r + 1}" s="${c.s}"/>` : '';
+    const ref = mvsColL(i) + (r + 1), n = c.num !== false ? mvsNum(c.v) : null;
+    const dec = n != null ? ((String(c.v).split(',')[1] || '').length) : 0, sx = n != null && dec && (c.s === 4 || c.s === 5) ? (c.s === 4 ? 9 : 12) + Math.min(3, dec) : (c.s || 0);
+    return n != null ? `<c r="${ref}" s="${sx}"><v>${n}</v></c>` : `<c r="${ref}" s="${c.s || 0}" t="inlineStr"><is><t xml:space="preserve">${mvsX(c.v)}</t></is></c>`;
+  }).join('')}</row>`).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews><cols>${cols.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${rows}</sheetData>${merges.length ? `<mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>` : ''}<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.7" header="0.3" footer="0.3"/><pageSetup paperSize="1" orientation="portrait" fitToHeight="0"/><headerFooter><oddFooter>&amp;L&amp;8ING ESTRUCTURAL — Proyectos Civiles e Industriales · Angol 47, of. 404, Concepción · +56 9 9884 7164&amp;R&amp;8Página &amp;P de &amp;N</oddFooter></headerFooter></worksheet>`;
+}
+function mvsXlsx(C, P) {
+  const est = t => /^NO CUMPLE/i.test(t) ? 7 : (/^CUMPLE/i.test(t) ? 6 : null);
+  const hoja = (grupo, titulo) => {
+    const F = [], M = []; let maxc = 2;
+    F.push({c:[{v:titulo, s:1}], h:22});
+    F.push({c:[{v:`${C.nombre} — ${mcmV(P.proyecto, '')}`, s:8, num:false}]});
+    F.push({c:[]});
+    C.secs.filter(s => s.grupo === grupo).forEach(s => {
+      const w = Math.max(2, ...s.filas.map(f => f.length)); maxc = Math.max(maxc, w);
+      F.push({c:[{v:s.titulo, s:2, num:false}].concat(Array(w - 1).fill({s:2}))}); M.push(`A${F.length}:${mvsColL(w - 1)}${F.length}`);
+      s.filas.forEach(f => {
+        const multi = f.length > 2 && f.every(c => c.k !== 'l');
+        F.push({c:f.map((c, i) => ({v:c.t, num:!(i === 0 && !multi), s: est(c.t) || (c.k === 'h' ? 9 : (c.k === 'i' ? 4 : (i === 0 && !multi ? 3 : 5)))}))});
+      });
+      s.notas.forEach(n => { F.push({c:[{v:n, s:8, num:false}]}); M.push(`A${F.length}:${mvsColL(Math.max(1, w - 1))}${F.length}`); });
+      F.push({c:[]});
+    });
+    const cols = [52].concat(Array(Math.max(1, maxc - 1)).fill(maxc > 3 ? 14 : 30));
+    return mvsSheetXml(F, cols, M);
+  };
+  const port = (() => {
+    const F = [{c:[{v:'PLANILLA DE CÁLCULO', s:1}], h:24}, {c:[{v:C.nombre, s:1, num:false}], h:20}, {c:[]}];
+    [['Proyecto', P.proyecto], ['Mandante', P.mandante], ['Código', P.codigo], ['Ubicación', P.ubicacion], ['Elaboró', P.elaboro], ['Revisó', P.reviso], ['Fecha', P.fecha], ['Revisión', P.rev], ['Normativa', mvsNormas(C).join(' · ')]]
+      .forEach(([k, v]) => F.push({c:[{v:k, s:3, num:false}, {v:v || '—', s:4, num:false}]}));
+    F.push({c:[]}); F.push({c:[{v:'Generada con la Mesa de Cálculo de ING Estructural. Celdas azules sobre fondo amarillo = datos de entrada; los valores de la hoja Calculo son los resultados calculados por la Mesa.', s:8, num:false}], h:30});
+    F.push({c:[{v:'ING ESTRUCTURAL — Proyectos Civiles e Industriales · Angol 47, of. 404, Concepción · +56 9 9884 7164', s:8, num:false}]});
+    return mvsSheetXml(F, [24, 70], ['A' + (F.length - 1) + ':B' + (F.length - 1), 'A' + F.length + ':B' + F.length]);
+  })();
+  const E = mvsEstados(C);
+  const res = (() => {
+    const F = [{c:[{v:'RESUMEN DE VERIFICACIONES', s:1}], h:22}, {c:[]}, {c:[{v:'Verificación', s:9}, {v:'Resultado', s:9}, {v:'Estado', s:9}]}];
+    E.forEach(e => F.push({c:[{v:e.lab, s:3, num:false}, {v:e.val || '—', s:5}, {v:e.est, s:est(e.est) || 5, num:false}]}));
+    if (!E.length) F.push({c:[{v:'Sin filas de estado en esta planilla', s:8, num:false}]});
+    return mvsSheetXml(F, [56, 30, 14], []);
+  })();
+  const sheets = [['Portada', port], ['Datos', hoja('datos', 'DATOS DE ENTRADA')], ['Calculo', hoja('calculo', 'CÁLCULO')], ['Resumen', res]];
+  const files = [
+    {name:'[Content_Types].xml', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((s, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`},
+    {name:'_rels/.rels', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`},
+    {name:'xl/workbook.xml', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s, i) => `<sheet name="${s[0]}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`},
+    {name:'xl/_rels/workbook.xml.rels', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`},
+    {name:'xl/styles.xml', data:MVS_STYLES},
+  ].concat(sheets.map((s, i) => ({name:`xl/worksheets/sheet${i + 1}.xml`, data:s[1]})));
+  return mvsZip(files);
+}
+/* ---------- entrega de archivos (PC: descarga · iPad/iPhone: Compartir) ---------- */
+const mvsMovil = () => /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
+async function mvsEntregar(archivos) {
+  if (mvsMovil()) {
+    const fs = archivos.map(a => new File([a.blob], a.nombre, {type:a.blob.type || 'application/octet-stream'}));
+    if (navigator.canShare && navigator.canShare({files:fs})) { try { await navigator.share({files:fs, title:archivos[0].nombre}); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  }
+  for (const a of archivos) await mcmGuardarArchivo(a.nombre, a.blob, a.blob.type || 'application/octet-stream', a.nombre.endsWith('.xlsx') ? 'Planilla Excel' : (a.nombre.endsWith('.pdf') ? 'PDF' : 'Documento Word'), a.nombre.slice(a.nombre.lastIndexOf('.')));
+}
+async function mvsPdf(C, P, B) {
+  const lib = await pdfCargarLib();
+  const oc = document.createElement('div'); oc.style.cssText = 'position:fixed;left:-12000px;top:0;width:760px;z-index:-1';
+  const cont = document.createElement('div'); cont.style.cssText = 'width:728px;background:#fff'; cont.className = 'pdf-export-root';
+  cont.innerHTML = mcmSheetHtml({proy:P}, B).replace('class="mem-sheet"', 'class="mem-sheet" style="padding:0;max-width:none;box-shadow:none"');
+  cont.querySelectorAll('.mp-pb').forEach(x => { x.style.cssText = 'break-after:page;page-break-after:always;border:0;margin:0;height:0'; });
+  cont.querySelectorAll('mark').forEach(m => m.style.background = '#fff3b0');
+  oc.appendChild(cont); document.body.appendChild(oc);
+  try {
+    const pdf = await lib().set({margin:[10, 8, 16, 8], image:{type:'jpeg', quality:0.95}, html2canvas:{scale:2, backgroundColor:'#ffffff', scrollX:0, scrollY:0, logging:false, onclone:pdfLimpiarColores},
+      jsPDF:{unit:'mm', format:'letter', orientation:'portrait'}, pagebreak:{mode:['css', 'legacy'], avoid:['tr', 'img', '.mp-fig', '.mp-h1', '.mp-h2', '.mp-cap']}}).from(cont).toPdf().get('pdf');
+    const n = pdf.internal.getNumberOfPages(), W = pdf.internal.pageSize.getWidth(), H = pdf.internal.pageSize.getHeight();
+    for (let i = 1; i <= n; i++) { pdf.setPage(i); pdf.setDrawColor(31, 56, 100); pdf.setLineWidth(0.3); pdf.line(8, H - 13, W - 8, H - 13); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(31, 56, 100);
+      pdf.text('ING ESTRUCTURAL — Proyectos Civiles e Industriales', 8, H - 9.5); pdf.setFont('helvetica', 'normal'); pdf.text('Angol 47, of. 404, Concepción · +56 9 9884 7164', 8, H - 6); pdf.text('Página ' + i + ' de ' + n, W - 8, H - 9.5, {align:'right'}); }
+    return pdf.output('blob');
+  } finally { oc.remove(); }
+}
+/* ---------- interfaz ---------- */
+function mvsBarraTipo(container, tipo) {
+  const bar = document.createElement('div'); bar.className = 'mvs-tipo';
+  bar.innerHTML = `<span>Tipo de memoria:</span><button type="button" class="mcm-tog${tipo === 'general' ? ' on' : ''}" data-tipo="general">Estructura completa (memoria general)</button><button type="button" class="mcm-tog${tipo === 'simple' ? ' on' : ''}" data-tipo="simple">Verificación individual (desde una planilla)</button>`;
+  bar.addEventListener('click', e => { const b = e.target.closest('[data-tipo]'); if (!b || b.dataset.tipo === tipo) return; try { localStorage.setItem(MVS_TIPO, b.dataset.tipo); } catch (er) {} renderMemorias(container); });
+  return bar;
+}
+function renderMemoriaSimple(container) {
+  const S0 = mcmLoad(), P = S0.proy;
+  let L = mvsLista(), sel = null; try { sel = localStorage.getItem('mesaMemSel'); } catch (e) {}
+  let C = L.find(c => c.id === sel) || L[0] || null;
+  const root = document.createElement('div'); root.className = 'mcm-ui'; container.appendChild(root);
+  const tA = (k, rows) => `<textarea data-t="${k}" rows="${rows || 4}">${esc(C ? mvsT(C, P, k) : '')}</textarea>`;
+  const IP = (k, lab) => `<div class="field"><label>${lab}</label><input type="text" data-p="${k}" value="${esc(P[k] || '')}"></div>`;
+  function html() {
+    const lista = L.length ? `<div class="field"><label>Verificación a documentar</label><select id="mvsSel">${L.map(c => `<option value="${c.id}"${C && c.id === C.id ? ' selected' : ''}>${esc(c.nombre)}${c.meta && c.meta.length ? ' — ' + esc(c.meta.join(' · ')) : ''} (${c.fecha})</option>`).join('')}</select></div>` : '';
+    const E = C ? mvsEstados(C) : [];
+    return `<div class="calc-head"><h1>Constructor de Memorias de Cálculo</h1><div class="sub">Memoria resumida de una verificación hecha en cualquier planilla de la Mesa (estanque, placa base, fundación, etc.): objetivo, introducción, normativa, datos y materiales, cargas, verificaciones, esquemas y conclusiones, más la planilla Excel del cálculo como anexo.</div></div>
+      <div class="panel"><h3>1 · Verificación</h3>${lista}
+        <div class="note">${L.length ? 'Para agregar otra: abre la planilla, haz el cálculo y toca <b>«📑 Memoria»</b> (junto a Imprimir). Se guardan las últimas 12.' : 'Aún no hay verificaciones. Abre cualquier planilla de la Mesa, haz el cálculo y toca <b>«📑 Memoria»</b> (junto a «Imprimir completo»): el resultado llega aquí automáticamente.'}</div>
+        ${C ? `<div class="note" style="margin-top:.4rem"><b>${esc(C.nombre)}</b> · ${C.secs.length} secciones · ${E.length} verificaciones con estado (${E.filter(e => e.est === 'CUMPLE').length} cumplen${E.some(e => e.est === 'NO CUMPLE') ? ', <b style="color:#b91c1c">' + E.filter(e => e.est === 'NO CUMPLE').length + ' no cumplen</b>' : ''}) · ${C.figs.length} esquema(s) <button type="button" class="btn-add" id="mvsDel" style="margin-left:.6rem">Quitar de la lista</button></div>` : ''}
+      </div>
+      ${C ? `<div class="panel"><h3>2 · Proyecto</h3><div class="field-grid">${IP('proyecto', 'Proyecto')}${IP('mandante', 'Mandante')}${IP('codigo', 'Código')}${IP('ubicacion', 'Ubicación')}${IP('elaboro', 'Elaboró')}${IP('reviso', 'Revisó')}${IP('fecha', 'Fecha')}${IP('rev', 'Revisión')}</div><div class="note">Los datos del proyecto son los mismos de la memoria general.</div></div>
+      <div class="panel"><h3>3 · Textos (editables)</h3>
+        <div class="mem-blk"><h4>Objetivo</h4>${tA('objetivo', 3)}</div>
+        <div class="mem-blk"><h4>Introducción</h4>${tA('intro', 4)}</div>
+        <div class="mem-blk"><h4>Alcance</h4>${tA('alcance', 3)}</div>
+        <div class="mem-blk"><h4>Normas adicionales <small>(una por línea; se suman a las de la planilla)</small></h4><textarea data-t="normExtra" rows="2">${esc((C.txt && C.txt.normExtra) || '')}</textarea></div>
+        <div class="mem-blk"><h4>Nota sobre las cargas <small>(origen de las cargas, combinación usada, etc.)</small></h4><textarea data-t="cargasNota" rows="2">${esc((C.txt && C.txt.cargasNota) || '')}</textarea></div>
+        <div class="mem-blk"><h4>Conclusiones</h4>${tA('concl', 3)}</div>
+        <button type="button" class="btn-add" id="mvsReset">Restaurar textos sugeridos</button></div>
+      <div class="panel"><h3>4 · Emitir memoria</h3>
+        <div class="mem-btns"><button type="button" class="mem-btn" data-act="todo">📦 Memoria Word + planilla Excel</button><button type="button" class="mem-btn" data-act="word">⬇ Word</button><button type="button" class="mem-btn" data-act="xlsx">📊 Excel</button><button type="button" class="mem-btn" data-act="pdf">⬇ PDF</button></div>
+        <div class="note">Word: el índice se actualiza al abrir (Word pregunta «¿actualizar campos?» → Sí). En iPad/iPhone los archivos se entregan con el menú Compartir.</div>
+        <div class="mem-prev-wrap" id="mvsPrev"></div></div>` : ''}`;
+  }
+  function prev() { const w = root.querySelector('#mvsPrev'); if (w && C) w.innerHTML = mcmSheetHtml({proy:Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO'})}, mvsBuild(C, P)); }
+  function guardar() { if (C) { const i = L.findIndex(c => c.id === C.id); if (i >= 0) L[i] = C; } mvsGuardarLista(L); }
+  function draw() { root.innerHTML = html(); prev(); }
+  draw();
+  let tp = null;
+  root.addEventListener('input', e => {
+    const t = e.target;
+    if (t.dataset.p != null) { P[t.dataset.p] = t.value; mcmSave(S0); }
+    else if (t.dataset.t != null && C) { C.txt = C.txt || {}; C.txt[t.dataset.t] = t.value; guardar(); }
+    else return;
+    clearTimeout(tp); tp = setTimeout(prev, 300);
+  });
+  root.addEventListener('change', e => {
+    if (e.target.id === 'mvsSel') { C = L.find(c => c.id === e.target.value) || C; try { localStorage.setItem('mesaMemSel', C.id); } catch (er) {} draw(); }
+  });
+  root.addEventListener('click', async e => {
+    if (e.target.id === 'mvsDel' && C) { L = L.filter(c => c.id !== C.id); mvsGuardarLista(L); C = L[0] || null; draw(); return; }
+    if (e.target.id === 'mvsReset' && C) { const keep = C.txt || {}; C.txt = {normExtra:keep.normExtra, cargasNota:keep.cargasNota}; guardar(); draw(); return; }
+    const b = e.target.closest('[data-act]'); if (!b || !C) return;
+    const t0 = b.textContent; b.disabled = true; b.textContent = '⏳ Generando…';
+    try {
+      const B = mvsBuild(C, P), base = mvsNombreBase(C, P), out = [];
+      const Sx = Object.assign({}, S0, {proy:Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO'})});
+      if (b.dataset.act === 'word' || b.dataset.act === 'todo') out.push({nombre:base + '.docx', blob:await mcmDocx(Sx, B)});
+      if (b.dataset.act === 'xlsx' || b.dataset.act === 'todo') out.push({nombre:mvsNombreXlsx(C, P), blob:mvsXlsx(C, P)});
+      if (b.dataset.act === 'pdf') out.push({nombre:base + '.pdf', blob:await mvsPdf(C, Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO'}), B)});
+      await mvsEntregar(out);
+    } catch (er) { fsToast('No se pudo generar: ' + ((er && er.message) || er)); }
+    finally { b.disabled = false; b.textContent = t0; }
+  });
+}
 function renderMemorias(container) {
   if (!document.getElementById('mcmCss')) { const st = document.createElement('style'); st.id = 'mcmCss'; st.textContent = MCM_CSS; document.head.appendChild(st); }
+  let mcmTipo = 'general'; try { mcmTipo = localStorage.getItem(MVS_TIPO) || 'general'; } catch (e) {}
+  container.innerHTML = ''; container.appendChild(mvsBarraTipo(container, mcmTipo));
+  if (mcmTipo === 'simple') {
+    document.documentElement.classList.add('mcm-on');
+    const offR = () => { if (location.hash.replace('#', '') !== 'memorias') { document.documentElement.classList.remove('mcm-on'); window.removeEventListener('hashchange', offR); } };
+    window.addEventListener('hashchange', offR);
+    renderMemoriaSimple(container); return;
+  }
   let S = mcmLoad(), mcmFH = null;
-  const root = document.createElement('div'); root.className = 'mcm-ui'; container.innerHTML = ''; container.appendChild(root);
+  const root = document.createElement('div'); root.className = 'mcm-ui'; container.appendChild(root);
   const get = (o, p) => p.split('.').reduce((a, k) => a == null ? a : a[k], o);
   const set = (o, p, v) => { const ks = p.split('.'), last = ks.pop(); const t = ks.reduce((a, k) => a[k], o); t[last] = v; };
   const I = (k, ph = '', type = 'text') => `<input type="${type}" data-k="${k}" value="${esc(get(S, k) ?? '')}" placeholder="${esc(ph)}">`;
@@ -47361,7 +47714,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261009-1100. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261009-1200. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
