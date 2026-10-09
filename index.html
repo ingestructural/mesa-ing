@@ -45152,6 +45152,11 @@ function renderCargasUso(container) {
       <div id="cu_tabla" style="overflow-x:auto;margin-top:.4rem"></div>
     </div>
 
+    <div class="panel" data-resumen="force">
+      <h3>4 · Resumen de cargas calculadas</h3>
+      <div id="cu_resumen" style="overflow-x:auto"></div>
+    </div>
+
     <div class="panel">
       <div class="disclosure">Fuente: NCh1537:2009 Diseño estructural — Cargas permanentes y cargas de uso (INN). Tabla 4: cargas de uso uniformemente distribuidas L₀ y concentradas Qk; según 5.2.1 c) la carga concentrada se considera uniformemente distribuida en un área cuadrada de 0,6 m², en la zona más desfavorable, como alternativa a la uniforme (rige la que produzca mayores esfuerzos). 5.2.1 b): tabiques móviles ≥ 0,7 kN/m² en planta, salvo carga de uso ≥ 4,0 kN/m². 8.1: L = L₀·(0,25 + 4,57/√(KLL·AT)) para KLL·AT ≥ 36 m², con L ≥ 0,5·L₀ en estructuras de un piso y L ≥ 0,4·L₀ en las de dos o más; no se reducen las cargas mayores que 5 kN/m² ni las de estacionamientos de vehículos de pasajeros (salvo elementos que soportan dos o más pisos, con reducción máxima de 20 %), ni las de lugares públicos con carga de diseño ≤ 5 kN/m²; en losas en una dirección AT ≤ 1,5·L². 8.2 (techos accesibles sólo para mantención con cubiertas livianas): Lr = L₀ si R₁·R₂ ≥ 0,84; Lr = L₀·R₁·R₂ si 0,3 < R₁·R₂ < 0,84; Lr = 0,3·L₀ si R₁·R₂ ≤ 0,3; R₁ = 1 − 0,008·AT (AT < 50 m²) o 0,6; R₂ = 1 − 0,0233·F (F < 30 %) o 0,3. Los techos transitables usan la carga de su uso y se reducen según 8.1. La calificación de «lugar público» (sin reducción) es criterio del calculista según el destino.</div>
     </div>
@@ -45221,6 +45226,15 @@ function renderCargasUso(container) {
         <tr><td><b>Sobrecarga de techo L = L₀</b> (lugar de reunión pública con L₀ ≤ 0,51 t/m²: no se reduce)</td><td class="num"><b>${kg(tt[2])} t/m²</b></td><td class="num"><b>${kp(tt[2])}</b></td></tr></table>` };
     }
     $('cu_resT').innerHTML = resT.html;
+    const tsub = tt[0] === 'M' ? 'Lr — techo accesible sólo para mantención (8.2)' : tt[0] === 'P' ? 'L — techo transitable de uso privado (8.1)' : 'L — techo transitable de uso público';
+    const resRows = [
+      ['Carga de uso de piso (Tabla 4)', 'L₀', L0, `${esc(row[0])}: ${esc(row[1])}`],
+      ['Sobrecarga de uso de diseño (reducida por área tributaria)', 'L', rp.L, rp.f < 1 ? `Factor ${n(rp.f, 3)} — ${esc(k[1])}, AT = ${n(AT, 1)} m²` : (rp.motivo ? esc(rp.motivo) : 'Sin reducción')],
+      ['Sobrecarga de techo de diseño', tt[0] === 'M' ? 'Lr' : 'L', resT.L, esc(tsub) + `, AT = ${n(ATt, 1)} m²` + (tt[0] === 'M' ? `, pendiente ${n(F, 1)} %` : '')]];
+    $('cu_resumen').innerHTML = `<table class="results"><tr><th>Carga</th><th>Símbolo</th><th class="num">t/m²</th><th class="num">kPa</th><th>Observación</th></tr>
+      ${resRows.map(r => `<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td class="num"><b>${kg(r[2])}</b></td><td class="num">${kp(r[2])}</td><td style="font-size:.85em">${r[3]}</td></tr>`).join('')}
+      ${row[3] != null ? `<tr><td>Carga concentrada de piso (alternativa a L₀, en 0,6 m²)</td><td>Qk</td><td class="num">${n(row[3] * CU_TM2, 3)} tf</td><td class="num">${n(row[3], 1)} kN</td><td style="font-size:.85em">Tabla 4</td></tr>` : ''}
+    </table>`;
     tabla();
     // impresión
     const rr = (l, val) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${val}</td></tr>`;
@@ -45232,6 +45246,9 @@ function renderCargasUso(container) {
       ${rr('Techo', esc(tt[1]))}
       ${rr('Área tributaria techo / pendiente F', `${xlsxNum(ATt, 1)} m² / ${xlsxNum(F, 1)} %`)}
     </tbody></table>`;
+    const resTab = `<table class="xlsx-table xlsx-calc-table"><tbody>
+      ${resRows.map(r => lin(`${r[0]} — ${r[1]}`, kg(r[2]) + ' t/m²')).join('')}
+      ${row[3] != null ? lin('Carga concentrada de piso — Qk', n(row[3] * CU_TM2, 3) + ' tf') : ''}</tbody></table>`;
     const calc = `<div class="xlsx-title-bar">CÁLCULO</div>
       <div class="xlsx-section">1. CARGA DE USO DE PISO — NCh1537:2009 TABLA 4 Y 8.1</div><table class="xlsx-table xlsx-calc-table"><tbody>
       ${lin('L₀ (t/m²)', kg(L0))}
@@ -45242,10 +45259,9 @@ function renderCargasUso(container) {
       <div class="xlsx-section">2. SOBRECARGA DE TECHO — NCh1537:2009 TABLA 4, 5.3 Y 8.2</div><table class="xlsx-table xlsx-calc-table"><tbody>
       ${lin('L₀ techo (t/m²)', kg(tt[2]))}
       ${lin('Sobrecarga de techo de diseño (t/m²)', kg(resT.L))}</tbody></table>
+      <div class="xlsx-section">3. RESUMEN DE CARGAS CALCULADAS</div>${resTab}
       <div class="xlsx-desc-row" style="padding:.3rem">NCh1537:2009. 8.1: L = L₀·(0,25 + 4,57/√(KLL·AT)), KLL·AT ≥ 36 m², L ≥ 0,5·L₀ (un piso) o 0,4·L₀ (dos o más pisos). 8.2: Lr = L₀ (R₁·R₂ ≥ 0,84), L₀·R₁·R₂ (0,3 < R₁·R₂ < 0,84) o 0,3·L₀ (R₁·R₂ ≤ 0,3); R₁ = 1 − 0,008·AT (AT < 50 m²) o 0,6; R₂ = 1 − 0,0233·F (F < 30 %) o 0,3.</div>`;
-    const resum = `<div class="xlsx-title-bar">RESUMEN</div><table class="xlsx-table xlsx-calc-table"><tbody>
-      ${lin('Carga de uso de piso de diseño L', kg(rp.L) + ' t/m²')}
-      ${lin('Sobrecarga de techo de diseño', kg(resT.L) + ' t/m²')}</tbody></table>`;
+    const resum = `<div class="xlsx-title-bar">RESUMEN</div>${resTab}`;
     xlsxSetPrintSheets(datos, calc, resum);
   }
   $('cu_tipo').addEventListener('change', () => { llenarUsos(); recalc(); });
@@ -47714,7 +47730,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261009-1200. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261009-1240. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
