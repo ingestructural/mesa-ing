@@ -42001,6 +42001,7 @@ const MCM_CSS = `
 html.mcm-on .print-actions{display:none !important}
 .mvs-tipo{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1rem;font-size:.88rem;color:var(--ink-muted)}
 .mvs-tipo span{font-weight:600}
+.mvs-hoja{font-size:.9em} .mvs-hoja .xlsx-sheet{display:block} .mvs-hoja .panel{box-shadow:none;border:0;padding:.3rem 0;background:#fff} .mvs-hoja .panel h3{background:none;color:#1F3864;padding:0;border-bottom:1.5px solid #1F3864}
 .mcm-drop{margin-top:.8rem;border:2px dashed var(--accent,#0060c1);border-radius:8px;padding:.8rem;display:grid;gap:.3rem;cursor:pointer;background:color-mix(in srgb,var(--accent,#0060c1) 5%,transparent);font-size:.85rem}
 .mcm-drop span{color:var(--ink-muted)} .mcm-drop.over{background:color-mix(in srgb,var(--accent,#0060c1) 16%,transparent)} .mcm-drop:focus{outline:2px solid var(--accent)}
 .mcm-thumbs{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:.3rem} .mcm-th{display:grid;gap:.2rem;width:180px;cursor:default} .mcm-th img{width:180px;height:110px;object-fit:cover;border-radius:4px;border:1px solid var(--line,#ccd)}
@@ -42221,6 +42222,30 @@ function mvsSvgPng(svgHtml) {
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
   });
 }
+async function mvsHojaHtml(main) {
+  const sheet = document.getElementById('printSheetCompleto');
+  let c;
+  if (sheet && sheet.innerHTML.trim()) {
+    try { printInjectEsquemas(); } catch (e) {}
+    c = sheet.cloneNode(true); c.removeAttribute('id');
+    if (typeof pdfControlesATexto === 'function') pdfControlesATexto(c, sheet);
+  } else {
+    c = document.createElement('div');
+    main.querySelectorAll('.panel').forEach(p => {
+      if (p.offsetParent === null || p.closest('#printSheetCompleto, #printSheetResumen, #printSheetInforme')) return;
+      const k = p.cloneNode(true); if (typeof pdfControlesATexto === 'function') pdfControlesATexto(k, p); c.appendChild(k);
+    });
+    c.querySelectorAll('.calc-save-bar, button, details, datalist, script').forEach(n => n.remove());
+  }
+  for (const svg of Array.from(c.querySelectorAll('svg'))) {
+    if (svg.parentElement && svg.parentElement.closest('svg')) continue;
+    const png = await mvsSvgPng(svg.outerHTML);
+    if (png) { const im = document.createElement('img'); im.src = png.src; im.style.cssText = 'max-width:100%;width:' + Math.min(680, Math.round(png.w / 2)) + 'px;height:auto;display:block;margin:4px auto'; svg.replaceWith(im); }
+    else svg.remove();
+  }
+  c.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'));
+  return c.innerHTML;
+}
 async function mvsCapturar() {
   const main = document.getElementById('mainView'), id = (location.hash || '').replace('#', '');
   const tool = (typeof TOOLS !== 'undefined' ? TOOLS : []).find(t => t.id === id);
@@ -42239,9 +42264,10 @@ async function mvsCapturar() {
     }
   } catch (e) {}
   const meta = Array.from(main.querySelectorAll('.calc-meta input')).map(i => i.value).filter(Boolean);
-  const cap = {id:'c' + Date.now(), tool:id, nombre:mvsTxt(main.querySelector('.calc-head h1')) || tool.name, tag:tool.tag || '', desc:tool.desc || '', fecha:MCM_HOY(), meta, secs, figs, txt:{}};
+  let hoja = ''; try { hoja = await mvsHojaHtml(main); } catch (e) { hoja = ''; }
+  const cap = {id:'c' + Date.now(), tool:id, nombre:mvsTxt(main.querySelector('.calc-head h1')) || tool.name, tag:tool.tag || '', desc:tool.desc || '', fecha:MCM_HOY(), meta, secs, figs, hoja, txt:{}};
   const L = mvsLista().filter(c => !(c.tool === id && c.fecha === cap.fecha && JSON.stringify(c.secs) === JSON.stringify(secs)));
-  L.unshift(cap); mvsGuardarLista(L.slice(0, 12));
+  L.unshift(cap); mvsGuardarLista(L.slice(0, 10));
   try { localStorage.setItem(MVS_TIPO, 'simple'); localStorage.setItem('mesaMemSel', cap.id); } catch (e) {}
   fsToast('Resultado de «' + cap.nombre + '» enviado al Constructor de Memorias.');
   location.hash = 'memorias';
@@ -42312,6 +42338,7 @@ function mvsBuild(C, P) {
   B.push({t:'h1', text:'CONCLUSIONES'}); par(mvsT(C, P, 'concl'));
   B.push({t:'pb'}); B.push({t:'ha', text:'ANEXO A — PLANILLA DE CÁLCULO'});
   B.push({t:'p', text:`Se adjunta la planilla de cálculo en formato Excel «${mvsNombreXlsx(C, P)}», con los datos de entrada y el desarrollo completo de las verificaciones realizadas con la planilla «${C.nombre}» de la Mesa de Cálculo de ING Estructural.`});
+  if (C.hoja) B.push({t:'p', text:'En la versión PDF de esta memoria se incluye, a continuación, la impresión completa de la planilla (Anexo B).'});
   let n1 = 0, n2 = 0;
   B.forEach(b => { if (b.t === 'h1') { n1++; n2 = 0; b.num = `${n1}.`; } else if (b.t === 'h2') { n2++; b.num = `${n1}.${n2}`; } });
   return B;
@@ -42413,21 +42440,26 @@ async function mvsEntregar(archivos) {
   for (const a of archivos) await mcmGuardarArchivo(a.nombre, a.blob, a.blob.type || 'application/octet-stream', a.nombre.endsWith('.xlsx') ? 'Planilla Excel' : (a.nombre.endsWith('.pdf') ? 'PDF' : 'Documento Word'), a.nombre.slice(a.nombre.lastIndexOf('.')));
 }
 async function mvsPdf(C, P, B) {
+  const anexo = mvsAnexoHtml(C);
   const lib = await pdfCargarLib();
   const oc = document.createElement('div'); oc.style.cssText = 'position:fixed;left:-12000px;top:0;width:760px;z-index:-1';
   const cont = document.createElement('div'); cont.style.cssText = 'width:728px;background:#fff'; cont.className = 'pdf-export-root';
-  cont.innerHTML = mcmSheetHtml({proy:P}, B).replace('class="mem-sheet"', 'class="mem-sheet" style="padding:0;max-width:none;box-shadow:none"');
+  cont.innerHTML = mcmSheetHtml({proy:P}, B).replace(/<\/div>$/, anexo + '</div>').replace('class="mem-sheet"', 'class="mem-sheet" style="padding:0;max-width:none;box-shadow:none"');
   cont.querySelectorAll('.mp-pb').forEach(x => { x.style.cssText = 'break-after:page;page-break-after:always;border:0;margin:0;height:0'; });
   cont.querySelectorAll('mark').forEach(m => m.style.background = '#fff3b0');
   oc.appendChild(cont); document.body.appendChild(oc);
   try {
     const pdf = await lib().set({margin:[10, 8, 16, 8], image:{type:'jpeg', quality:0.95}, html2canvas:{scale:2, backgroundColor:'#ffffff', scrollX:0, scrollY:0, logging:false, onclone:pdfLimpiarColores},
-      jsPDF:{unit:'mm', format:'letter', orientation:'portrait'}, pagebreak:{mode:['css', 'legacy'], avoid:['tr', 'img', '.mp-fig', '.mp-h1', '.mp-h2', '.mp-cap']}}).from(cont).toPdf().get('pdf');
+      jsPDF:{unit:'mm', format:'letter', orientation:'portrait'}, pagebreak:{mode:['css', 'legacy'], avoid:['tr', 'img', '.mp-fig', '.mp-h1', '.mp-h2', '.mp-cap', '.xlsx-section', '.xlsx-title-bar', '.print-esq-bloque']}}).from(cont).toPdf().get('pdf');
     const n = pdf.internal.getNumberOfPages(), W = pdf.internal.pageSize.getWidth(), H = pdf.internal.pageSize.getHeight();
     for (let i = 1; i <= n; i++) { pdf.setPage(i); pdf.setDrawColor(31, 56, 100); pdf.setLineWidth(0.3); pdf.line(8, H - 13, W - 8, H - 13); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(31, 56, 100);
       pdf.text('ING ESTRUCTURAL — Proyectos Civiles e Industriales', 8, H - 9.5); pdf.setFont('helvetica', 'normal'); pdf.text('Angol 47, of. 404, Concepción · +56 9 9884 7164', 8, H - 6); pdf.text('Página ' + i + ' de ' + n, W - 8, H - 9.5, {align:'right'}); }
     return pdf.output('blob');
   } finally { oc.remove(); }
+}
+function mvsAnexoHtml(C) {
+  if (!C || !C.hoja) return '';
+  return `<div class="mvs-anexo"><div class="mp-pb"></div><h1 class="mp-h1">ANEXO B — PLANILLA DE CÁLCULO (IMPRESIÓN COMPLETA)</h1><p class="mp-p">Impresión completa de la planilla «${esc(C.nombre)}» de la Mesa de Cálculo de ING Estructural, con los datos de entrada, el desarrollo del cálculo y los esquemas.</p><div class="mvs-hoja">${C.hoja}</div></div>`;
 }
 /* ---------- interfaz ---------- */
 function mvsBarraTipo(container, tipo) {
@@ -42448,7 +42480,7 @@ function renderMemoriaSimple(container) {
     const E = C ? mvsEstados(C) : [];
     return `<div class="calc-head"><h1>Constructor de Memorias de Cálculo</h1><div class="sub">Memoria resumida de una verificación hecha en cualquier planilla de la Mesa (estanque, placa base, fundación, etc.): objetivo, introducción, normativa, datos y materiales, cargas, verificaciones, esquemas y conclusiones, más la planilla Excel del cálculo como anexo.</div></div>
       <div class="panel"><h3>1 · Verificación</h3>${lista}
-        <div class="note">${L.length ? 'Para agregar otra: abre la planilla, haz el cálculo y toca <b>«📑 Memoria»</b> (junto a Imprimir). Se guardan las últimas 12.' : 'Aún no hay verificaciones. Abre cualquier planilla de la Mesa, haz el cálculo y toca <b>«📑 Memoria»</b> (junto a «Imprimir completo»): el resultado llega aquí automáticamente.'}</div>
+        <div class="note">${L.length ? 'Para agregar otra: abre la planilla, haz el cálculo y toca <b>«📑 Memoria»</b> (junto a Imprimir). Se guardan las últimas 10.' : 'Aún no hay verificaciones. Abre cualquier planilla de la Mesa, haz el cálculo y toca <b>«📑 Memoria»</b> (junto a «Imprimir completo»): el resultado llega aquí automáticamente.'}</div>
         ${C ? `<div class="note" style="margin-top:.4rem"><b>${esc(C.nombre)}</b> · ${C.secs.length} secciones · ${E.length} verificaciones con estado (${E.filter(e => e.est === 'CUMPLE').length} cumplen${E.some(e => e.est === 'NO CUMPLE') ? ', <b style="color:#b91c1c">' + E.filter(e => e.est === 'NO CUMPLE').length + ' no cumplen</b>' : ''}) · ${C.figs.length} esquema(s) <button type="button" class="btn-add" id="mvsDel" style="margin-left:.6rem">Quitar de la lista</button></div>` : ''}
       </div>
       ${C ? `<div class="panel"><h3>2 · Proyecto</h3><div class="field-grid">${IP('proyecto', 'Proyecto')}${IP('mandante', 'Mandante')}${IP('codigo', 'Código')}${IP('ubicacion', 'Ubicación')}${IP('elaboro', 'Elaboró')}${IP('reviso', 'Revisó')}${IP('fecha', 'Fecha')}${IP('rev', 'Revisión')}</div><div class="note">Los datos del proyecto son los mismos de la memoria general.</div></div>
@@ -42462,10 +42494,10 @@ function renderMemoriaSimple(container) {
         <button type="button" class="btn-add" id="mvsReset">Restaurar textos sugeridos</button></div>
       <div class="panel"><h3>4 · Emitir memoria</h3>
         <div class="mem-btns"><button type="button" class="mem-btn" data-act="todo">📦 Memoria Word + planilla Excel</button><button type="button" class="mem-btn" data-act="word">⬇ Word</button><button type="button" class="mem-btn" data-act="xlsx">📊 Excel</button><button type="button" class="mem-btn" data-act="pdf">⬇ PDF</button></div>
-        <div class="note">Word: el índice se actualiza al abrir (Word pregunta «¿actualizar campos?» → Sí). En iPad/iPhone los archivos se entregan con el menú Compartir.</div>
+        <div class="note">El PDF incluye al final la impresión completa de la planilla (Anexo B)${C.hoja ? '' : ' — <b>esta verificación se capturó antes de esa función: vuelve a la planilla y toca «📑 Memoria» otra vez para incluirla</b>'}. Word: el índice se actualiza al abrir (Word pregunta «¿actualizar campos?» → Sí). En iPad/iPhone los archivos se entregan con el menú Compartir.</div>
         <div class="mem-prev-wrap" id="mvsPrev"></div></div>` : ''}`;
   }
-  function prev() { const w = root.querySelector('#mvsPrev'); if (w && C) w.innerHTML = mcmSheetHtml({proy:Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO'})}, mvsBuild(C, P)); }
+  function prev() { const w = root.querySelector('#mvsPrev'); if (w && C) w.innerHTML = mcmSheetHtml({proy:Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO'})}, mvsBuild(C, P)).replace(/<\/div>$/, mvsAnexoHtml(C) + '</div>'); }
   function guardar() { if (C) { const i = L.findIndex(c => c.id === C.id); if (i >= 0) L[i] = C; } mvsGuardarLista(L); }
   function draw() { root.innerHTML = html(); prev(); }
   draw();
@@ -47730,7 +47762,7 @@ route();
 
 
 <script>
-/* App instalable (PWA) — versión 20261009-1240. Funciona sin conexión y se actualiza sola al abrirla con internet. */
+/* App instalable (PWA) — versión 20261009-1300. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
