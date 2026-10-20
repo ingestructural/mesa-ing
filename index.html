@@ -23180,6 +23180,38 @@ function calcFlexionDesdeMu(Mu_Tonm, bw_cm, d_cm, h_cm, fc, fy){
   var phiMn_Tonm = phi*AsReq*fy*(d_cm-a/2)/100000;
   return {Mu_Tonm, AsReq, phiMn_Tonm, ok: phiMn_Tonm>=Mu_Tonm && disc>=0};
 }
+// --- Resumen de estatus con valores: demanda vs. capacidad y razón D/C ---
+function fdCmp(nD, vD, nC, vC, u, f){
+  f = f || fmt2;
+  var fin = isFinite(vD) && isFinite(vC);
+  var op = fin ? (vD<=vC ? '≤' : '>') : 'vs.';
+  return { txt: nD+' = '+f(vD)+' '+u+' '+op+' '+nC+' = '+f(vC)+' '+u, dc: fin && vC>0 ? vD/vC : null };
+}
+function fdFS(desliz, u){
+  if (!(desliz.Vres>0)) return { txt: 'Sin corte horizontal (V = 0)', dc: null };
+  return { txt: 'FS = μ·N/V = '+fmt2(desliz.Vr)+' / '+fmt2(desliz.Vres)+' '+u+' = '+fmt2(desliz.FS)+' '+(desliz.FS>=1.5?'≥':'<')+' 1,50', dc: 1.5/desliz.FS };
+}
+function fdFlex(flex, u){
+  var v = fdCmp('Mu', flex.Mu_Tonm, 'φMn', flex.phiMn_Tonm, u, fmt3);
+  v.txt += ' · As,req = '+fmt2(flex.AsReq)+(u.indexOf('/m')>=0 ? ' cm²/m' : ' cm²');
+  if (flex.ok===false && flex.rho===null) v.txt += ' · sección insuficiente (aumentar h)';
+  return v;
+}
+function fdVerdictRow(label, ok, v){
+  var val = v ? '<span class="u" style="display:block;margin-left:0;margin-top:.15rem">'+v.txt+(v.dc!=null && isFinite(v.dc) ? ' · D/C = '+fmt2(v.dc) : '')+'</span>' : '';
+  return '<div class="verdict-row"><span>'+label+val+'</span><span>'+chip(ok)+'</span></div>';
+}
+// Impresión: agrega los valores al rótulo de las filas de estatus (vf) y la razón D/C a su columna
+function fdConValores(sections, r){
+  if (!r.vals) return sections;
+  return sections.map(function(sec){ return Object.assign({}, sec, { rows: sec.rows.map(function(row){
+    var v = row.vf && r.vals[row.vf];
+    return v ? Object.assign({}, row, { label: row.label+' — '+v.txt, dcL: 'dc_'+row.vf }) : row;
+  }) }); });
+}
+function fdDcCampos(vals){
+  var o = {}; Object.keys(vals||{}).forEach(function(k){ o['dc_'+k] = vals[k] ? vals[k].dc : null; }); return o;
+}
 function calcCorteUnidireccionalFranja(Vu_Ton, bw_cm, d_cm, fc){
   var phiVc_Ton = 0.75*0.53*Math.sqrt(fc)*bw_cm*d_cm/1000;
   return {Vu_Ton:Vu_Ton, phiVc_Ton:phiVc_Ton, ok: Vu_Ton<=phiVc_Ton};
@@ -23614,18 +23646,20 @@ const FD_AISLADA_CALC_SECTIONS = [
     { t: 'chk', label: 'Verificacion: FS >= 1.5', estL: 'chkDesliz', forceNA: true },
   ]},
   { num: '10', title: 'ESTATUS GLOBAL', rows: [
-    { t: 'chk', label: 'Presion de contacto <= q_adm', estL: 'chkPresion', forceNA: true },
-    { t: 'chk', label: 'Punzonamiento', estL: 'chkPunz', forceNA: true },
-    { t: 'chk', label: 'Corte unidireccional (X y Z)', estL: 'chkCorteXZ', forceNA: true },
-    { t: 'chk', label: 'Flexion (X y Z)', estL: 'chkFlexXZ', forceNA: true },
-    { t: 'chk', label: 'Deslizamiento', estL: 'chkDesliz', forceNA: true },
+    { t: 'chk', label: 'Presion de contacto <= q_adm', estL: 'chkPresion', forceNA: true, vf: 'presion' },
+    { t: 'chk', label: 'Punzonamiento', estL: 'chkPunz', forceNA: true, vf: 'punz' },
+    { t: 'chk', label: 'Corte unidireccional X', estL: 'chkCorteX', forceNA: true, vf: 'corteX' },
+    { t: 'chk', label: 'Corte unidireccional Z', estL: 'chkCorteZ', forceNA: true, vf: 'corteZ' },
+    { t: 'chk', label: 'Flexion X', estL: 'chkFlexX', forceNA: true, vf: 'flexX' },
+    { t: 'chk', label: 'Flexion Z', estL: 'chkFlexZ', forceNA: true, vf: 'flexZ' },
+    { t: 'chk', label: 'Deslizamiento', estL: 'chkDesliz', forceNA: true, vf: 'desliz' },
     { t: 'chk', label: 'ESTATUS GLOBAL', estL: 'chkGlobal', forceNA: true },
   ]},
 ];
 
 function fundAisladaCalcHtml(r, opts) {
   const resumen = !!(opts && opts.resumen);
-  return xlsxBuildCalculoHtml(FD_AISLADA_CALC_SECTIONS, r, {
+  return xlsxBuildCalculoHtml(fdConValores(FD_AISLADA_CALC_SECTIONS, r), r, {
     resumen,
   });
 }
@@ -23695,6 +23729,7 @@ function buildPrintSheetsFundAislada(state, r) {
     chkDesliz: r.desliz.ok,
 
     chkCorteXZ, chkFlexXZ, chkGlobal,
+    vals: r.vals, ...fdDcCampos(r.vals),
   };
 
   const datosHtml = fundAisladaDatosHtml(state);
@@ -23808,17 +23843,17 @@ const FD_CORRIDA_CALC_SECTIONS = [
     { t: 'var1', label: 'Armadura sugerida: espaciamiento @ (redondeado a 2.5 cm, min 5 cm) [cm]', f: 'espaciamiento', d: 1 },
   ]},
   { num: '7', title: 'ESTATUS GLOBAL', rows: [
-    { t: 'chk', label: 'Presion de contacto <= q_adm', estL: 'chkPresion', forceNA: true },
-    { t: 'chk', label: 'Deslizamiento', estL: 'chkDesliz', forceNA: true },
-    { t: 'chk', label: 'Corte unidireccional', estL: 'chkCorte', forceNA: true },
-    { t: 'chk', label: 'Flexion', estL: 'chkFlex', forceNA: true },
+    { t: 'chk', label: 'Presion de contacto <= q_adm', estL: 'chkPresion', forceNA: true, vf: 'presion' },
+    { t: 'chk', label: 'Deslizamiento', estL: 'chkDesliz', forceNA: true, vf: 'desliz' },
+    { t: 'chk', label: 'Corte unidireccional', estL: 'chkCorte', forceNA: true, vf: 'corte' },
+    { t: 'chk', label: 'Flexion', estL: 'chkFlex', forceNA: true, vf: 'flex' },
     { t: 'chk', label: 'ESTATUS GLOBAL', estL: 'chkGlobal', forceNA: true },
   ]},
 ];
 
 function fundCorridaCalcHtml(r, opts) {
   const resumen = !!(opts && opts.resumen);
-  return xlsxBuildCalculoHtml(FD_CORRIDA_CALC_SECTIONS, r, {
+  return xlsxBuildCalculoHtml(fdConValores(FD_CORRIDA_CALC_SECTIONS, r), r, {
     resumen,
     intro: 'Fórmulas según hoja "Calculo_Corrida" de la planilla Excel (zapata bajo muro continuo, verificada por metro lineal; distribución lineal dentro del núcleo o triangular fuera de él). No hay columna de razón demanda/capacidad ni columna ASD en el xlsx — ver nota de fidelidad 7.',
   });
@@ -23858,6 +23893,7 @@ function buildPrintSheetsFundCorrida(state, r) {
     espaciamiento: espaciamientoParaAs(r.flex.AsReq, state.phiBarra),
 
     chkGlobal,
+    vals: r.vals, ...fdDcCampos(r.vals),
   };
 
   const datosHtml = fundCorridaDatosHtml(state);
@@ -23965,8 +24001,8 @@ const FD_LOSA_CALC_SECTIONS = [
   ]},
   { num: '5', title: 'PUNZONAMIENTO POR PEDESTAL (VERIFICADO COMO INTERIOR)', rows: [], extraHtml: null /* se completa en fundLosaCalcHtml con la tabla real, ver más abajo */ },
   { num: '6', title: 'ESTATUS GLOBAL', rows: [
-    { t: 'chk', label: 'Presion de contacto (q_max<=q_adm, q_min>=0)', estL: 'chkPresion', forceNA: true },
-    { t: 'chk', label: 'Punzonamiento (todos los pedestales activos)', estL: 'chkPunz', forceNA: true },
+    { t: 'chk', label: 'Presion de contacto (q_max<=q_adm, q_min>=0)', estL: 'chkPresion', forceNA: true, vf: 'presion' },
+    { t: 'chk', label: 'Punzonamiento (todos los pedestales activos)', estL: 'chkPunz', forceNA: true, vf: 'punz' },
     { t: 'chk', label: 'ESTATUS GLOBAL', estL: 'chkGlobal', forceNA: true },
   ]},
   { num: '7', title: 'CARGAS UNIFORMES POR SECTOR (INFORMATIVO - YA INCLUIDAS EN SP,SMX,SMZ DE LA SECCION 2)', rows: [], extraHtml: null },
@@ -24047,7 +24083,7 @@ function fundLosaCalcHtml(r, opts) {
     if (sec.num === '7') return Object.assign({}, sec, { extraHtml: r.__sectorTableHtml });
     return sec;
   });
-  return fdBuildCalculoHtmlConExtra(sections, r, {
+  return fdBuildCalculoHtmlConExtra(fdConValores(sections, r), r, {
     resumen,
     intro: 'Fórmulas según hoja "Calculo_Losa" de la planilla Excel (método rígido de presión de contacto P/A±Mx·z/Ix±Mz·x/Iz, punzonamiento por pedestal ACI 318-19 §22.6). No incluye la sección "Flexión por franjas" del panel interactivo — ampliación propia de la versión web, no existe en el xlsx — ver nota de fidelidad 5. No hay columna de razón demanda/capacidad ni columna ASD en el xlsx — ver nota de fidelidad 7.',
   });
@@ -24096,6 +24132,7 @@ function buildPrintSheetsFundLosa(state, r) {
     d: d_cm, g1, g2, b0, beta, phiVn, JcX, JcZ, gammaVx, gammaVz, areaCritica: r.areaCritica_m2,
 
     chkPunz, chkGlobal,
+    vals: r.vals, ...fdDcCampos(r.vals),
 
     __pedestalTableHtml: fdLosaPedestalTableHtml(r.punzRows.map(row => ({
       p: row.p, esBorde: row.esBorde, quLocal: row.qu_local, VuNeto: row.Vu_neto, r: row.r,
@@ -24536,14 +24573,23 @@ function renderAislada(main){
 
     var okPresion = pres.areaValida && pres.qEq<=st.qAdm;
     var global = okPresion && desliz.ok && punz.okSinRefuerzo && corteX.ok && corteZ.ok && flexX.ok && flexZ.ok;
-    document.getElementById('ai_resumen').innerHTML = `
-      <div class="verdict-row"><span>Presión de contacto (Meyerhof) ≤ q_adm</span><span>${chip(okPresion)}</span></div>
-      <div class="verdict-row"><span>Deslizamiento (FS≥1.5)</span><span>${chip(desliz.ok)}</span></div>
-      <div class="verdict-row"><span>Punzonamiento</span><span>${chip(punz.okSinRefuerzo)}</span></div>
-      <div class="verdict-row"><span>Corte unidireccional X</span><span>${chip(corteX.ok)}</span></div>
-      <div class="verdict-row"><span>Corte unidireccional Z</span><span>${chip(corteZ.ok)}</span></div>
-      <div class="verdict-row"><span>Flexión X</span><span>${chip(flexX.ok)}</span></div>
-      <div class="verdict-row"><span>Flexión Z</span><span>${chip(flexZ.ok)}</span></div>
+    var vals = {
+      presion: pres.areaValida ? fdCmp('q_eq', pres.qEq, 'q_adm', st.qAdm, 'Ton/m²') : { txt: 'Resultante fuera de la base (B\' o L\' ≤ 0) — q_adm = '+fmt2(st.qAdm)+' Ton/m²', dc: null },
+      desliz: fdFS(desliz, 'Ton'),
+      punz: fdCmp('vu,máx', punz.vuMax, 'φvc', punz.phiVn, 'kgf/cm²'),
+      corteX: fdCmp('Vu', corteX.Vu_Ton, 'φVc', corteX.phiVc_Ton, 'Ton'),
+      corteZ: fdCmp('Vu', corteZ.Vu_Ton, 'φVc', corteZ.phiVc_Ton, 'Ton'),
+      flexX: fdFlex(flexX, 'Ton·m'),
+      flexZ: fdFlex(flexZ, 'Ton·m'),
+    };
+    document.getElementById('ai_resumen').innerHTML =
+      fdVerdictRow('Presión de contacto (Meyerhof) ≤ q_adm', okPresion, vals.presion) +
+      fdVerdictRow('Deslizamiento (FS≥1.5)', desliz.ok, vals.desliz) +
+      fdVerdictRow('Punzonamiento', punz.okSinRefuerzo, vals.punz) +
+      fdVerdictRow('Corte unidireccional X', corteX.ok, vals.corteX) +
+      fdVerdictRow('Corte unidireccional Z', corteZ.ok, vals.corteZ) +
+      fdVerdictRow('Flexión X', flexX.ok, vals.flexX) +
+      fdVerdictRow('Flexión Z', flexZ.ok, vals.flexZ) + `
       <div class="global-verdict ${global?'ok':'bad'}"><span class="label">ESTATUS GLOBAL</span><span class="label">${global?'CUMPLE':'NO CUMPLE'}</span></div>`;
 
     var __fdR = {
@@ -24552,7 +24598,7 @@ function renderAislada(main){
       ex: ex, ez: ez, pres: pres, desliz: desliz,
       presU: presU, qu_dis: qu_dis, punz: punz, punzEval: punzEval,
       corteX: corteX, corteZ: corteZ, flexX: flexX, flexZ: flexZ,
-      okPresion: okPresion,
+      okPresion: okPresion, vals: vals,
     };
     if (typeof buildPrintSheetsFundAislada === 'function') buildPrintSheetsFundAislada(st, __fdR);
   }
@@ -25025,11 +25071,19 @@ function renderCorrida(main){
       </table>`;
 
     var global = okPresion && desliz.ok && corte.ok && flex.ok;
-    document.getElementById('zco_resumen').innerHTML = `
-      <div class="verdict-row"><span>Presión de contacto ≤ q_adm</span><span>${chip(okPresion)}</span></div>
-      <div class="verdict-row"><span>Deslizamiento (FS≥1.5)</span><span>${chip(desliz.ok)}</span></div>
-      <div class="verdict-row"><span>Corte unidireccional</span><span>${chip(corte.ok)}</span></div>
-      <div class="verdict-row"><span>Flexión</span><span>${chip(flex.ok)}</span></div>
+    var vals = {
+      presion: puntual
+        ? (pres.areaValida ? fdCmp('q_eq', pres.qEq, 'q_adm', st.qAdm, 'Ton/m²') : { txt: 'Resultante fuera de la base — q_adm = '+fmt2(st.qAdm)+' Ton/m²', dc: null })
+        : (pres.valido ? fdCmp('q_max', pres.qmax, 'q_adm', st.qAdm, 'Ton/m²') : { txt: 'e ≥ B/2: resultante fuera de la zapata — q_adm = '+fmt2(st.qAdm)+' Ton/m²', dc: null }),
+      desliz: fdFS(desliz, unidadCarga),
+      corte: fdCmp('Vu', corte.Vu_Ton, 'φVc', corte.phiVc_Ton, 'Ton/m'),
+      flex: fdFlex(flex, 'Ton·m/m'),
+    };
+    document.getElementById('zco_resumen').innerHTML =
+      fdVerdictRow('Presión de contacto ≤ q_adm', okPresion, vals.presion) +
+      fdVerdictRow('Deslizamiento (FS≥1.5)', desliz.ok, vals.desliz) +
+      fdVerdictRow('Corte unidireccional', corte.ok, vals.corte) +
+      fdVerdictRow('Flexión', flex.ok, vals.flex) + `
       <div class="global-verdict ${global?'ok':'bad'}"><span class="label">ESTATUS GLOBAL</span><span class="label">${global?'CUMPLE':'NO CUMPLE'}</span></div>`;
 
     if (!puntual) {
@@ -25039,7 +25093,7 @@ function renderCorrida(main){
         e: e, pres: pres, desliz: desliz,
         presU: presU, qu_dis: qu_dis,
         d_cm: d_cm, voladizo: voladizo, corte: corte, flex: flex,
-        okPresion: okPresion,
+        okPresion: okPresion, vals: vals,
       };
       if (typeof buildPrintSheetsFundCorrida === 'function') buildPrintSheetsFundCorrida(st, __fdR);
     }
@@ -25524,7 +25578,7 @@ function renderLosa(main){
 
     var grid = esGrillaRegular(st.pedestales);
     var flexEl = document.getElementById('lo_flexion');
-    var franjaResults = [];
+    var franjaResults = [], franjaCalc = [];
     if (!grid){
       flexEl.innerHTML = '<div class="note">Diseño por franjas no disponible: los pedestales no forman una grilla regular completa.</div>';
     } else {
@@ -25554,6 +25608,7 @@ function renderLosa(main){
           var AsInf = flexPos ? flexPos.AsReq : AsMinFranja;
           var AsSup = flexNeg ? flexNeg.AsReq : AsMinFranja;
           var corte = calcCorteUnidireccionalFranja(fr.rFact.Vmax, bw_cm, d_cm, st.fc*KGF_POR_TON);
+          franjaCalc.push({tipo:fr.tipo, wTrib:fr.wTrib, corte:corte, flexPos:flexPos, flexNeg:flexNeg});
           return '<tr><td>'+fr.tipo+'</td><td class="num">'+fmt2(fr.wTrib)+'</td><td class="num">'+fmt2(MuPos)+'</td><td class="num">'+fmt2(MuNeg)+'</td><td class="num">'+fmt2(fr.rFact.Vmax)+'</td><td class="num">'+fmt2(AsInf)+'</td><td class="num">'+fmt2(AsSup)+'</td><td>'+chip(corte.ok)+'</td></tr>';
         }).join('')}
         </table>`;
@@ -25565,18 +25620,32 @@ function renderLosa(main){
       var corte = calcCorteUnidireccionalFranja(fr.rFact.Vmax, bw_cm, d_cm, st.fc*KGF_POR_TON);
       return corte.ok;
     });
-    var global = okPresion && okPunz && okFranjas;
-    document.getElementById('lo_resumen').innerHTML = `
-      <div class="verdict-row"><span>Presión de contacto (método rígido) ≤ q_adm, sin tracción</span><span>${chip(okPresion)}</span></div>
-      <div class="verdict-row"><span>Punzonamiento (todos los pedestales interiores)</span><span>${chip(okPunz)}</span></div>
-      <div class="verdict-row"><span>Corte unidireccional en franjas</span><span>${chip(okFranjas)}</span></div>
+    var flexFr = [];
+    franjaCalc.forEach(function(fc){ [['Mu+', fc.flexPos], ['Mu−', fc.flexNeg]].forEach(function(x){ if (x[1]) flexFr.push({tipo:fc.tipo, wTrib:fc.wTrib, signo:x[0], flex:x[1]}); }); });
+    var okFlexFr = flexFr.every(function(x){ return x.flex.ok; });
+    var global = okPresion && okPunz && okFranjas && okFlexFr;
+    function peor(arr, fn){ return arr.reduce(function(a,b){ return !a || fn(b)>fn(a) ? b : a; }, null); }
+    var punzG = peor(punzRows, function(x){ return x.r.vuMax/x.r.phiVn; });
+    var corteG = peor(franjaCalc, function(x){ return x.corte.Vu_Ton/x.corte.phiVc_Ton; });
+    var flexG = peor(flexFr, function(x){ return x.flex.Mu_Tonm/x.wTrib; });
+    var vals = {
+      presion: { txt: 'q_max = '+fmt2(qServMax)+' Ton/m² '+(qServMax<=st.qAdm?'≤':'>')+' q_adm = '+fmt2(st.qAdm)+' Ton/m² · q_min = '+fmt2(qServMin)+' Ton/m² '+(qServMin>=0?'≥':'<')+' 0', dc: st.qAdm>0 ? qServMax/st.qAdm : null },
+      punz: punzG ? (function(v){ v.txt = 'Gobierna '+punzG.p.id+': '+v.txt; return v; })(fdCmp('vu,máx', punzG.r.vuMax, 'φvc', punzG.r.phiVn, 'kgf/cm²')) : null,
+      corte: !grid ? { txt: 'No disponible: los pedestales no forman una grilla regular', dc: null } : corteG ? (function(v){ v.txt = 'Gobierna '+corteG.tipo+': '+v.txt; return v; })(fdCmp('Vu', corteG.corte.Vu_Ton, 'φVc', corteG.corte.phiVc_Ton, 'Ton')) : null,
+      flex: !grid ? { txt: 'No disponible: los pedestales no forman una grilla regular', dc: null } : flexG ? { txt: 'Gobierna '+flexG.tipo+' ('+flexG.signo+', ancho trib. '+fmt2(flexG.wTrib)+' m): Mu = '+fmt3(flexG.flex.Mu_Tonm)+' Ton·m → As,req = '+fmt2(flexG.flex.AsReq)+' cm²'+(flexG.flex.ok ? '' : ' · sección insuficiente (aumentar h)'), dc: null } : null,
+    };
+    document.getElementById('lo_resumen').innerHTML =
+      fdVerdictRow('Presión de contacto (método rígido) ≤ q_adm, sin tracción', okPresion, vals.presion) +
+      fdVerdictRow('Punzonamiento (todos los pedestales interiores)', okPunz, vals.punz) +
+      fdVerdictRow('Corte unidireccional en franjas', okFranjas, vals.corte) +
+      fdVerdictRow('Flexión en franjas', okFlexFr, vals.flex) + `
       <div class="global-verdict ${global?'ok':'bad'}"><span class="label">ESTATUS GLOBAL</span><span class="label">${global?'CUMPLE':'NO CUMPLE'}</span></div>`;
 
     var __fdR = {
       pesoRellenoLO: pesoRellenoLO, peso_m2: peso_m2,
       rigServ: rigServ, rigFact: rigFact,
       qServCorners: qServCorners, qServMax: qServMax, qServMin: qServMin,
-      okPresion: okPresion, areaCritica_m2: areaCritica_m2, punzRows: punzRows,
+      okPresion: okPresion, areaCritica_m2: areaCritica_m2, punzRows: punzRows, vals: vals,
     };
     if (typeof buildPrintSheetsFundLosa === 'function') buildPrintSheetsFundLosa(st, __fdR);
   }
