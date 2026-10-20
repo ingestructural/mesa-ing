@@ -45164,26 +45164,36 @@ function renderCargasUso(container) {
   const tipos = [...new Set(CU_T4.map(r => r[0]))];
   container.innerHTML = `
     <div class="calc-head">
-      <h1>Cargas de Uso — Pisos y Techos (NCh1537:2009)</h1>
+      <h1 id="cu_h1">Cargas de Uso — Pisos y Techos (NCh1537:2009)</h1>
       <div class="sub">Carga de uso uniforme L₀ y concentrada Qk según la Tabla 4 de NCh1537:2009, reducción por área tributaria (8.1, factor KLL de la Tabla 1) y sobrecarga reducida de techos accesibles sólo para mantención (8.2, factores R₁ por área tributaria y R₂ por pendiente, Tabla 3). Resultados en t/m² (1 kPa = 0,102 t/m²; se indica también el valor en kPa de la norma).</div>
     </div>
 
     <div class="panel">
-      <h3>1 · Piso — destino y elemento</h3>
+      <h3>Cargas a obtener</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem 1.6rem">
+        <label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cu_sUso" checked style="width:auto;min-width:0;flex:none;margin:0"> <span><b>Carga de uso</b> — L₀ y Qk según destino (Tabla 4)</span></label>
+        <label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cu_sPiso" checked style="width:auto;min-width:0;flex:none;margin:0"> <span><b>Carga de piso</b> — L de diseño reducida por área tributaria (8.1)</span></label>
+        <label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cu_sTecho" checked style="width:auto;min-width:0;flex:none;margin:0"> <span><b>Carga de techo</b> — según tipo de techo (5.3 y 8.2)</span></label>
+      </div>
+      <div class="note">Marque una, dos o las tres. El documento (Imprimir completo, Resumen y PDF) incluye sólo las cargas marcadas.</div>
+    </div>
+
+    <div class="panel" id="cu_pP">
+      <h3 id="cu_hP">1 · Piso — destino y elemento</h3>
       <div class="field-grid">
         <div class="field"><label>Tipo de edificio</label><select id="cu_tipo">${tipos.map(t => `<option>${esc(t)}</option>`).join('')}<option value="__">Otro — ingresar L₀</option></select></div>
         <div class="field"><label>Descripción de uso</label><select id="cu_uso"></select></div>
         <div class="field" id="cu_wL0"><label>L₀ ingresada (t/m²)</label><input type="text" inputmode="decimal" id="cu_L0u" value="0.255"></div>
-        <div class="field"><label>Elemento (factor KLL, Tabla 1)</label><select id="cu_kll">${CU_KLL.map(k => `<option value="${k[0]}"${k[0] === '2c' ? ' selected' : ''}>${esc(k[1])} — KLL = ${k[2]}</option>`).join('')}</select></div>
-        <div class="field"><label>Área tributaria AT (m²)</label><input type="text" inputmode="decimal" id="cu_AT" value="30"></div>
-        <div class="field"><label>Pisos que soporta el elemento</label><select id="cu_np"><option value="1">Un piso</option><option value="2">Dos o más pisos</option></select></div>
+        <div class="field" id="cu_wK"><label>Elemento (factor KLL, Tabla 1)</label><select id="cu_kll">${CU_KLL.map(k => `<option value="${k[0]}"${k[0] === '2c' ? ' selected' : ''}>${esc(k[1])} — KLL = ${k[2]}</option>`).join('')}</select></div>
+        <div class="field" id="cu_wAT"><label>Área tributaria AT (m²)</label><input type="text" inputmode="decimal" id="cu_AT" value="30"></div>
+        <div class="field" id="cu_wNp"><label>Pisos que soporta el elemento</label><select id="cu_np"><option value="1">Un piso</option><option value="2">Dos o más pisos</option></select></div>
         <div class="field" id="cu_wLl"><label>Luz de la losa en una dirección L (m)</label><input type="text" inputmode="decimal" id="cu_Ll" value="4"></div>
       </div>
       <div id="cu_resP" style="margin-top:.6rem"></div>
     </div>
 
-    <div class="panel">
-      <h3>2 · Techo</h3>
+    <div class="panel" id="cu_pT">
+      <h3 id="cu_hT">2 · Techo</h3>
       <div class="field-grid">
         <div class="field"><label>Tipo de techo (Tabla 4 y 5.3)</label><select id="cu_tt">${CU_TECHO.map(t => `<option value="${t[0]}">${esc(t[1])} — L₀ = ${(t[2] * CU_TM2).toFixed(3).replace('.', ',')} t/m²</option>`).join('')}</select></div>
         <div class="field"><label>Área tributaria del elemento AT (m²)</label><input type="text" inputmode="decimal" id="cu_ATt" value="20"></div>
@@ -45194,13 +45204,13 @@ function renderCargasUso(container) {
     </div>
 
     <div class="panel">
-      <h3>3 · Tabla 4 — cargas de uso (NCh1537:2009)</h3>
+      <h3 id="cu_hTab">3 · Tabla 4 — cargas de uso (NCh1537:2009)</h3>
       <div class="field"><label>Tipo de edificio</label><select id="cu_q"><option value="">Todos</option>${tipos.map(t => `<option>${esc(t)}</option>`).join('')}<option value="Techos">Techos</option></select></div>
       <div id="cu_tabla" style="overflow-x:auto;margin-top:.4rem"></div>
     </div>
 
     <div class="panel" data-resumen="force">
-      <h3>4 · Resumen de cargas calculadas</h3>
+      <h3 id="cu_hRes">4 · Resumen de cargas calculadas</h3>
       <div id="cu_resumen" style="overflow-x:auto"></div>
     </div>
 
@@ -45227,6 +45237,18 @@ function renderCargasUso(container) {
     </table>`;
   }
   function recalc() {
+    // Cargas a obtener: uso (L0, Qk), piso (L reducida, 8.1) y techo; el documento incluye sólo las marcadas
+    const sU = $('cu_sUso').checked, sP = $('cu_sPiso').checked, sT = $('cu_sTecho').checked, sD = sU || sP;
+    const nSel = [sU, sP, sT].filter(Boolean).length;
+    $('cu_h1').textContent = nSel === 3 || nSel === 0 ? 'Cargas de Uso — Pisos y Techos (NCh1537:2009)'
+      : [sU && 'Carga de Uso', sP && 'Carga de Piso', sT && 'Carga de Techo'].filter(Boolean).join(' y ').replace(/ y (?=.* y )/, ', ') + ' (NCh1537:2009)';
+    $('cu_pP').hidden = !sD; $('cu_pT').hidden = !sT;
+    ['cu_wK', 'cu_wAT', 'cu_wNp'].forEach(id => { $(id).hidden = !sP; });
+    let np_ = 0; const num = () => ++np_ + ' · ';
+    $('cu_hP').textContent = sD ? num() + (sP ? 'Piso — destino y elemento' : 'Destino — carga de uso') : '';
+    $('cu_hT').textContent = sT ? num() + 'Techo' : '';
+    $('cu_hTab').textContent = num() + 'Tabla 4 — cargas de uso (NCh1537:2009)';
+    $('cu_hRes').textContent = num() + 'Resumen de cargas calculadas';
     const otro = $('cu_tipo').value === '__';
     const idx = +$('cu_uso').value, row = otro ? ['Otro', 'Uso definido por el proyecto', v('cu_L0u') / CU_TM2, null, ''] : CU_T4[idx];
     const def = row[4].includes('D');
@@ -45234,16 +45256,16 @@ function renderCargasUso(container) {
     if (def && cuUltDef !== idx) { $('cu_L0u').value = row[2] > 0 ? (row[2] * CU_TM2).toFixed(3) : ''; cuUltDef = idx; }
     const L0 = otro || def ? v('cu_L0u') / CU_TM2 : row[2], flags = def ? row[4].replace('D', '') : row[4];
     const k = CU_KLL.find(x => x[0] === $('cu_kll').value), AT = v('cu_AT'), np = +$('cu_np').value, es1D = k[0] === '1L', Ll = v('cu_Ll');
-    $('cu_wLl').hidden = !es1D;
+    $('cu_wLl').hidden = !(sP && es1D);
     const rp = cuReduccionPiso(L0, flags, k[2], AT, np, Ll, es1D);
     $('cu_resP').innerHTML = `<table class="results">
-      <tr><th>Resultado — piso</th><th class="num">t/m²</th><th class="num">kPa (norma)</th></tr>
-      <tr><td>Carga de uso L₀ — ${esc(row[0])}: ${esc(row[1])}</td><td class="num">${kg(L0)}</td><td class="num">${kp(L0)}</td></tr>
-      <tr><td>Carga concentrada Qk (alternativa a L₀, distribuida en un área cuadrada de 0,6 m²)</td><td class="num">${row[3] != null ? n(row[3] * CU_TM2, 3) + ' tf' : '—'}</td><td class="num">${row[3] != null ? n(row[3], 1) + ' kN' : '—'}</td></tr>
-      <tr><td>KLL·AT = ${k[2]} × ${n(rp.ATe != null ? rp.ATe : AT, 1)} m²</td><td class="num" colspan="2">${n(rp.KA, 1)} m²</td></tr>
+      <tr><th>Resultado — ${sP ? 'piso' : 'carga de uso'}</th><th class="num">t/m²</th><th class="num">kPa (norma)</th></tr>
+      <tr><td>${sU ? '' : '<span style="color:var(--ink-muted)">Dato para la reducción — </span>'}Carga de uso L₀ — ${esc(row[0])}: ${esc(row[1])}</td><td class="num">${kg(L0)}</td><td class="num">${kp(L0)}</td></tr>
+      ${sU ? `<tr><td>Carga concentrada Qk (alternativa a L₀, distribuida en un área cuadrada de 0,6 m²)</td><td class="num">${row[3] != null ? n(row[3] * CU_TM2, 3) + ' tf' : '—'}</td><td class="num">${row[3] != null ? n(row[3], 1) + ' kN' : '—'}</td></tr>` : ''}
+      ${sP ? `<tr><td>KLL·AT = ${k[2]} × ${n(rp.ATe != null ? rp.ATe : AT, 1)} m²</td><td class="num" colspan="2">${n(rp.KA, 1)} m²</td></tr>
       <tr><td>Factor de reducción 0,25 + 4,57/√(KLL·AT)${rp.fmin ? ` (mín. ${n(rp.fmin, 1)})` : ''}</td><td class="num" colspan="2">${n(rp.f, 3)}</td></tr>
-      <tr><td><b>Carga de uso de diseño L</b></td><td class="num"><b>${kg(rp.L)}</b></td><td class="num"><b>${kp(rp.L)}</b></td></tr>
-    </table>${rp.motivo ? `<div class="note">${esc(rp.motivo)}.</div>` : ''}${rp.nota ? `<div class="note">${esc(rp.nota)}.</div>` : ''}${def ? `<div class="note">${row[0] === 'Estacionamientos' ? 'Tabla 4 nota c): pisos de buses, camiones y vehículos pesados se diseñan con un método debidamente aprobado que considere el efecto real de sus cargas, no menos de 12 kN/m² (1,224 t/m²). Ingrese la carga en L₀ (t/m²).' : 'Tabla 4 nota f): se diseñan según las cargas que establezca la Autoridad Competente. Ingrese la carga en L₀ (t/m²).'}</div>` : ''}${row[0] === 'Estacionamientos' && !def ? '<div class="note">Tabla 4 nota b): verificar además 1,38 tf (13,5 kN) sobre 11 × 11 cm (apoyo de gata) y, en estacionamientos mecánicos sin losa, 1,02 tf (10 kN) por rueda.</div>' : ''}${/Aceras/.test(row[1]) ? '<div class="note">Tabla 4 nota e): la carga de rueda de 3,67 tf (36 kN) se aplica en 11 × 11 cm.</div>' : ''}${row[0] === 'Oficinas' && L0 < 4 ? '<div class="note">5.2.1 b): en oficinas con tabiques móviles, agregar su peso, no menos de 0,071 t/m² (0,7 kN/m²) en planta; no se exige si la carga de uso es ≥ 0,408 t/m² (4,0 kN/m²).</div>' : ''}`;
+      <tr><td><b>Carga de uso de diseño L</b></td><td class="num"><b>${kg(rp.L)}</b></td><td class="num"><b>${kp(rp.L)}</b></td></tr>` : ''}
+    </table>${sP && rp.motivo ? `<div class="note">${esc(rp.motivo)}.</div>` : ''}${sP && rp.nota ? `<div class="note">${esc(rp.nota)}.</div>` : ''}${def ? `<div class="note">${row[0] === 'Estacionamientos' ? 'Tabla 4 nota c): pisos de buses, camiones y vehículos pesados se diseñan con un método debidamente aprobado que considere el efecto real de sus cargas, no menos de 12 kN/m² (1,224 t/m²). Ingrese la carga en L₀ (t/m²).' : 'Tabla 4 nota f): se diseñan según las cargas que establezca la Autoridad Competente. Ingrese la carga en L₀ (t/m²).'}</div>` : ''}${row[0] === 'Estacionamientos' && !def ? '<div class="note">Tabla 4 nota b): verificar además 1,38 tf (13,5 kN) sobre 11 × 11 cm (apoyo de gata) y, en estacionamientos mecánicos sin losa, 1,02 tf (10 kN) por rueda.</div>' : ''}${/Aceras/.test(row[1]) ? '<div class="note">Tabla 4 nota e): la carga de rueda de 3,67 tf (36 kN) se aplica en 11 × 11 cm.</div>' : ''}${row[0] === 'Oficinas' && L0 < 4 ? '<div class="note">5.2.1 b): en oficinas con tabiques móviles, agregar su peso, no menos de 0,071 t/m² (0,7 kN/m²) en planta; no se exige si la carga de uso es ≥ 0,408 t/m² (4,0 kN/m²).</div>' : ''}`;
     // techo
     const tt = CU_TECHO.find(t => t[0] === $('cu_tt').value), ATt = v('cu_ATt'), F = v('cu_F');
     $('cu_wKt').hidden = tt[0] !== 'P';
@@ -45275,39 +45297,45 @@ function renderCargasUso(container) {
     $('cu_resT').innerHTML = resT.html;
     const tsub = tt[0] === 'M' ? 'Lr — techo accesible sólo para mantención (8.2)' : tt[0] === 'P' ? 'L — techo transitable de uso privado (8.1)' : 'L — techo transitable de uso público';
     const resRows = [
-      ['Carga de uso de piso (Tabla 4)', 'L₀', L0, `${esc(row[0])}: ${esc(row[1])}`],
-      ['Sobrecarga de uso de diseño (reducida por área tributaria)', 'L', rp.L, rp.f < 1 ? `Factor ${n(rp.f, 3)} — ${esc(k[1])}, AT = ${n(AT, 1)} m²` : (rp.motivo ? esc(rp.motivo) : 'Sin reducción')],
-      ['Sobrecarga de techo de diseño', tt[0] === 'M' ? 'Lr' : 'L', resT.L, esc(tsub) + `, AT = ${n(ATt, 1)} m²` + (tt[0] === 'M' ? `, pendiente ${n(F, 1)} %` : '')]];
-    $('cu_resumen').innerHTML = `<table class="results"><tr><th>Carga</th><th>Símbolo</th><th class="num">t/m²</th><th class="num">kPa</th><th>Observación</th></tr>
+      sU && ['Carga de uso de piso (Tabla 4)', 'L₀', L0, `${esc(row[0])}: ${esc(row[1])}`],
+      sP && ['Sobrecarga de uso de diseño (reducida por área tributaria)', 'L', rp.L, rp.f < 1 ? `Factor ${n(rp.f, 3)} — ${esc(k[1])}, AT = ${n(AT, 1)} m²` : (rp.motivo ? esc(rp.motivo) : 'Sin reducción')],
+      sT && ['Sobrecarga de techo de diseño', tt[0] === 'M' ? 'Lr' : 'L', resT.L, esc(tsub) + `, AT = ${n(ATt, 1)} m²` + (tt[0] === 'M' ? `, pendiente ${n(F, 1)} %` : '')]].filter(Boolean);
+    const conQk = sU && row[3] != null;
+    $('cu_resumen').innerHTML = !nSel ? '<div class="note">Marque al menos una carga en «Cargas a obtener».</div>' : `<table class="results"><tr><th>Carga</th><th>Símbolo</th><th class="num">t/m²</th><th class="num">kPa</th><th>Observación</th></tr>
       ${resRows.map(r => `<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td class="num"><b>${kg(r[2])}</b></td><td class="num">${kp(r[2])}</td><td style="font-size:.85em">${r[3]}</td></tr>`).join('')}
-      ${row[3] != null ? `<tr><td>Carga concentrada de piso (alternativa a L₀, en 0,6 m²)</td><td>Qk</td><td class="num">${n(row[3] * CU_TM2, 3)} tf</td><td class="num">${n(row[3], 1)} kN</td><td style="font-size:.85em">Tabla 4</td></tr>` : ''}
+      ${conQk ? `<tr><td>Carga concentrada de piso (alternativa a L₀, en 0,6 m²)</td><td>Qk</td><td class="num">${n(row[3] * CU_TM2, 3)} tf</td><td class="num">${n(row[3], 1)} kN</td><td style="font-size:.85em">Tabla 4</td></tr>` : ''}
     </table>`;
     tabla();
     // impresión
     const rr = (l, val) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${val}</td></tr>`;
     const lin = (l, val) => `<tr><td class="xv-label">${l}</td><td class="xv-num">${val}</td></tr>`;
+    if (!nSel) { xlsxSetPrintSheets('<div class="xlsx-title-bar">SIN CARGAS SELECCIONADAS</div>', '', ''); return; }
     const datos = `<div class="xlsx-title-bar">DATOS DE ENTRADA</div><table class="xlsx-table"><tbody>
-      ${rr('Destino (Tabla 4)', esc(row[0] + ' — ' + row[1]))}
-      ${rr('Elemento / KLL', esc(k[1]) + ' / ' + k[2])}
-      ${rr('Área tributaria AT / pisos soportados', `${xlsxNum(AT, 1)} m² / ${np >= 2 ? 'dos o más' : 'uno'}`)}
-      ${rr('Techo', esc(tt[1]))}
-      ${rr('Área tributaria techo / pendiente F', `${xlsxNum(ATt, 1)} m² / ${xlsxNum(F, 1)} %`)}
+      ${rr('Cargas incluidas', [sU && 'carga de uso', sP && 'carga de piso', sT && 'carga de techo'].filter(Boolean).join(', '))}
+      ${sD ? rr('Destino (Tabla 4)', esc(row[0] + ' — ' + row[1])) : ''}
+      ${sP ? rr('Elemento / KLL', esc(k[1]) + ' / ' + k[2]) : ''}
+      ${sP ? rr('Área tributaria AT / pisos soportados', `${xlsxNum(AT, 1)} m² / ${np >= 2 ? 'dos o más' : 'uno'}`) : ''}
+      ${sT ? rr('Techo', esc(tt[1])) : ''}
+      ${sT ? rr('Área tributaria techo / pendiente F', `${xlsxNum(ATt, 1)} m² / ${xlsxNum(F, 1)} %`) : ''}
     </tbody></table>`;
     const resTab = `<table class="xlsx-table xlsx-calc-table"><tbody>
       ${resRows.map(r => lin(`${r[0]} — ${r[1]}`, kg(r[2]) + ' t/m²')).join('')}
-      ${row[3] != null ? lin('Carga concentrada de piso — Qk', n(row[3] * CU_TM2, 3) + ' tf') : ''}</tbody></table>`;
+      ${conQk ? lin('Carga concentrada de piso — Qk', n(row[3] * CU_TM2, 3) + ' tf') : ''}</tbody></table>`;
+    let ns = 0; const sec = t => `<div class="xlsx-section">${++ns}. ${t}</div>`;
     const calc = `<div class="xlsx-title-bar">CÁLCULO</div>
-      <div class="xlsx-section">1. CARGA DE USO DE PISO — NCh1537:2009 TABLA 4 Y 8.1</div><table class="xlsx-table xlsx-calc-table"><tbody>
+      ${sU ? `${sec('CARGA DE USO — NCh1537:2009 TABLA 4')}<table class="xlsx-table xlsx-calc-table"><tbody>
       ${lin('L₀ (t/m²)', kg(L0))}
-      ${lin('Qk (tf)', row[3] != null ? n(row[3] * CU_TM2, 3) : '—')}
+      ${lin('Qk (tf)', row[3] != null ? n(row[3] * CU_TM2, 3) : '—')}</tbody></table>` : ''}
+      ${sP ? `${sec('CARGA DE PISO — NCh1537:2009 TABLA 4 Y 8.1')}<table class="xlsx-table xlsx-calc-table"><tbody>
+      ${sU ? '' : lin('L₀ (t/m²)', kg(L0))}
       ${lin('KLL·AT (m²)', xlsxNum(rp.KA, 1))}
       ${lin('Factor 0,25 + 4,57/√(KLL·AT), con límites', xlsxNum(rp.f, 3) + (rp.motivo ? ' — ' + esc(rp.motivo) : ''))}
-      ${lin('L de diseño (t/m²)', kg(rp.L))}</tbody></table>
-      <div class="xlsx-section">2. SOBRECARGA DE TECHO — NCh1537:2009 TABLA 4, 5.3 Y 8.2</div><table class="xlsx-table xlsx-calc-table"><tbody>
+      ${lin('L de diseño (t/m²)', kg(rp.L))}</tbody></table>` : ''}
+      ${sT ? `${sec('SOBRECARGA DE TECHO — NCh1537:2009 TABLA 4, 5.3 Y 8.2')}<table class="xlsx-table xlsx-calc-table"><tbody>
       ${lin('L₀ techo (t/m²)', kg(tt[2]))}
-      ${lin('Sobrecarga de techo de diseño (t/m²)', kg(resT.L))}</tbody></table>
-      <div class="xlsx-section">3. RESUMEN DE CARGAS CALCULADAS</div>${resTab}
-      <div class="xlsx-desc-row" style="padding:.3rem">NCh1537:2009. 8.1: L = L₀·(0,25 + 4,57/√(KLL·AT)), KLL·AT ≥ 36 m², L ≥ 0,5·L₀ (un piso) o 0,4·L₀ (dos o más pisos). 8.2: Lr = L₀ (R₁·R₂ ≥ 0,84), L₀·R₁·R₂ (0,3 < R₁·R₂ < 0,84) o 0,3·L₀ (R₁·R₂ ≤ 0,3); R₁ = 1 − 0,008·AT (AT < 50 m²) o 0,6; R₂ = 1 − 0,0233·F (F < 30 %) o 0,3.</div>`;
+      ${lin('Sobrecarga de techo de diseño (t/m²)', kg(resT.L))}</tbody></table>` : ''}
+      ${sec('RESUMEN DE CARGAS CALCULADAS')}${resTab}
+      <div class="xlsx-desc-row" style="padding:.3rem">NCh1537:2009.${sU ? ' Tabla 4: L₀ uniforme y Qk concentrada (alternativa a L₀, en un área cuadrada de 0,6 m²).' : ''}${sP ? ' 8.1: L = L₀·(0,25 + 4,57/√(KLL·AT)), KLL·AT ≥ 36 m², L ≥ 0,5·L₀ (un piso) o 0,4·L₀ (dos o más pisos).' : ''}${sT ? ' 8.2: Lr = L₀ (R₁·R₂ ≥ 0,84), L₀·R₁·R₂ (0,3 < R₁·R₂ < 0,84) o 0,3·L₀ (R₁·R₂ ≤ 0,3); R₁ = 1 − 0,008·AT (AT < 50 m²) o 0,6; R₂ = 1 − 0,0233·F (F < 30 %) o 0,3.' : ''}</div>`;
     const resum = `<div class="xlsx-title-bar">RESUMEN</div>${resTab}`;
     xlsxSetPrintSheets(datos, calc, resum);
   }
