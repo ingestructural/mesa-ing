@@ -2088,6 +2088,9 @@ const TOOLS = [
   { id:'sismo-nch2369', cat:'Cargas', name:'Fuerzas Sísmicas NCh2369.Of2003 (Industrial)', file:'Fuerzas_Sismicas_Metodo_Estatico_NCh2369_1.xlsx',
     desc:'Coeficiente sísmico horizontal, corte basal, distribución en altura y acción sísmica vertical según el método estático de NCh2369.Of2003.',
     tag:'NCh2369.Of2003', calc:'sismoIndustrial' },
+  { id:'cargas-puentes', cat:'Cargas', name:'Cargas en Puentes — Manual de Carreteras Vol. 3 (AASHTO LRFD)', file:null,
+    desc:'Cargas de diseño de puentes de un tramo (losa sobre vigas de acero, HA o pretensadas; losa maciza; pasarela): DC y DW, HL-93 con camión HS20-44 + 20 % (MC 3.1000), impacto, factores de distribución con regla de la palanca, sección rígida y esviaje, franja equivalente, peatonal, frenado, centrífuga, viento, temperatura, sismo por coeficiente sísmico del MC y combinaciones LRFD, con memoria de cálculo.',
+    tag:'MC Vol. 3 · AASHTO LRFD', calc:'cargasPuentes' },
 
   { id:'cuerda-vida', cat:'Protección contra caídas', name:'Cuerda de Vida — Reacciones y Oreja de Sujeción', file:'Cuerda_de_Vida_Reacciones_Apoyo.xlsx',
     desc:'Reacciones de apoyo de una cuerda de vida horizontal (un vano, hasta 3 operarios simultáneos): estática de cable con cargas puntuales, verificación de anclajes y diseño de la placa "oreja" de sujeción (tracción neta, aplastamiento, desgarramiento).',
@@ -42292,6 +42295,690 @@ function renderEstudioFuego(container) {
 
 
 /* =========================================================================
+   CARGAS EN PUENTES — MANUAL DE CARRETERAS VOL. 3 (CAP. 3.1000) + AASHTO LRFD
+   id interno "cargas-puentes" (calc: 'cargasPuentes')
+   Puente de un tramo simplemente apoyado. Tres tipologías:
+   (a) Losa de hormigón sobre vigas de acero, de hormigón armado o pretensadas (AASHTO tipos a, e, k):
+       factores de distribución de AASHTO LRFD Tablas 4.6.2.2.2b-1, 4.6.2.2.2d-1, 4.6.2.2.3a-1 y 4.6.2.2.3b-1,
+       regla de la palanca y verificación de sección rígida (4.6.2.2.2d), corrección por esviaje
+       (Tablas 4.6.2.2.2e-1 y 4.6.2.2.3c-1).
+   (b) Losa maciza: franja equivalente interior (4.6.2.3) y reducción por esviaje (4.6.2.3-3).
+   (c) Pasarela peatonal: 4,3 kPa (90 psf, AASHTO Guide Specifications for the Design of Pedestrian Bridges 2009 §3.1).
+   Carga viva vehicular: HL-93 (AASHTO 3.6.1.2) con el camión HS20-44 amplificado en 20 % según el MC Vol. 3
+   (factor editable; por defecto se aplica solo al camión, como lo citan las fuentes consultadas).
+   Impacto 3.6.2, presencia múltiple 3.6.1.1.2, frenado 3.6.4, centrífuga 3.6.3, peatonal 3.6.1.6,
+   viento 3.8 (presión base PB y velocidad VDZ de la 7ª ed., 2014), temperatura uniforme 3.12.2,
+   combinaciones Tablas 3.4.1-1 y 3.4.1-2 (7ª ed.).
+   Sismo: método del coeficiente sísmico del MC (Kh = K1·S·A0/2g), con A0 por zona y S por suelo según el MC
+   (valores verificados en fuente secundaria: Soto, U. de Chile, 2007); K1 se ingresa.
+   Transferencia tablero–infraestructura con A0/2 y barras de anclaje verticales con A0, según
+   «Nuevos Criterios Sísmicos para el Diseño de Puentes en Chile» (Dirección de Vialidad, 2010).
+   Unidades internas: kN, m. Se muestran también en tonf (1 tonf = 9,80665 kN).
+   ========================================================================= */
+const PC_TF = 9.80665;
+const PC_A0 = { '1': 0.20, '2': 0.30, '3': 0.40 };                  // MC: A0/g por zona sísmica
+const PC_S = { 'I': 0.9, 'II': 1.0, 'III': 1.2, 'IV': 1.3 };         // MC: coeficiente de suelo S
+const PC_VIENTO = { abierto: { V0: 13.2, Z0: 0.07, txt: 'Campo abierto' }, suburbano: { V0: 17.6, Z0: 1.0, txt: 'Suburbano' }, ciudad: { V0: 19.3, Z0: 2.5, txt: 'Ciudad' } }; // AASHTO Tabla 3.8.1.1-1 (Z0 en m)
+const PC_ALFA = { hormigon: 10.8e-6, acero: 11.7e-6 };               // AASHTO 5.4.2.2 y 6.4.1
+const PC_TIPOS = { vigas: 'Losa sobre vigas (acero, HA o pretensadas)', losa: 'Losa maciza de hormigón', pasarela: 'Pasarela peatonal' };
+// Factores de carga AASHTO LRFD 7ª ed. (Tablas 3.4.1-1 y 3.4.1-2), valores máximos de γp para cargas permanentes.
+const PC_COMB = [
+  { id: 'R1', n: 'Resistencia I', DC: 1.25, DW: 1.50, LL: 1.75, BR: 1.75, CE: 1.75, WS: 0, WL: 0, EQ: 0 },
+  { id: 'R3', n: 'Resistencia III', DC: 1.25, DW: 1.50, LL: 0, BR: 0, CE: 0, WS: 1.40, WL: 0, EQ: 0 },
+  { id: 'R4', n: 'Resistencia IV', DC: 1.50, DW: 1.50, LL: 0, BR: 0, CE: 0, WS: 0, WL: 0, EQ: 0 },
+  { id: 'R5', n: 'Resistencia V', DC: 1.25, DW: 1.50, LL: 1.35, BR: 1.35, CE: 1.35, WS: 0.40, WL: 1.0, EQ: 0 },
+  { id: 'EV1', n: 'Evento Extremo I', DC: 1.25, DW: 1.50, LL: 'gEQ', BR: 'gEQ', CE: 'gEQ', WS: 0, WL: 0, EQ: 1.0 },
+  { id: 'S1', n: 'Servicio I', DC: 1.0, DW: 1.0, LL: 1.0, BR: 1.0, CE: 1.0, WS: 0.30, WL: 1.0, EQ: 0 },
+  { id: 'S2', n: 'Servicio II', DC: 1.0, DW: 1.0, LL: 1.30, BR: 1.30, CE: 1.30, WS: 0, WL: 0, EQ: 0 },
+];
+
+// Presencia múltiple m (AASHTO Tabla 3.6.1.1.2-1).
+function pcM(n) { return n <= 1 ? 1.20 : n === 2 ? 1.00 : n === 3 ? 0.85 : 0.65; }
+
+// Viga simplemente apoyada de luz L bajo un tren de cargas [{P, a}] (a = distancia al primer eje) más una faja w
+// concurrente, en ambos sentidos. Recorre el tren sobre la luz (paso ≤ 2 cm, más las posiciones con un eje sobre los apoyos) y devuelve:
+// Mtr = máximo momento absoluto del tren solo; Vtr = máximo corte en apoyo del tren solo;
+// Mc/xc = máximo de Mtr(x)·(1+IM) + w·x·(L−x)/2 evaluado bajo cada eje (misma sección); Vc = Vtr·(1+IM) + w·L/2.
+function pcTren(L, ejes0, w, IM) {
+  const len = ejes0[ejes0.length - 1].a;
+  const ida = pcTrenSentido(L, ejes0, w, IM);
+  const vuelta = pcTrenSentido(L, ejes0.map(e => ({ P: e.P, a: len - e.a })).reverse(), w, IM);
+  const r = ida.Mc >= vuelta.Mc ? ida : vuelta;
+  return Object.assign({}, r, { Mtr: Math.max(ida.Mtr, vuelta.Mtr), Vtr: Math.max(ida.Vtr, vuelta.Vtr), Vc: Math.max(ida.Vc, vuelta.Vc) });
+}
+// Un sentido de circulación del tren (el corte en el apoyo izquierdo depende del sentido).
+function pcTrenSentido(L, ejes, w, IM) {
+  const len = ejes[ejes.length - 1].a;
+  const dx = Math.min(0.02, L / 500);
+  const xs = [];
+  for (let x0 = -len; x0 <= L + 1e-9; x0 += dx) xs.push(x0);
+  ejes.forEach(e => { xs.push(-e.a); xs.push(L - e.a); xs.push(L / 2 - e.a); });
+  let Mtr = 0, Vtr = 0, Mc = 0, xc = L / 2, MtrC = 0;
+  xs.forEach(x0 => {
+    const pos = ejes.map(e => ({ P: e.P, x: x0 + e.a })).filter(e => e.x >= -1e-9 && e.x <= L + 1e-9);
+    if (!pos.length) return;
+    const RA = pos.reduce((s, e) => s + e.P * (L - e.x) / L, 0);
+    if (RA > Vtr) Vtr = RA;
+    pos.forEach(e => {
+      let M = RA * e.x;
+      pos.forEach(f => { if (f.x < e.x) M -= f.P * (e.x - f.x); });
+      if (M > Mtr) Mtr = M;
+      const Mt = M * (1 + IM) + w * e.x * (L - e.x) / 2;
+      if (Mt > Mc) { Mc = Mt; xc = e.x; MtrC = M; }
+    });
+  });
+  return { Mtr, Vtr, Mc, xc, MtrC, Vc: Vtr * (1 + IM) + w * L / 2 };
+}
+
+// Ejes del camión de diseño (AASHTO 3.6.1.2.2: 35 / 145 / 145 kN, 4,3 m y 4,3–9,0 m) y del tándem (3.6.1.2.3: 2 × 110 kN a 1,2 m).
+function pcCamion(f, s2) { return [{ P: 35 * f, a: 0 }, { P: 145 * f, a: 4.3 }, { P: 145 * f, a: 4.3 + s2 }]; }
+function pcTandem(f) { return [{ P: 110 * f, a: 0 }, { P: 110 * f, a: 1.2 }]; }
+
+function calcCargasPuentes(inp) {
+  const r = { av: [], ok: true };
+  const L = inp.L, tipo = inp.tipo;
+  const IM = inp.IM / 100;
+  const th = Math.min(Math.abs(inp.theta), 60) * Math.PI / 180;
+  // ---- geometría y vías
+  r.NL = tipo === 'pasarela' ? 0 : Math.max(1, Math.floor(inp.w / 3.6 + 1e-9));
+  if (tipo !== 'pasarela' && inp.NLman > 0) r.NL = Math.round(inp.NLman);
+  r.mNL = pcM(r.NL);
+  r.vol = tipo === 'vigas' ? (inp.B - (inp.Nb - 1) * inp.S) / 2 : null;
+
+  // ---- carga viva por vía
+  const fC = inp.fCam, fT = inp.fTanSi ? inp.fCam : 1.0, wL = inp.wFaja;
+  if (tipo !== 'pasarela') {
+    const cam = pcTren(L, pcCamion(fC, 4.3), wL, IM);
+    const tan = pcTren(L, pcTandem(fT), wL, IM);
+    const cam9 = pcTren(L, pcCamion(fC, 9.0), 0, 0);
+    r.cam = cam; r.tan = tan;
+    r.Mfaja = wL * L * L / 8; r.Vfaja = wL * L / 2;
+    r.gobM = cam.Mc >= tan.Mc ? 'Camión' : 'Tándem';
+    r.gobV = cam.Vc >= tan.Vc ? 'Camión' : 'Tándem';
+    r.Mlane = Math.max(cam.Mc, tan.Mc);              // (LL+IM) por vía [kN·m]
+    r.Vlane = Math.max(cam.Vc, tan.Vc);              // (LL+IM) por vía [kN]
+    r.Mfat = cam9.Mtr * 1.15; r.Vfat = cam9.Vtr * 1.15; // camión de fatiga, 9,0 m, IM = 15 % (3.6.1.4, Tabla 3.6.2.1-1)
+    r.Mdef = Math.max(cam.Mtr * (1 + IM), 0.25 * cam.Mtr * (1 + IM) + r.Mfaja); // 3.6.1.3.2 (cota superior)
+    r.ejesCam = pcCamion(fC, 4.3); r.ejesTan = pcTandem(fT);
+  }
+
+  // ---- cargas permanentes globales [kN/m de puente]
+  const gc = inp.gc;
+  r.DW_tot = tipo === 'pasarela' ? inp.ePav * inp.gPav * inp.w : inp.ePav * inp.gPav * inp.w;
+  r.barr_tot = inp.nBarr * inp.gBarr;
+  r.ver_tot = inp.nVer * inp.gVer;
+  if (tipo === 'vigas') {
+    r.losa_tot = gc * inp.ts * inp.B;
+    r.vigas_tot = inp.Nb * inp.gv;
+    r.DC_tot = r.losa_tot + r.vigas_tot + r.barr_tot + r.ver_tot + inp.dcAd;
+  } else if (tipo === 'losa') {
+    r.losa_tot = gc * inp.h * inp.B;
+    r.vigas_tot = 0;
+    r.DC_tot = r.losa_tot + r.barr_tot + r.ver_tot + inp.dcAd;
+  } else {
+    r.losa_tot = 0; r.vigas_tot = 0;
+    r.DC_tot = inp.dcPas + r.barr_tot + inp.dcAd;
+  }
+  r.W_sup = (r.DC_tot + r.DW_tot) * L;                // peso de la superestructura [kN]
+
+  // ---- elementos de diseño: solicitaciones características
+  const MV = q => ({ M: q * L * L / 8, V: q * L / 2 });
+  r.elems = [];
+  if (tipo === 'vigas') {
+    const S = inp.S * 1000, Lm = L * 1000, ts = inp.ts * 1000, de = inp.de * 1000;
+    const Kg = inp.n * (inp.Iv * 1e4 + inp.Av * 100 * Math.pow(inp.eg, 2));
+    r.Kg = Kg;
+    const kgr = Kg / (Lm * Math.pow(ts, 3));
+    r.gMi1 = 0.06 + Math.pow(S / 4300, 0.4) * Math.pow(S / Lm, 0.3) * Math.pow(kgr, 0.1);
+    r.gMi2 = 0.075 + Math.pow(S / 2900, 0.6) * Math.pow(S / Lm, 0.2) * Math.pow(kgr, 0.1);
+    r.gVi1 = 0.36 + S / 7600;
+    r.gVi2 = 0.2 + S / 3600 - Math.pow(S / 10700, 2);
+    // regla de la palanca, viga exterior, una vía (m = 1,20): ruedas a 0,6 m de la cara de la barrera y 1,8 m entre sí
+    const x1 = -inp.de + 0.6, x2 = x1 + 1.8;
+    r.palX = [x1, x2];
+    const reac = x => (x < inp.S ? 0.5 * (inp.S - x) / inp.S : 0);
+    r.palR = reac(x1) + reac(x2);
+    r.gMe1 = 1.2 * r.palR; r.gVe1 = r.gMe1;
+    r.eM = 0.77 + de / 2800; r.eV = 0.6 + de / 3000;
+    r.gMe2 = r.eM * r.gMi2; r.gVe2 = r.eV * r.gVi2;
+    // sección rígida (4.6.2.2.2d)
+    r.rig = null;
+    if (inp.diaf && inp.Nb >= 2) {
+      const Xext = (inp.Nb - 1) * inp.S / 2;
+      let sx2 = 0; for (let i = 0; i < inp.Nb; i++) { const x = -Xext + i * inp.S; sx2 += x * x; }
+      const casos = [];
+      for (let k = 1; k <= r.NL; k++) {
+        let se = 0; for (let j = 0; j < k; j++) se += Xext + inp.de - 1.5 - 3.6 * j;
+        const R = k / inp.Nb + Xext * se / sx2;
+        casos.push({ k, se, R, mR: pcM(k) * R });
+      }
+      r.rig = { Xext, sx2, casos, g: Math.max(...casos.map(c => c.mR)) };
+    }
+    // esviaje
+    const thDeg = Math.abs(inp.theta);
+    r.c1 = thDeg < 30 ? 0 : 0.25 * Math.pow(kgr, 0.25) * Math.pow(S / Lm, 0.5);
+    r.skM = 1 - r.c1 * Math.pow(Math.tan(th), 1.5);
+    r.skV = 1 + 0.20 * Math.pow(1 / kgr, 0.3) * Math.tan(th);
+    const dos = r.NL >= 2;
+    r.gMi = (dos ? Math.max(r.gMi1, r.gMi2) : r.gMi1) * r.skM;
+    r.gVi = (dos ? Math.max(r.gVi1, r.gVi2) : r.gVi1) * r.skV;
+    r.gMeBase = Math.max(r.gMe1, dos ? r.gMe2 : 0, r.rig ? r.rig.g : 0);
+    r.gVeBase = Math.max(r.gVe1, dos ? r.gVe2 : 0, r.rig ? r.rig.g : 0);
+    r.gMe = r.gMeBase * r.skM; r.gVe = r.gVeBase * r.skV;
+    // rangos de aplicabilidad
+    if (S < 1100 || S > 4900) r.av.push(`S = ${S.toFixed(0)} mm fuera del rango 1100–4900 mm de las fórmulas de distribución: use la regla de la palanca o un análisis refinado.`);
+    if (ts < 110 || ts > 300) r.av.push(`ts = ${ts.toFixed(0)} mm fuera del rango 110–300 mm.`);
+    if (Lm < 6000 || Lm > 73000) r.av.push(`L = ${L} m fuera del rango 6–73 m.`);
+    if (inp.Nb < 4) r.av.push('Nb < 4: las fórmulas de la Tabla 4.6.2.2.2b-1 exigen al menos 4 vigas (con 3 vigas se adopta el menor entre la fórmula y la regla de la palanca, 4.6.2.2.2d; verifique).');
+    if (Kg < 4e9 || Kg > 3e12) r.av.push(`Kg = ${Kg.toExponential(2)} mm⁴ fuera del rango 4·10⁹–3·10¹² mm⁴.`);
+    if (inp.de < -0.3 || inp.de > 1.7) r.av.push('de fuera del rango −0,30 a 1,70 m de los factores e.');
+    if (r.vol < 0) r.av.push('El ancho total es menor que (Nb − 1)·S: revise la geometría.');
+    // cargas permanentes por viga
+    const repart = (r.barr_tot + r.ver_tot + inp.dcAd) / inp.Nb;
+    const dwV = r.DW_tot / inp.Nb;
+    // peatonal: cada vereda con su resultante en el centro de la vereda, medida desde la viga exterior hacia el interior
+    const qv = inp.PL * inp.bVer;                    // kN/m por vereda
+    const xs = inp.bVer / 2 - r.vol;
+    const PLext = inp.nVer >= 1 ? qv * Math.max(0, (inp.S - xs) / inp.S) : 0;
+    const PLint = inp.nVer >= 1 ? qv * Math.max(0, xs / inp.S) : 0;
+    r.PLext = PLext; r.PLint = PLint;
+    const mk = (nombre, dcLosa, gM, gV, PLq, gMf, gVf) => {
+      const dc = dcLosa + inp.gv + repart;
+      const e = { nombre, qDC: dc, qDW: dwV, qPL: PLq, gM, gV };
+      e.DC = MV(dc); e.DW = MV(dwV); e.PL = MV(PLq);
+      e.LL = { M: gM * r.Mlane, V: gV * r.Vlane };
+      e.FAT = { M: gMf / 1.2 * r.Mfat, V: gVf / 1.2 * r.Vfat }; // fatiga: factor de una vía sin m (3.6.1.1.2)
+      e.DEF = { M: r.NL * r.mNL * r.Mdef / inp.Nb };
+      return e;
+    };
+    r.elems.push(mk('Viga interior', gc * inp.ts * inp.S, r.gMi, r.gVi, PLint, r.gMi1 * r.skM, r.gVi1 * r.skV));
+    const g1e = Math.max(r.gMe1, r.rig ? r.rig.casos[0].mR : 0);
+    r.elems.push(mk('Viga exterior', gc * inp.ts * (inp.S / 2 + Math.max(0, r.vol)), r.gMe, r.gVe, PLext, g1e * r.skM, g1e * r.skV));
+    r.unidad = 'por viga';
+  } else if (tipo === 'losa') {
+    const L1 = Math.min(L, 18) * 1000, W1s = Math.min(inp.B, 9) * 1000, W1m = Math.min(inp.B, 18) * 1000;
+    r.E1 = 250 + 0.42 * Math.sqrt(L1 * W1s);
+    r.Em = 2100 + 0.12 * Math.sqrt(L1 * W1m);
+    r.EmMax = inp.B * 1000 / r.NL;
+    r.EmUsado = Math.min(r.Em, r.EmMax);
+    r.E = r.NL >= 2 ? Math.min(r.E1, r.EmUsado) : r.E1;
+    r.rSkew = Math.min(1, 1.05 - 0.25 * Math.tan(th));
+    const q = gc * inp.h, dw = inp.ePav * inp.gPav;
+    const e = { nombre: 'Franja interior de 1 m', qDC: q, qDW: dw, qPL: 0 };
+    e.DC = MV(q); e.DW = MV(dw); e.PL = { M: 0, V: 0 };
+    e.LL = { M: r.Mlane / (r.E / 1000) * r.rSkew, V: r.Vlane / (r.E / 1000) };
+    e.FAT = { M: r.Mfat / (r.E1 / 1000) / 1.2 * r.rSkew, V: r.Vfat / (r.E1 / 1000) / 1.2 };
+    e.DEF = { M: r.NL * r.mNL * r.Mdef / inp.B };
+    r.elems.push(e);
+    r.unidad = 'por metro de ancho';
+    if (L > 18) r.av.push('L1 se limita a 18 m en la franja equivalente (4.6.2.3).');
+    r.av.push('Franja interior solamente. Las franjas de borde (4.6.2.1.4b) con barrera y vereda deben verificarse aparte.');
+  } else {
+    const q = inp.PLpas * inp.w;
+    const e = { nombre: 'Pasarela completa', qDC: r.DC_tot, qDW: r.DW_tot, qPL: q };
+    e.DC = MV(r.DC_tot); e.DW = MV(r.DW_tot); e.PL = MV(q);
+    e.LL = { M: 0, V: 0 }; e.FAT = null; e.DEF = null;
+    r.elems.push(e);
+    r.unidad = 'estructura completa';
+    if (inp.w > 2.13) r.av.push(`Ancho libre ${inp.w.toLocaleString('es-CL')} m: la Guide Specification 2009 (§3.2) exige verificar además un vehículo de mantención (H5 entre 2,13 y 3,05 m; H10 sobre 3,05 m) cuando no se impide su acceso.`);
+  }
+
+  // ---- combinaciones (efectos verticales sobre el elemento de diseño)
+  const fac = (c, k) => c[k] === 'gEQ' ? inp.gEQ : c[k];
+  r.elems.forEach(e => {
+    e.comb = PC_COMB.map(c => {
+      const g = fac(c, 'LL');
+      return { n: c.n, M: inp.eta * (c.DC * e.DC.M + c.DW * e.DW.M + g * (e.LL.M + e.PL.M)), V: inp.eta * (c.DC * e.DC.V + c.DW * e.DW.V + g * (e.LL.V + e.PL.V)) };
+    });
+    if (e.FAT) e.comb.push({ n: 'Fatiga I (solo carga viva de fatiga)', M: 1.5 * e.FAT.M, V: 1.5 * e.FAT.V, fat: true });
+    e.Mu = Math.max(...e.comb.filter(c => /Resistencia|Evento/.test(c.n)).map(c => c.M));
+    e.Vu = Math.max(...e.comb.filter(c => /Resistencia|Evento/.test(c.n)).map(c => c.V));
+  });
+
+  // ---- acciones horizontales sobre la infraestructura (puente completo)
+  if (tipo !== 'pasarela') {
+    const ejesC = r.ejesCam.reduce((s, e) => s + e.P, 0), ejesT = r.ejesTan.reduce((s, e) => s + e.P, 0);
+    r.br1 = 0.25 * ejesC; r.br2 = 0.25 * ejesT; r.br3 = 0.05 * (ejesC + wL * L); r.br4 = 0.05 * (ejesT + wL * L);
+    r.BRv = Math.max(r.br1, r.br2, r.br3, r.br4);    // por vía
+    r.BR = r.BRv * r.NL * r.mNL;
+    if (inp.R > 0 && inp.Vd > 0) {
+      const v = inp.Vd / 3.6;
+      r.Cf = 4 / 3 * v * v / (9.81 * inp.R);
+      r.CE = r.Cf * Math.max(ejesC, ejesT) * r.NL * r.mNL;
+    } else { r.Cf = 0; r.CE = 0; }
+  } else { r.BR = 0; r.CE = 0; }
+  // viento (3.8.1.1 y 3.8.1.2, 7ª ed.)
+  const ex = PC_VIENTO[inp.exp] || PC_VIENTO.abierto;
+  r.VDZ = inp.Z > 10 ? 2.5 * ex.V0 * (inp.V30 / 160) * Math.log(inp.Z / ex.Z0) : inp.V30;
+  r.PD = 2.4 * Math.pow(r.VDZ / 160, 2);           // kPa, vigas
+  r.wsq = Math.max(r.PD * inp.hw, 4.4);            // kN/m
+  r.wsMin = r.PD * inp.hw < 4.4;
+  r.WS = r.wsq * L;
+  r.WL = tipo === 'pasarela' ? 0 : 1.46 * L;       // 1,46 kN/m a 1,8 m sobre la calzada
+  r.WSv = 0.96 * inp.B * L;                        // empuje vertical hacia arriba (3.8.2)
+  // sismo, método del coeficiente sísmico (MC)
+  r.A0 = PC_A0[inp.zona]; r.Ss = PC_S[inp.suelo];
+  r.Kh = inp.K1 * r.Ss * r.A0 / 2;
+  r.EQ = r.Kh * r.W_sup;
+  r.EQapoyo = r.EQ / 2;
+  r.Rdc = (r.DC_tot + r.DW_tot) * L / 2;           // reacción permanente por estribo
+  r.Fanc = r.A0 * r.Rdc;                           // barras de anclaje verticales (aceleración A0)
+  // temperatura
+  const a = PC_ALFA[inp.mat] || PC_ALFA.hormigon;
+  r.alfa = a;
+  r.dT = inp.Tmax - inp.Tmin;
+  r.dL = a * inp.Ldil * 1000 * r.dT;               // mm
+  r.dExp = a * inp.Ldil * 1000 * (inp.Tmax - inp.Tins);
+  r.dCon = a * inp.Ldil * 1000 * (inp.Tins - inp.Tmin);
+  // combinaciones de acciones horizontales (puente completo)
+  r.hcomb = PC_COMB.filter(c => c.id !== 'R4' && c.id !== 'S2').map(c => {
+    const g = k => fac(c, k);
+    const lon = g('BR') * r.BR + (c.EQ ? r.EQ : 0);
+    const tra = g('CE') * r.CE + c.WS * r.WS + c.WL * r.WL + (c.EQ ? r.EQ : 0);
+    return { n: c.n, lon: inp.eta * lon, tra: inp.eta * tra };
+  });
+  return r;
+}
+
+function pcLeer() {
+  const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const n = id => { const x = parseFloat(String(v(id)).replace(',', '.')); return isNaN(x) ? 0 : x; };
+  return {
+    nombre: v('pc_nombre').trim(), tipo: v('pc_tipo'), L: n('pc_L'), B: n('pc_B'), w: n('pc_w'), theta: n('pc_theta'), NLman: n('pc_NL'),
+    Nb: Math.max(2, Math.round(n('pc_Nb'))), S: n('pc_S'), ts: n('pc_ts'), de: n('pc_de'), gv: n('pc_gv'), Iv: n('pc_Iv'), Av: n('pc_Av'), eg: n('pc_eg'), n: n('pc_n') || 1,
+    diaf: v('pc_diaf') === 'si', h: n('pc_h'), dcPas: n('pc_dcPas'),
+    gc: n('pc_gc'), nBarr: n('pc_nBarr'), gBarr: n('pc_gBarr'), nVer: n('pc_nVer'), bVer: n('pc_bVer'), gVer: n('pc_gVer'), dcAd: n('pc_dcAd'), ePav: n('pc_ePav'), gPav: n('pc_gPav'),
+    fCam: n('pc_fCam') || 1, fTanSi: v('pc_fTan') === 'si', wFaja: n('pc_wFaja'), IM: n('pc_IM'), PL: n('pc_PL'), PLpas: n('pc_PLpas'),
+    R: n('pc_R'), Vd: n('pc_Vd'), V30: n('pc_V30'), Z: n('pc_Z'), exp: v('pc_exp'), hw: n('pc_hw'),
+    Tmax: n('pc_Tmax'), Tmin: n('pc_Tmin'), Tins: n('pc_Tins'), mat: v('pc_mat'), Ldil: n('pc_Ldil') || n('pc_L'),
+    zona: v('pc_zona'), suelo: v('pc_suelo'), K1: n('pc_K1'), gEQ: n('pc_gEQ'), eta: n('pc_eta') || 1
+  };
+}
+
+// Corte transversal esquemático (losa sobre vigas): vigas, barreras y las dos ruedas de la regla de la palanca.
+function pcSvgCorte(inp, r) {
+  if (inp.tipo !== 'vigas' || !(inp.B > 0)) return '';
+  const W = 640, H = 190, m = 30, sc = (W - 2 * m) / inp.B;
+  const X = x => m + x * sc;                 // x desde el borde izquierdo del tablero
+  const vol = r.vol, yL = 70, tL = Math.max(6, inp.ts * sc);
+  let g = `<rect x="${X(0)}" y="${yL}" width="${inp.B * sc}" height="${tL}" fill="#c9d3df" stroke="#57636F"/>`;
+  for (let i = 0; i < inp.Nb; i++) {
+    const x = X(vol + i * inp.S);
+    g += `<rect x="${x - 5}" y="${yL + tL}" width="10" height="55" fill="#8a99ab" stroke="#57636F"/><rect x="${x - 14}" y="${yL + tL + 55}" width="28" height="6" fill="#8a99ab" stroke="#57636F"/>`;
+  }
+  const xb = vol - inp.de;                  // cara interior de la barrera (de > 0: viga hacia adentro de la cara)
+  g += `<rect x="${X(0)}" y="${yL - 30}" width="${Math.max(4, (xb) * sc)}" height="30" fill="#e3e8ef" stroke="#57636F"/>`;
+  g += `<rect x="${X(inp.B - xb)}" y="${yL - 30}" width="${Math.max(4, (xb) * sc)}" height="30" fill="#e3e8ef" stroke="#57636F"/>`;
+  r.palX.forEach(x => {
+    const xx = X(vol + x);
+    g += `<line x1="${xx}" x2="${xx}" y1="${yL - 46}" y2="${yL - 4}" stroke="#B3261E" stroke-width="2.2"/><polygon points="${xx - 5},${yL - 12} ${xx + 5},${yL - 12} ${xx},${yL - 3}" fill="#B3261E"/>`;
+  });
+  g += `<text x="${X(vol + r.palX[0]) + 6}" y="${yL - 38}" font-size="10" fill="#B3261E">P/2   1,8 m   P/2</text>`;
+  g += `<text x="${X(vol)}" y="${H - 6}" font-size="10" text-anchor="middle" fill="#57636F">viga ext.</text>`;
+  g += `<text x="${X(vol + inp.S)}" y="${H - 6}" font-size="10" text-anchor="middle" fill="#57636F">S = ${inp.S.toLocaleString('es-CL')} m</text>`;
+  g += `<text x="${X(inp.B / 2)}" y="${yL - 50}" font-size="10" text-anchor="middle" fill="#182430">B = ${inp.B.toLocaleString('es-CL')} m · ${r.NL} vía(s) de diseño · Nb = ${inp.Nb}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto;display:block;margin:.4rem auto" role="img" aria-label="Corte transversal">${g}</svg>`;
+}
+
+// Camión HS20-44 + 20 % y tándem (esquema con cargas por eje).
+function pcSvgCamion(r) {
+  if (!r.ejesCam) return '';
+  const W = 640, H = 120, x0 = 60, sc = 40;
+  let g = `<line x1="20" x2="${W - 20}" y1="90" y2="90" stroke="#57636F"/>`;
+  r.ejesCam.forEach(e => {
+    const x = x0 + e.a * sc;
+    g += `<line x1="${x}" x2="${x}" y1="30" y2="86" stroke="#1F3864" stroke-width="2.4"/><polygon points="${x - 6},76 ${x + 6},76 ${x},88" fill="#1F3864"/><text x="${x}" y="24" font-size="11" text-anchor="middle" fill="#182430">${MEM_N(e.P, 1)} kN</text>`;
+  });
+  g += `<text x="${x0 + 2.15 * sc}" y="106" font-size="10" text-anchor="middle" fill="#57636F">4,3 m</text><text x="${x0 + 6.45 * sc}" y="106" font-size="10" text-anchor="middle" fill="#57636F">4,3 a 9,0 m</text>`;
+  const xt = x0 + 11.5 * sc;
+  r.ejesTan.forEach(e => {
+    const x = xt + e.a * sc;
+    g += `<line x1="${x}" x2="${x}" y1="30" y2="86" stroke="#2E5395" stroke-width="2.4"/><polygon points="${x - 6},76 ${x + 6},76 ${x},88" fill="#2E5395"/>`;
+  });
+  g += `<text x="${xt + 0.6 * sc}" y="24" font-size="11" text-anchor="middle" fill="#182430">2 × ${MEM_N(r.ejesTan[0].P, 1)} kN</text><text x="${xt + 0.6 * sc}" y="106" font-size="10" text-anchor="middle" fill="#57636F">tándem, 1,2 m</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto;display:block;margin:.4rem auto" role="img" aria-label="Camión y tándem de diseño">${g}</svg>`;
+}
+
+const PC_NOTA = 'Carga viva vehicular: HL-93 de AASHTO LRFD con el camión HS20-44 amplificado en 20 % según el Manual de Carreteras Vol. 3, Cap. 3.1000 (Puentes y Obras Afines). Las fuentes consultadas citan la amplificación sobre el camión; el factor y su aplicación al tándem y a la faja quedan editables y deben confirmarse contra la edición vigente del MC del contrato. Sismo: A0 por zona (0,20 g / 0,30 g / 0,40 g) y S por suelo (I 0,9 · II 1,0 · III 1,2 · IV 1,3) según MC; K1 se ingresa según la clasificación de importancia del MC. Viento, impacto, frenado, temperatura y combinaciones según AASHTO LRFD 7ª ed. (2014); el MC puede fijar velocidades y temperaturas de diseño propias.';
+
+function pcDatosHtml(inp, r) {
+  const row = (l, v) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${v}</td></tr>`;
+  const N = (v, d) => xlsxNum(v, d);
+  const proyecto = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.proyecto) ? esc(PROYECTO_META.proyecto) : '____________________';
+  let h = `<div class="xlsx-title-bar">CARGAS EN PUENTES — DATOS DE ENTRADA</div>
+    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">${PC_NOTA}</div>
+    <div class="xlsx-section">A. Identificación y geometría</div>
+    <table class="xlsx-table"><tbody>
+      ${row('Proyecto', proyecto)}${row('Puente', esc(inp.nombre || '—'))}
+      ${row('Tipología', PC_TIPOS[inp.tipo])}
+      ${row('Luz de cálculo L [m] (tramo simplemente apoyado)', N(inp.L, 2))}
+      ${row('Ancho total B / ancho de calzada (o libre peatonal) w [m]', N(inp.B, 2) + ' / ' + N(inp.w, 2))}
+      ${row('Esviaje θ [°]', N(inp.theta, 1))}
+      ${inp.tipo !== 'pasarela' ? row('Vías de diseño NL / presencia múltiple m', r.NL + ' / ' + N(r.mNL, 2)) : ''}
+      ${inp.tipo === 'vigas' ? row('Nb / S [m] / ts [m] / de [m]', `${inp.Nb} / ${N(inp.S, 2)} / ${N(inp.ts, 3)} / ${N(inp.de, 2)}`) + row('Viga: peso [kN/m] · I [cm⁴] · A [cm²] · eg [mm] · n', `${N(inp.gv, 2)} · ${N(inp.Iv, 0)} · ${N(inp.Av, 1)} · ${N(inp.eg, 0)} · ${N(inp.n, 2)}`) + row('Diafragmas / arriostramiento transversal', inp.diaf ? 'Sí' : 'No') : ''}
+      ${inp.tipo === 'losa' ? row('Espesor de losa h [m]', N(inp.h, 3)) : ''}
+    </tbody></table>
+    <div class="xlsx-section">B. Cargas permanentes y variables</div>
+    <table class="xlsx-table"><tbody>
+      ${row('γ hormigón [kN/m³]', N(inp.gc, 1))}
+      ${inp.tipo === 'pasarela' ? row('Peso propio de la estructura [kN/m]', N(inp.dcPas, 2)) : ''}
+      ${row('Barreras: n° × peso [kN/m]', inp.nBarr + ' × ' + N(inp.gBarr, 2))}
+      ${inp.tipo !== 'pasarela' ? row('Veredas: n° × ancho [m] × peso [kN/m]', inp.nVer + ' × ' + N(inp.bVer, 2) + ' × ' + N(inp.gVer, 2)) : ''}
+      ${row('Otras cargas muertas DC [kN/m]', N(inp.dcAd, 2))}
+      ${row('Pavimento: espesor [m] × γ [kN/m³]', N(inp.ePav, 3) + ' × ' + N(inp.gPav, 1))}
+      ${inp.tipo !== 'pasarela' ? row('Factor MC sobre camión / aplicado al tándem', N(inp.fCam, 2) + ' / ' + (inp.fTanSi ? 'Sí' : 'No')) + row('Faja [kN/m] / IM [%]', N(inp.wFaja, 2) + ' / ' + N(inp.IM, 0)) + row('Carga peatonal en veredas [kPa]', N(inp.PL, 2)) : row('Carga peatonal [kPa]', N(inp.PLpas, 2))}
+      ${row('Viento: V30 [km/h] · Z [m] · terreno · altura expuesta [m]', `${N(inp.V30, 0)} · ${N(inp.Z, 1)} · ${(PC_VIENTO[inp.exp] || PC_VIENTO.abierto).txt} · ${N(inp.hw, 2)}`)}
+      ${row('Temperatura: Tmáx / Tmín / Tinstalación [°C] · material · longitud [m]', `${N(inp.Tmax, 0)} / ${N(inp.Tmin, 0)} / ${N(inp.Tins, 0)} · ${inp.mat === 'acero' ? 'acero' : 'hormigón'} · ${N(inp.Ldil, 2)}`)}
+      ${row('Sismo: zona · suelo · K1 · γEQ', `${inp.zona} · ${inp.suelo} · ${N(inp.K1, 2)} · ${N(inp.gEQ, 2)}`)}
+      ${row('η = ηD·ηR·ηI', N(inp.eta, 2))}
+    </tbody></table>`;
+  return h;
+}
+
+function pcCalcHtml(inp, r, resumen) {
+  const th = 'style="text-align:center;font-weight:700;padding:.25rem .3rem;border:1px solid #999;background:#349DD3;color:#fff"';
+  const td = 'style="padding:.2rem .3rem;border:1px solid #999"';
+  const tdn = 'style="padding:.2rem .3rem;border:1px solid #999;text-align:right"';
+  const n = (v, d) => (v == null || !isFinite(v)) ? '—' : xlsxNum(v, d);
+  let h = `<div class="xlsx-title-bar">CÁLCULO</div>`;
+  if (inp.tipo !== 'pasarela' && !resumen) {
+    h += `<div class="xlsx-section">1. Carga viva por vía (HL-93 con camión × ${n(inp.fCam, 2)})</div>
+      <table style="border-collapse:collapse;width:100%;font-size:.78rem"><thead><tr><th ${th}>Efecto</th><th ${th}>M [kN·m]</th><th ${th}>V apoyo [kN]</th></tr></thead><tbody>
+      <tr><td ${td}>Camión de diseño (sin IM)</td><td ${tdn}>${n(r.cam.Mtr, 1)}</td><td ${tdn}>${n(r.cam.Vtr, 1)}</td></tr>
+      <tr><td ${td}>Tándem de diseño (sin IM)</td><td ${tdn}>${n(r.tan.Mtr, 1)}</td><td ${tdn}>${n(r.tan.Vtr, 1)}</td></tr>
+      <tr><td ${td}>Faja ${n(inp.wFaja, 2)} kN/m</td><td ${tdn}>${n(r.Mfaja, 1)}</td><td ${tdn}>${n(r.Vfaja, 1)}</td></tr>
+      <tr><td ${td}><b>(LL+IM) por vía, gobierna ${r.gobM} / ${r.gobV}</b></td><td ${tdn}><b>${n(r.Mlane, 1)}</b></td><td ${tdn}><b>${n(r.Vlane, 1)}</b></td></tr>
+      <tr><td ${td}>Camión de fatiga (9,0 m, IM 15 %)</td><td ${tdn}>${n(r.Mfat, 1)}</td><td ${tdn}>${n(r.Vfat, 1)}</td></tr>
+      </tbody></table>`;
+  }
+  if (inp.tipo === 'vigas' && !resumen) {
+    h += `<div class="xlsx-section">2. Factores de distribución (AASHTO 4.6.2.2)</div>
+      <table style="border-collapse:collapse;width:100%;font-size:.78rem"><thead><tr><th ${th}>Factor</th><th ${th}>1 vía</th><th ${th}>2+ vías</th><th ${th}>Sección rígida</th><th ${th}>Esviaje</th><th ${th}>Adoptado</th></tr></thead><tbody>
+      <tr><td ${td}>Momento, viga interior</td><td ${tdn}>${n(r.gMi1, 3)}</td><td ${tdn}>${r.NL >= 2 ? n(r.gMi2, 3) : '—'}</td><td ${tdn}>—</td><td ${tdn}>${n(r.skM, 3)}</td><td ${tdn}><b>${n(r.gMi, 3)}</b></td></tr>
+      <tr><td ${td}>Momento, viga exterior</td><td ${tdn}>${n(r.gMe1, 3)}</td><td ${tdn}>${r.NL >= 2 ? n(r.gMe2, 3) : '—'}</td><td ${tdn}>${r.rig ? n(r.rig.g, 3) : '—'}</td><td ${tdn}>${n(r.skM, 3)}</td><td ${tdn}><b>${n(r.gMe, 3)}</b></td></tr>
+      <tr><td ${td}>Corte, viga interior</td><td ${tdn}>${n(r.gVi1, 3)}</td><td ${tdn}>${r.NL >= 2 ? n(r.gVi2, 3) : '—'}</td><td ${tdn}>—</td><td ${tdn}>${n(r.skV, 3)}</td><td ${tdn}><b>${n(r.gVi, 3)}</b></td></tr>
+      <tr><td ${td}>Corte, viga exterior</td><td ${tdn}>${n(r.gVe1, 3)}</td><td ${tdn}>${r.NL >= 2 ? n(r.gVe2, 3) : '—'}</td><td ${tdn}>${r.rig ? n(r.rig.g, 3) : '—'}</td><td ${tdn}>${n(r.skV, 3)}</td><td ${tdn}><b>${n(r.gVe, 3)}</b></td></tr>
+      </tbody></table>`;
+  }
+  if (inp.tipo === 'losa' && !resumen) {
+    h += `<div class="xlsx-section">2. Franja equivalente (AASHTO 4.6.2.3)</div><table class="xlsx-table"><tbody>
+      <tr><td class="xv-label">E una vía / varias vías / adoptado [mm]</td><td class="xv-input" colspan="3">${n(r.E1, 0)} / ${r.NL >= 2 ? n(r.EmUsado, 0) : '—'} / <b>${n(r.E, 0)}</b></td></tr>
+      <tr><td class="xv-label">Factor por esviaje r</td><td class="xv-input" colspan="3">${n(r.rSkew, 3)}</td></tr></tbody></table>`;
+  }
+  r.elems.forEach((e, i) => {
+    h += `<div class="xlsx-section">${3 + i}. ${esc(e.nombre)} — solicitaciones ${r.unidad}</div>
+      <table style="border-collapse:collapse;width:100%;font-size:.78rem"><thead><tr><th ${th}>Carga / combinación</th><th ${th}>M [kN·m]</th><th ${th}>V [kN]</th><th ${th}>M [tonf·m]</th><th ${th}>V [tonf]</th></tr></thead><tbody>
+      ${resumen ? '' : [['DC', e.DC], ['DW', e.DW], ['LL+IM', e.LL], ['PL', e.PL]].map(x => `<tr><td ${td}>${x[0]}</td><td ${tdn}>${n(x[1].M, 1)}</td><td ${tdn}>${n(x[1].V, 1)}</td><td ${tdn}>${n(x[1].M / PC_TF, 2)}</td><td ${tdn}>${n(x[1].V / PC_TF, 2)}</td></tr>`).join('')}
+      ${e.comb.map(c => `<tr><td ${td}>${esc(c.n)}</td><td ${tdn}>${n(c.M, 1)}</td><td ${tdn}>${n(c.V, 1)}</td><td ${tdn}>${n(c.M / PC_TF, 2)}</td><td ${tdn}>${n(c.V / PC_TF, 2)}</td></tr>`).join('')}
+      </tbody></table>`;
+  });
+  h += `<div class="xlsx-section">Acciones horizontales y otras (puente completo)</div><table class="xlsx-table"><tbody>
+    ${inp.tipo !== 'pasarela' ? `<tr><td class="xv-label">Frenado BR [kN] (a 1,8 m sobre la calzada)</td><td class="xv-input" colspan="3">${n(r.BR, 1)} (${n(r.BR / PC_TF, 2)} tonf)</td></tr>` : ''}
+    ${r.CE > 0 ? `<tr><td class="xv-label">Fuerza centrífuga CE [kN]</td><td class="xv-input" colspan="3">${n(r.CE, 1)}</td></tr>` : ''}
+    <tr><td class="xv-label">Viento WS sobre superestructura [kN] (VDZ = ${n(r.VDZ, 1)} km/h)</td><td class="xv-input" colspan="3">${n(r.WS, 1)} (${n(r.wsq, 2)} kN/m)</td></tr>
+    ${r.WL ? `<tr><td class="xv-label">Viento sobre carga viva WL [kN]</td><td class="xv-input" colspan="3">${n(r.WL, 1)}</td></tr>` : ''}
+    <tr><td class="xv-label">Viento vertical (hacia arriba) [kN]</td><td class="xv-input" colspan="3">${n(r.WSv, 1)}</td></tr>
+    <tr><td class="xv-label">Sismo: Kh = K1·S·A0/2g / peso / EQ [kN]</td><td class="xv-input" colspan="3">${n(r.Kh, 3)} / ${n(r.W_sup, 0)} / <b>${n(r.EQ, 1)}</b> (${n(r.EQ / PC_TF, 1)} tonf)</td></tr>
+    <tr><td class="xv-label">Barras de anclaje verticales, por estribo [kN] (A0·R)</td><td class="xv-input" colspan="3">${n(r.Fanc, 1)}</td></tr>
+    <tr><td class="xv-label">Temperatura: ΔT [°C] / dilatación / contracción [mm]</td><td class="xv-input" colspan="3">${n(r.dT, 0)} / ${n(r.dExp, 1)} / ${n(r.dCon, 1)}</td></tr>
+  </tbody></table>
+  <table style="border-collapse:collapse;width:100%;font-size:.78rem;margin-top:.3rem"><thead><tr><th ${th}>Combinación</th><th ${th}>Longitudinal [kN]</th><th ${th}>Transversal [kN]</th></tr></thead><tbody>
+  ${r.hcomb.map(c => `<tr><td ${td}>${esc(c.n)}</td><td ${tdn}>${n(c.lon, 1)}</td><td ${tdn}>${n(c.tra, 1)}</td></tr>`).join('')}</tbody></table>`;
+  if (r.av.length) h += `<div class="xlsx-desc-row" style="padding:.3rem">${r.av.map(esc).join('<br>')}</div>`;
+  return h;
+}
+
+/* ---------------- Memoria: CARGAS EN PUENTES ---------------- */
+function pcMemoriaHtml(inp, r, meta) {
+  const N = MEM_N;
+  const nom = inp.nombre || meta.edif || 'el puente en estudio';
+  const tabla = (cab, filas) => `<table class="inf-t"><tr>${cab.map(c => `<th>${c}</th>`).join('')}</tr>${filas.map(f => `<tr>${f.map((c, i) => `<td${i === 0 ? ' class="l"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</table>`;
+  let s = '';
+  s += `<h1>1. Introducción</h1><p>Se determinan las cargas de diseño de ${esc(nom)}, ${PC_TIPOS[inp.tipo].toLowerCase()}, de un tramo simplemente apoyado de ${N(inp.L, 2)} m de luz, conforme al Manual de Carreteras, Volumen 3, Capítulo 3.1000 (Puentes y Obras Afines) y a la especificación AASHTO LRFD Bridge Design Specifications a la que este remite.</p>${meta.desc ? `<p>${esc(meta.desc)}</p>` : ''}`;
+  s += `<h1>2. Marco normativo</h1><ul>
+    <li>Manual de Carreteras, Vol. 3, Cap. 3.1000, Dirección de Vialidad, MOP: carga viva HL-93 con camión HS20-44 amplificado en 20 %; diseño sísmico (zonas, coeficiente de suelo, método del coeficiente sísmico).</li>
+    <li>AASHTO LRFD Bridge Design Specifications, 7ª ed. (2014): Secciones 3 (cargas y combinaciones) y 4 (distribución de cargas).</li>
+    <li>Dirección de Vialidad (2010), Nuevos Criterios Sísmicos para el Diseño de Puentes en Chile.</li>
+    ${inp.tipo === 'pasarela' ? '<li>AASHTO LRFD Guide Specifications for the Design of Pedestrian Bridges (2009).</li>' : ''}</ul>`;
+  s += `<h1>3. Cargas permanentes</h1>${MEM_T('Cargas permanentes del tablero (kN/m de puente)')}${tabla(['Componente', 'kN/m', 'tonf/m'], [
+    ['Losa', N(r.losa_tot, 2), N(r.losa_tot / PC_TF, 3)], ['Vigas', N(r.vigas_tot, 2), N(r.vigas_tot / PC_TF, 3)], ['Barreras', N(r.barr_tot, 2), N(r.barr_tot / PC_TF, 3)],
+    ['Veredas', N(r.ver_tot, 2), N(r.ver_tot / PC_TF, 3)], ['Otras DC', N(inp.dcAd + (inp.tipo === 'pasarela' ? inp.dcPas : 0), 2), N((inp.dcAd + (inp.tipo === 'pasarela' ? inp.dcPas : 0)) / PC_TF, 3)],
+    ['<b>DC total</b>', `<b>${N(r.DC_tot, 2)}</b>`, N(r.DC_tot / PC_TF, 3)], ['<b>DW pavimento</b>', `<b>${N(r.DW_tot, 2)}</b>`, N(r.DW_tot / PC_TF, 3)]])}
+    <p>Peso total de la superestructura: W = (DC + DW)·L = ${N(r.W_sup, 0)} kN (${N(r.W_sup / PC_TF, 1)} tonf).${inp.tipo === 'vigas' ? ' Las barreras, veredas, otras cargas DC y el pavimento se reparten por igual entre las vigas (AASHTO 4.6.2.2.1); la losa se asigna por ancho tributario.' : ''}</p>`;
+  if (inp.tipo !== 'pasarela') {
+    s += `<h1>4. Carga viva vehicular</h1>
+      <p>Modelo HL-93: camión de diseño o tándem, el que produzca el mayor efecto, más la carga de faja de ${N(inp.wFaja, 2)} kN/m en 3,0 m de ancho. Según el Manual de Carreteras, las cargas del camión HS20-44 se amplifican por ${N(inp.fCam, 2)}${inp.fTanSi ? '; en este cálculo el factor se aplica también al tándem' : ''}. El incremento por carga dinámica IM = ${N(inp.IM, 0)} % se aplica al camión o tándem y no a la faja (AASHTO 3.6.2.1).</p>
+      ${pcSvgCamion(r)}${MEM_F('Camión de diseño amplificado y tándem de diseño')}
+      <p>Ancho de calzada w = ${N(inp.w, 2)} m; número de vías de diseño NL = ⌊w / 3,6⌋ = ${r.NL} (AASHTO 3.6.1.1.1), con factor de presencia múltiple m = ${N(r.mNL, 2)}.</p>
+      ${MEM_T('Solicitaciones por vía en viga simplemente apoyada')}${tabla(['Carga', 'M máx. (kN·m)', 'V apoyo (kN)'], [
+        ['Camión × ' + N(inp.fCam, 2), N(r.cam.Mtr, 1), N(r.cam.Vtr, 1)], ['Tándem', N(r.tan.Mtr, 1), N(r.tan.Vtr, 1)], ['Faja', N(r.Mfaja, 1), N(r.Vfaja, 1)],
+        [`<b>(LL+IM) = ${r.gobM.toLowerCase()}·(1+IM) + faja</b>`, `<b>${N(r.Mlane, 1)}</b>`, `<b>${N(r.Vlane, 1)}</b>`], ['Camión de fatiga (9,0 m; IM 15 %)', N(r.Mfat, 1), N(r.Vfat, 1)],
+        ['Deflexión: máx(camión·(1+IM); 0,25·camión·(1+IM) + faja)', N(r.Mdef, 1), '—']])}
+      <p>El momento combinado máximo se produce a x = ${N(r.gobM === 'Camión' ? r.cam.xc : r.tan.xc, 2)} m del apoyo, bajo un eje del vehículo, sumando en esa misma sección el momento de la faja.</p>`;
+  } else {
+    s += `<h1>4. Carga peatonal</h1><p>Pasarela peatonal: carga uniforme de ${N(inp.PLpas, 2)} kPa sobre el ancho libre de ${N(inp.w, 2)} m, sin incremento dinámico (Guide Specification 2009, §3.1): q = ${N(inp.PLpas * inp.w, 2)} kN/m.</p>`;
+  }
+  if (inp.tipo === 'vigas') {
+    s += `<h1>5. Distribución de la carga viva entre vigas</h1>
+      ${pcSvgCorte(inp, r)}${MEM_F('Corte transversal y posición de las ruedas para la regla de la palanca')}
+      <p>Parámetro de rigidez longitudinal Kg = n·(I + A·eg²) = ${N(inp.n, 2)}·(${N(inp.Iv * 1e4, 0)} + ${N(inp.Av * 100, 0)}·${N(inp.eg, 0)}²) = ${r.Kg.toExponential(3).replace('.', ',')} mm⁴.</p>
+      <div class="eq">g<sub>M,int</sub> (1 vía) = 0,06 + (S/4300)<sup>0,4</sup>(S/L)<sup>0,3</sup>(Kg/Lts³)<sup>0,1</sup> = ${N(r.gMi1, 3)}</div>
+      ${r.NL >= 2 ? `<div class="eq">g<sub>M,int</sub> (2+ vías) = 0,075 + (S/2900)<sup>0,6</sup>(S/L)<sup>0,2</sup>(Kg/Lts³)<sup>0,1</sup> = ${N(r.gMi2, 3)}</div>` : ''}
+      <div class="eq">g<sub>V,int</sub> (1 vía) = 0,36 + S/7600 = ${N(r.gVi1, 3)}${r.NL >= 2 ? ` &nbsp;·&nbsp; (2+ vías) = 0,2 + S/3600 − (S/10700)² = ${N(r.gVi2, 3)}` : ''}</div>
+      <p>Viga exterior, una vía: regla de la palanca con las ruedas a 0,6 m de la cara de la barrera, R = ${N(r.palR, 3)} y g = 1,2·R = ${N(r.gMe1, 3)}. ${r.NL >= 2 ? `Dos o más vías: e<sub>M</sub> = 0,77 + de/2800 = ${N(r.eM, 3)} → ${N(r.gMe2, 3)}; e<sub>V</sub> = 0,6 + de/3000 = ${N(r.eV, 3)} → ${N(r.gVe2, 3)}.` : ''} ${r.rig ? `Sección rígida (4.6.2.2.2d): ${r.rig.casos.map(c => `${c.k} vía(s): m·R = ${N(c.mR, 3)}`).join('; ')}.` : ''}</p>
+      <p>Esviaje θ = ${N(inp.theta, 1)}°: factor de momento 1 − c1·(tan θ)<sup>1,5</sup> = ${N(r.skM, 3)}; factor de corte 1 + 0,2·(Lts³/Kg)<sup>0,3</sup>·tan θ = ${N(r.skV, 3)}.</p>
+      ${MEM_T('Factores de distribución adoptados')}${tabla(['Viga', 'g momento', 'g corte'], [['Interior', N(r.gMi, 3), N(r.gVi, 3)], ['Exterior', N(r.gMe, 3), N(r.gVe, 3)]])}`;
+  } else if (inp.tipo === 'losa') {
+    s += `<h1>5. Franja equivalente</h1>
+      <div class="eq">E (1 vía) = 250 + 0,42·√(L1·W1) = ${N(r.E1, 0)} mm</div>
+      ${r.NL >= 2 ? `<div class="eq">E (2+ vías) = 2100 + 0,12·√(L1·W1) = ${N(r.Em, 0)} mm ≤ W/NL = ${N(r.EmMax, 0)} mm</div>` : ''}
+      <p>Se adopta E = ${N(r.E, 0)} mm; los factores de presencia múltiple están incluidos en las expresiones (AASHTO 3.6.1.1.2). Reducción por esviaje r = 1,05 − 0,25·tan θ = ${N(r.rSkew, 3)} ≤ 1,0.</p>`;
+  }
+  r.elems.forEach((e, i) => {
+    s += `<h1>${6 + i}. ${esc(e.nombre)}: solicitaciones y combinaciones (${r.unidad})</h1>
+      ${MEM_T('Solicitaciones características y mayoradas, η = ' + N(inp.eta, 2))}${tabla(['Carga / combinación', 'M (kN·m)', 'V (kN)', 'M (tonf·m)', 'V (tonf)'],
+      [['DC', e.DC], ['DW', e.DW], ['LL+IM', e.LL], ['PL', e.PL]].map(x => [x[0], N(x[1].M, 1), N(x[1].V, 1), N(x[1].M / PC_TF, 2), N(x[1].V / PC_TF, 2)])
+        .concat(e.comb.map(c => [c.n, N(c.M, 1), N(c.V, 1), N(c.M / PC_TF, 2), N(c.V / PC_TF, 2)])))}`;
+  });
+  const k = 6 + r.elems.length;
+  s += `<h1>${k}. Acciones sobre la infraestructura</h1>
+    ${inp.tipo !== 'pasarela' ? `<p><b>Frenado (AASHTO 3.6.4).</b> Por vía, el mayor entre 25 % de los ejes del camión (${N(r.br1, 1)} kN) o del tándem (${N(r.br2, 1)} kN) y 5 % de camión más faja (${N(r.br3, 1)} kN) o de tándem más faja (${N(r.br4, 1)} kN): ${N(r.BRv, 1)} kN. Total BR = ${N(r.BRv, 1)}·${r.NL}·${N(r.mNL, 2)} = <b>${N(r.BR, 1)} kN</b>, horizontal a 1,8 m sobre la calzada.</p>` : ''}
+    ${r.CE > 0 ? `<p><b>Fuerza centrífuga (3.6.3).</b> C = 4/3·v²/(g·R) = ${N(r.Cf, 3)}; CE = ${N(r.CE, 1)} kN.</p>` : ''}
+    <p><b>Viento (3.8.1).</b> V<sub>DZ</sub> = ${inp.Z > 10 ? `2,5·V0·(V30/VB)·ln(Z/Z0) = ${N(r.VDZ, 1)}` : `V30 = ${N(r.VDZ, 1)} (Z ≤ 10 m)`} km/h; P<sub>D</sub> = 2,4·(V<sub>DZ</sub>/160)² = ${N(r.PD, 3)} kPa sobre ${N(inp.hw, 2)} m de altura expuesta: ${N(r.wsq, 2)} kN/m${r.wsMin ? ' (rige el mínimo de 4,4 kN/m)' : ''}, WS = ${N(r.WS, 1)} kN. ${r.WL ? `Viento sobre la carga viva: 1,46 kN/m a 1,8 m sobre la calzada, WL = ${N(r.WL, 1)} kN.` : ''} Empuje vertical hacia arriba 0,96 kPa sobre el ancho del tablero, aplicado en el cuarto de barlovento: ${N(r.WSv, 1)} kN (3.8.2).</p>
+    <p><b>Sismo (MC, método del coeficiente sísmico).</b> Zona ${inp.zona}: A0 = ${N(r.A0, 2)} g; suelo ${inp.suelo}: S = ${N(r.Ss, 2)}; K1 = ${N(inp.K1, 2)}.</p>
+    <div class="eq">Kh = K1·S·A0 / 2g = ${N(inp.K1, 2)}·${N(r.Ss, 2)}·${N(r.A0, 2)} / 2 = ${N(r.Kh, 3)} &nbsp;&nbsp; EQ = Kh·W = ${N(r.Kh, 3)}·${N(r.W_sup, 0)} = <b>${N(r.EQ, 1)} kN</b></div>
+    <p>La fuerza se aplica en dirección longitudinal y transversal (combinación 100 % + 30 % de las direcciones ortogonales, AASHTO 3.10.8); por estribo, ${N(r.EQapoyo, 1)} kN. Las barras de anclaje verticales se diseñan con aceleración vertical A0 (Nuevos Criterios Sísmicos, 2010): A0·R<sub>DC+DW</sub> = ${N(r.A0, 2)}·${N(r.Rdc, 1)} = ${N(r.Fanc, 1)} kN por estribo.</p>
+    <p><b>Temperatura uniforme (3.12.2).</b> α = ${N(r.alfa * 1e6, 1)}·10⁻⁶ /°C sobre ${N(inp.Ldil, 2)} m: dilatación α·L·(Tmáx − Tinst) = ${N(r.dExp, 1)} mm; contracción α·L·(Tinst − Tmín) = ${N(r.dCon, 1)} mm; recorrido total ${N(r.dL, 1)} mm.</p>
+    ${MEM_T('Acciones horizontales mayoradas sobre la infraestructura (puente completo)')}${tabla(['Combinación', 'Longitudinal (kN)', 'Transversal (kN)'], r.hcomb.map(c => [c.n, N(c.lon, 1), N(c.tra, 1)]))}`;
+  s += `<h1>${k + 1}. Conclusiones y observaciones</h1><ul>${r.elems.map(e => `<li>${esc(e.nombre)}: M<sub>u</sub> = ${N(e.Mu, 1)} kN·m (${N(e.Mu / PC_TF, 2)} tonf·m) y V<sub>u</sub> = ${N(e.Vu, 1)} kN (${N(e.Vu / PC_TF, 2)} tonf), ${r.unidad}.</li>`).join('')}
+    <li>${PC_NOTA}</li>${r.av.map(a => `<li>${esc(a)}</li>`).join('')}</ul>${memFirmas(meta)}`;
+  const html = `<div class="mem-inf"><style>${MEM_CSS}</style>
+    ${memPortada('MEMORIA DE CÁLCULO — CARGAS DE DISEÑO', 'Puente: ' + esc(nom), meta)}<div class="salto"></div>${s}</div>`;
+  return memFinalizar(html);
+}
+
+function renderCargasPuentes(container) {
+  const f = (id, lab, val, ph) => `<div class="field"><label>${lab}</label><input type="text" inputmode="decimal" id="${id}" value="${val}"${ph ? ` placeholder="${ph}"` : ''}></div>`;
+  const sel = (id, lab, opts, val) => `<div class="field"><label>${lab}</label><select id="${id}">${opts.map(o => `<option value="${o[0]}"${o[0] === val ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></div>`;
+  container.innerHTML = `
+    <div class="calc-head">
+      <h1>Cargas en Puentes — Manual de Carreteras Vol. 3 (AASHTO LRFD)</h1>
+      <div class="sub">Determinación de cargas de diseño de un tramo simplemente apoyado: permanentes (DC, DW), carga viva HL-93 con camión HS20-44 + 20 % (MC 3.1000), impacto, distribución entre vigas o franja equivalente, peatonal, frenado, centrífuga, viento, temperatura y sismo por coeficiente sísmico del MC, con combinaciones LRFD.</div>
+    </div>
+    <div class="panel">
+      <h3>1 · Tipología y geometría</h3>
+      <div class="field-grid">
+        <div class="field"><label>Nombre del puente</label><input type="text" id="pc_nombre" placeholder="Ej: Puente Estero Las Toscas"></div>
+        ${sel('pc_tipo', 'Tipología', Object.keys(PC_TIPOS).map(k => [k, PC_TIPOS[k]]), 'vigas')}
+        ${f('pc_L', 'Luz de cálculo L (m)', '25')}
+        ${f('pc_B', 'Ancho total del tablero B (m)', '10,4')}
+        ${f('pc_w', 'Ancho de calzada entre barreras w (m) — en pasarela: ancho libre', '8,0')}
+        ${f('pc_theta', 'Esviaje θ (°)', '0')}
+        ${f('pc_NL', 'N° de vías de diseño (vacío = ⌊w/3,6⌋)', '', 'automático')}
+      </div>
+      <div id="pc_grpVigas"><div class="field-grid" style="margin-top:.6rem">
+        ${f('pc_Nb', 'N° de vigas Nb', '5')}
+        ${f('pc_S', 'Separación entre vigas S (m)', '2,2')}
+        ${f('pc_ts', 'Espesor de losa ts (m)', '0,20')}
+        ${f('pc_de', 'de: eje de viga exterior a cara interior de barrera (m)', '0,6')}
+        ${f('pc_gv', 'Peso propio de cada viga (kN/m)', '12')}
+        ${f('pc_Iv', 'Inercia de la viga I (cm⁴)', '4000000')}
+        ${f('pc_Av', 'Área de la viga A (cm²)', '4800')}
+        ${f('pc_eg', 'eg: distancia c.g. viga – c.g. losa (mm)', '750')}
+        ${f('pc_n', 'n = E viga / E losa', '1,0')}
+        ${sel('pc_diaf', 'Diafragmas o arriostramiento transversal', [['si', 'Sí (verificar sección rígida)'], ['no', 'No']], 'si')}
+      </div></div>
+      <div id="pc_grpLosa"><div class="field-grid" style="margin-top:.6rem">${f('pc_h', 'Espesor de la losa maciza h (m)', '0,55')}</div></div>
+      <div id="pc_grpPas"><div class="field-grid" style="margin-top:.6rem">${f('pc_dcPas', 'Peso propio de la estructura (kN/m)', '8')}</div></div>
+      <div id="pc_svgCorte"></div>
+    </div>
+    <div class="panel">
+      <h3>2 · Cargas permanentes</h3>
+      <div class="field-grid">
+        ${f('pc_gc', 'γ hormigón armado (kN/m³)', '25')}
+        ${f('pc_nBarr', 'N° de barreras', '2')}
+        ${f('pc_gBarr', 'Peso de cada barrera (kN/m)', '5')}
+        ${f('pc_nVer', 'N° de veredas', '0')}
+        ${f('pc_bVer', 'Ancho de cada vereda (m)', '1,0')}
+        ${f('pc_gVer', 'Peso de cada vereda (kN/m)', '0')}
+        ${f('pc_dcAd', 'Otras cargas muertas DC (kN/m de puente)', '0', 'diafragmas, servicios')}
+        ${f('pc_ePav', 'Espesor de pavimento (m)', '0,05')}
+        ${f('pc_gPav', 'γ pavimento (kN/m³)', '22')}
+      </div>
+      <div class="note" style="margin-top:.5rem">AASHTO Tabla 3.5.1-1: hormigón armado de peso normal ≈ 23,6 kN/m³ (0,150 kcf); capa de rodadura asfáltica 22,0 kN/m³ (0,140 kcf). La práctica nacional usa con frecuencia 25 kN/m³ (2,5 t/m³) para el hormigón armado.</div>
+    </div>
+    <div class="panel">
+      <h3>3 · Carga viva (MC 3.1000 + AASHTO 3.6)</h3>
+      <div class="field-grid">
+        ${f('pc_fCam', 'Factor MC sobre el camión HS20-44', '1,20')}
+        ${sel('pc_fTan', 'Aplicar el factor también al tándem', [['no', 'No'], ['si', 'Sí']], 'no')}
+        ${f('pc_wFaja', 'Carga de faja (kN/m)', '9,3')}
+        ${f('pc_IM', 'Incremento dinámico IM (%)', '33')}
+        ${f('pc_PL', 'Carga peatonal en veredas (kPa)', '3,6')}
+        ${f('pc_PLpas', 'Carga peatonal en pasarelas (kPa)', '4,3')}
+        ${f('pc_eta', 'η = ηD·ηR·ηI', '1,0')}
+      </div>
+      <div class="disclosure">${PC_NOTA}</div>
+      <div id="pc_svgCamion"></div>
+    </div>
+    <div class="panel">
+      <h3>4 · Frenado, centrífuga, viento, temperatura y sismo</h3>
+      <div class="field-grid">
+        ${f('pc_R', 'Radio de curvatura (m, 0 = recto)', '0')}
+        ${f('pc_Vd', 'Velocidad de diseño de la vía (km/h)', '80')}
+        ${f('pc_V30', 'Velocidad de viento a 10 m, V30 (km/h)', '160')}
+        ${f('pc_Z', 'Altura del tablero sobre el terreno o agua Z (m)', '8')}
+        ${sel('pc_exp', 'Terreno a barlovento', Object.keys(PC_VIENTO).map(k => [k, PC_VIENTO[k].txt]), 'abierto')}
+        ${f('pc_hw', 'Altura expuesta de la superestructura (m)', '2,3', 'viga + losa + barrera')}
+        ${f('pc_Tmax', 'Temperatura máxima de diseño (°C)', '40')}
+        ${f('pc_Tmin', 'Temperatura mínima de diseño (°C)', '-5')}
+        ${f('pc_Tins', 'Temperatura de instalación (°C)', '15')}
+        ${sel('pc_mat', 'Material de la superestructura', [['hormigon', 'Hormigón (α = 10,8·10⁻⁶)'], ['acero', 'Acero (α = 11,7·10⁻⁶)']], 'hormigon')}
+        ${f('pc_Ldil', 'Longitud de dilatación (m, vacío = L)', '', 'L')}
+        ${sel('pc_zona', 'Zona sísmica (MC)', [['1', 'Zona 1 — A0 = 0,20 g'], ['2', 'Zona 2 — A0 = 0,30 g'], ['3', 'Zona 3 — A0 = 0,40 g']], '3')}
+        ${sel('pc_suelo', 'Tipo de suelo (MC)', [['I', 'I — S = 0,9'], ['II', 'II — S = 1,0'], ['III', 'III — S = 1,2'], ['IV', 'IV — S = 1,3']], 'II')}
+        ${f('pc_K1', 'K1 coeficiente de importancia (MC)', '1,0')}
+        ${f('pc_gEQ', 'γEQ carga viva en Evento Extremo I', '0,5')}
+      </div>
+      <div class="note" style="margin-top:.5rem">Viento: V<sub>DZ</sub> = 2,5·V0·(V30/VB)·ln(Z/Z0) para Z &gt; 10 m (VB = 160 km/h; V0 y Z0 según AASHTO Tabla 3.8.1.1-1); P<sub>D</sub> = 2,4 kPa·(V<sub>DZ</sub>/160)², mínimo 4,4 kN/m en vigas. Temperaturas: ingrese las del proyecto o las que fije el MC para la zona. K1 según la clasificación de importancia del puente en el MC: el 1,0 inicial es solo un dato de partida, ajústelo al proyecto. γEQ: AASHTO 3.4.1 deja su valor al proyecto; 0,5 es el valor que sugiere el comentario C3.4.1.</div>
+    </div>
+    <div class="panel" data-resumen="force">
+      <h3>5 · Carga viva por vía y distribución</h3>
+      <div id="pc_resLL"></div>
+    </div>
+    <div class="panel" data-resumen="force">
+      <h3>6 · Solicitaciones y combinaciones LRFD</h3>
+      <div id="pc_resComb"></div>
+    </div>
+    <div class="panel" data-resumen="force">
+      <h3>7 · Acciones sobre la infraestructura</h3>
+      <div id="pc_resHor"></div>
+    </div>
+    ${memPanelHtml('pcm', '8', 'Memoria de cálculo (informe)', 'Ej: Puente de hormigón de un tramo de 25 m con 5 vigas postensadas y losa colaborante, sobre estribos de hormigón armado fundados en suelo tipo II...')}
+    <div id="printSheetCompleto"></div><div id="printSheetResumen"></div><div id="printSheetInforme"></div>
+  `;
+  const n = (v, d) => (v == null || !isFinite(v)) ? '—' : Number(v).toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const tf = (v, d) => `<span class="note">${n(v / PC_TF, d)}</span>`;
+  let ultimo = null;
+
+  function recalc() {
+    const inp = pcLeer();
+    document.getElementById('pc_grpVigas').style.display = inp.tipo === 'vigas' ? '' : 'none';
+    document.getElementById('pc_grpLosa').style.display = inp.tipo === 'losa' ? '' : 'none';
+    document.getElementById('pc_grpPas').style.display = inp.tipo === 'pasarela' ? '' : 'none';
+    if (!(inp.L > 0) || !(inp.B > 0)) { document.getElementById('pc_resLL').innerHTML = '<div class="note">Ingrese luz y ancho.</div>'; return; }
+    const r = calcCargasPuentes(inp);
+    ultimo = { inp, r };
+    document.getElementById('pc_svgCorte').innerHTML = pcSvgCorte(inp, r);
+    document.getElementById('pc_svgCamion').innerHTML = pcSvgCamion(r);
+    let ll = '';
+    if (inp.tipo !== 'pasarela') {
+      ll += `<table class="results">
+        <tr><th>Efecto por vía</th><th>M máx. (kN·m)</th><th>V apoyo (kN)</th><th>Observación</th></tr>
+        <tr><td>Camión HS20-44 × ${n(inp.fCam, 2)} (35 / 145 / 145 kN × factor, 4,3 m)</td><td class="num">${n(r.cam.Mtr, 1)}</td><td class="num">${n(r.cam.Vtr, 1)}</td><td>Ejes: ${r.ejesCam.map(e => n(e.P, 1)).join(' / ')} kN</td></tr>
+        <tr><td>Tándem (2 × 110 kN${inp.fTanSi ? ' × ' + n(inp.fCam, 2) : ''}, 1,2 m)</td><td class="num">${n(r.tan.Mtr, 1)}</td><td class="num">${n(r.tan.Vtr, 1)}</td><td></td></tr>
+        <tr><td>Faja ${n(inp.wFaja, 2)} kN/m</td><td class="num">${n(r.Mfaja, 1)}</td><td class="num">${n(r.Vfaja, 1)}</td><td>Sin IM</td></tr>
+        <tr><td><strong>(LL+IM) por vía</strong></td><td class="num"><strong>${n(r.Mlane, 1)}</strong></td><td class="num"><strong>${n(r.Vlane, 1)}</strong></td><td>Gobierna ${r.gobM.toLowerCase()} en momento (x = ${n(r.gobM === 'Camión' ? r.cam.xc : r.tan.xc, 2)} m) y ${r.gobV.toLowerCase()} en corte</td></tr>
+        <tr><td>Camión de fatiga (separación 9,0 m, IM 15 %)</td><td class="num">${n(r.Mfat, 1)}</td><td class="num">${n(r.Vfat, 1)}</td><td>Fatiga I: γ = 1,50</td></tr>
+        <tr><td>Carga para deflexión (3.6.1.3.2)</td><td class="num">${n(r.Mdef, 1)}</td><td class="num">—</td><td>máx(camión; 25 % camión + faja), con IM</td></tr>
+      </table>
+      <div class="verdict-row"><span>Vías de diseño NL · presencia múltiple m</span><span>${r.NL} · ${n(r.mNL, 2)}</span></div>`;
+    }
+    if (inp.tipo === 'vigas') {
+      ll += `<div style="overflow-x:auto;margin-top:.5rem"><table class="results">
+        <tr><th>Factor de distribución</th><th>1 vía</th><th>2+ vías</th><th>Sección rígida</th><th>Esviaje</th><th>Adoptado</th></tr>
+        <tr><td>Momento — viga interior</td><td class="num">${n(r.gMi1, 3)}</td><td class="num">${r.NL >= 2 ? n(r.gMi2, 3) : '—'}</td><td class="num">—</td><td class="num">${n(r.skM, 3)}</td><td class="num"><strong>${n(r.gMi, 3)}</strong></td></tr>
+        <tr><td>Momento — viga exterior</td><td class="num">${n(r.gMe1, 3)} <span class="note">palanca</span></td><td class="num">${r.NL >= 2 ? n(r.gMe2, 3) + ' <span class="note">e = ' + n(r.eM, 3) + '</span>' : '—'}</td><td class="num">${r.rig ? n(r.rig.g, 3) : '—'}</td><td class="num">${n(r.skM, 3)}</td><td class="num"><strong>${n(r.gMe, 3)}</strong></td></tr>
+        <tr><td>Corte — viga interior</td><td class="num">${n(r.gVi1, 3)}</td><td class="num">${r.NL >= 2 ? n(r.gVi2, 3) : '—'}</td><td class="num">—</td><td class="num">${n(r.skV, 3)}</td><td class="num"><strong>${n(r.gVi, 3)}</strong></td></tr>
+        <tr><td>Corte — viga exterior</td><td class="num">${n(r.gVe1, 3)} <span class="note">palanca</span></td><td class="num">${r.NL >= 2 ? n(r.gVe2, 3) + ' <span class="note">e = ' + n(r.eV, 3) + '</span>' : '—'}</td><td class="num">${r.rig ? n(r.rig.g, 3) : '—'}</td><td class="num">${n(r.skV, 3)}</td><td class="num"><strong>${n(r.gVe, 3)}</strong></td></tr>
+      </table></div>
+      <div class="note">Kg = n·(I + A·eg²) = ${r.Kg.toExponential(3).replace('.', ',')} mm⁴ · voladizo = ${n(r.vol, 2)} m · AASHTO Tablas 4.6.2.2.2b-1, 4.6.2.2.2d-1, 4.6.2.2.3a-1, 4.6.2.2.3b-1, 4.6.2.2.2e-1 y 4.6.2.2.3c-1 (tipos a, e, k). La regla de la palanca incluye m = 1,20; las fórmulas ya incluyen la presencia múltiple.</div>`;
+    } else if (inp.tipo === 'losa') {
+      ll += `<table class="results" style="margin-top:.5rem"><tr><th>Franja equivalente (4.6.2.3)</th><th>Valor</th></tr>
+        <tr><td>E una vía = 250 + 0,42·√(L1·W1)</td><td class="num">${n(r.E1, 0)} mm</td></tr>
+        ${r.NL >= 2 ? `<tr><td>E varias vías = 2100 + 0,12·√(L1·W1) ≤ W/NL</td><td class="num">${n(r.Em, 0)} → ${n(r.EmUsado, 0)} mm</td></tr>` : ''}
+        <tr><td><strong>E adoptado</strong></td><td class="num"><strong>${n(r.E, 0)} mm</strong></td></tr>
+        <tr><td>Reducción por esviaje r = 1,05 − 0,25·tan θ ≤ 1</td><td class="num">${n(r.rSkew, 3)}</td></tr></table>`;
+    } else {
+      ll += `<div class="verdict-row"><span>Carga peatonal sobre la pasarela</span><span>${n(inp.PLpas, 2)} kPa × ${n(inp.w, 2)} m = ${n(inp.PLpas * inp.w, 2)} kN/m</span></div>
+        <div class="note">Sin incremento dinámico (Guide Specification for the Design of Pedestrian Bridges, 2009, §3.1).</div>`;
+    }
+    document.getElementById('pc_resLL').innerHTML = ll;
+    document.getElementById('pc_resComb').innerHTML = r.elems.map(e => `<h4 style="margin:.6rem 0 .3rem">${esc(e.nombre)} <span class="note">(${r.unidad})</span></h4>
+      <div style="overflow-x:auto"><table class="results">
+        <tr><th>Carga / combinación</th><th>M (kN·m)</th><th>V (kN)</th><th>M (tonf·m)</th><th>V (tonf)</th></tr>
+        <tr><td>DC (q = ${n(e.qDC, 2)} kN/m)</td><td class="num">${n(e.DC.M, 1)}</td><td class="num">${n(e.DC.V, 1)}</td><td class="num">${tf(e.DC.M, 2)}</td><td class="num">${tf(e.DC.V, 2)}</td></tr>
+        <tr><td>DW (q = ${n(e.qDW, 2)} kN/m)</td><td class="num">${n(e.DW.M, 1)}</td><td class="num">${n(e.DW.V, 1)}</td><td class="num">${tf(e.DW.M, 2)}</td><td class="num">${tf(e.DW.V, 2)}</td></tr>
+        <tr><td>LL+IM vehicular</td><td class="num">${n(e.LL.M, 1)}</td><td class="num">${n(e.LL.V, 1)}</td><td class="num">${tf(e.LL.M, 2)}</td><td class="num">${tf(e.LL.V, 2)}</td></tr>
+        <tr><td>PL peatonal (q = ${n(e.qPL, 2)} kN/m)</td><td class="num">${n(e.PL.M, 1)}</td><td class="num">${n(e.PL.V, 1)}</td><td class="num">${tf(e.PL.M, 2)}</td><td class="num">${tf(e.PL.V, 2)}</td></tr>
+        ${e.comb.map(c => `<tr${/Resistencia I$/.test(c.n) ? ' style="font-weight:700"' : ''}><td>${esc(c.n)}</td><td class="num">${n(c.M, 1)}</td><td class="num">${n(c.V, 1)}</td><td class="num">${n(c.M / PC_TF, 2)}</td><td class="num">${n(c.V / PC_TF, 2)}</td></tr>`).join('')}
+      </table></div>
+      <div class="verdict-row"><span>Mu / Vu máximos (Resistencia y Evento Extremo)</span><span><strong>${n(e.Mu, 1)} kN·m · ${n(e.Vu, 1)} kN</strong> (${n(e.Mu / PC_TF, 2)} tonf·m · ${n(e.Vu / PC_TF, 2)} tonf)</span></div>`).join('') +
+      `<div class="note" style="margin-top:.4rem">Factores AASHTO LRFD 7ª ed., Tablas 3.4.1-1 y 3.4.1-2 (γp máximos: DC 1,25 · DW 1,50; Resistencia IV: 1,50). Evento Extremo I con γEQ = ${n(inp.gEQ, 2)} sobre LL; el efecto vertical del sismo sobre la viga no se incluye. Los momentos son máximos absolutos (carga viva) o a centro de luz (cargas uniformes) y se suman del lado de la seguridad.</div>
+      ${r.av.length ? `<div class="note" style="margin-top:.4rem;color:var(--warn,#a15c00)">${r.av.map(esc).join('<br>')}</div>` : ''}`;
+    document.getElementById('pc_resHor').innerHTML = `<table class="results">
+      <tr><th>Acción</th><th>Valor (kN)</th><th>tonf</th><th>Detalle</th></tr>
+      ${inp.tipo !== 'pasarela' ? `<tr><td>Frenado BR (3.6.4)</td><td class="num">${n(r.BR, 1)}</td><td class="num">${n(r.BR / PC_TF, 2)}</td><td>${n(r.BRv, 1)} kN/vía × ${r.NL} × m ${n(r.mNL, 2)}; a 1,8 m sobre la calzada</td></tr>` : ''}
+      ${inp.tipo !== 'pasarela' ? `<tr><td>Centrífuga CE (3.6.3)</td><td class="num">${n(r.CE, 1)}</td><td class="num">${n(r.CE / PC_TF, 2)}</td><td>${r.CE > 0 ? 'C = 4/3·v²/(gR) = ' + n(r.Cf, 3) : 'Puente en recta'}</td></tr>` : ''}
+      <tr><td>Viento WS transversal (3.8.1.2)</td><td class="num">${n(r.WS, 1)}</td><td class="num">${n(r.WS / PC_TF, 2)}</td><td>VDZ = ${n(r.VDZ, 1)} km/h · PD = ${n(r.PD, 3)} kPa · ${n(r.wsq, 2)} kN/m${r.wsMin ? ' (mínimo)' : ''}</td></tr>
+      ${r.WL ? `<tr><td>Viento sobre carga viva WL (3.8.1.3)</td><td class="num">${n(r.WL, 1)}</td><td class="num">${n(r.WL / PC_TF, 2)}</td><td>1,46 kN/m a 1,8 m sobre la calzada</td></tr>` : ''}
+      <tr><td>Viento vertical hacia arriba (3.8.2)</td><td class="num">${n(r.WSv, 1)}</td><td class="num">${n(r.WSv / PC_TF, 2)}</td><td>0,96 kPa × B, en el cuarto de barlovento</td></tr>
+      <tr><td><strong>Sismo EQ (MC, coeficiente sísmico)</strong></td><td class="num"><strong>${n(r.EQ, 1)}</strong></td><td class="num">${n(r.EQ / PC_TF, 2)}</td><td>Kh = K1·S·A0/2g = ${n(inp.K1, 2)}·${n(r.Ss, 2)}·${n(r.A0, 2)}/2 = ${n(r.Kh, 3)} · W = ${n(r.W_sup, 0)} kN · ${n(r.EQapoyo, 1)} kN por estribo</td></tr>
+      <tr><td>Barras de anclaje verticales, por estribo</td><td class="num">${n(r.Fanc, 1)}</td><td class="num">${n(r.Fanc / PC_TF, 2)}</td><td>Aceleración vertical A0 sobre R(DC+DW) = ${n(r.Rdc, 1)} kN (Nuevos Criterios Sísmicos, 2010)</td></tr>
+    </table>
+    <div class="verdict-row"><span>Temperatura uniforme (3.12.2)</span><span>ΔT = ${n(r.dT, 0)} °C · dilatación ${n(r.dExp, 1)} mm · contracción ${n(r.dCon, 1)} mm · total ${n(r.dL, 1)} mm</span></div>
+    <div style="overflow-x:auto;margin-top:.5rem"><table class="results"><tr><th>Combinación</th><th>Longitudinal (kN)</th><th>Transversal (kN)</th></tr>
+      ${r.hcomb.map(c => `<tr><td>${esc(c.n)}</td><td class="num">${n(c.lon, 1)}</td><td class="num">${n(c.tra, 1)}</td></tr>`).join('')}</table></div>
+    <div class="note" style="margin-top:.4rem">Puente completo. En Evento Extremo I el sismo actúa en cada dirección por separado; combine 100 % + 30 % de la dirección ortogonal (AASHTO 3.10.8). El viento sobre la infraestructura, el empuje de tierras y la presión de agua se determinan en el diseño de estribos y cepas.</div>`;
+    xlsxSetPrintSheets(pcDatosHtml(inp, r), pcCalcHtml(inp, r, false), pcCalcHtml(inp, r, true));
+  }
+  document.getElementById('pcm_imprimir').addEventListener('click', () => { recalc(); if (ultimo) memImprimir(pcMemoriaHtml(ultimo.inp, ultimo.r, memMeta('pcm'))); });
+  container.querySelectorAll('.panel input, .panel select').forEach(el => { if (!/^pcm_/.test(el.id)) { el.addEventListener('input', recalc); el.addEventListener('change', recalc); } });
+  recalc();
+}
+
+
+/* =========================================================================
    BIBLIOTECA DE NORMAS DE DISEÑO — acceso rápido a normas y reglamentos
    Estructuras · Arquitectura · Hidráulica · Mecánica. Enlaces a fuentes oficiales:
    - normastecnicas.minvu.cl: consulta gratuita de las NCh declaradas obligatorias (OGUC / DS 10)
@@ -48405,7 +49092,7 @@ const CALC_RENDERERS = { memorias: renderMemorias, eett: renderEETT, vigaFundTor
   losaElastico: renderLosaMedioElastico, pavimentos: renderPavimentos, madera: renderMadera, viento: renderViento,
   sismo: renderSismo, combustible: renderCombustible, puenteGrua: renderPuenteGrua, sismoIndustrial: renderSismoNCh2369,
   fundacionesDirectas: renderFundacionesDirectas, cuerdaVida: renderCuerdaVida, factorMasividad: renderFactorMasividad,
-  proteccionFuego: renderProteccionFuego, asimilacionFuego: renderAsimilacionFuego, estudioFuego: renderEstudioFuego, bibliotecaNormas: renderBibliotecaNormas, sobreanchoMadera: renderSobreanchoMadera, seleccionPernos: renderSeleccionPernos,
+  proteccionFuego: renderProteccionFuego, asimilacionFuego: renderAsimilacionFuego, estudioFuego: renderEstudioFuego, cargasPuentes: renderCargasPuentes, bibliotecaNormas: renderBibliotecaNormas, sobreanchoMadera: renderSobreanchoMadera, seleccionPernos: renderSeleccionPernos,
   chimeneaAcero: renderChimeneaAcero,
   propPerfiles: renderPropPerfiles,
   dosificacion: renderDosificacion,
