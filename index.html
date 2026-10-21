@@ -41384,23 +41384,29 @@ function efClase(it, solic) {
   if (tipo === 'I-H') {
     const cw = (h - 2*tf - 2*r)/tw, cf = (b - tw - 2*r)/2/tf, lw = comp ? 42*e : 124*e, lf = 14*e;
     const c4 = cw > lw || cf > lf;
-    return {clase4: c4, txt: `alma c/t = ${fmt1(cw)} (lím. ${fmt1(lw)}); ala c/t = ${fmt1(cf)} (lím. ${fmt1(lf)})`};
+    return {clase4: c4, eps: e, fy, txt: `alma c/t = ${fmt1(cw)} (lím. ${fmt1(lw)}); ala c/t = ${fmt1(cf)} (lím. ${fmt1(lf)})`,
+      partes: [{p: 'Alma', expr: `c/t = (h − 2tf − 2r)/tw = (${MEM_N(h,1)} − 2·${MEM_N(tf,1)} − 2·${MEM_N(r,1)}) / ${MEM_N(tw,1)}`, ct: cw, lim: lw, limExpr: (comp ? '42' : '124') + '·ε'},
+               {p: 'Ala', expr: `c/t = (b − tw − 2r)/(2·tf) = (${MEM_N(b,1)} − ${MEM_N(tw,1)} − 2·${MEM_N(r,1)}) / (2·${MEM_N(tf,1)})`, ct: cf, lim: lf, limExpr: '14·ε'}]};
   }
   if (tipo === 'RHS' || tipo === 'TUB') {
     const t = tw, ch = (h - 3*t)/t, cb = (b - 3*t)/t, lh = comp ? 42*e : 124*e, lb = 42*e;
     const c4 = ch > lh || cb > lb;
-    return {clase4: c4, txt: `c/t lado h = ${fmt1(ch)} (lím. ${fmt1(lh)}); lado b = ${fmt1(cb)} (lím. ${fmt1(lb)})`};
+    return {clase4: c4, eps: e, fy, txt: `c/t lado h = ${fmt1(ch)} (lím. ${fmt1(lh)}); lado b = ${fmt1(cb)} (lím. ${fmt1(lb)})`,
+      partes: [{p: 'Pared lado h', expr: `c/t = (h − 3t)/t = (${MEM_N(h,1)} − 3·${MEM_N(t,1)}) / ${MEM_N(t,1)}`, ct: ch, lim: lh, limExpr: (comp ? '42' : '124') + '·ε'},
+               {p: 'Pared lado b', expr: `c/t = (b − 3t)/t = (${MEM_N(b,1)} − 3·${MEM_N(t,1)}) / ${MEM_N(t,1)}`, ct: cb, lim: lb, limExpr: '42·ε'}]};
   }
   if (tipo === 'CHS') {
     const dt = h/tw, l = 90*e*e;
-    return {clase4: dt > l, txt: `d/t = ${fmt1(dt)} (lím. ${fmt1(l)})`};
+    return {clase4: dt > l, eps: e, fy, txt: `d/t = ${fmt1(dt)} (lím. ${fmt1(l)})`,
+      partes: [{p: 'Pared', expr: `d/t = ${MEM_N(h,1)} / ${MEM_N(tw,2)}`, ct: dt, lim: l, limExpr: '90·ε²'}]};
   }
-  if (tipo === 'C') return {clase4: true, txt: 'perfil conformado en frío: se trata como clase 4 (EN 1993-1-2 §4.2.3.6 y Anexo E)'};
+  if (tipo === 'C') return {clase4: true, eps: e, fy, txt: 'perfil conformado en frío: se trata como clase 4 (EN 1993-1-2 §4.2.3.6 y Anexo E)', partes: []};
   return null;
 }
 
 function calcEstudioFuego(inp) {
-  const out = {avisos: []};
+  const out = {avisos: [], avisosP: []};
+  const aviso = (web, imp) => { out.avisos.push(web); out.avisosP.push(imp || web); };
   // (1) Carga combustible
   const A = inp.area > 0 ? inp.area : 0;
   const mats = inp.materiales.map(m => Object.assign({}, m, {carga: (m.masa > 0 && m.hc > 0) ? m.masa*m.hc : 0}));
@@ -41411,8 +41417,10 @@ function calcEstudioFuego(inp) {
   const zonasArr = Object.keys(zonas).map(z => ({zona: z, carga: zonas[z], dcc: zonas[z]/4})).sort((a, b) => b.dcc - a.dcc);
   const puntual = inp.puntualManual > 0 ? inp.puntualManual : (zonasArr.length ? zonasArr[0].dcc : null);
   const sinFuente = mats.filter(m => m.carga > 0 && !m.fuente).length;
-  if (sinFuente) out.avisos.push(`${sinFuente} material(es) sin fuente del poder calorífico: indíquela (NCh 1916, ensayo NCh 1914/2 o ficha del fabricante).`);
-  if (puntual == null) out.avisos.push('Densidad puntual máxima no determinada: asigne los acopios a superficies de 2×2 m (columna "Zona 2×2") o ingrésela.');
+  if (sinFuente) aviso(`${sinFuente} material(es) sin fuente del poder calorífico: indíquela (NCh 1916, ensayo NCh 1914/2 o ficha del fabricante).`,
+    `${sinFuente} material(es) sin fuente declarada del poder calorífico; el valor usado carece de respaldo documental.`);
+  if (puntual == null) aviso('Densidad puntual máxima no determinada: asigne los acopios a superficies de 2×2 m (columna "Zona 2×2") o ingrésela.',
+    'Densidad de carga combustible puntual máxima no determinada.');
   Object.assign(out, {mats, cargaTotal, media, zonasArr, puntual, area: A});
 
   // (2) Pisos y tipo de edificio
@@ -41426,9 +41434,12 @@ function calcEstudioFuego(inp) {
   const t3 = inp.t3 ? efLetraT3(EF_T3[inp.t3], media, puntual, pisosEq) : null;
   const tipoCalc = efMasExigente([t1, t2, t3 && t3.letra]);
   const tipo = inp.tipoManual || tipoCalc;
-  if (!tipoCalc && !inp.tipoManual) out.avisos.push('No se pudo determinar el tipo de edificio: elija al menos una tabla del Art. 4.3.4 con sus datos.');
-  if (inp.tipoManual && tipoCalc && inp.tipoManual !== tipoCalc) out.avisos.push(`Tipo adoptado manualmente (${inp.tipoManual}) distinto del calculado (${tipoCalc}): justifíquelo en el informe.`);
-  if (inp.t3 && puntual == null) out.avisos.push('Tabla 3 evaluada solo con la densidad media: resultado provisorio hasta determinar la puntual máxima.');
+  if (!tipoCalc && !inp.tipoManual) aviso('No se pudo determinar el tipo de edificio: elija al menos una tabla del Art. 4.3.4 con sus datos.',
+    'Tipo de edificio no determinado: no se evaluó ninguna tabla del Art. 4.3.4.');
+  if (inp.tipoManual && tipoCalc && inp.tipoManual !== tipoCalc) aviso(`Tipo adoptado manualmente (${inp.tipoManual}) distinto del calculado (${tipoCalc}): justifíquelo en el informe.`,
+    `El tipo adoptado (${inp.tipoManual}) difiere del resultante de las tablas (${tipoCalc}) por decisión del proyectista.`);
+  if (inp.t3 && puntual == null) aviso('Tabla 3 evaluada solo con la densidad media: resultado provisorio hasta determinar la puntual máxima.',
+    'Tabla 3 evaluada solo con la densidad media: la clasificación es provisoria mientras no se determine la densidad puntual máxima.');
   Object.assign(out, {pisosEq, pisosAltura, excepcion, t1, t2, t3, tipoCalc, tipo});
 
   // (3)-(5) Elementos
@@ -41449,18 +41460,20 @@ function calcEstudioFuego(inp) {
     r.thcr = r.clase4 ? 350 : (it.mu > 0 ? efThetaCr(it.mu) : null);
     r.tcr = (r.curva && r.thcr != null) ? afTiempoCrit(r.curva.serie, r.thcr) : null;
     r.sobre390 = r.F4 > 390;
-    r.av = [];
-    if (r.sobre390) r.av.push('Masividad a 4 caras > 390 m⁻¹ (Listado Oficial ED17-2025, punto 3).');
-    if (it.inest === 'si' && !r.clase4) r.av.push('Gobierna inestabilidad: §4.2.4 no aplica; verificar resistencia en caliente por §4.2.3 (planilla Asimilación Viga–Pilar).');
-    if (!r.cls) r.av.push('Clase de sección no evaluada para este tipo de perfil: clasificar según EN 1993-1-1 Tabla 5.2.');
-    if (!(it.mu > 0) && !r.clase4) r.av.push('Falta μ0 (grado de utilización en incendio, EN 1993-1-2 §4.2.4(3)).');
+    r.av = []; r.avP = [];
+    const av = (web, imp) => { r.av.push(web); r.avP.push(imp || web); };
+    if (r.sobre390) av('Masividad a 4 caras > 390 m⁻¹ (Listado Oficial ED17-2025, punto 3).', 'Masividad a 4 caras superior a 390 m⁻¹, límite del Listado Oficial ED17-2025 (punto 3).');
+    if (it.inest === 'si' && !r.clase4) av('Gobierna inestabilidad: §4.2.4 no aplica; verificar resistencia en caliente por §4.2.3 (planilla Asimilación Viga–Pilar).',
+      'Gobierna la inestabilidad: el método de temperatura crítica (§4.2.4) no es aplicable y la resistencia en caliente debe verificarse por EN 1993-1-2 §4.2.3.');
+    if (!r.cls) av('Clase de sección no evaluada para este tipo de perfil: clasificar según EN 1993-1-1 Tabla 5.2.', 'Clase de sección no evaluada para este tipo de perfil (EN 1993-1-1 Tabla 5.2).');
+    if (!(it.mu > 0) && !r.clase4) av('Falta μ0 (grado de utilización en incendio, EN 1993-1-2 §4.2.4(3)).', 'Grado de utilización μ0 no informado: la temperatura crítica no está determinada.');
     // Protección
     const rf = r.Freq > 0 ? 'F' + r.Freq : null;
     r.espReq = null; r.espTxt = '—';
     if (it.prot === 'cerefire' || it.prot === 'stofire') {
       if (rf && ['F15', 'F30', 'F60', 'F90', 'F120'].includes(rf)) { const e = afEspesor(it.prot, rf, r.F4); r.espReq = e.v; r.espTxt = e.txt; }
       else r.espTxt = rf ? 'Sin tabla para ' + afRfTxt(rf) : '—';
-      r.av.push('Tabla IDIEM: confirmar que su criterio de falla sea compatible con θcr del elemento.');
+      av('Tabla IDIEM: confirmar que su criterio de falla sea compatible con θcr del elemento.', 'La compatibilidad entre el criterio de falla de la tabla IDIEM y la θcr del elemento debe acreditarse con el informe de ensayo.');
     } else if (it.prot === 'otro') { r.espReq = it.espCert > 0 ? it.espCert : null; r.espTxt = r.espReq ? r.espReq + ' µm (certificado)' : 'Ingrese espesor del certificado'; }
     // Estado
     if (r.Freq == null) r.estado = ['warn', tipo ? 'Sin función OGUC' : 'Sin tipo de edificio'];
@@ -41480,8 +41493,8 @@ function calcEstudioFuego(inp) {
   const auto = [];
   if (protegidos.length) {
     const fuera = protegidos.filter(e => e.espReq == null), cortos = protegidos.filter(e => e.espReq != null && !(e.espProp >= e.espReq));
-    auto.push({txt: 'Masividad de los elementos protegidos dentro del rango de la tabla ensayada (solo interpolación).', v: fuera.length ? 'no' : 'si', obs: fuera.length ? 'Fuera de rango: ' + fuera.map(e => e.nombre).join(', ') : 'Calculado en la sección 4'});
-    auto.push({txt: 'Espesor propuesto mayor o igual al de la tabla para la masividad y la exigencia F.', v: cortos.length || fuera.length ? 'no' : 'si', obs: cortos.length ? 'Insuficiente: ' + cortos.map(e => e.nombre).join(', ') : 'Calculado en la sección 4'});
+    auto.push({txt: 'Masividad de los elementos protegidos dentro del rango de la tabla ensayada (solo interpolación).', v: fuera.length ? 'no' : 'si', obs: fuera.length ? 'Fuera de rango: ' + fuera.map(e => e.nombre).join(', ') : 'Verificado elemento por elemento'});
+    auto.push({txt: 'Espesor propuesto mayor o igual al de la tabla para la masividad y la exigencia F.', v: cortos.length || fuera.length ? 'no' : 'si', obs: cortos.length ? 'Insuficiente: ' + cortos.map(e => e.nombre).join(', ') : (fuera.length ? 'Sin espesor de tabla: ' + fuera.map(e => e.nombre).join(', ') : 'Verificado elemento por elemento')});
   }
   const todos = chk.concat(auto);
   const nNo = todos.filter(c => c.v === 'no').length, nPend = todos.filter(c => c.v === 'pend').length;
@@ -41528,7 +41541,7 @@ function estudioFuegoCalcHtml(inp, r, resumen) {
     <table style="border-collapse:collapse;width:100%;font-size:.78rem"><thead><tr>
       <th ${th}>Elemento</th><th ${th}>Perfil</th><th ${th}>F exigida</th><th ${th}>Am/V (m⁻¹)</th><th ${th}>ksh</th><th ${th}>Clase 4</th><th ${th}>θcr (°C)</th><th ${th}>t sin prot. (min)</th><th ${th}>Protección</th><th ${th}>Esp. req. (µm)</th><th ${th}>Esp. prop. (µm)</th><th ${th}>Estado</th></tr></thead><tbody>`;
   r.elems.forEach(e => {
-    h += `<tr><td ${td}>${esc(e.nombre)}</td><td ${td}>${esc(e.perfil)}</td><td ${tdn}>${e.Freq ? 'F-' + e.Freq : (e.Freq === 0 ? '—' : '?')}</td><td ${tdn}>${n(e.F, 0)}</td><td ${tdn}>${n(e.ksh, 2)}</td><td ${td}>${e.cls ? (e.clase4 ? 'Sí' : 'No') : 'n/e'}</td><td ${tdn}>${n(e.thcr, 0)}</td><td ${tdn}>${n(e.tcr, 1)}</td><td ${td}>${esc(EF_PROD[e.prot])}</td><td ${tdn}>${e.espReq != null ? e.espReq : esc(e.espTxt)}</td><td ${tdn}>${e.prot === 'ninguna' ? '—' : n(e.espProp, 0)}</td><td ${td}>${esc(e.estado[1])}</td></tr>`;
+    h += `<tr><td ${td}>${esc(e.nombre)}</td><td ${td}>${esc(e.perfil)}</td><td ${tdn}>${e.Freq ? 'F-' + e.Freq : (e.Freq === 0 ? '—' : '?')}</td><td ${tdn}>${n(e.F, 0)}</td><td ${tdn}>${n(e.ksh, 2)}</td><td ${td}>${e.cls ? (e.clase4 ? 'Sí' : 'No') : 'n/e'}</td><td ${tdn}>${n(e.thcr, 0)}</td><td ${tdn}>${n(e.tcr, 1)}</td><td ${td}>${esc(EF_PROD[e.prot])}</td><td ${tdn}>${e.espReq != null ? e.espReq : esc(e.espTxt)}</td><td ${tdn}>${e.prot === 'ninguna' ? '—' : n(e.espProp, 0)}</td><td ${td}>${esc(efTxtImp(e.estado[1]))}</td></tr>`;
   });
   h += `</tbody></table>`;
   if (!resumen) {
@@ -41541,11 +41554,402 @@ function estudioFuegoCalcHtml(inp, r, resumen) {
     h += `</tbody></table>`;
   }
   h += `<div class="xlsx-section">Conclusión de asimilación</div><table class="xlsx-table"><tbody>
-    <tr><td class="xv-label">Método</td><td class="xv-input" colspan="3">${esc(r.metodo)}</td></tr>
-    <tr><td class="xv-label">Resultado</td><td class="xv-input" colspan="3">${esc(r.asim[1])}</td></tr></tbody></table>`;
-  if (r.avisos.length) h += `<div class="xlsx-desc-row" style="padding:.3rem">${r.avisos.map(esc).join('<br>')}</div>`;
+    <tr><td class="xv-label">Método</td><td class="xv-input" colspan="3">${esc(efTxtImp(r.metodo))}</td></tr>
+    <tr><td class="xv-label">Resultado</td><td class="xv-input" colspan="3">${esc(efTxtImp(r.asim[1]))}</td></tr></tbody></table>`;
+  if (r.avisosP.length) h += `<div class="xlsx-desc-row" style="padding:.3rem">${r.avisosP.map(esc).join('<br>')}</div>`;
+  const avE = r.elems.filter(e => e.avP.length);
+  if (avE.length) h += `<div class="xlsx-desc-row" style="padding:.3rem">${avE.map(e => '<b>' + esc(e.nombre) + ':</b> ' + e.avP.map(esc).join(' ')).join('<br>')}</div>`;
   h += `<div class="xlsx-desc-row" style="padding:.3rem">Parámetros térmicos: curva NCh 935/1 (ISO 834), αc = 25 W/m²K, Φ = εf = 1,0, εm = 0,7, ca(θ) y ρa = 7850 kg/m³ (EN 1991-1-2 §3.1-3.2; EN 1993-1-2 §2.2, §3.4, §4.2.5.1), Δt = 5 s. El cálculo no reemplaza un ensayo: la acreditación ante la DOM sigue OGUC Art. 4.3.2.</div>`;
   return h;
+}
+
+/* ---------------- Memoria: ESTUDIO DE RESISTENCIA AL FUEGO ---------------- */
+// Textos de estado redactados para el documento impreso (sin instrucciones de uso de la planilla).
+function efTxtImp(t) {
+  const m = {
+    'Faltan datos (μ0)': 'μ0 no informado: θcr no determinada',
+    'Verificar por §4.2.3': 'Requiere verificación de resistencia por EN 1993-1-2 §4.2.3',
+    'Ingrese espesor del certificado': 'Espesor del certificado no informado',
+    'Sin función OGUC': 'Función OGUC 4.3.3 no asignada',
+    'Sin tipo de edificio': 'Tipo de edificio no determinado',
+    'Defina el origen del ensayo de referencia.': 'Origen del ensayo de referencia no definido.'
+  };
+  if (m[t]) return m[t];
+  if (/^Pendiente: /.test(t)) return t.replace(/\. No emitir conclusión hasta completarlos\.$/, ': la asimilación no puede concluirse con los antecedentes disponibles.');
+  if (/^No asimilable/.test(t)) return t.replace(/: corresponde ensayo o cambio de solución\.$/, '. Conforme a OGUC 4.3.2, la acreditación requiere ensayo o un cambio de solución.');
+  if (/^Antecedentes completos/.test(t)) return 'Los antecedentes permiten que un profesional especialista certifique la asimilación (OGUC 4.3.2).';
+  return t;
+}
+
+// Paso a paso del cálculo incremental de EN 1993-1-2 §4.2.5.1 (mismo algoritmo que afCurva), registrando
+// las magnitudes intermedias al inicio del paso en los minutos pedidos.
+function efTraza(F, ksh, p, minutos) {
+  const dt = p.dt, tMax = Math.max(...minutos)*60;
+  let th = 20, t = 0;
+  const filas = [];
+  while (t <= tMax + 1e-9) {
+    const m = t/60, tg = afIso(m);
+    const hc = p.alfa*(tg - th), hr = p.phi*p.em*p.ef*5.67e-8*(Math.pow(tg + 273, 4) - Math.pow(th + 273, 4));
+    const ca = p.caVar ? afCa(th) : p.ca;
+    const d = ksh*F/(ca*p.rho)*(hc + hr)*dt;
+    if (minutos.some(k => Math.abs(k - m) < 1e-9)) filas.push({t: m, tg, th, ca, hc, hr, hnet: hc + hr, d});
+    th += d; t += dt;
+  }
+  return filas;
+}
+
+// Gráfico temperatura–tiempo para impresión (colores fijos, sin variables de tema).
+// curvas: [{nombre, serie:[{t,th}], color}]; lineasH: [{v, txt, color}]; lineasV: [{v, txt, color}]
+function efGraficoMem(curvas, lineasH, lineasV, tMax) {
+  const W = 660, H = 320, L = 52, R = 170, T = 14, B = 40, pw = W - L - R, ph = H - T - B;
+  tMax = tMax || 120;
+  const x = t => L + t/tMax*pw, y = th => T + ph - Math.min(1200, th)/1200*ph;
+  let g = '';
+  for (let th = 0; th <= 1200; th += 200) g += `<line x1="${L}" x2="${L + pw}" y1="${y(th)}" y2="${y(th)}" stroke="#d7dce3"/><text x="${L - 6}" y="${y(th) + 4}" text-anchor="end" font-size="10" fill="#57636F">${th}</text>`;
+  for (let t = 0; t <= tMax; t += 15) g += `<line x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${T + ph}" stroke="#d7dce3"/><text x="${x(t)}" y="${T + ph + 15}" text-anchor="middle" font-size="10" fill="#57636F">${t}</text>`;
+  let iso = ''; for (let t = 0; t <= tMax; t++) iso += (t ? ' L ' : 'M ') + x(t).toFixed(1) + ' ' + y(afIso(t)).toFixed(1);
+  g += `<path d="${iso}" fill="none" stroke="#57636F" stroke-width="2" stroke-dasharray="6,4"/>`;
+  let leg = `<line x1="${L + pw + 12}" x2="${L + pw + 32}" y1="${T + 8}" y2="${T + 8}" stroke="#57636F" stroke-width="2" stroke-dasharray="6,4"/><text x="${L + pw + 38}" y="${T + 12}" font-size="10" fill="#182430">Curva NCh 935/1</text>`;
+  let k = 1;
+  curvas.forEach(c => {
+    const d = c.serie.filter(q => q.t <= tMax).map((q, j) => (j ? 'L' : 'M') + x(q.t).toFixed(1) + ' ' + y(q.th).toFixed(1)).join(' ');
+    g += `<path d="${d}" fill="none" stroke="${c.color}" stroke-width="2.2"/>`;
+    leg += `<line x1="${L + pw + 12}" x2="${L + pw + 32}" y1="${T + 8 + k*17}" y2="${T + 8 + k*17}" stroke="${c.color}" stroke-width="3"/><text x="${L + pw + 38}" y="${T + 12 + k*17}" font-size="10" fill="#182430">${esc(String(c.nombre).slice(0, 24))}</text>`;
+    k++;
+  });
+  (lineasH || []).forEach(l => {
+    g += `<line x1="${L}" x2="${L + pw}" y1="${y(l.v)}" y2="${y(l.v)}" stroke="${l.color}" stroke-width="1.4" stroke-dasharray="5,3"/><text x="${L + 4}" y="${y(l.v) - 4}" font-size="10" fill="${l.color}">${esc(l.txt)}</text>`;
+  });
+  (lineasV || []).forEach(l => {
+    if (!(l.v >= 0 && l.v <= tMax)) return;
+    g += `<line x1="${x(l.v)}" x2="${x(l.v)}" y1="${T}" y2="${T + ph}" stroke="${l.color}" stroke-width="1.4" stroke-dasharray="2,3"/><text x="${x(l.v) + 3}" y="${T + 10 + (l.dy || 0)}" font-size="10" fill="${l.color}">${esc(l.txt)}</text>`;
+  });
+  g += `<text x="${L + pw/2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#57636F">tiempo de exposición (min)</text>`;
+  g += `<text x="13" y="${T + ph/2}" text-anchor="middle" font-size="10" fill="#57636F" transform="rotate(-90 13 ${T + ph/2})">temperatura (°C)</text>`;
+  return `<div class="fig"><svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto;display:block;margin:0 auto" role="img" aria-label="Temperatura versus tiempo">${g}${leg}</svg></div>`;
+}
+
+// Gráfico ky,θ (EN 1993-1-2 Tabla 3.1) con la temperatura crítica de cada elemento.
+function efGraficoKy(puntos) {
+  const W = 660, H = 270, L = 52, R = 170, T = 12, B = 40, pw = W - L - R, ph = H - T - B;
+  const x = th => L + th/1200*pw, y = k => T + ph - k*ph;
+  let g = '';
+  for (let k = 0; k <= 1.0001; k += 0.2) g += `<line x1="${L}" x2="${L + pw}" y1="${y(k)}" y2="${y(k)}" stroke="#d7dce3"/><text x="${L - 6}" y="${y(k) + 4}" text-anchor="end" font-size="10" fill="#57636F">${MEM_N(k, 1)}</text>`;
+  for (let th = 0; th <= 1200; th += 200) g += `<line x1="${x(th)}" x2="${x(th)}" y1="${T}" y2="${T + ph}" stroke="#d7dce3"/><text x="${x(th)}" y="${T + ph + 15}" text-anchor="middle" font-size="10" fill="#57636F">${th}</text>`;
+  g += `<path d="${AF_KY.map((q, j) => (j ? 'L' : 'M') + x(q[0]).toFixed(1) + ' ' + y(q[1]).toFixed(1)).join(' ')}" fill="none" stroke="#1F3864" stroke-width="2.2"/>`;
+  let cur = ''; for (let m = 0.013; m <= 1.0; m += 0.005) { const t = efThetaCr(m); if (t != null) cur += (cur ? ' L ' : 'M ') + x(t).toFixed(1) + ' ' + y(m).toFixed(1); }
+  g += `<path d="${cur}" fill="none" stroke="#eb6834" stroke-width="1.6" stroke-dasharray="5,3"/>`;
+  let leg = `<line x1="${L + pw + 12}" x2="${L + pw + 32}" y1="${T + 8}" y2="${T + 8}" stroke="#1F3864" stroke-width="3"/><text x="${L + pw + 38}" y="${T + 12}" font-size="10" fill="#182430">ky,θ (Tabla 3.1)</text>
+    <line x1="${L + pw + 12}" x2="${L + pw + 32}" y1="${T + 25}" y2="${T + 25}" stroke="#eb6834" stroke-width="2" stroke-dasharray="5,3"/><text x="${L + pw + 38}" y="${T + 29}" font-size="10" fill="#182430">μ0 vs θcr (ec. 4.22)</text>`;
+  puntos.forEach((p, i) => {
+    g += `<circle cx="${x(p.th)}" cy="${y(p.mu)}" r="4" fill="${p.color}" stroke="#fff"/>`;
+    leg += `<circle cx="${L + pw + 22}" cy="${T + 46 + i*17}" r="4" fill="${p.color}"/><text x="${L + pw + 38}" y="${T + 50 + i*17}" font-size="10" fill="#182430">${esc(String(p.nombre).slice(0, 24))}</text>`;
+  });
+  g += `<text x="${L + pw/2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#57636F">temperatura del acero θa (°C)</text>`;
+  g += `<text x="13" y="${T + ph/2}" text-anchor="middle" font-size="10" fill="#57636F" transform="rotate(-90 13 ${T + ph/2})">ky,θ  /  μ0</text>`;
+  return `<div class="fig"><svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto;display:block;margin:0 auto" role="img" aria-label="Factor de reducción ky,θ">${g}${leg}</svg></div>`;
+}
+
+// Desarrollo del perímetro expuesto con sus valores (mismas expresiones que calcFactorMasividad/afMasividades).
+function efPerimetroTxt(e) {
+  const N = v => MEM_N(v, 1), {h, b, tw, r} = e, A = MEM_N(e.A, 2);
+  const tres = e.caras === '3';
+  if (e.tipo === 'C') return {formula: 'F = 2 / e (pared delgada, ambas caras expuestas)', calc: `F = 2000 / ${MEM_N(tw, 2)} = ${MEM_N(e.F, 1)} m⁻¹`};
+  let P, fP, sP;
+  if (e.tipo === 'I-H') {
+    const nb = tres ? 3 : 4;
+    P = 2*h + nb*b + 2*Math.PI*r - 8*r - 2*tw;
+    fP = `P = 2h + ${nb}b + 2πr − 8r − 2tw`;
+    sP = `P = 2·${N(h)} + ${nb}·${N(b)} + 2π·${N(r)} − 8·${N(r)} − 2·${N(tw)} = ${N(P)} mm`;
+  } else if ((e.tipo === 'RHS' || e.tipo === 'TUB') && tres) {
+    P = 2*h + b; fP = 'P = 2H + B'; sP = `P = 2·${N(h)} + ${N(b)} = ${N(P)} mm`;
+  } else if (e.tipo === 'RHS' || e.tipo === 'TUB') {
+    P = 2*(h + b); fP = 'P = 2·(H + B)'; sP = `P = 2·(${N(h)} + ${N(b)}) = ${N(P)} mm`;
+  } else if (e.tipo === 'CHS') {
+    P = Math.PI*h; fP = 'P = π·D'; sP = `P = π·${N(h)} = ${N(P)} mm`;
+  } else if (e.tipo === 'L') {
+    P = 2*(h + b); fP = 'P = 2·(a + b)'; sP = `P = 2·(${N(h)} + ${N(b)}) = ${N(P)} mm`;
+  } else if (e.tipo === 'U') {
+    P = 2*h + 4*b - 2*tw; fP = 'P = 2h + 4b − 2tw (contorno completo)'; sP = `P = 2·${N(h)} + 4·${N(b)} − 2·${N(tw)} = ${N(P)} mm`;
+  } else return {formula: '—', calc: '—'};
+  return {formula: fP, calc: `${sP}<br>Am/V = 10·P / A = 10·${N(P)} / ${A} = <b>${MEM_N(10*P/e.A, 1)} m⁻¹</b>`, P};
+}
+
+function efMemoriaHtml(inp, r, meta) {
+  const N = MEM_N, PAL = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
+  const pT = {dt: 5, alfa: 25, phi: 1, ef: 1, em: 0.7, caVar: true, ca: 600, rho: 7850};
+  const sector = inp.sector || meta.edif || 'el sector en estudio';
+  const fReq = e => e.Freq ? 'F-' + e.Freq : (e.Freq === 0 ? 'Sin exigencia' : 'No determinada');
+  const tipoPerfil = t => ({'I-H': 'I / H', U: 'canal U', L: 'ángulo L', CHS: 'tubo circular', RHS: 'tubo rectangular o cajón', TUB: 'Tubest', C: 'conformado en frío'})[t] || t;
+  const SOLIC = {compresion: 'compresión', flexion: 'flexión', flexocomp: 'flexocompresión'};
+  const colEl = r.elems.map((e, i) => PAL[i % PAL.length]);
+
+  // ---- 1. Carga combustible
+  const mats = r.mats.filter(m => m.desc || m.carga > 0);
+  const tablaMat = mats.length ? `${MEM_T('Inventario de materiales combustibles y carga combustible')}
+    <table class="inf-t"><tr><th>N°</th><th>Material / acopio</th><th>Masa mi (kg)</th><th>Poder calorífico Hi (MJ/kg)</th><th>Fuente de Hi</th><th>Zona 2×2</th><th>Qi = mi·Hi (MJ)</th></tr>
+    ${mats.map((m, i) => `<tr><td>${i + 1}</td><td class="l">${esc(m.desc || '—')}</td><td>${N(m.masa, 1)}</td><td>${N(m.hc, 2)}</td><td class="l">${esc(m.fuente || 'Sin fuente declarada')}</td><td>${esc(m.zona || '—')}</td><td>${N(m.carga, 0)}</td></tr>`).join('')}
+    <tr><td colspan="6" class="l"><b>Carga combustible total ΣQi</b></td><td class="hl">${N(r.cargaTotal, 0)}</td></tr></table>` : '<p>No se registraron materiales combustibles.</p>';
+  const tablaZonas = r.zonasArr.length ? `${MEM_T('Densidad de carga combustible por superficie de 2 × 2 m')}
+    <table class="inf-t"><tr><th>Zona</th><th>Carga de la zona (MJ)</th><th>Superficie (m²)</th><th>Densidad (MJ/m²)</th></tr>
+    ${r.zonasArr.map((z, i) => `<tr><td>${esc(z.zona)}</td><td>${N(z.carga, 0)}</td><td>4,0</td><td class="${i === 0 ? 'hl' : ''}">${N(z.dcc, 0)}</td></tr>`).join('')}</table>` : '';
+  const grafZonas = r.zonasArr.length ? `${memBarras(r.zonasArr.slice(0, 20).map(z => ({label: z.zona, v: z.dcc, color: '#2a78d6'})), 'Densidad de carga combustible (MJ/m²)', r.media != null ? [{v: r.media, label: 'media ' + N(r.media, 0)}] : [])}${MEM_F('Densidad de carga combustible por zona de 2 × 2 m y densidad media del sector (línea de referencia)')}` : '';
+
+  // ---- 2. Pisos y tablas 4.3.4
+  const H = inp.altura;
+  const pisosTxt = r.excepcion
+    ? `<p>El edificio tiene un piso, no tiene altillos ni superficies intermedias y su densidad de carga combustible media es ${N(r.media, 0)} MJ/m² &lt; 500 MJ/m². Se aplica la excepción del Art. 4.3.4 y se considera de <b>1 piso</b>, cualquiera sea su altura.</p>`
+    : `<p>Pisos reales: ${inp.pisosReales}.${H > 0 ? ` Por altura: la altura interior se divide por 3,5 m y la fracción se cuenta como un piso adicional.` : ''}</p>
+       ${H > 0 ? `<div class="eq">n = ⌈H / 3,5⌉ = ⌈${N(H, 2)} / 3,5⌉ = ⌈${N(H/3.5, 2)}⌉ = ${r.pisosAltura}</div>` : ''}
+       <div class="eq">n para clasificación = máx(${inp.pisosReales}${H > 0 ? '; ' + r.pisosAltura : ''}) = <b>${r.pisosEq}</b></div>
+       ${inp.pisosReales === 1 && !r.excepcion ? `<p>No procede la excepción de un piso: ${inp.altillos === 'si' ? 'el edificio tiene altillos o superficies intermedias' : (r.media == null ? 'la densidad media no está determinada' : 'la densidad media (' + N(r.media, 0) + ' MJ/m²) no es inferior a 500 MJ/m²')}.</p>` : ''}`;
+  const rangoTxt = x => x[1] == null ? 'Sobre ' + N(x[0], 0) : (x[0] === 0 ? 'Hasta ' + N(x[1], 0) : 'Sobre ' + N(x[0], 0) + ' y hasta ' + N(x[1], 0));
+  const tablaLookup = (titulo, rows, nCols, ult, rango, iSel, pisos, unidad) => {
+    const col = Math.min(pisos, nCols) - 1;
+    const enc = Array.from({length: nCols}, (_, i) => `<th${i === col ? ' style="background:#2E5395"' : ''}>${i + 1 === nCols ? nCols + ' ' + ult : i + 1}</th>`).join('');
+    return `${MEM_T(titulo)}<table class="inf-t"><tr><th>${unidad}</th>${enc}</tr>
+      ${rows.map((x, i) => `<tr><td class="l${i === iSel ? ' hl' : ''}">${rango(x, i)}</td>${x[2].split('').map((c, j) => `<td class="${i === iSel && j === col ? 'hl' : ''}">${c}</td>`).join('')}</tr>`).join('')}</table>`;
+  };
+  const selT = (rows, val) => rows.findIndex(x => (val > x[0] && (x[1] == null || val <= x[1])) || (val === 0 && x[0] === 0));
+  let t434 = '';
+  if (inp.t1) t434 += `<h2>5.2 Tabla 1 — destino «${esc(inp.t1)}», superficie edificada ${N(inp.superficie, 0)} m²</h2>
+    ${tablaLookup('OGUC Art. 4.3.4, Tabla 1, fila del destino (superficie edificada en m²; columnas: número de pisos)', EF_T1[inp.t1], 7, 'o más', x => rangoTxt(x), selT(EF_T1[inp.t1], inp.superficie), r.pisosEq, 'Superficie (m²)')}
+    <p>Con ${N(inp.superficie, 0)} m² y ${r.pisosEq} piso(s) resulta tipo <b>${r.t1 || '—'}</b>.</p>`;
+  if (inp.t2) t434 += `<h2>5.${inp.t1 ? 3 : 2} Tabla 2 — destino «${esc(inp.t2)}», ${N(inp.ocupantes, 0)} ocupantes</h2>
+    ${tablaLookup('OGUC Art. 4.3.4, Tabla 2, fila del destino (máximo de ocupantes; columnas: número de pisos)', EF_T2[inp.t2], 6, 'o más', x => rangoTxt(x), selT(EF_T2[inp.t2], inp.ocupantes), r.pisosEq, 'Ocupantes')}
+    <p>Con ${N(inp.ocupantes, 0)} ocupantes y ${r.pisosEq} piso(s) resulta tipo <b>${r.t2 || '—'}</b>.</p>`;
+  if (inp.t3) {
+    const rows = EF_T3[inp.t3];
+    const lim = (x, i, k) => x[k] == null ? 'sobre ' + N(rows[i - 1][k], 0) : 'hasta ' + N(x[k], 0);
+    t434 += `<h2>5.${1 + (inp.t1 ? 1 : 0) + (inp.t2 ? 1 : 0) + 1} Tabla 3 — destino «${esc(inp.t3)}»</h2>
+      <p>La Tabla 3 se ingresa con la densidad de carga combustible media (NCh 1916) y con la puntual máxima (NCh 1993); cuando ambas conducen a filas distintas, rige la de mayor densidad.</p>
+      ${tablaLookup('OGUC Art. 4.3.4, Tabla 3, fila del destino (densidades en MJ/m²; columnas: número de pisos)', rows, 5, 'o más', (x, i) => 'Media ' + lim(x, i, 0) + ' / puntual ' + lim(x, i, 1), r.t3 ? Math.max(r.t3.iM, r.t3.iP) : -1, r.pisosEq, 'Densidad media / puntual')}
+      <p>Densidad media ${N(r.media, 0)} MJ/m² → fila ${r.t3 && r.t3.iM >= 0 ? r.t3.iM + 1 : '—'}; densidad puntual máxima ${N(r.puntual, 0)} MJ/m² → fila ${r.t3 && r.t3.iP >= 0 ? r.t3.iP + 1 : '—'}. Rige la fila ${r.t3 ? Math.max(r.t3.iM, r.t3.iP) + 1 : '—'}${r.t3 && r.t3.porPuntual ? ', determinada por la densidad puntual' : ''}, con lo que resulta tipo <b>${r.t3 ? r.t3.letra : '—'}</b>.</p>`;
+  }
+  const letras = [['Tabla 1', r.t1], ['Tabla 2', r.t2], ['Tabla 3', r.t3 && r.t3.letra]].filter(x => x[1]);
+
+  // ---- 3. Exigencia por elemento
+  const tablaExig = `${MEM_T('Resistencia al fuego exigida por función del elemento (OGUC Art. 4.3.3, tipo ' + (r.tipo || '—') + ')')}
+    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Función principal</th><th>Exigencia</th><th>Función adicional</th><th>Exigencia</th><th>Exigencia adoptada</th></tr>
+    ${r.elems.map((e, i) => {
+      const fx = f => f >= 1 && f <= 9 ? [EF_FUNC[f - 1], r.tipo && EF_T433[r.tipo][f - 1] ? 'F-' + EF_T433[r.tipo][f - 1] : '—'] : ['—', '—'];
+      const a = fx(e.f1), b = fx(e.f2);
+      return `<tr><td>${i + 1}</td><td class="l">${esc(e.nombre)}</td><td class="l">${esc(a[0])}</td><td>${a[1]}</td><td class="l">${esc(b[0])}</td><td>${b[1]}</td><td class="hl">${e.Fmanual > 0 ? 'F-' + e.Fmanual + ' (fijada por el proyectista)' : fReq(e)}</td></tr>`;
+    }).join('')}</table>`;
+
+  // ---- 4. Térmico
+  const conCurva = r.elems.filter(e => e.curva);
+  const grafGlobal = conCurva.length ? `${efGraficoMem(conCurva.slice(0, 8).map(e => ({nombre: e.nombre, serie: e.curva.serie, color: colEl[r.elems.indexOf(e)]})), [], [], 120)}${MEM_F('Temperatura del acero sin protección versus tiempo para todos los elementos, y curva de incendio normalizado NCh 935/1')}` : '';
+  const conCr = r.elems.filter(e => e.thcr != null && e.mu > 0 && !e.clase4);
+  const grafKy = conCr.length ? `${efGraficoKy(conCr.slice(0, 8).map(e => ({nombre: e.nombre, th: e.thcr, mu: Math.max(0.013, e.mu), color: colEl[r.elems.indexOf(e)]})))}${MEM_F('Factor de reducción del límite elástico ky,θ (EN 1993-1-2 Tabla 3.1), relación μ0–θcr de la ecuación 4.22 y punto de trabajo de cada elemento')}` : '';
+
+  const MIN_TRAZA = [0, 1, 2, 5, 10, 15, 20, 30, 45, 60, 90, 120];
+  const fichas = r.elems.map((e, i) => {
+    const per = efPerimetroTxt(e);
+    const sv = (typeof afSvgSeccion === 'function' && ['I-H', 'U', 'RHS', 'TUB', 'CHS', 'L'].includes(e.tipo)) ? afSvgSeccion({tipo: e.tipo === 'TUB' ? 'RHS' : e.tipo, h: e.h, b: e.b, tw: e.tw, tf: e.tf, rol: e.caras === '3' ? 'viga' : 'pilar', perfil: e.perfil}) : '';
+    const Fb = e.A > 0 ? (e.caras === '3' ? 10*(2*e.h + e.b)/e.A : 10*2*(e.h + e.b)/e.A) : null;
+    const kshTxt = (e.tipo === 'I-H' || e.tipo === 'U') && Fb
+      ? `<p>Factor de corrección por efecto sombra (EN 1993-1-2 ec. 4.26a, secciones I): [Am/V]b es la masividad del cajón que envuelve la sección.</p>
+         <div class="eq">[Am/V]b = 10·${e.caras === '3' ? '(2h + b)' : '2·(h + b)'} / A = 10·${e.caras === '3' ? '(2·' + N(e.h, 1) + ' + ' + N(e.b, 1) + ')' : '2·(' + N(e.h, 1) + ' + ' + N(e.b, 1) + ')'} / ${N(e.A, 2)} = ${N(Fb, 1)} m⁻¹</div>
+         <div class="eq">ksh = 0,9·[Am/V]b / [Am/V] = 0,9·${N(Fb, 1)} / ${N(e.F, 1)} = <b>${N(e.ksh, 3)}</b></div>`
+      : `<p>Sección convexa (tubo, cajón, ángulo o pared delgada): ksh = <b>1,0</b> (EN 1993-1-2 §4.2.5.1(2)).</p>`;
+    const cls = e.cls;
+    const clsTxt = cls ? `<p>Clasificación de la sección en situación de incendio (EN 1993-1-2 §4.2.2: ε reducido por el cociente de rigideces y resistencias a temperatura elevada; límites de EN 1993-1-1 Tabla 5.2, solicitación: ${SOLIC[e.solic] || e.solic}${e.solic === 'flexocomp' ? '; para el alma se adopta, del lado de la seguridad, el límite de compresión pura' : ''}):</p>
+        <div class="eq">fy = ${N(e.Fy, 0)} kg/cm² = ${N(cls.fy, 1)} MPa &nbsp;&nbsp; ε = 0,85·√(235 / fy) = 0,85·√(235 / ${N(cls.fy, 1)}) = ${N(cls.eps, 3)}</div>
+        ${cls.partes.length ? `<table class="inf-t"><tr><th>Parte</th><th>Esbeltez</th><th>Valor</th><th>Límite clase 3</th><th>Resultado</th></tr>
+        ${cls.partes.map(q => `<tr><td class="l">${q.p}</td><td class="l">${q.expr}</td><td>${N(q.ct, 1)}</td><td>${q.limExpr} = ${N(q.lim, 1)}</td><td class="${q.ct > q.lim ? 'bad' : 'ok'}">${q.ct > q.lim ? 'Clase 4' : 'Clase 1-3'}</td></tr>`).join('')}</table>` : `<p>${esc(cls.txt)}.</p>`}
+        <p>La sección resulta <b>${e.clase4 ? 'clase 4' : 'clase 1, 2 o 3'}</b>.</p>` : '<p>La clase de la sección no se evaluó para este tipo de perfil.</p>';
+    let crTxt;
+    if (e.clase4) crTxt = `<p>Para secciones clase 4, EN 1993-1-2 §4.2.3.6 limita la temperatura del acero a <b>θcr = 350 °C</b> en todo instante, con independencia del grado de utilización.</p>`;
+    else if (e.mu > 0) {
+      const m = Math.max(0.013, e.mu);
+      crTxt = `<p>Método de la temperatura crítica (EN 1993-1-2 §4.2.4), con el grado de utilización μ0 = Efi,d / Rfi,d,0 = ${N(e.mu, 3)}${e.mu < 0.013 ? ' (se adopta el mínimo 0,013)' : ''}:</p>
+        <div class="eq">θa,cr = 39,19·ln[1 / (0,9674·μ0^3,833) − 1] + 482</div>
+        <div class="eq">θa,cr = 39,19·ln[1 / (0,9674·${N(m, 3)}^3,833) − 1] + 482 = <b>${N(e.thcr, 0)} °C</b></div>
+        ${e.inest === 'si' ? '<p>Se informó que gobierna la inestabilidad del elemento: la ecuación 4.22 no es aplicable (§4.2.4(1)) y la resistencia en caliente debe verificarse por §4.2.3; el valor anterior es solo referencial.</p>' : ''}`;
+    } else crTxt = '<p>El grado de utilización μ0 no fue informado; la temperatura crítica no está determinada.</p>';
+    const traza = e.curva ? efTraza(e.F, e.ksh, pT, MIN_TRAZA) : [];
+    const tablaTraza = traza.length ? `${MEM_T('Cálculo incremental de la temperatura del acero sin protección — ' + esc(e.nombre) + ' (valores al inicio del paso Δt = 5 s)')}
+      <table class="inf-t"><tr><th>t (min)</th><th>θg (°C)</th><th>θa (°C)</th><th>ca(θa) (J/kg·K)</th><th>ḣnet,c (W/m²)</th><th>ḣnet,r (W/m²)</th><th>ḣnet (W/m²)</th><th>Δθa en Δt (°C)</th><th>ky,θ</th></tr>
+      ${traza.map(q => `<tr><td>${q.t}</td><td>${N(q.tg, 1)}</td><td class="${e.thcr != null && q.th >= e.thcr ? 'bad' : ''}">${N(q.th, 1)}</td><td>${N(q.ca, 0)}</td><td>${N(q.hc, 0)}</td><td>${N(q.hr, 0)}</td><td>${N(q.hnet, 0)}</td><td>${N(q.d, 2)}</td><td>${N(afKy(q.th), 3)}</td></tr>`).join('')}</table>` : '';
+    const ej = traza.find(q => q.t === 15);
+    const ejTxt = ej ? `<p>Ejemplo del paso que comienza en t = 15 min:</p>
+      <div class="eq">ḣnet = 25·(${N(ej.tg, 1)} − ${N(ej.th, 1)}) + 1·0,7·1·5,67·10⁻⁸·[(${N(ej.tg, 1)} + 273)⁴ − (${N(ej.th, 1)} + 273)⁴] = ${N(ej.hc, 0)} + ${N(ej.hr, 0)} = ${N(ej.hnet, 0)} W/m²</div>
+      <div class="eq">Δθa = ${N(e.ksh, 3)}·${N(e.F, 1)} / (${N(ej.ca, 0)}·7850)·${N(ej.hnet, 0)}·5 = ${N(ej.d, 2)} °C</div>` : '';
+    const lv = [];
+    if (e.Freq > 0) lv.push({v: e.Freq, txt: 'F-' + e.Freq, color: '#1E7A46'});
+    if (e.tcr != null) lv.push({v: e.tcr, txt: 'tcr = ' + N(e.tcr, 1), color: '#B3261E', dy: 14});
+    const graf = e.curva ? `${efGraficoMem([{nombre: e.nombre + ' (acero)', serie: e.curva.serie, color: colEl[i]}], e.thcr != null ? [{v: e.thcr, txt: 'θcr = ' + N(e.thcr, 0) + ' °C', color: '#B3261E'}] : [], lv, e.Freq > 120 ? 150 : 120)}${MEM_F('Temperatura del acero sin protección — ' + esc(e.nombre) + ': curva NCh 935/1, temperatura crítica y exigencia')}` : '';
+    let tcrTxt = '';
+    if (e.curva && e.thcr != null) tcrTxt = e.tcr != null
+      ? `<p>Interpolando la serie de temperaturas, el acero sin protección alcanza θcr = ${N(e.thcr, 0)} °C a los <b>t = ${N(e.tcr, 1)} min</b>${e.Freq > 0 ? (e.tcr >= e.Freq ? `, tiempo mayor o igual a la exigencia de ${e.Freq} min` : `, tiempo inferior a la exigencia de ${e.Freq} min; el elemento requiere protección`) : ''}.</p>`
+      : `<p>El acero sin protección no alcanza θcr = ${N(e.thcr, 0)} °C dentro de 150 min de exposición.</p>`;
+    // protección
+    let protTxt = '';
+    if (e.prot === 'cerefire' || e.prot === 'stofire') {
+      const rf = e.Freq > 0 ? 'F' + e.Freq : null, T = AF_TABLAS[e.prot], rows = rf ? (T[rf] || []) : [];
+      const fila = e.F4 != null ? Math.max(60, Math.ceil(e.F4/10 - 1e-9)*10) : null;
+      const iR = rows.findIndex(x => fila >= x[0] && fila <= x[1]);
+      const ext = iR >= 0 ? rows.slice(Math.max(0, iR - 2), iR + 3) : rows;
+      protTxt = `<h2>Protección: ${esc(EF_PROD[e.prot])}</h2>
+        <p>El espesor de pintura intumescente se obtiene de la tabla del informe de ensayo, sin cálculo térmico del acero protegido: el comportamiento de la pintura solo está respaldado por el ensayo. Se ingresa con la masividad a 4 caras, F4 = ${N(e.F4, 1)} m⁻¹, redondeada a la decena superior (fila ${fila != null ? fila : '—'} m⁻¹), sin extrapolar fuera del rango ensayado.${e.caras === '3' ? ' Para un elemento expuesto por 3 caras se emplea igualmente la masividad a 4 caras, lo que asimila la viga a la condición de pilar ensayada y es conservador.' : ''}</p>
+        ${rows.length ? `${MEM_T('Extracto de la tabla ' + esc(T.nombre) + ' para ' + afRfTxt(rf) + ' (masividad en m⁻¹, espesor seco en µm)')}
+        <table class="inf-t"><tr><th>Masividad desde</th><th>Masividad hasta</th><th>Espesor (µm)</th></tr>
+        ${ext.map(x => `<tr><td class="${x === rows[iR] ? 'hl' : ''}">${x[0]}</td><td class="${x === rows[iR] ? 'hl' : ''}">${x[1]}</td><td class="${x === rows[iR] ? 'hl' : ''}">${x[2]}</td></tr>`).join('')}
+        <tr><td colspan="3" class="l">Rango cubierto por la tabla: ${rows[0][0]} a ${rows[rows.length - 1][1]} m⁻¹</td></tr></table>` : `<p>La tabla no contiene la exigencia ${rf ? afRfTxt(rf) : 'requerida'}.</p>`}
+        <p>${e.espReq != null ? `Espesor requerido: <b>${e.espReq} µm</b>; espesor propuesto: <b>${e.espProp || 0} µm</b> → ${e.espProp >= e.espReq ? 'suficiente' : 'insuficiente'}.` : `Resultado: ${esc(e.espTxt)}; el elemento no queda cubierto por la tabla ensayada.`}</p>`;
+    } else if (e.prot === 'otro') {
+      protTxt = `<h2>Protección: producto con certificado propio</h2><p>Espesor según certificado: ${e.espCert > 0 ? e.espCert + ' µm' : 'no informado'}; espesor propuesto: ${e.espProp > 0 ? e.espProp + ' µm' : 'no informado'}.</p>`;
+    } else protTxt = `<h2>Protección</h2><p>Elemento sin protección.</p>`;
+    return `<div class="salto"></div><h1>6.${i + 1} ${esc(e.nombre)} — ${esc(e.perfil)}</h1>
+      <table class="ficha-g"><tr><td style="width:36%">${sv}</td><td>
+        <p>Perfil ${esc(e.perfil)} (${tipoPerfil(e.tipo)}): h = ${N(e.h, 1)} mm, b = ${N(e.b, 1)} mm, tw = ${N(e.tw, 2)} mm, tf = ${N(e.tf, 2)} mm, r = ${N(e.r, 1)} mm, A = ${N(e.A, 2)} cm². Exposición: ${e.caras} caras. Exigencia: <b>${fReq(e)}</b>.</p>
+      </td></tr></table>
+      <h2>Factor de masividad</h2>
+      <div class="eq">${per.formula}</div><div class="eq">${per.calc}</div>
+      ${e.caras === '3' && e.F4 != null ? `<p>Para la consulta de tablas de ensayo se usa además la masividad a 4 caras: F4 = ${N(e.F4, 1)} m⁻¹.</p>` : ''}
+      ${e.sobre390 ? '<p><b>La masividad a 4 caras supera 390 m⁻¹</b>, límite establecido en el punto 3 del Listado Oficial ED17-2025.</p>' : ''}
+      <h2>Efecto sombra</h2>${kshTxt}
+      <h2>Clase de la sección</h2>${clsTxt}
+      <h2>Temperatura crítica</h2>${crTxt}
+      <h2>Evolución de la temperatura del acero sin protección</h2>${ejTxt}${tablaTraza}${graf}${tcrTxt}
+      ${protTxt}
+      <h2>Resultado del elemento</h2><p><b>${esc(efTxtImp(e.estado[1]))}</b>.${e.avP.length ? ' ' + e.avP.map(esc).join(' ') : ''}</p>`;
+  }).join('');
+
+  // ---- 7. Asimilación
+  const lab = {si: 'Cumple', no: 'No cumple', pend: 'Sin antecedente', na: 'No aplica'};
+  const cls = {si: 'ok', no: 'bad'};
+  const tablaChk = `${MEM_T('Verificación de criterios para la asimilación')}
+    <table class="inf-t"><tr><th>N°</th><th>Criterio</th><th>Referencia</th><th>Estado</th><th>Antecedente / observación</th></tr>
+    ${r.chk.concat(r.chkAuto.map(c => Object.assign({ref: 'Cálculo de esta memoria (sección 6)'}, c))).map((c, i) => `<tr><td>${i + 1}</td><td class="l">${esc(c.txt)}</td><td class="l">${esc(c.ref)}</td><td class="${cls[c.v] || ''}">${lab[c.v] || c.v}</td><td class="l">${esc(c.obs || '')}</td></tr>`).join('')}</table>`;
+
+  // ---- Conclusiones
+  const tablaRes = `${MEM_T('Resumen de resultados por elemento')}
+    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Perfil</th><th>Exigencia</th><th>Am/V (m⁻¹)</th><th>ksh</th><th>Clase</th><th>θcr (°C)</th><th>θa a la exigencia (°C)</th><th>t a θcr sin prot. (min)</th><th>Protección</th><th>Esp. req. / prop. (µm)</th><th>Resultado</th></tr>
+    ${r.elems.map((e, i) => `<tr><td>${i + 1}</td><td class="l">${esc(e.nombre)}</td><td>${esc(e.perfil)}</td><td>${fReq(e)}</td><td>${N(e.F, 1)}</td><td>${N(e.ksh, 2)}</td><td>${e.cls ? (e.clase4 ? '4' : '1-3') : 'n/e'}</td><td>${N(e.thcr, 0)}</td><td>${e.curva && e.Freq > 0 && e.curva.hitos[e.Freq] != null ? N(e.curva.hitos[e.Freq], 0) : '—'}</td><td>${e.tcr != null ? N(e.tcr, 1) : (e.curva && e.thcr != null ? '> 150' : '—')}</td><td class="l">${esc(EF_PROD[e.prot])}</td><td>${e.prot === 'ninguna' ? '—' : (e.espReq != null ? e.espReq : '—') + ' / ' + (e.espProp || 0)}</td><td class="${e.estado[0] === 'ok' ? 'ok' : (e.estado[0] === 'bad' ? 'bad' : '')} l">${esc(efTxtImp(e.estado[1]))}</td></tr>`).join('')}</table>`;
+  const nBad = r.elems.filter(e => e.estado[0] === 'bad').length;
+  const obsGlob = r.avisosP.length ? `<p>Observaciones a los datos de entrada:</p><ul>${r.avisosP.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : '';
+
+  const proyecto = meta.edif || inp.sector || 'la estructura en estudio';
+  const html = `<div class="mem-inf"><style>${MEM_CSS}</style>
+    ${memPortada('ESTUDIO DE RESISTENCIA AL FUEGO', 'Estructura de acero — carga combustible, clasificación OGUC, temperatura crítica y protección pasiva', meta)}
+    <div class="salto"></div>
+    <h1>ÍNDICE</h1>
+    <p>1. Introducción y alcance<br>2. Antecedentes y descripción<br>3. Marco normativo y métodos de referencia<br>4. Carga combustible<br>5. Clasificación del edificio (OGUC Art. 4.3.4)<br>6. Exigencia, comportamiento térmico y protección de los elementos<br>&nbsp;&nbsp;&nbsp;6.0 Fundamentos del cálculo térmico<br>${r.elems.map((e, i) => `&nbsp;&nbsp;&nbsp;6.${i + 1} ${esc(e.nombre)}`).join('<br>')}<br>7. Asimilación (OGUC Art. 4.3.2)<br>8. Conclusiones<br>9. Limitaciones</p>
+
+    <h1>1. INTRODUCCIÓN Y ALCANCE</h1>
+    <p>La presente memoria determina la resistencia al fuego exigida a los elementos de acero de ${esc(proyecto)}${meta.cliente ? ', de ' + esc(meta.cliente) : ''}${meta.ubic ? ', ubicada en ' + esc(meta.ubic) : ''}, y evalúa si la solución de protección propuesta la satisface. El estudio sigue la secuencia que establece la Ordenanza General de Urbanismo y Construcciones: la densidad de carga combustible y el destino definen el tipo de edificio (Art. 4.3.4); el tipo y la función de cada elemento fijan su exigencia F (Art. 4.3.3); y la acreditación de esa exigencia se rige por el Art. 4.3.2.</p>
+    <p>El comportamiento térmico del acero se analiza con el método simplificado de EN 1993-1-2. Este cálculo describe el calentamiento del acero sin protección y su temperatura crítica, y permite juzgar la necesidad de protección y la compatibilidad con el ensayo de referencia. No sustituye un ensayo de resistencia al fuego ni la inscripción en el Listado Oficial.</p>
+
+    <h1>2. ANTECEDENTES Y DESCRIPCIÓN</h1>
+    ${meta.desc ? `<p>${esc(meta.desc).replace(/\n/g, '<br>')}</p>` : ''}
+    ${MEM_T('Datos generales del sector analizado')}
+    <table class="inf-t">
+      <tr><td class="l" style="width:45%">Sector analizado</td><td class="l">${esc(inp.sector || '—')}</td></tr>
+      <tr><td class="l">Superficie considerada para la densidad media</td><td class="l">${N(inp.area, 1)} m²</td></tr>
+      <tr><td class="l">Pisos reales / altura interior máxima</td><td class="l">${inp.pisosReales} / ${H > 0 ? N(H, 2) + ' m' : 'no informada'}</td></tr>
+      <tr><td class="l">Altillos o superficies intermedias</td><td class="l">${inp.altillos === 'si' ? 'Sí' : 'No'}</td></tr>
+      <tr><td class="l">Destino según Tabla 1 / 2 / 3 del Art. 4.3.4</td><td class="l">${esc(inp.t1 || 'No aplica')} / ${esc(inp.t2 || 'No aplica')} / ${esc(inp.t3 || 'No aplica')}</td></tr>
+      <tr><td class="l">Elementos de acero analizados</td><td class="l">${r.elems.length}</td></tr>
+    </table>
+
+    <h1>3. MARCO NORMATIVO Y MÉTODOS DE REFERENCIA</h1>
+    <p><b>Requisitos normativos obligatorios en Chile:</b></p>
+    <ul>
+      <li>OGUC, Título 4, Capítulo 3: Art. 4.3.2 (acreditación de la resistencia al fuego: Listado Oficial, certificado de ensaye de Institución Oficial de Control Técnico, o asimilación certificada por profesional especialista), Art. 4.3.3 (exigencias por tipo de edificio y elemento) y Art. 4.3.4 (tipo de edificio según destino, superficie, ocupantes y carga combustible).</li>
+      <li>Listado Oficial de Comportamiento al Fuego de Elementos y Componentes de la Construcción, MINVU, edición ED17-2025: masividad máxima 390 m⁻¹ (punto 3), uso de tablas de pinturas intumescentes (punto 4), asimilación por NCh 3684/1:2022 y NCh 3684/2:2022 (punto 7).</li>
+      <li>NCh 935/1 — Ensayo de resistencia al fuego. Parte 1: Elementos de construcción en general (curva de calentamiento normalizado).</li>
+      <li>NCh 1916 — Determinación de cargas combustibles; NCh 1993 — Clasificación de los edificios según su carga combustible (densidad media y puntual).</li>
+    </ul>
+    <p><b>Métodos de cálculo de referencia internacional</b> (no exigidos por la OGUC; se emplean como herramienta técnica de análisis):</p>
+    <ul>
+      <li>EN 1991-1-2 — Acciones en estructuras expuestas al fuego: coeficiente de convección αc = 25 W/m²K para la curva normalizada (§3.2.1), emisividad del fuego εf = 1,0 y factor de configuración Φ = 1,0 (§3.1).</li>
+      <li>EN 1993-1-2 — Proyecto de estructuras de acero frente al fuego: propiedades del acero (§3.2, §3.4), clasificación de secciones (§4.2.2), clase 4 (§4.2.3.6), temperatura crítica (§4.2.4, ec. 4.22) y calentamiento del acero sin protección (§4.2.5.1).</li>
+      <li>EN 1993-1-1 Tabla 5.2 — Límites de esbeltez de las partes comprimidas.</li>
+    </ul>
+    <p>Las tablas del Art. 4.3.3 y 4.3.4 se aplican en la versión transcrita por la Biblioteca Nacional (BIM); deben cotejarse con el texto oficial vigente de la OGUC.</p>
+
+    <div class="salto"></div>
+    <h1>4. CARGA COMBUSTIBLE</h1>
+    <p>La carga combustible de cada material es el producto de su masa por su poder calorífico superior, y la densidad de carga combustible media es la carga total dividida por la superficie del sector (NCh 1916):</p>
+    <div class="eq">Qi = mi · Hi &nbsp;[MJ] &nbsp;&nbsp;&nbsp;&nbsp; qm = Σ Qi / A &nbsp;[MJ/m²]</div>
+    ${tablaMat}
+    <div class="eq">qm = ${N(r.cargaTotal, 0)} MJ / ${N(r.area, 1)} m² = <b>${N(r.media, 0)} MJ/m²</b></div>
+    <p>La densidad de carga combustible puntual máxima (NCh 1993) representa la concentración local de combustible. En este estudio se determina agrupando los acopios en superficies de 2 × 2 m (4 m²) y tomando la de mayor densidad:</p>
+    <div class="eq">qp = Σ Qi (zona) / 4 m²</div>
+    ${tablaZonas}${grafZonas}
+    <p>Densidad puntual máxima: <b>${N(r.puntual, 0)} MJ/m²</b>${inp.puntualManual > 0 ? ' (valor determinado por el proyectista fuera de este cálculo)' : (r.zonasArr.length ? ', en la zona ' + esc(r.zonasArr[0].zona) : '')}.</p>
+
+    <div class="salto"></div>
+    <h1>5. CLASIFICACIÓN DEL EDIFICIO (OGUC ART. 4.3.4)</h1>
+    <p>El Art. 4.3.4 asigna a cada edificio un tipo (a, b, c o d, de mayor a menor exigencia) según su destino, el número de pisos y, según corresponda, la superficie edificada (Tabla 1), el número máximo de ocupantes (Tabla 2) o la densidad de carga combustible (Tabla 3). Si el edificio queda comprendido en más de una tabla, se adopta el tipo más exigente.</p>
+    <h2>5.1 Número de pisos para la clasificación</h2>
+    ${pisosTxt}
+    ${t434}
+    <h2>Tipo adoptado</h2>
+    <p>${letras.length ? 'Tipos resultantes: ' + letras.map(x => x[0] + ' → ' + x[1]).join('; ') + '. ' : ''}${inp.tipoManual ? `El proyectista adopta el tipo <b>${inp.tipoManual}</b>${r.tipoCalc && inp.tipoManual !== r.tipoCalc ? ', distinto del resultante de las tablas (' + r.tipoCalc + ')' : ''}.` : `Se adopta el más exigente: <b>tipo ${r.tipo || '—'}</b>.`}</p>
+    ${r.tipo ? `${MEM_T('Resistencia al fuego exigida por elemento para el tipo ' + r.tipo + ' (OGUC Art. 4.3.3)')}
+    <table class="inf-t"><tr><th>Elemento de construcción</th><th>Tipo ${r.tipo}</th></tr>${EF_FUNC.map((f, i) => `<tr><td class="l">${esc(f)}</td><td>${EF_T433[r.tipo][i] ? 'F-' + EF_T433[r.tipo][i] : '—'}</td></tr>`).join('')}</table>` : ''}
+
+    <div class="salto"></div>
+    <h1>6. EXIGENCIA, COMPORTAMIENTO TÉRMICO Y PROTECCIÓN DE LOS ELEMENTOS</h1>
+    <p>Cada elemento recibe la exigencia que corresponde a su función según el Art. 4.3.3. Si cumple más de una función (por ejemplo, una viga de marco que además soporta la techumbre), se le asigna la mayor de las exigencias.</p>
+    ${tablaExig}
+    <h2>6.0 Fundamentos del cálculo térmico</h2>
+    <p><b>Curva de incendio.</b> La temperatura de los gases sigue la curva normalizada de NCh 935/1, idéntica a ISO 834:</p>
+    <div class="eq">θg = 20 + 345·log₁₀(8t + 1) &nbsp;&nbsp;[°C, t en min]</div>
+    <p><b>Factor de masividad.</b> Es la razón entre la superficie expuesta y el volumen del elemento por unidad de longitud. Gobierna la velocidad de calentamiento: un perfil liviano o esbelto (Am/V alto) se calienta más rápido.</p>
+    <div class="eq">Am/V = P / A &nbsp;[m⁻¹] &nbsp;&nbsp;⇒&nbsp;&nbsp; Am/V = 10·P[mm] / A[cm²]</div>
+    <p><b>Calentamiento del acero sin protección</b> (EN 1993-1-2 §4.2.5.1). Se integra paso a paso, con Δt = 5 s:</p>
+    <div class="eq">Δθa,t = ksh · (Am/V) / (ca·ρa) · ḣnet · Δt</div>
+    <div class="eq">ḣnet = αc·(θg − θa) + Φ·εm·εf·σ·[(θg + 273)⁴ − (θa + 273)⁴]</div>
+    <p><b>Calor específico del acero</b> (EN 1993-1-2 §3.4.1.2), variable con la temperatura; el pico en torno a 735 °C refleja el cambio de fase:</p>
+    <div class="eq">20 ≤ θa &lt; 600 °C: &nbsp;ca = 425 + 0,773·θa − 1,69·10⁻³·θa² + 2,22·10⁻⁶·θa³</div>
+    <div class="eq">600 ≤ θa &lt; 735: ca = 666 + 13002/(738 − θa) &nbsp;&nbsp; 735 ≤ θa &lt; 900: ca = 545 + 17820/(θa − 731) &nbsp;&nbsp; θa ≥ 900: ca = 650</div>
+    ${MEM_T('Parámetros térmicos adoptados')}
+    <table class="inf-t"><tr><th>Parámetro</th><th>Símbolo</th><th>Valor</th><th>Fuente</th></tr>
+      <tr><td class="l">Coeficiente de convección</td><td>αc</td><td>25 W/m²K</td><td class="l">EN 1991-1-2 §3.2.1 (curva normalizada)</td></tr>
+      <tr><td class="l">Emisividad del acero</td><td>εm</td><td>0,7</td><td class="l">EN 1993-1-2 §2.2(2)</td></tr>
+      <tr><td class="l">Emisividad del fuego</td><td>εf</td><td>1,0</td><td class="l">EN 1991-1-2 §3.1(6)</td></tr>
+      <tr><td class="l">Factor de configuración</td><td>Φ</td><td>1,0</td><td class="l">EN 1991-1-2 §3.1(7)</td></tr>
+      <tr><td class="l">Constante de Stefan-Boltzmann</td><td>σ</td><td>5,67·10⁻⁸ W/m²K⁴</td><td class="l">EN 1991-1-2 §3.1(6)</td></tr>
+      <tr><td class="l">Densidad del acero</td><td>ρa</td><td>7850 kg/m³</td><td class="l">EN 1993-1-2 §3.2.2</td></tr>
+      <tr><td class="l">Calor específico</td><td>ca(θa)</td><td>variable</td><td class="l">EN 1993-1-2 §3.4.1.2</td></tr>
+      <tr><td class="l">Paso de integración</td><td>Δt</td><td>5 s</td><td class="l">EN 1993-1-2 §4.2.5.1(4): Δt ≤ 5 s</td></tr>
+    </table>
+    <p><b>Efecto sombra.</b> En secciones I expuestas a la curva normalizada, ksh = 0,9·[Am/V]b/[Am/V] (ec. 4.26a), donde [Am/V]b corresponde al cajón que envuelve la sección; en secciones convexas ksh = 1.</p>
+    <p><b>Clase de la sección.</b> En incendio, la clasificación se hace con ε = 0,85·√(235/fy) (§4.2.2) y los límites de EN 1993-1-1 Tabla 5.2. Las secciones clase 4 se limitan a 350 °C (§4.2.3.6).</p>
+    <p><b>Temperatura crítica.</b> Para elementos en los que no gobierna la inestabilidad, la temperatura crítica depende solo del grado de utilización μ0 (§4.2.4, ec. 4.22, con μ0 ≥ 0,013). La ecuación reproduce la pérdida de límite elástico ky,θ de la Tabla 3.1. La figura siguiente compara ambas relaciones y ubica a cada elemento.</p>
+    ${grafKy}
+    ${grafGlobal}
+    ${fichas}
+
+    <div class="salto"></div>
+    <h1>7. ASIMILACIÓN (OGUC ART. 4.3.2)</h1>
+    <p>El Art. 4.3.2 admite tres vías para acreditar la resistencia al fuego: la inscripción en el Listado Oficial; un certificado de ensaye emitido por una Institución Oficial de Control Técnico (o un certificado extranjero ASTM, UL o DIN cuando el proyecto cuenta con Estudio de Seguridad); y, para elementos sin inscripción ni certificación, la asimilación a un tipo del Art. 4.3.3 certificada por un profesional especialista al solicitar la recepción definitiva. Si la asimilación no es posible, el Director de Obras Municipales exige el ensaye. El Listado Oficial ED17-2025 (punto 7) remite la asimilación a NCh 3684/1:2022, para ensayos nacionales de estructuras de acero o madera con placas, y a NCh 3684/2:2022, para ensayos extranjeros.</p>
+    <p><b>Método aplicable:</b> ${esc(efTxtImp(r.metodo))}</p>
+    ${tablaChk}
+    <p><b>Resultado:</b> ${esc(efTxtImp(r.asim[1]))}</p>
+
+    <div class="salto"></div>
+    <h1>8. CONCLUSIONES</h1>
+    <p>El sector se clasifica como edificio <b>tipo ${r.tipo || '—'}</b> según el Art. 4.3.4, con una densidad de carga combustible media de ${N(r.media, 0)} MJ/m² y una puntual máxima de ${N(r.puntual, 0)} MJ/m².</p>
+    ${tablaRes}
+    <p>${nBad ? `${nBad} elemento(s) no satisfacen la exigencia con la solución propuesta.` : 'Ningún elemento presenta incumplimiento con los datos ingresados.'} En los elementos sin protección, un tiempo calculado mayor o igual a la exigencia es solo un resultado de cálculo: no acredita resistencia al fuego ante la DOM, porque la acreditación se rige por el Art. 4.3.2.</p>
+    ${obsGlob}
+
+    <h1>9. LIMITACIONES</h1>
+    <ul>
+      <li>La temperatura del acero sin protección se calcula con la curva normalizada y el método simplificado de EN 1993-1-2; no considera fuegos naturales ni efectos de la continuidad estructural.</li>
+      <li>El método de la temperatura crítica (§4.2.4) no es aplicable cuando gobierna la inestabilidad (pandeo, volcamiento); en ese caso la verificación corresponde a §4.2.3.</li>
+      <li>El espesor de pintura intumescente proviene exclusivamente de las tablas de ensayo citadas. Su validez depende de que el producto, el sistema aplicado y el criterio de falla del ensayo correspondan a la solución real.</li>
+      <li>Las tablas del Art. 4.3.3 y 4.3.4 provienen de una transcripción secundaria y deben cotejarse con el texto oficial.</li>
+      <li>Los poderes caloríficos y las masas de los materiales son datos del proyecto con la fuente indicada en la Tabla de inventario.</li>
+    </ul>
+    ${memFirmas(meta)}
+  </div>`;
+  return memFinalizar(html);
 }
 
 function renderEstudioFuego(container) {
@@ -41618,7 +42022,8 @@ function renderEstudioFuego(container) {
       <div id="ef_resAsim" style="margin-top:.6rem"></div>
       <div class="disclosure">OGUC 4.3.2: lo que no figure en el Listado Oficial se acredita con certificado de ensaye de una Institución Oficial de Control Técnico. Si un elemento no figura en el Listado ni tiene certificación, un profesional especialista puede certificar su asimilación a un tipo del Art. 4.3.3, adjuntando la certificación en el país de origen; si no es posible, el Director de Obras Municipales exige el ensaye. Listado ED17-2025, punto 7: la asimilación sigue NCh 3684/1:2022 (ensayos nacionales, estructuras de acero o madera con placas) y NCh 3684/2:2022 (ensayos extranjeros). Esta lista ordena los antecedentes; no reemplaza el texto de esas normas ni el juicio del profesional que firma.</div>
     </div>
-    <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>
+    ${memPanelHtml('efi', '6', 'Memoria de cálculo (informe)', 'Ej: Nave de bodegaje de estructura de acero de un nivel, con marcos de pilares y vigas IPE y costaneras de techumbre...')}
+    <div id="printSheetCompleto"></div><div id="printSheetResumen"></div><div id="printSheetInforme"></div>
   `;
 
   const mat = document.getElementById('ef_mat'), body = document.getElementById('ef_body');
@@ -41731,7 +42136,10 @@ function renderEstudioFuego(container) {
       <div class="verdict-row"><span>Resultado</span><span>${sp(r.asim[0], r.asim[1])}</span></div>
       ${r.avisos.length ? `<div class="note" style="margin-top:.4rem">${r.avisos.map(esc).join('<br>')}</div>` : ''}`;
     xlsxSetPrintSheets(estudioFuegoDatosHtml(inp, r), estudioFuegoCalcHtml(inp, r, false), estudioFuegoCalcHtml(inp, r, true));
+    ultimo = {inp, r};
   }
+  let ultimo = null;
+  document.getElementById('efi_imprimir').addEventListener('click', () => { recalc(); memImprimir(efMemoriaHtml(ultimo.inp, ultimo.r, memMeta('efi'))); });
 
   mat.addEventListener('input', recalc);
   mat.addEventListener('click', e => { const b = e.target.closest('.btn-remove'); if (!b) return; b.closest('tr').remove(); recalc(); });
