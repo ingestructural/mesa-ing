@@ -41329,12 +41329,102 @@ const EF_T433 = {
   d: [120, 60, 60, 60, 30, null, null, 30, 15]
 };
 const EF_RANK = {a:1, b:2, c:3, d:4};
-const EF_PROD = {
-  ninguna: 'Sin protección',
-  cerefire: 'CEREFIRE X200 (tabla IDIEM I.E. 300.465)',
-  stofire: 'Renner STOFIRE (tabla IDIEM I.E. 305.751)',
-  otro: 'Otro producto (espesor según su certificado)'
+// Productos de protección. Fuentes: Listado Oficial ED17-2025 (Cap. I B.1.2 y B.1.3; Cap. II Subcap. I B.2.1;
+// Título IV Cap. IV Morteros) e informes IDIEM de pinturas intumescentes (no inscritas en el Listado ED17-2025).
+//  modo 'mas'  : tabla masividad → espesor por exigencia (cols = exigencias en min; filas [masividad, esp...]).
+//  modo 'idiem': tabla de rangos de masividad de la Mesa (AF_TABLAS).
+//  modo 'esp'  : tabla espesor → resistencia, independiente de la masividad ([espesor, F]).
+const EF_PROT = {
+  ninguna: {nombre: 'Sin protección'},
+  cerefire: {nombre: 'CEREFIRE X200 — pintura intumescente', corto: 'CEREFIRE X200', fuente: 'Informe IDIEM I.E. 300.465 (producto no inscrito en el Listado ED17-2025)', modo: 'idiem', u: 'µm', listado: false},
+  stofire: {nombre: 'Renner STOFIRE — pintura intumescente', corto: 'Renner STOFIRE', fuente: 'Informe IDIEM I.E. 305.751 (producto no inscrito en el Listado ED17-2025)', modo: 'idiem', u: 'µm', listado: false},
+  sikacrete: {nombre: 'Sikacrete-215F (Copsafire) — mortero proyectado', corto: 'Sikacrete-215F', fuente: 'Listado ED17-2025, Título IV Cap. IV Morteros; informe IDIEM N° 877.410 (ensayo de 12 columnas de acero)', modo: 'mas', u: 'mm', listado: true,
+    nota: 'El Listado no indica la unidad de la tabla; los valores se leen en mm (confirmar en el informe IDIEM N° 877.410).',
+    tablas: {col: {titulo: 'Columnas de acero', cols: [30, 60, 90, 120], rows: [[100,12,19,27,33],[125,12,19,27,34],[150,13,20,28,35],[175,13,20,29,36],[200,13,21,29,36],[225,14,21,30,37],[250,14,22,30,38],[275,14,22,31,39],[300,15,23,31,39],[315,15,23,32,40],[346,15,24,33,41]]}}},
+  promaspray: {nombre: 'Promaspray P-300 — mortero proyectado', corto: 'Promaspray P-300', fuente: 'Listado ED17-2025, Título IV Cap. IV Morteros; informe DICTUC N° 1.450.578', modo: 'mas', u: 'mm', listado: true,
+    tablas: {
+      dobleT: {titulo: 'Columnas doble T (densidad 340 kg/m³)', cols: [30, 60, 90, 120], rows: [[70,10,10,14,19],[80,10,11,16,21],[90,10,11,17,22],[100,10,12,18,24],[110,10,13,20,26],[120,10,14,21,28],[130,10,15,22,29],[140,10,15,23,30],[150,10,16,24,32],[160,10,17,25,33],[170,10,17,26,34],[180,10,18,27,36],[190,10,19,28,37],[200,10,19,29,38],[210,10,20,29,39],[220,10,20,30,40],[230,11,21,31,41],[240,11,21,32,42],[250,11,22,32,43],[260,11,22,33,44],[270,11,22,33,44],[280,12,23,34,45],[290,12,23,35,46],[300,12,24,35,47],[310,12,24,36,48],[320,12,24,36,48],[330,13,25,37,49],[340,13,25,37,50],[350,13,25,38,50],[360,13,26,38,51],[370,13,26,39,51],[380,13,26,39,52],[390,14,27,40,null],[400,14,27,40,null]]},
+      hueca: {titulo: 'Columnas huecas (densidad 340 kg/m³)', cols: [30, 60, 90, 120], rows: [[70,10,10,15,20],[80,10,11,17,22],[90,10,12,18,24],[100,10,14,20,27],[110,10,15,22,29],[120,10,16,23,31],[130,10,17,25,33],[140,10,18,26,35],[150,10,19,28,37],[160,10,19,29,38],[170,10,20,30,40],[180,11,21,32,42],[190,11,22,33,44],[200,12,23,34,45],[210,12,24,35,47],[220,13,25,37,49],[230,13,25,38,50],[240,13,26,39,52],[250,14,27,40,null],[260,14,27,41,null],[270,14,28,42,null],[280,14,28,42,null],[290,15,29,43,null],[300,15,29,44,null],[310,15,30,45,null],[320,15,30,45,null],[330,16,31,46,null],[340,16,31,47,null],[350,16,32,47,null],[360,16,32,48,null],[370,16,32,48,null],[380,17,33,49,null],[390,17,33,49,null],[400,17,33,50,null]]},
+      viga: {titulo: 'Vigas bajo losa de hormigón (densidad 274 kg/m³)', cols: [30, 60, 90, 120], rows: [[70,10,10,11,15],[80,10,10,12,16],[90,10,10,13,18],[100,10,10,14,19],[110,10,10,15,20],[120,10,10,16,21],[130,10,10,16,22],[140,10,11,17,23],[150,10,11,18,24],[160,10,12,18,25],[170,10,12,19,26],[180,10,12,20,27],[190,10,13,20,28],[200,10,13,21,29],[210,10,13,21,29],[220,10,14,22,30],[230,10,14,22,31],[240,10,14,23,31],[250,10,15,23,32],[260,10,15,24,33],[270,10,15,24,33],[280,10,15,24,34],[290,10,16,25,34],[300,10,16,25,35],[310,10,16,26,35],[320,10,16,26,36],[330,10,16,26,36],[340,10,17,27,36],[350,10,17,27,37],[360,10,17,27,37]]}}},
+  igniver: {nombre: 'Igniver (Placo Saint-Gobain) — estuco, solución B.2.1', corto: 'Igniver', fuente: 'Listado ED17-2025, Cap. II Subcap. I, B.2.1 (informes IDIEM N° 922.706 y 922.706-1)', modo: 'esp', u: 'mm', listado: true, soloCajon200: true,
+    titulo: 'Pilar cajón 200 × 200 × 6 mm protegido con Igniver', esp: [[12,30],[23,60],[26,90],[43,150]]},
+  b12fy: {nombre: 'Placas de fibro-yeso — B.1.2', corto: 'Fibro-yeso (B.1.2)', fuente: 'Listado ED17-2025, Cap. I Productos tradicionales, B.1.2', modo: 'esp', u: 'mm', listado: true, soloVertical: true,
+    titulo: 'B.1.2 Revestimiento de placas de fibro-yeso', esp: [[8,15],[12,30],[15,30],[18,30],[20,60],[25,60],[30,90],[40,120],[50,120]]},
+  b12vm: {nombre: 'Placas de viruta de madera mineralizada con cemento, estucada o enlucida con yeso 6 mm — B.1.2', corto: 'Viruta-cemento (B.1.2)', fuente: 'Listado ED17-2025, Cap. I Productos tradicionales, B.1.2', modo: 'esp', u: 'mm', listado: true, soloVertical: true,
+    titulo: 'B.1.2 Revestimiento de viruta de madera mineralizada con cemento', esp: [[8,15],[12,30],[15,30],[18,60],[20,60],[25,90],[30,90],[40,120],[50,120]]},
+  b12ma: {nombre: 'Placas de madera aglomerada — B.1.2', corto: 'Madera aglomerada (B.1.2)', fuente: 'Listado ED17-2025, Cap. I Productos tradicionales, B.1.2', modo: 'esp', u: 'mm', listado: true, soloVertical: true,
+    titulo: 'B.1.2 Revestimiento de madera aglomerada', esp: [[8,15],[12,15],[15,15],[18,15],[20,30],[25,30],[30,30]]},
+  b13hf: {nombre: 'Hormigón fino de cemento sobre malla soldada — B.1.3', corto: 'Hormigón fino (B.1.3)', fuente: 'Listado ED17-2025, Cap. I Productos tradicionales, B.1.3', modo: 'esp', u: 'mm', listado: true,
+    titulo: 'B.1.3 Hormigón fino de cemento sobre malla de acero soldada', esp: [[20,0],[25,30],[30,30],[35,60],[40,60],[50,120],[60,120]]},
+  b13mc: {nombre: 'Mortero de yeso o cemento sobre malla soldada — B.1.3', corto: 'Mortero yeso/cemento (B.1.3)', fuente: 'Listado ED17-2025, Cap. I Productos tradicionales, B.1.3', modo: 'esp', u: 'mm', listado: true,
+    titulo: 'B.1.3 Mortero de yeso o cemento sobre malla de acero soldada', esp: [[20,0],[25,30],[30,30],[35,60],[40,60],[50,120],[60,120]]},
+  b13vp: {nombre: 'Mortero de yeso con vermiculita o perlita sobre malla soldada — B.1.3', corto: 'Mortero vermiculita/perlita (B.1.3)', fuente: 'Listado ED17-2025, Cap. I Productos tradicionales, B.1.3', modo: 'esp', u: 'mm', listado: true,
+    titulo: 'B.1.3 Mortero de yeso vermiculita/perlita sobre malla de acero soldada', esp: [[20,0],[25,30],[30,30],[35,60],[40,60],[50,60],[60,120]]},
+  otro: {nombre: 'Otro producto (espesor según su certificado)', corto: 'Otro producto', u: 'µm'}
 };
+// Compatibilidad con textos anteriores.
+const EF_PROD = Object.fromEntries(Object.keys(EF_PROT).map(k => [k, EF_PROT[k].nombre]));
+
+// Espesor requerido de un producto para un elemento ya calculado (e: F, F3, F4, Freq, tipo, caras, h, b, tw, f1, f2).
+// Devuelve {v, txt, u, nota, tabla} donde tabla describe lo consultado para la memoria.
+function efEspesorProd(k, e) {
+  const P = EF_PROT[k], u = P && P.u;
+  const no = (txt, extra) => Object.assign({v: null, txt, u}, extra || {});
+  if (!P || !P.modo) return no('—');
+  if (!(e.Freq > 0)) return no('Sin exigencia');
+  if (P.modo === 'idiem') {
+    const rf = 'F' + e.Freq;
+    if (!['F15', 'F30', 'F60', 'F90'].includes(rf)) return no('Sin tabla para F-' + e.Freq);
+    const r = afEspesor(k, rf, e.F4), rows = AF_TABLAS[k][rf];
+    const iR = r.fila != null ? rows.findIndex(x => r.fila >= x[0] && r.fila <= x[1]) : -1;
+    return {v: r.v, txt: r.v != null ? r.v + ' µm' : (r.txt === 'Fuera del rango ensayado' ? 'Fuera del rango ensayado' : r.txt), u,
+      tabla: {modo: 'idiem', titulo: AF_TABLAS[k].nombre + ' para F-' + e.Freq, rows, iR, Fent: e.F4, fila: r.fila, col: e.Freq}};
+  }
+  if (P.modo === 'mas') {
+    let t, Fent, por = '';
+    if (k === 'promaspray') {
+      if (e.tipo === 'I-H' && e.caras === '3') { t = P.tablas.viga; Fent = e.F3 != null ? e.F3 : e.F4; por = 'viga bajo losa: masividad a 3 caras'; }
+      else if (e.tipo === 'I-H') { t = P.tablas.dobleT; Fent = e.F4; por = 'sección doble T: masividad a 4 caras'; }
+      else if (['RHS', 'TUB', 'CHS'].includes(e.tipo)) { t = P.tablas.hueca; Fent = e.F4; por = 'sección hueca: masividad a 4 caras'; }
+      else return no('Sin tabla para este tipo de sección');
+    } else { t = P.tablas.col; Fent = e.F4; por = 'masividad a 4 caras'; }
+    const jc = t.cols.findIndex(c => c >= e.Freq);
+    if (jc < 0) return no('Sin tabla para F-' + e.Freq);
+    const tab = {modo: 'mas', titulo: t.titulo, cols: t.cols, rows: t.rows, Fent, por, col: t.cols[jc], jc};
+    if (Fent == null) return no('—', {tabla: tab});
+    const last = t.rows[t.rows.length - 1][0];
+    if (Fent > last + 1e-9) return no('Fuera del rango ensayado', {tabla: Object.assign(tab, {iR: -1})});
+    const iR = t.rows.findIndex(x => x[0] >= Fent - 1e-9);
+    tab.iR = iR;
+    const v = t.rows[iR][jc + 1];
+    if (v == null) return no('Sin valor para F-' + t.cols[jc] + ' con esa masividad', {tabla: tab});
+    return {v, txt: v + ' mm', u, tabla: tab, nota: P.nota};
+  }
+  // modo 'esp'
+  if (P.soloVertical && !(e.f1 === 5 || e.f2 === 5)) return no('Solo elementos verticales (B.1.2)');
+  if (P.soloCajon200 && !(['RHS', 'TUB'].includes(e.tipo) && Math.abs(e.h - 200) < 1 && Math.abs(e.b - 200) < 1 && Math.abs(e.tw - 6) < 0.3))
+    return no('Solución aislada: solo pilar cajón 200×200×6 ensayado');
+  if (e.F4 > 390) return no('Masividad > 390 m⁻¹');
+  const iR = P.esp.findIndex(x => x[1] >= e.Freq);
+  const tab = {modo: 'esp', titulo: P.titulo, esp: P.esp, iR, col: e.Freq};
+  if (iR < 0) return no('El Listado no alcanza F-' + e.Freq, {tabla: tab});
+  return {v: P.esp[iR][0], txt: P.esp[iR][0] + ' mm' + (P.esp[iR][0] === 60 && k.startsWith('b13') ? ' o más' : ''), u, tabla: tab};
+}
+
+// Mejora (solo vista web): productos que cubren la exigencia del elemento dentro de su rango ensayado.
+function efAlternativas(e) {
+  return Object.keys(EF_PROT).filter(k => EF_PROT[k].modo && k !== e.prot)
+    .map(k => Object.assign({k}, efEspesorProd(k, e))).filter(a => a.v != null);
+}
+function efProtOpts() {
+  const g = (lab, ks) => `<optgroup label="${lab}">${ks.map(k => `<option value="${k}">${esc(EF_PROT[k].nombre)}</option>`).join('')}</optgroup>`;
+  return `<option value="ninguna">Sin protección</option>`
+    + g('Pinturas intumescentes (informes IDIEM, no inscritas en el Listado)', ['cerefire', 'stofire'])
+    + g('Morteros proyectados (Listado ED17-2025, Cap. IV)', ['sikacrete', 'promaspray'])
+    + g('Estucos (Listado ED17-2025, B.2.1)', ['igniver'])
+    + g('Revestimientos tradicionales (Listado ED17-2025, B.1.2 y B.1.3)', ['b12fy', 'b12vm', 'b12ma', 'b13hf', 'b13mc', 'b13vp'])
+    + `<option value="otro">${esc(EF_PROT.otro.nombre)}</option>`;
+}
 // Lista de chequeo de asimilación. Criterios de comparación de la Mesa, ordenados según OGUC 4.3.2 y el
 // punto 7 del Listado ED17-2025 (no reemplazan el texto de NCh 3684/1-2:2022, que debe consultarse).
 const EF_CHK = [
@@ -41468,13 +41558,15 @@ function calcEstudioFuego(inp) {
     if (!r.cls) av('Clase de sección no evaluada para este tipo de perfil: clasificar según EN 1993-1-1 Tabla 5.2.', 'Clase de sección no evaluada para este tipo de perfil (EN 1993-1-1 Tabla 5.2).');
     if (!(it.mu > 0) && !r.clase4) av('Falta μ0 (grado de utilización en incendio, EN 1993-1-2 §4.2.4(3)).', 'Grado de utilización μ0 no informado: la temperatura crítica no está determinada.');
     // Protección
-    const rf = r.Freq > 0 ? 'F' + r.Freq : null;
-    r.espReq = null; r.espTxt = '—';
-    if (it.prot === 'cerefire' || it.prot === 'stofire') {
-      if (rf && ['F15', 'F30', 'F60', 'F90', 'F120'].includes(rf)) { const e = afEspesor(it.prot, rf, r.F4); r.espReq = e.v; r.espTxt = e.txt; }
-      else r.espTxt = rf ? 'Sin tabla para ' + afRfTxt(rf) : '—';
-      av('Tabla IDIEM: confirmar que su criterio de falla sea compatible con θcr del elemento.', 'La compatibilidad entre el criterio de falla de la tabla IDIEM y la θcr del elemento debe acreditarse con el informe de ensayo.');
-    } else if (it.prot === 'otro') { r.espReq = it.espCert > 0 ? it.espCert : null; r.espTxt = r.espReq ? r.espReq + ' µm (certificado)' : 'Ingrese espesor del certificado'; }
+    r.espReq = null; r.espTxt = '—'; r.espU = (EF_PROT[it.prot] && EF_PROT[it.prot].u) || '';
+    const P = EF_PROT[it.prot];
+    if (P && P.modo) {
+      r.espInfo = efEspesorProd(it.prot, r);
+      r.espReq = r.espInfo.v; r.espTxt = r.espInfo.txt;
+      if (P.modo !== 'esp') av('Tabla de ensayo: confirmar que su criterio de falla sea compatible con θcr del elemento.', 'La compatibilidad entre el criterio de falla del ensayo de referencia y la θcr del elemento debe acreditarse con el informe de ensayo.');
+      if (P.nota) av(P.nota, P.nota);
+    } else if (it.prot === 'otro') { r.espReq = it.espCert > 0 ? it.espCert : null; r.espTxt = r.espReq ? r.espReq + ' ' + r.espU + ' (certificado)' : 'Ingrese espesor del certificado'; }
+    r.alternativas = (r.Freq > 0) ? efAlternativas(r) : [];
     // Estado
     if (r.Freq == null) r.estado = ['warn', tipo ? 'Sin función OGUC' : 'Sin tipo de edificio'];
     else if (r.Freq === 0) r.estado = ['ok', 'Sin exigencia F'];
@@ -41483,7 +41575,7 @@ function calcEstudioFuego(inp) {
       else if (r.tcr == null) r.estado = ['warn', 'Faltan datos (μ0)'];
       else r.estado = r.tcr >= r.Freq ? ['warn', `t = ${fmt1(r.tcr)} min ≥ F-${r.Freq}: cumple por cálculo (no es ensayo)`] : ['bad', `t = ${fmt1(r.tcr)} min < F-${r.Freq}: requiere protección`];
     } else if (r.espReq == null) r.estado = ['bad', r.espTxt];
-    else r.estado = it.espProp >= r.espReq ? ['ok', `Espesor suficiente (${it.espProp} ≥ ${r.espReq} µm)`] : ['bad', `Espesor insuficiente (${it.espProp || 0} < ${r.espReq} µm)`];
+    else r.estado = it.espProp >= r.espReq ? ['ok', `Espesor suficiente (${it.espProp} ≥ ${r.espReq} ${r.espU})`] : ['bad', `Espesor insuficiente (${it.espProp || 0} < ${r.espReq} ${r.espU})`];
     return r;
   });
 
@@ -41493,7 +41585,7 @@ function calcEstudioFuego(inp) {
   const auto = [];
   if (protegidos.length) {
     const fuera = protegidos.filter(e => e.espReq == null), cortos = protegidos.filter(e => e.espReq != null && !(e.espProp >= e.espReq));
-    auto.push({txt: 'Masividad de los elementos protegidos dentro del rango de la tabla ensayada (solo interpolación).', v: fuera.length ? 'no' : 'si', obs: fuera.length ? 'Fuera de rango: ' + fuera.map(e => e.nombre).join(', ') : 'Verificado elemento por elemento'});
+    auto.push({txt: 'Elementos protegidos cubiertos por la tabla ensayada o del Listado (sin extrapolar).', v: fuera.length ? 'no' : 'si', obs: fuera.length ? 'Fuera de rango: ' + fuera.map(e => e.nombre).join(', ') : 'Verificado elemento por elemento'});
     auto.push({txt: 'Espesor propuesto mayor o igual al de la tabla para la masividad y la exigencia F.', v: cortos.length || fuera.length ? 'no' : 'si', obs: cortos.length ? 'Insuficiente: ' + cortos.map(e => e.nombre).join(', ') : (fuera.length ? 'Sin espesor de tabla: ' + fuera.map(e => e.nombre).join(', ') : 'Verificado elemento por elemento')});
   }
   const todos = chk.concat(auto);
@@ -41539,9 +41631,9 @@ function estudioFuegoCalcHtml(inp, r, resumen) {
     </tbody></table>
     <div class="xlsx-section">3. Exigencia, masividad, temperatura crítica y protección por elemento</div>
     <table style="border-collapse:collapse;width:100%;font-size:.78rem"><thead><tr>
-      <th ${th}>Elemento</th><th ${th}>Perfil</th><th ${th}>F exigida</th><th ${th}>Am/V (m⁻¹)</th><th ${th}>ksh</th><th ${th}>Clase 4</th><th ${th}>θcr (°C)</th><th ${th}>t sin prot. (min)</th><th ${th}>Protección</th><th ${th}>Esp. req. (µm)</th><th ${th}>Esp. prop. (µm)</th><th ${th}>Estado</th></tr></thead><tbody>`;
+      <th ${th}>Elemento</th><th ${th}>Perfil</th><th ${th}>F exigida</th><th ${th}>Am/V (m⁻¹)</th><th ${th}>ksh</th><th ${th}>Clase 4</th><th ${th}>θcr (°C)</th><th ${th}>t sin prot. (min)</th><th ${th}>Protección</th><th ${th}>Esp. req.</th><th ${th}>Esp. prop.</th><th ${th}>Estado</th></tr></thead><tbody>`;
   r.elems.forEach(e => {
-    h += `<tr><td ${td}>${esc(e.nombre)}</td><td ${td}>${esc(e.perfil)}</td><td ${tdn}>${e.Freq ? 'F-' + e.Freq : (e.Freq === 0 ? '—' : '?')}</td><td ${tdn}>${n(e.F, 0)}</td><td ${tdn}>${n(e.ksh, 2)}</td><td ${td}>${e.cls ? (e.clase4 ? 'Sí' : 'No') : 'n/e'}</td><td ${tdn}>${n(e.thcr, 0)}</td><td ${tdn}>${n(e.tcr, 1)}</td><td ${td}>${esc(EF_PROD[e.prot])}</td><td ${tdn}>${e.espReq != null ? e.espReq : esc(e.espTxt)}</td><td ${tdn}>${e.prot === 'ninguna' ? '—' : n(e.espProp, 0)}</td><td ${td}>${esc(efTxtImp(e.estado[1]))}</td></tr>`;
+    h += `<tr><td ${td}>${esc(e.nombre)}</td><td ${td}>${esc(e.perfil)}</td><td ${tdn}>${e.Freq ? 'F-' + e.Freq : (e.Freq === 0 ? '—' : '?')}</td><td ${tdn}>${n(e.F, 0)}</td><td ${tdn}>${n(e.ksh, 2)}</td><td ${td}>${e.cls ? (e.clase4 ? 'Sí' : 'No') : 'n/e'}</td><td ${tdn}>${n(e.thcr, 0)}</td><td ${tdn}>${n(e.tcr, 1)}</td><td ${td}>${esc(EF_PROD[e.prot])}</td><td ${tdn}>${esc(e.espTxt)}</td><td ${tdn}>${e.prot === 'ninguna' ? '—' : n(e.espProp, 0) + ' ' + e.espU}</td><td ${td}>${esc(efTxtImp(e.estado[1]))}</td></tr>`;
   });
   h += `</tbody></table>`;
   if (!resumen) {
@@ -41786,20 +41878,39 @@ function efMemoriaHtml(inp, r, meta) {
       : `<p>El acero sin protección no alcanza θcr = ${N(e.thcr, 0)} °C dentro de 150 min de exposición.</p>`;
     // protección
     let protTxt = '';
-    if (e.prot === 'cerefire' || e.prot === 'stofire') {
-      const rf = e.Freq > 0 ? 'F' + e.Freq : null, T = AF_TABLAS[e.prot], rows = rf ? (T[rf] || []) : [];
-      const fila = e.F4 != null ? Math.max(60, Math.ceil(e.F4/10 - 1e-9)*10) : null;
-      const iR = rows.findIndex(x => fila >= x[0] && fila <= x[1]);
+    const PP = EF_PROT[e.prot], inf = e.espInfo, tb = inf && inf.tabla;
+    const hl = c => c ? ' class="hl"' : '';
+    const cierre = () => `<p>${e.espReq != null ? `Espesor requerido: <b>${e.espReq} ${e.espU}</b>; espesor propuesto: <b>${e.espProp || 0} ${e.espU}</b> → ${e.espProp >= e.espReq ? 'suficiente' : 'insuficiente'}.` : `Resultado: ${esc(efTxtImp(e.espTxt))}; el elemento no queda cubierto por la solución de referencia.`}</p>`;
+    if (PP && PP.modo === 'idiem') {
+      const rows = tb ? tb.rows : [], iR = tb ? tb.iR : -1;
       const ext = iR >= 0 ? rows.slice(Math.max(0, iR - 2), iR + 3) : rows;
-      protTxt = `<h2>Protección: ${esc(EF_PROD[e.prot])}</h2>
-        <p>El espesor de pintura intumescente se obtiene de la tabla del informe de ensayo, sin cálculo térmico del acero protegido: el comportamiento de la pintura solo está respaldado por el ensayo. Se ingresa con la masividad a 4 caras, F4 = ${N(e.F4, 1)} m⁻¹, redondeada a la decena superior (fila ${fila != null ? fila : '—'} m⁻¹), sin extrapolar fuera del rango ensayado.${e.caras === '3' ? ' Para un elemento expuesto por 3 caras se emplea igualmente la masividad a 4 caras, lo que asimila la viga a la condición de pilar ensayada y es conservador.' : ''}</p>
-        ${rows.length ? `${MEM_T('Extracto de la tabla ' + esc(T.nombre) + ' para ' + afRfTxt(rf) + ' (masividad en m⁻¹, espesor seco en µm)')}
+      protTxt = `<h2>Protección: ${esc(PP.nombre)}</h2>
+        <p>Fuente: ${esc(PP.fuente)}. El espesor de pintura intumescente se obtiene de la tabla del informe de ensayo, sin cálculo térmico del acero protegido: el comportamiento de la pintura solo está respaldado por el ensayo. Se ingresa con la masividad a 4 caras, F4 = ${N(e.F4, 1)} m⁻¹, redondeada a la decena superior (fila ${tb && tb.fila != null ? tb.fila : '—'} m⁻¹), sin extrapolar fuera del rango ensayado.${e.caras === '3' ? ' Para un elemento expuesto por 3 caras se emplea igualmente la masividad a 4 caras, lo que asimila la viga a la condición de pilar ensayada y es conservador.' : ''}</p>
+        ${rows.length ? `${MEM_T('Extracto de la tabla ' + esc(tb.titulo) + ' (masividad en m⁻¹, espesor seco en µm)')}
         <table class="inf-t"><tr><th>Masividad desde</th><th>Masividad hasta</th><th>Espesor (µm)</th></tr>
-        ${ext.map(x => `<tr><td class="${x === rows[iR] ? 'hl' : ''}">${x[0]}</td><td class="${x === rows[iR] ? 'hl' : ''}">${x[1]}</td><td class="${x === rows[iR] ? 'hl' : ''}">${x[2]}</td></tr>`).join('')}
-        <tr><td colspan="3" class="l">Rango cubierto por la tabla: ${rows[0][0]} a ${rows[rows.length - 1][1]} m⁻¹</td></tr></table>` : `<p>La tabla no contiene la exigencia ${rf ? afRfTxt(rf) : 'requerida'}.</p>`}
-        <p>${e.espReq != null ? `Espesor requerido: <b>${e.espReq} µm</b>; espesor propuesto: <b>${e.espProp || 0} µm</b> → ${e.espProp >= e.espReq ? 'suficiente' : 'insuficiente'}.` : `Resultado: ${esc(e.espTxt)}; el elemento no queda cubierto por la tabla ensayada.`}</p>`;
+        ${ext.map(x => `<tr><td${hl(x === rows[iR])}>${x[0]}</td><td${hl(x === rows[iR])}>${x[1]}</td><td${hl(x === rows[iR])}>${x[2]}</td></tr>`).join('')}
+        <tr><td colspan="3" class="l">Rango cubierto por la tabla: ${rows[0][0]} a ${rows[rows.length - 1][1]} m⁻¹</td></tr></table>` : `<p>La tabla no contiene la exigencia F-${e.Freq}.</p>`}
+        ${cierre()}`;
+    } else if (PP && PP.modo === 'mas') {
+      const rows = tb ? tb.rows : [], iR = tb && tb.iR != null ? tb.iR : -1;
+      const ext = iR >= 0 ? rows.slice(Math.max(0, iR - 2), iR + 3) : rows.slice(-3);
+      protTxt = `<h2>Protección: ${esc(PP.nombre)}</h2>
+        <p>Fuente: ${esc(PP.fuente)}. El espesor de mortero se obtiene de la tabla inscrita, que relaciona la masividad con el espesor necesario para cada exigencia; no se calcula térmicamente el acero protegido.${tb ? ` Se usa la tabla «${esc(tb.titulo)}» (${esc(tb.por)}), con Am/V = ${N(tb.Fent, 1)} m⁻¹. Como el punto 4 del Listado admite la interpolación solo para pinturas intumescentes, se adopta la fila tabulada inmediatamente superior${tb.Fent < rows[0][0] ? ' (la masividad es menor que la mínima tabulada; se usa la primera fila, lo que es conservador)' : ''}.` : ''}${tb && tb.col !== e.Freq ? ` La tabla no tiene columna F-${e.Freq}; se usa la columna F-${tb.col}, más exigente.` : ''}${e.caras === '3' && e.tipo !== 'I-H' ? ' El elemento expuesto por 3 caras se verifica con la masividad a 4 caras, lo que es conservador.' : ''}</p>
+        ${PP.nota ? `<p>${esc(PP.nota)}</p>` : ''}
+        ${tb ? `${MEM_T('Extracto de la tabla ' + esc(PP.corto) + ' — ' + esc(tb.titulo) + ' (masividad en m⁻¹, espesor en mm)')}
+        <table class="inf-t"><tr><th>Masividad (m⁻¹)</th>${tb.cols.map((c, j) => `<th${j === tb.jc ? ' style="background:#2E5395"' : ''}>F-${c}</th>`).join('')}</tr>
+        ${ext.map(x => `<tr><td${hl(x === rows[iR])}>${x[0]}</td>${x.slice(1).map((v, j) => `<td${hl(x === rows[iR] && j === tb.jc)}>${v == null ? '—' : v}</td>`).join('')}</tr>`).join('')}
+        <tr><td colspan="${tb.cols.length + 1}" class="l">Rango cubierto por la tabla: ${rows[0][0]} a ${rows[rows.length - 1][0]} m⁻¹</td></tr></table>` : ''}
+        ${cierre()}`;
+    } else if (PP && PP.modo === 'esp') {
+      protTxt = `<h2>Protección: ${esc(PP.nombre)}</h2>
+        <p>Fuente: ${esc(PP.fuente)}. ${e.prot === 'igniver' ? 'Solución inscrita para un pilar específico: es válida solo para un elemento igual al ensayado (pilar cajón 200 × 200 × 6 mm).' : 'Solución tradicional del Listado: la resistencia depende del espesor del revestimiento y no de la masividad, dentro del límite general de 390 m⁻¹ (punto 3).'}${PP.soloVertical ? ' La solución B.1.2 corresponde a elementos estructurales verticales.' : ''} Se adopta el menor espesor cuya resistencia es mayor o igual a F-${e.Freq}.</p>
+        ${tb ? `${MEM_T(esc(tb.titulo) + ' — espesor del revestimiento y resistencia al fuego')}
+        <table class="inf-t"><tr><th>Espesor (mm)</th>${tb.esp.map((x, j) => `<td${hl(j === tb.iR)}>${x[0]}${j === tb.esp.length - 1 && e.prot.startsWith('b13') ? ' o más' : ''}</td>`).join('')}</tr>
+        <tr><th>Resistencia</th>${tb.esp.map((x, j) => `<td${hl(j === tb.iR)}>F-${x[1]}</td>`).join('')}</tr></table>` : ''}
+        ${cierre()}`;
     } else if (e.prot === 'otro') {
-      protTxt = `<h2>Protección: producto con certificado propio</h2><p>Espesor según certificado: ${e.espCert > 0 ? e.espCert + ' µm' : 'no informado'}; espesor propuesto: ${e.espProp > 0 ? e.espProp + ' µm' : 'no informado'}.</p>`;
+      protTxt = `<h2>Protección: producto con certificado propio</h2><p>Espesor según certificado: ${e.espCert > 0 ? e.espCert + ' ' + e.espU : 'no informado'}; espesor propuesto: ${e.espProp > 0 ? e.espProp + ' ' + e.espU : 'no informado'}.</p>`;
     } else protTxt = `<h2>Protección</h2><p>Elemento sin protección.</p>`;
     return `<div class="salto"></div><h1>6.${i + 1} ${esc(e.nombre)} — ${esc(e.perfil)}</h1>
       <table class="ficha-g"><tr><td style="width:36%">${sv}</td><td>
@@ -41826,8 +41937,8 @@ function efMemoriaHtml(inp, r, meta) {
 
   // ---- Conclusiones
   const tablaRes = `${MEM_T('Resumen de resultados por elemento')}
-    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Perfil</th><th>Exigencia</th><th>Am/V (m⁻¹)</th><th>ksh</th><th>Clase</th><th>θcr (°C)</th><th>θa a la exigencia (°C)</th><th>t a θcr sin prot. (min)</th><th>Protección</th><th>Esp. req. / prop. (µm)</th><th>Resultado</th></tr>
-    ${r.elems.map((e, i) => `<tr><td>${i + 1}</td><td class="l">${esc(e.nombre)}</td><td>${esc(e.perfil)}</td><td>${fReq(e)}</td><td>${N(e.F, 1)}</td><td>${N(e.ksh, 2)}</td><td>${e.cls ? (e.clase4 ? '4' : '1-3') : 'n/e'}</td><td>${N(e.thcr, 0)}</td><td>${e.curva && e.Freq > 0 && e.curva.hitos[e.Freq] != null ? N(e.curva.hitos[e.Freq], 0) : '—'}</td><td>${e.tcr != null ? N(e.tcr, 1) : (e.curva && e.thcr != null ? '> 150' : '—')}</td><td class="l">${esc(EF_PROD[e.prot])}</td><td>${e.prot === 'ninguna' ? '—' : (e.espReq != null ? e.espReq : '—') + ' / ' + (e.espProp || 0)}</td><td class="${e.estado[0] === 'ok' ? 'ok' : (e.estado[0] === 'bad' ? 'bad' : '')} l">${esc(efTxtImp(e.estado[1]))}</td></tr>`).join('')}</table>`;
+    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Perfil</th><th>Exigencia</th><th>Am/V (m⁻¹)</th><th>ksh</th><th>Clase</th><th>θcr (°C)</th><th>θa a la exigencia (°C)</th><th>t a θcr sin prot. (min)</th><th>Protección</th><th>Esp. req. / prop.</th><th>Resultado</th></tr>
+    ${r.elems.map((e, i) => `<tr><td>${i + 1}</td><td class="l">${esc(e.nombre)}</td><td>${esc(e.perfil)}</td><td>${fReq(e)}</td><td>${N(e.F, 1)}</td><td>${N(e.ksh, 2)}</td><td>${e.cls ? (e.clase4 ? '4' : '1-3') : 'n/e'}</td><td>${N(e.thcr, 0)}</td><td>${e.curva && e.Freq > 0 && e.curva.hitos[e.Freq] != null ? N(e.curva.hitos[e.Freq], 0) : '—'}</td><td>${e.tcr != null ? N(e.tcr, 1) : (e.curva && e.thcr != null ? '> 150' : '—')}</td><td class="l">${esc(EF_PROD[e.prot])}</td><td>${e.prot === 'ninguna' ? '—' : (e.espReq != null ? e.espReq : '—') + ' / ' + (e.espProp || 0) + ' ' + e.espU}</td><td class="${e.estado[0] === 'ok' ? 'ok' : (e.estado[0] === 'bad' ? 'bad' : '')} l">${esc(efTxtImp(e.estado[1]))}</td></tr>`).join('')}</table>`;
   const nBad = r.elems.filter(e => e.estado[0] === 'bad').length;
   const obsGlob = r.avisosP.length ? `<p>Observaciones a los datos de entrada:</p><ul>${r.avisosP.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : '';
 
@@ -41858,7 +41969,7 @@ function efMemoriaHtml(inp, r, meta) {
     <p><b>Requisitos normativos obligatorios en Chile:</b></p>
     <ul>
       <li>OGUC, Título 4, Capítulo 3: Art. 4.3.2 (acreditación de la resistencia al fuego: Listado Oficial, certificado de ensaye de Institución Oficial de Control Técnico, o asimilación certificada por profesional especialista), Art. 4.3.3 (exigencias por tipo de edificio y elemento) y Art. 4.3.4 (tipo de edificio según destino, superficie, ocupantes y carga combustible).</li>
-      <li>Listado Oficial de Comportamiento al Fuego de Elementos y Componentes de la Construcción, MINVU, edición ED17-2025: masividad máxima 390 m⁻¹ (punto 3), uso de tablas de pinturas intumescentes (punto 4), asimilación por NCh 3684/1:2022 y NCh 3684/2:2022 (punto 7).</li>
+      <li>Listado Oficial de Comportamiento al Fuego de Elementos y Componentes de la Construcción, MINVU, edición ED17-2025: masividad máxima 390 m⁻¹ (punto 3), uso de tablas de pinturas intumescentes (punto 4), asimilación por NCh 3684/1:2022 y NCh 3684/2:2022 (punto 7); protección de acero por revestimientos tradicionales (B.1.2 y B.1.3), estucos (B.2.1) y morteros proyectados (Título IV, Cap. IV).</li>
       <li>NCh 935/1 — Ensayo de resistencia al fuego. Parte 1: Elementos de construcción en general (curva de calentamiento normalizado).</li>
       <li>NCh 1916 — Determinación de cargas combustibles; NCh 1993 — Clasificación de los edificios según su carga combustible (densidad media y puntual).</li>
     </ul>
@@ -41943,13 +42054,30 @@ function efMemoriaHtml(inp, r, meta) {
     <ul>
       <li>La temperatura del acero sin protección se calcula con la curva normalizada y el método simplificado de EN 1993-1-2; no considera fuegos naturales ni efectos de la continuidad estructural.</li>
       <li>El método de la temperatura crítica (§4.2.4) no es aplicable cuando gobierna la inestabilidad (pandeo, volcamiento); en ese caso la verificación corresponde a §4.2.3.</li>
-      <li>El espesor de pintura intumescente proviene exclusivamente de las tablas de ensayo citadas. Su validez depende de que el producto, el sistema aplicado y el criterio de falla del ensayo correspondan a la solución real.</li>
+      <li>El espesor de protección proviene exclusivamente de las tablas citadas (Listado Oficial ED17-2025 o informes de ensayo). Su validez depende de que el producto, el sistema aplicado, el tipo de sección y el criterio de falla del ensayo correspondan a la solución real.</li>
       <li>Las tablas del Art. 4.3.3 y 4.3.4 provienen de una transcripción secundaria y deben cotejarse con el texto oficial.</li>
       <li>Los poderes caloríficos y las masas de los materiales son datos del proyecto con la fuente indicada en la Tabla de inventario.</li>
     </ul>
     ${memFirmas(meta)}
   </div>`;
   return memFinalizar(html);
+}
+
+// Mejora (solo vista web, no se imprime): para cada elemento que no cumple o queda fuera del rango ensayado,
+// lista los productos del catálogo que sí cubren su exigencia, con el espesor requerido.
+function efMejoraHtml(r) {
+  const casos = r.elems.filter(e => e.Freq > 0 && e.estado[0] === 'bad');
+  if (!casos.length) return '';
+  const fila = (e, a) => `<tr><td>${esc(EF_PROT[a.k].nombre)}</td><td class="num"><strong>${esc(a.txt)}</strong></td><td>${EF_PROT[a.k].listado ? '<span class="chip ok">Listado ED17-2025</span>' : '<span class="chip warn">Informe de ensayo</span>'}</td><td class="note">${esc(EF_PROT[a.k].fuente)}${a.tabla && a.tabla.por ? ' · ' + esc(a.tabla.por) : ''}${a.nota ? ' · ' + esc(a.nota) : ''}</td></tr>`;
+  return `<div class="resumen-hide" style="margin-top:1rem">
+    <h4 style="margin:.2rem 0 .3rem">Mejora — alternativas de protección dentro del rango ensayado</h4>
+    <div class="note" style="margin-bottom:.4rem">Solo en pantalla, no se imprime. Para cada elemento que no cumple, se listan los productos del catálogo cuya tabla cubre su masividad y su exigencia, con el espesor que exige esa tabla. Para adoptar uno, selecciónelo en la columna «Protección» de la sección 3 e ingrese el espesor propuesto.</div>
+    ${casos.map(e => {
+      const extra = e.prot !== 'ninguna' && e.espReq != null ? `<div class="note">Con el producto actual basta aumentar el espesor a ${e.espReq} ${e.espU}.</div>` : '';
+      return `<div style="margin:.5rem 0"><strong>${esc(e.nombre)}</strong> — ${esc(e.perfil)}, F-${e.Freq}, Am/V 4 caras = ${fmt1(e.F4)} m⁻¹ <span class="note">(${esc(e.estado[1])})</span>${extra}
+        ${e.alternativas.length ? `<div style="overflow-x:auto"><table class="results"><tr><th>Producto</th><th>Espesor requerido</th><th>Respaldo</th><th>Fuente y criterio</th></tr>${e.alternativas.map(a => fila(e, a)).join('')}</table></div>`
+          : '<div class="note">Ningún producto del catálogo cubre esta combinación de masividad y exigencia: considere un perfil de menor masividad, un producto con certificado propio o revisar la exigencia.</div>'}</div>`;
+    }).join('')}</div>`;
 }
 
 function renderEstudioFuego(container) {
@@ -42000,7 +42128,7 @@ function renderEstudioFuego(container) {
       <datalist id="dl_ef_fy"><option value="2530">2530 — ASTM A36</option><option value="2700">2700 — A270ES (NCh 203)</option><option value="3450">3450 — A345ES (NCh 203)</option><option value="3515">3515 — ASTM A572 Gr. 50</option></datalist>
       <div style="overflow-x:auto"><style>table.ef-lista input, table.ef-lista select{ font-size:.8rem !important; padding:.24rem .28rem !important; } table.ef-lista td{ padding:.2rem .16rem; }</style>
       <table class="results editable ef-lista" style="min-width:1900px">
-        <thead><tr><th>N°</th><th>Elemento</th><th>Función principal</th><th>Función adicional</th><th>F manual</th><th>Origen</th><th>Perfil</th><th>Tipo</th><th>h</th><th>b</th><th>tw</th><th>tf</th><th>r</th><th>A (cm²)</th><th>Caras</th><th>Solicitación</th><th>Fy</th><th>μ0</th><th>Inestab.</th><th>Protección</th><th>Esp. cert. (µm)</th><th>Esp. prop. (µm)</th><th></th></tr></thead>
+        <thead><tr><th>N°</th><th>Elemento</th><th>Función principal</th><th>Función adicional</th><th>F manual</th><th>Origen</th><th>Perfil</th><th>Tipo</th><th>h</th><th>b</th><th>tw</th><th>tf</th><th>r</th><th>A (cm²)</th><th>Caras</th><th>Solicitación</th><th>Fy</th><th>μ0</th><th>Inestab.</th><th>Protección</th><th>Esp. cert. (µm)</th><th>Esp. propuesto (µm pintura / mm mortero o placa)</th><th></th></tr></thead>
         <tbody id="ef_body"></tbody></table></div>
       <button type="button" class="btn-add" id="ef_add">+ Agregar elemento</button>
     </div>
@@ -42060,7 +42188,7 @@ function renderEstudioFuego(container) {
       <td><input type="text" inputmode="decimal" data-f="Fy" style="min-width:60px" list="dl_ef_fy"></td>
       <td>${inp('mu', 48)}</td>
       <td><select data-f="inest" style="min-width:56px"><option value="no">No</option><option value="si">Sí</option></select></td>
-      <td><select data-f="prot" style="min-width:170px">${Object.keys(EF_PROD).map(k => `<option value="${k}">${esc(EF_PROD[k])}</option>`).join('')}</select></td>
+      <td><select data-f="prot" style="min-width:170px">${efProtOpts()}</select></td>
       <td>${inp('espCert', 56)}</td><td>${inp('espProp', 56)}</td>
       <td><button type="button" class="btn-remove" title="Eliminar">✕</button></td>`;
     body.appendChild(tr);
@@ -42081,6 +42209,8 @@ function renderEstudioFuego(container) {
     }
     q('espCert').disabled = q('prot').value !== 'otro';
     q('espProp').disabled = q('prot').value === 'ninguna';
+    const uP = (EF_PROT[q('prot').value] || {}).u || '';
+    q('espProp').placeholder = uP; q('espCert').placeholder = q('prot').value === 'otro' ? uP : '';
   }
   function leer() {
     const materiales = Array.from(mat.children).map(tr => {
@@ -42130,7 +42260,7 @@ function renderEstudioFuego(container) {
         <td>${e.cls ? (e.clase4 ? sp('warn', 'Clase 4 → 350 °C') : 'Clase 1-3') + `<div class="note">${esc(e.cls.txt)}</div>` : '<span class="note">No evaluada</span>'}</td>
         <td class="num">${n(e.thcr, 0)}</td><td class="num">${n(e.tcr, 1)}</td><td class="num">${e.prot === 'ninguna' ? '—' : esc(e.espTxt)}</td>
         <td>${sp(e.estado[0], e.estado[1])}${e.av.length ? `<div class="note">${e.av.map(esc).join('<br>')}</div>` : ''}</td></tr>`).join('')}
-    </table></div>` : '<div class="note">Agregue elementos en la sección 3.</div>';
+    </table></div>${efMejoraHtml(r)}` : '<div class="note">Agregue elementos en la sección 3.</div>';
     document.getElementById('ef_resAsim').innerHTML = `${r.chkAuto.length ? `<table class="results" style="margin-bottom:.5rem"><tr><th>Criterio calculado</th><th>Estado</th><th>Detalle</th></tr>${r.chkAuto.map(c => `<tr><td>${esc(c.txt)}</td><td>${c.v === 'si' ? sp('ok', 'Cumple') : sp('bad', 'No cumple')}</td><td>${esc(c.obs)}</td></tr>`).join('')}</table>` : ''}
       <div class="verdict-row"><span>Método aplicable</span><span>${esc(r.metodo)}</span></div>
       <div class="verdict-row"><span>Resultado</span><span>${sp(r.asim[0], r.asim[1])}</span></div>
