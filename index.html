@@ -39211,6 +39211,13 @@ function fmpInitPanel(el, state, recalc) {
   }
 
   $('fmp_generar').addEventListener('click', () => { msg('Calculando los bloques y buscando rediseños…'); setTimeout(calcular, 30); });
+  /* Con resultados a la vista, un cambio en los datos comunes (secciones 1-4,
+     p. ej. el espesor H) recalcula todos los bloques. */
+  let tComun = null;
+  raiz.addEventListener('input', ev => {
+    if (!st.res || !st.modelo || ev.target.closest('#fmp_panel')) return;
+    clearTimeout(tComun); tComun = setTimeout(calcular, 300);
+  });
   function calcular() {
     recalc();
     const c = cargas();
