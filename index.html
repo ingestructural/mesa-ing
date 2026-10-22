@@ -39173,8 +39173,14 @@ function fmpInitPanel(el, state, recalc) {
       <table class="results" style="margin-top:.6rem">
         <tr><th>Bloque</th><th>Patas</th><th>L×B×H (m)</th><th>ΣP (kN)</th><th>Masa sobre el bloque (ton)</th><th>q (kPa)</th><th>Mf/M</th><th>r más cercano a 1</th><th>v máx. (mm/s)</th><th>Estado</th><th></th></tr>
         ${filas}
+        ${(() => {
+          const Mf = p.ev.reduce((t, e) => t + e.r.Mf, 0), Meq = p.ev.reduce((t, e) => t + e.inp.Meq, 0);
+          const MR = Meq > 0 ? Mf / Meq : NaN, MRmin = p.ev[0].r.MRmin, ok = MR >= MRmin;
+          return `<tr style="font-weight:600"><td colspan="4">Global (${p.ev.length} bloque${p.ev.length > 1 ? 's' : ''}): ΣMf = ${fmt2(Mf)} ton</td><td class="num">${fmt2(Meq)}</td><td></td>
+            <td class="num">${fmt2(MR)}</td><td colspan="3">Relación de masa global ΣMf/ΣM (mínimo ${fmt0(MRmin)}) ${chip(ok)}</td><td></td></tr>`;
+        })()}
       </table>
-      <div class="note">${esc(st.nota)} Cada bloque se analiza como bloque rígido independiente con su parte de la masa y de las fuerzas del equipo; no se considera el acoplamiento entre bloques a través de la estructura. «Cargar en la planilla» copia ese bloque a las secciones 1 y 3 (masa, fuerzas repartidas, excentricidad, altura del CG, L y B) y las secciones 5 a 12 y la impresión pasan a mostrar ese bloque. La velocidad v es pico, igual que en la planilla.</div>`;
+      <div class="note">Relación de masa: cada bloque se verifica con Mf/M de su propia masa y la masa que recibe (columna Mf/M); la fila «Global» compara la masa de todos los bloques con la masa total soportada, con el mismo mínimo (3 rotativo, 5 reciprocante). La global es informativa: no reemplaza la verificación de cada bloque. ${esc(st.nota)} Cada bloque se analiza como bloque rígido independiente con su parte de la masa y de las fuerzas del equipo; no se considera el acoplamiento entre bloques a través de la estructura. «Cargar en la planilla» copia ese bloque a las secciones 1 y 3 (masa, fuerzas repartidas, excentricidad, altura del CG, L y B) y las secciones 5 a 12 y la impresión pasan a mostrar ese bloque. La velocidad v es pico, igual que en la planilla.</div>`;
     $('fmp_detalle').querySelectorAll('[data-cargar]').forEach(b => b.addEventListener('click', () => {
       const e = p.ev[+b.dataset.cargar];
       const set = (id, v) => { const x = document.getElementById(id); if (x) x.value = +(+v).toFixed(3); };
