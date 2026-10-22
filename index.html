@@ -38857,10 +38857,78 @@ const FMP_TXT_CHK = {
   okVelVert: 'velocidad vertical', okVelHoriz: 'velocidad horizontal', okDeslizSis: 'deslizamiento sísmico', okVolcSis: 'volcamiento sísmico'
 };
 
+/* Detalle de cada verificacion fallida: valor obtenido contra lo exigido,
+   con los mismos limites que usa calcFundacionEquipoDinamico. */
+function fmpDetalleFallas(e) {
+  const r = e.r, b = e.inp, m = b.margen || 0;
+  const rango = `fuera de ${fmt2(1 - m)} – ${fmt2(1 + m)}`;
+  const d = {
+    okMasa: () => `Relación de masa: Mf/M = ${fmt2(r.MRmasa)}; exigido ≥ ${fmt0(r.MRmin)}`,
+    okExc: () => `Excentricidad: ex/L = ${fmtPct(r.exRel)}, ey/B = ${fmtPct(r.eyRel)}; exigido ≤ ${fmtPct(b.excAdm)}`,
+    okPresion: () => `Presión de contacto: q = ${fmt1(r.q)} kPa; exigido ≤ ${fmt1(b.qadm)} kPa`,
+    okFreqVert: () => `Resonancia vertical: r = fop/fn = ${fmt3(r.rVert)}; exigido ${rango}`,
+    okFreqHoriz: () => `Resonancia horizontal: r = ${fmt3(r.rHoriz)}; exigido ${rango}`,
+    okFreqRock: () => `Resonancia en balanceo: r = ${fmt3(r.rRock)}; exigido ${rango}`,
+    okFreqTors: () => `Resonancia torsional: r = ${fmt3(r.rTors)}; exigido ${rango}`,
+    okVelVert: () => `Velocidad vertical: v = ${fmt2(r.vVert)} mm/s; exigido ≤ ${fmt2(b.vadm)} mm/s`,
+    okVelHoriz: () => `Velocidad horizontal: v = ${fmt2(r.vHoriz)} mm/s; exigido ≤ ${fmt2(b.vadm)} mm/s`,
+    okDeslizSis: () => `Deslizamiento sísmico: FS = ${fmt2(r.FSdeslizSis)}; exigido ≥ ${fmt2(b.FSdeslizMin)}`,
+    okVolcSis: () => `Volcamiento sísmico: FS = ${fmt2(r.FSvolcSis)}; exigido ≥ ${fmt2(b.FSvolcMin)}`
+  };
+  return e.fallas.map(f => d[f] ? d[f]() : FMP_TXT_CHK[f]);
+}
+
+/* Rediseno de un bloque: menor L x B (multiplos de 5 cm, mismo centro) que
+   cumple todas las verificaciones, contiene sus nudos y no se superpone con
+   los otros bloques. Busca hasta +6 m por lado; si con el H actual no hay
+   solucion, informa el menor H (de 10 en 10 cm, hasta +1,5 m) con el que si
+   la hay, porque H es comun a todos los bloques. */
+const FMP_PASO_RED = 0.05;
+function fmpRedisenoBloque(k, res, patas, P, op, base, libre) {
+  const rc = res.rects[k], idx = res.grupos[k];
+  const otros = libre ? [] : res.rects.filter((o, j) => j !== k && o);
+  const xs = idx.map(i => patas[i].x), zs = idx.map(i => patas[i].z);
+  const redA = v => +(Math.ceil(v / FMP_PASO_RED - 1e-9) * FMP_PASO_RED).toFixed(2);
+  // largo minimo para contener los nudos con el centro fijo
+  const Lmin = redA(Math.max(0.3, 2 * Math.max(...xs.map(x => Math.abs(x - rc.xc))))), Bmin = redA(Math.max(0.3, 2 * Math.max(...zs.map(z => Math.abs(z - rc.zc)))));
+  const buscar = (H, paso) => {
+    const b = Object.assign({}, base, { H });
+    let mejor = null;
+    for (let L = Lmin; L <= Math.max(rc.L, Lmin) + 6 + 1e-9; L = +(L + paso).toFixed(2)) {
+      for (let B = Bmin; B <= Math.max(rc.B, Bmin) + 6 + 1e-9; B = +(B + paso).toFixed(2)) {
+        if (mejor && L * B > mejor.L * mejor.B + 1e-9) break;
+        const r2 = fmpConCaja({ xc: rc.xc, zc: rc.zc, L, B });
+        if (otros.some(o => fmpSeparacion(r2, o) < -1e-6)) continue;
+        const ev = fmpEvaluarBloque(r2, idx, patas, P, op, b);
+        if (ev.fallas.length) continue;
+        if (!mejor || L * B < mejor.L * mejor.B - 1e-9 || (Math.abs(L * B - mejor.L * mejor.B) < 1e-9 && Math.abs(L - B) < Math.abs(mejor.L - mejor.B))) mejor = { L, B, H, ev };
+      }
+    }
+    return mejor;
+  };
+  const s1 = buscar(base.H, FMP_PASO_RED);
+  if (s1) return s1;
+  for (let H = +(base.H + 0.1).toFixed(2); H <= base.H + 1.5 + 1e-9; H = +(H + 0.1).toFixed(2)) {
+    const s2 = buscar(H, 0.10);
+    if (s2) return Object.assign(s2, { cambiaH: true });
+  }
+  // Sin solucion respetando a los otros bloques: se informa la que habria
+  // si el bloque pudiera crecer libremente (se superpone: conviene unirlos)
+  if (!libre) {
+    const s3 = fmpRedisenoBloque(k, res, patas, P, op, base, true);
+    if (s3) {
+      const r3 = fmpConCaja({ xc: rc.xc, zc: rc.zc, L: s3.L, B: s3.B });
+      s3.choca = res.rects.map((o, j) => (j !== k && o && fmpSeparacion(r3, o) < -1e-6) ? 'B' + (j + 1) : null).filter(Boolean);
+      return s3;
+    }
+  }
+  return null;
+}
+
 /* ---------------- 4) Panel (dentro de renderFundacionEquipoDinamico) ----------------
    fmpInitPanel(el, state, recalc): `state` y `recalc` son los de la planilla;
-   "Cargar en la planilla" escribe el bloque elegido en los campos fed_* y
-   recalcula, de modo que las secciones 5 a 12 y la impresion muestran ese bloque. */
+   los datos de suelo, criterios y H se toman de ella y todos los bloques se
+   calculan a la vez con calcFundacionEquipoDinamico, sin tocar sus campos. */
 function fmpInitPanel(el, state, recalc) {
   const st = { modelo: null, total: null, estructuras: [], est: 0, patas: [], peso: null, bloques: [], res: null, fuente: 'rigido', parsed: null };
   const $ = id => el.querySelector('#' + id);
@@ -38870,7 +38938,7 @@ function fmpInitPanel(el, state, recalc) {
     <h3>0 · Equipo con varias patas — desde el modelo RAM Elements (opcional)</h3>
     <div class="note">Cargue el .zip del modelo RAM Elements o el archivo .etz. La Mesa identifica los apoyos (patas) y sus coordenadas; usted define cuántos bloques, qué nudos recibe cada uno, sus dimensiones en planta y su excentricidad, y la planta se dibuja mientras escribe. Cada bloque se verifica con esta misma planilla. Si no usa un modelo, ignore esta sección.</div>
     <div class="field-grid" style="margin-top:.6rem">
-      <div class="field"><label>Modelo RAM Elements (.zip o .etz)</label><input type="file" id="fmp_file" accept=".zip,.etz"></div>
+      <div class="field" style="grid-column:1/-1"><label>Modelo RAM Elements (.zip o .etz)</label><input type="file" id="fmp_file" accept=".zip,.etz" style="width:100%;max-width:none;min-width:0;font-size:.85rem;box-sizing:border-box"></div>
     </div>
     <div id="fmp_msg" class="note" style="margin-top:.4rem"></div>
     <div id="fmp_cuerpo" hidden>
@@ -38903,9 +38971,9 @@ function fmpInitPanel(el, state, recalc) {
         <div class="field"><label>Dirección L de la planilla (balanceo, Fox)</label><select id="fmp_swap"><option value="0">Eje X de RAM</option><option value="1">Eje Z de RAM</option></select></div>
       </div>
       <div id="fmp_bloques" style="margin-top:.5rem"></div>
-      <div id="fmp_previa" style="margin-top:.6rem"></div>
+      <div id="fmp_esqPlanta" style="margin-top:.6rem"></div>
       <div class="note">Para cada bloque indique los nudos que recibe (ID RAM de la tabla de apoyos, separados por espacio o coma), su largo en X (horizontal en planta) y en Z (vertical en planta), y la excentricidad: desplazamiento del centro del bloque respecto del centro de sus nudos (punto medio entre los nudos extremos en X y en Z; positiva hacia +X y +Z). Cada columna llega al bloque como un punto, sin pedestal. El espesor H es el de la sección 3. Las fuerzas de desbalance Foz y Fox se reparten en proporción a la carga de cada bloque.</div>
-      <button type="button" class="btn-add" id="fmp_generar">Dibujar y verificar bloques</button>
+      <button type="button" class="btn-add" id="fmp_generar">Calcular todos los bloques</button>
       <div id="fmp_detalle" style="margin-top:.8rem"></div>
     </div>`;
 
@@ -39125,7 +39193,7 @@ function fmpInitPanel(el, state, recalc) {
     if (!st.modelo) return;
     st.res = null; $('fmp_detalle').innerHTML = '';
     const g = geometria(false);
-    $('fmp_previa').innerHTML = fmpSvgPlanta(g, g.usadas) +
+    $('fmp_esqPlanta').innerHTML = fmpSvgPlanta(g, g.usadas) +
       (g.txt.length ? `<div class="note" style="color:var(--bad);font-weight:600">${g.txt.join('<br>')}</div>` : '') +
       (g.notas.length ? `<div class="note">Faltan datos: ${g.notas.join(' ')}</div>` : '');
   }
@@ -39139,65 +39207,93 @@ function fmpInitPanel(el, state, recalc) {
     if (!isFinite(hcg)) { msg('Indique hcg, la altura del CG de la masa sobre el bloque.', true); return; }
     const g = geometria(true);
     if (g.error) { msg(g.error, true); return; }
+    if (!st.calculando) { st.calculando = true; msg('Calculando los bloques y buscando rediseños…'); setTimeout(() => { $('fmp_generar').click(); st.calculando = false; }, 30); return; }
     const { grupos, rects, avisos, traslapes } = g;
     const op = { hcg, swap: $('fmp_swap').value === '1', Ptot: c.P.reduce((s, v) => s + v, 0) };
     const base = Object.assign({}, state);
     const ev = rects.map((r, k) => fmpEvaluarBloque(r, grupos[k], c.usadas, c.P, op, base));
     st.usadas = c.usadas; st.nota = c.nota;
     st.res = { grupos, rects, ev, avisos, traslapes, vol: rects.reduce((s, r) => s + r.L * r.B * base.H, 0) };
+    st.res.prop = ev.map((e, k) => e.fallas.length ? fmpRedisenoBloque(k, st.res, c.usadas, c.P, op, base) : null);
     msg(g.txt.join('<br>'), g.txt.length > 0);
-    $('fmp_previa').innerHTML = fmpSvgPlanta(st.res, c.usadas);
+    $('fmp_esqPlanta').innerHTML = fmpSvgPlanta(st.res, c.usadas);
     pintarDetalle();
   });
 
   function pintarDetalle() {
-    const p = st.res;
-    const filas = p.ev.map((e, k) => {
-      const r = e.r;
+    const p = st.res, n = p.ev.length, b0 = p.ev[0].inp, m = b0.margen || 0;
+    const fallasTxt = e => e.fallas.length ? `<div style="font-size:.72rem;line-height:1.3;color:var(--bad)">${fmpDetalleFallas(e).map(t => `<div style="margin:.1rem 0">✗ ${esc(t)}</div>`).join('')}</div>` : chip(true);
+    const propTxt = k => {
+      if (!p.ev[k].fallas.length) return '—';
+      const pr = p.prop && p.prop[k];
+      if (!pr) return '<span style="color:var(--bad)">Sin solución con este bloque y su centro dentro de +6 m por lado y H hasta +1,5 m: una este bloque con otro o revise los datos.</span>';
+      const aviso = pr.choca && pr.choca.length ? `<br><span style="color:var(--bad);font-weight:600">⚠ No cabe sin superponerse con ${pr.choca.join(', ')}: considere unir ${['B' + (k + 1)].concat(pr.choca).join(' + ')} en un solo bloque.</span>` : '';
+      return `<b>${fmt2(pr.L)} × ${fmt2(pr.B)}${pr.cambiaH ? ` × H = ${fmt2(pr.H)}` : ''} m</b><br><span style="color:var(--ink-muted)">mismo centro, múltiplos de 5 cm; cumple todas las verificaciones${pr.cambiaH ? '. Requiere subir H (sección 3), que es común a todos los bloques' : ''}</span>${aviso}${pr.choca && pr.choca.length ? '' : `<br><button type="button" class="modo-btn" data-aplicar="${k}" style="margin-top:.3rem">Aplicar</button>`}`;
+    };
+    const resumen = p.ev.map((e, k) => {
       const ys = p.grupos[k].map(i => st.usadas[i].y);
       const desnivel = Math.max(...ys) - Math.min(...ys) > 0.01 ? ` <span class="chip warn">patas a distinta cota Y (${fmt2(Math.min(...ys))} a ${fmt2(Math.max(...ys))} m)</span>` : '';
       const av = p.avisos[k].length ? ` <span class="chip warn">${esc(p.avisos[k].join('; '))}</span>` : '';
       return `<tr><td class="num">B${k + 1}</td><td>${esc(p.grupos[k].map(i => st.usadas[i].id).join(', '))}${desnivel}${av}</td>
-        <td>${fmt2(e.inp.L)}×${fmt2(e.inp.B)}×${fmt2(e.inp.H)}</td><td class="num">${fmt1(e.Pg)}</td><td class="num">${fmt2(e.inp.Meq)}</td>
-        <td class="num">${fmt1(r.q)}</td><td class="num">${fmt2(r.MRmasa)}</td><td class="num">${fmt3(e.peorR)}</td><td class="num">${fmt2(e.vMax)}</td>
-        <td>${e.fallas.length ? `<span class="chip bad" title="${esc(e.fallas.map(f => FMP_TXT_CHK[f]).join(', '))}">${esc(e.fallas.map(f => FMP_TXT_CHK[f]).join(', '))}</span>` : chip(true)}</td>
-        <td><button type="button" class="modo-btn" data-cargar="${k}">Cargar en la planilla</button></td></tr>`;
+        <td>${fmt2(e.inp.L)}×${fmt2(e.inp.B)}×${fmt2(e.inp.H)}</td>
+        <td>${fallasTxt(e)}</td><td style="font-size:.74rem;line-height:1.3">${propTxt(k)}</td></tr>`;
     }).join('');
+    // Resultados por bloque: una columna por bloque, una fila por magnitud
+    const celda = (v, ok) => `<td class="num"${ok === false ? ' style="color:var(--bad);font-weight:700"' : ''}>${v}</td>`;
+    const fila = (lab, f, ok, exig) => `<tr><td>${lab}</td>${p.ev.map(e => celda(f(e), ok ? ok(e) : undefined)).join('')}<td style="font-size:.78rem;color:var(--ink-muted)">${exig || ''}</td></tr>`;
+    const R = e => e.r;
+    const tabla = `<table class="results" style="margin-top:.6rem">
+        <tr><th>Resultado</th>${p.ev.map((e, k) => `<th>B${k + 1}</th>`).join('')}<th>Exigido</th></tr>
+        ${fila('Nudos', e => esc(p.grupos[p.ev.indexOf(e)].map(i => st.usadas[i].id).join(', ')))}
+        ${fila('L × B × H (m)', e => `${fmt2(e.inp.L)}×${fmt2(e.inp.B)}×${fmt2(e.inp.H)}`)}
+        ${fila('Carga de sus nudos, ΣP (kN)', e => fmt1(e.Pg))}
+        ${fila('Masa soportada, M = ΣP/g (ton)', e => fmt2(e.inp.Meq))}
+        ${fila('Fuerzas de desbalance Foz / Fox (kN)', e => `${fmt2(e.inp.Foz)} / ${fmt2(e.inp.Fox)}`)}
+        ${fila('Masa del bloque, Mf (ton)', e => fmt2(R(e).Mf))}
+        ${fila('Relación de masa, Mf/M', e => fmt2(R(e).MRmasa), e => R(e).okMasa, `≥ ${fmt0(p.ev[0].r.MRmin)}`)}
+        ${fila('Presión de contacto, q (kPa)', e => fmt1(R(e).q), e => R(e).okPresion, `≤ ${fmt1(b0.qadm)}`)}
+        ${fila('Excentricidad ex/L ; ey/B', e => `${fmtPct(R(e).exRel)} ; ${fmtPct(R(e).eyRel)}`, e => R(e).okExc, `≤ ${fmtPct(b0.excAdm)}`)}
+        ${fila('Frecuencia de operación, fop (Hz)', e => fmt2(R(e).fop))}
+        ${fila('fn vertical (Hz) ; r', e => `${fmt2(R(e).fnVert)} ; ${fmt3(R(e).rVert)}`, e => R(e).okFreqVert, `r fuera de ${fmt2(1 - m)}–${fmt2(1 + m)}`)}
+        ${fila('fn horizontal (Hz) ; r', e => `${fmt2(R(e).fnHoriz)} ; ${fmt3(R(e).rHoriz)}`, e => R(e).okFreqHoriz, `r fuera de ${fmt2(1 - m)}–${fmt2(1 + m)}`)}
+        ${fila('fn balanceo (Hz) ; r', e => `${fmt2(R(e).fnRock)} ; ${fmt3(R(e).rRock)}`, e => R(e).okFreqRock, `r fuera de ${fmt2(1 - m)}–${fmt2(1 + m)}`)}
+        ${fila('fn torsional (Hz) ; r', e => `${fmt2(R(e).fnTors)} ; ${fmt3(R(e).rTors)}`, e => R(e).okFreqTors, `r fuera de ${fmt2(1 - m)}–${fmt2(1 + m)}`)}
+        ${fila('Amplitud dinámica vertical / horizontal (mm)', e => `${fmt3(R(e).deltaDinVert)} / ${fmt3(R(e).deltaDinHoriz)}`)}
+        ${fila('Velocidad pico vertical (mm/s)', e => fmt2(R(e).vVert), e => R(e).okVelVert, `≤ ${fmt2(b0.vadm)}`)}
+        ${fila('Velocidad pico horizontal (mm/s)', e => fmt2(R(e).vHoriz), e => R(e).okVelHoriz, `≤ ${fmt2(b0.vadm)}`)}
+        ${fila('FS deslizamiento sísmico', e => fmt2(R(e).FSdeslizSis), e => R(e).okDeslizSis, `≥ ${fmt2(b0.FSdeslizMin)}`)}
+        ${fila('FS volcamiento sísmico', e => fmt2(R(e).FSvolcSis), e => R(e).okVolcSis, `≥ ${fmt2(b0.FSvolcMin)}`)}
+        <tr style="font-weight:700"><td>Estado del bloque</td>${p.ev.map(e => `<td>${e.fallas.length ? `<span class="chip bad">NO CUMPLE (${e.fallas.length})</span>` : chip(true)}</td>`).join('')}<td></td></tr>
+      </table>`;
+    const Mf = p.ev.reduce((t, e) => t + e.r.Mf, 0), Meq = p.ev.reduce((t, e) => t + e.inp.Meq, 0);
+    const MR = Meq > 0 ? Mf / Meq : NaN, MRmin = p.ev[0].r.MRmin;
     $('fmp_detalle').innerHTML = `
-      <div class="xlsx-section">Planta de bloques (${p.rects.length}; hormigón ${fmt2(p.vol)} m³)</div>
+      <div class="xlsx-section">Planta de bloques (${n}; hormigón ${fmt2(p.vol)} m³)</div>
       ${p.traslapes.length ? `<div class="note" style="color:var(--bad);font-weight:600">⚠ Superposición de bloques: ${p.traslapes.map(t => `B${t.a + 1} con B${t.b + 1} (${fmt2(t.x2 - t.x1)} × ${fmt2(t.z2 - t.z1)} m)`).join('; ')}. Zona marcada en rojo en la planta.</div>` : ''}
       <table class="results" style="margin-top:.6rem">
         <tr><th>Bloque</th><th>Centro de los nudos X ; Z (m)</th><th>Excentricidad ex ; ez (m)</th><th>Centro del bloque X ; Z (m)</th><th>Bordes X (m)</th><th>Bordes Z (m)</th></tr>
         ${p.rects.map((r, k) => `<tr><td class="num">B${k + 1}</td><td class="num">${fmt3(r.x0)} ; ${fmt3(r.z0)}</td><td class="num">${fmt3(r.ex)} ; ${fmt3(r.ez)}</td><td class="num">${fmt3(r.xc)} ; ${fmt3(r.zc)}</td><td class="num">${fmt3(r.x1)} a ${fmt3(r.x2)}</td><td class="num">${fmt3(r.z1)} a ${fmt3(r.z2)}</td></tr>`).join('')}
       </table>
-      <table class="results" style="margin-top:.6rem">
-        <tr><th>Bloque</th><th>Patas</th><th>L×B×H (m)</th><th>ΣP (kN)</th><th>Masa sobre el bloque (ton)</th><th>q (kPa)</th><th>Mf/M</th><th>r más cercano a 1</th><th>v máx. (mm/s)</th><th>Estado</th><th></th></tr>
-        ${filas}
-        ${(() => {
-          const Mf = p.ev.reduce((t, e) => t + e.r.Mf, 0), Meq = p.ev.reduce((t, e) => t + e.inp.Meq, 0);
-          const MR = Meq > 0 ? Mf / Meq : NaN, MRmin = p.ev[0].r.MRmin, ok = MR >= MRmin;
-          return `<tr style="font-weight:600"><td colspan="4">Global (${p.ev.length} bloque${p.ev.length > 1 ? 's' : ''}): ΣMf = ${fmt2(Mf)} ton</td><td class="num">${fmt2(Meq)}</td><td></td>
-            <td class="num">${fmt2(MR)}</td><td colspan="3">Relación de masa global ΣMf/ΣM (mínimo ${fmt0(MRmin)}) ${chip(ok)}</td><td></td></tr>`;
-        })()}
+      <div class="xlsx-section" style="margin-top:.8rem">Resultados por bloque</div>
+      ${tabla}
+      <div class="verdict-row" style="margin-top:.4rem"><span>Relación de masa global ΣMf/ΣM = ${fmt2(Mf)} / ${fmt2(Meq)} = <b>${fmt2(MR)}</b> (mínimo ${fmt0(MRmin)}; informativa)</span><span>${chip(MR >= MRmin)}</span></div>
+      <div class="global-verdict ${p.ev.every(e => !e.fallas.length) ? 'ok' : 'bad'}"><span class="label">ESTATUS DE LOS ${n} BLOQUE${n > 1 ? 'S' : ''}</span><span class="label">${p.ev.every(e => !e.fallas.length) ? (n > 1 ? 'CUMPLEN' : 'CUMPLE') : `${n > 1 ? 'NO CUMPLEN' : 'NO CUMPLE'} (${p.ev.filter(e => e.fallas.length).map((e, i) => 'B' + (p.ev.indexOf(e) + 1)).join(', ')})`}</span></div>
+      <div class="xlsx-section" style="margin-top:.8rem">Verificaciones que no cumplen y rediseño</div>
+      <table class="results" style="margin-top:.4rem">
+        <tr><th>Bloque</th><th>Nudos</th><th>L×B×H (m)</th><th>Verificaciones que no cumplen (valor obtenido; exigido)</th><th>Rediseño propuesto</th></tr>
+        ${resumen}
       </table>
-      <div class="note">Relación de masa: cada bloque se verifica con Mf/M de su propia masa y la masa que recibe (columna Mf/M); la fila «Global» compara la masa de todos los bloques con la masa total soportada, con el mismo mínimo (3 rotativo, 5 reciprocante). La global es informativa: no reemplaza la verificación de cada bloque. ${esc(st.nota)} Cada bloque se analiza como bloque rígido independiente con su parte de la masa y de las fuerzas del equipo; no se considera el acoplamiento entre bloques a través de la estructura. «Cargar en la planilla» copia ese bloque a las secciones 1 y 3 (masa, fuerzas repartidas, excentricidad, altura del CG, L y B) y las secciones 5 a 12 y la impresión pasan a mostrar ese bloque. La velocidad v es pico, igual que en la planilla.</div>`;
-    $('fmp_detalle').querySelectorAll('[data-cargar]').forEach(b => b.addEventListener('click', () => {
-      const e = p.ev[+b.dataset.cargar];
-      const set = (id, v) => { const x = document.getElementById(id); if (x) x.value = +(+v).toFixed(3); };
-      set('fed_Meq', e.inp.Meq); set('fed_Foz', e.inp.Foz); set('fed_Fox', e.inp.Fox);
-      set('fed_exEq', e.inp.exEq); set('fed_eyEq', e.inp.eyEq); set('fed_heq', e.inp.heq);
-      set('fed_L', e.inp.L); set('fed_B', e.inp.B);
-      const d = document.getElementById('fed_descEquipo');
-      const base = String(d.value).replace(/ — bloque \d+ \((patas|nudos) [^)]*\)$/, '');
-      d.value = `${base} — bloque ${+b.dataset.cargar + 1} (nudos ${p.grupos[+b.dataset.cargar].map(i => st.usadas[i].id).join('-')})`;
-      recalc();
-      const dest = document.getElementById('fed_geometria');
-      if (dest && dest.scrollIntoView) dest.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      <div class="note">Todos los bloques se calculan a la vez con el método de la planilla (Richart-Hall-Woods, ACI 351.3R), cada uno como bloque rígido independiente con su parte de la masa y de las fuerzas del equipo (Foz y Fox en proporción a su carga); no se considera el acoplamiento entre bloques a través de la estructura. ${esc(st.nota)} Valores en rojo: no cumplen. La relación de masa global es informativa y no reemplaza la de cada bloque. El rediseño busca el menor L × B en múltiplos de 5 cm, con el mismo centro y sin superponerse a otros bloques, con el que el bloque cumple todas las verificaciones; «Aplicar» lo escribe en la tabla de bloques y recalcula. La velocidad v es pico, igual que en la planilla. Las secciones 1 a 12 siguen siendo la planilla de un solo bloque.</div>`;
+    $('fmp_detalle').querySelectorAll('[data-aplicar]').forEach(b => b.addEventListener('click', () => {
+      const k = +b.dataset.aplicar, pr = p.prop[k];
+      st.bloques[k].L = String(pr.L); st.bloques[k].B = String(pr.B);
+      if (pr.cambiaH) { const h = document.getElementById('fed_H'); if (h) h.value = pr.H; }
+      $('fmp_bloques').innerHTML = ''; pintarBloques();
+      $('fmp_generar').click();
     }));
   }
 }
 
-/* Planta de una propuesta: espacio disponible, zonas prohibidas, bloques y patas (ejes RAM X-Z). */
 /* Planta de los bloques (ejes RAM X-Z) con cotas: largo en X bajo cada bloque,
    largo en Z a su izquierda, centro del bloque (+), centro de sus nudos (◇) si
    hay excentricidad, y cada nudo-columna con su ID y coordenadas. p.rects puede
