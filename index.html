@@ -39198,7 +39198,8 @@ function fmpInitPanel(el, state, recalc) {
       (g.notas.length ? `<div class="note">Faltan datos: ${g.notas.join(' ')}</div>` : '');
   }
 
-  $('fmp_generar').addEventListener('click', () => {
+  $('fmp_generar').addEventListener('click', () => { msg('Calculando los bloques y buscando rediseños…'); setTimeout(calcular, 30); });
+  function calcular() {
     recalc();
     const c = cargas();
     if (c.error) { msg(c.error, true); return; }
@@ -39207,7 +39208,6 @@ function fmpInitPanel(el, state, recalc) {
     if (!isFinite(hcg)) { msg('Indique hcg, la altura del CG de la masa sobre el bloque.', true); return; }
     const g = geometria(true);
     if (g.error) { msg(g.error, true); return; }
-    if (!st.calculando) { st.calculando = true; msg('Calculando los bloques y buscando rediseños…'); setTimeout(() => { $('fmp_generar').click(); st.calculando = false; }, 30); return; }
     const { grupos, rects, avisos, traslapes } = g;
     const op = { hcg, swap: $('fmp_swap').value === '1', Ptot: c.P.reduce((s, v) => s + v, 0) };
     const base = Object.assign({}, state);
@@ -39218,7 +39218,12 @@ function fmpInitPanel(el, state, recalc) {
     msg(g.txt.join('<br>'), g.txt.length > 0);
     $('fmp_esqPlanta').innerHTML = fmpSvgPlanta(st.res, c.usadas);
     pintarDetalle();
-  });
+    if (st.auto != null) {
+      const k = st.auto, pr = st.res.prop[k];
+      st.auto = null;
+      if (pr && !(pr.choca && pr.choca.length)) aplicarProp([k]);
+    }
+  }
 
   function pintarDetalle() {
     const p = st.res, n = p.ev.length, b0 = p.ev[0].inp, m = b0.margen || 0;
@@ -39228,7 +39233,7 @@ function fmpInitPanel(el, state, recalc) {
       const pr = p.prop && p.prop[k];
       if (!pr) return '<span style="color:var(--bad)">Sin solución con este bloque y su centro dentro de +6 m por lado y H hasta +1,5 m: una este bloque con otro o revise los datos.</span>';
       const aviso = pr.choca && pr.choca.length ? `<br><span style="color:var(--bad);font-weight:600">⚠ No cabe sin superponerse con ${pr.choca.join(', ')}: considere unir ${['B' + (k + 1)].concat(pr.choca).join(' + ')} en un solo bloque.</span>` : '';
-      return `<b>${fmt2(pr.L)} × ${fmt2(pr.B)}${pr.cambiaH ? ` × H = ${fmt2(pr.H)}` : ''} m</b><br><span style="color:var(--ink-muted)">mismo centro, múltiplos de 5 cm; cumple todas las verificaciones${pr.cambiaH ? '. Requiere subir H (sección 3), que es común a todos los bloques' : ''}</span>${aviso}${pr.choca && pr.choca.length ? '' : `<br><button type="button" class="modo-btn" data-aplicar="${k}" style="margin-top:.3rem">Aplicar</button>`}`;
+      return `<b>${fmt2(pr.L)} × ${fmt2(pr.B)}${pr.cambiaH ? ` × H = ${fmt2(pr.H)}` : ''} m</b><br><span style="color:var(--ink-muted)">mismo centro, múltiplos de 5 cm; cumple todas las verificaciones${pr.cambiaH ? '. Requiere subir H (sección 3), que es común a todos los bloques' : ''}</span>${aviso}${pr.choca && pr.choca.length ? `<br><button type="button" class="modo-btn" data-unir="${k}" style="margin-top:.3rem">Unir ${['B' + (k + 1)].concat(pr.choca).join(' + ')} y aplicar</button>` : `<br><button type="button" class="modo-btn" data-aplicar="${k}" style="margin-top:.3rem">Aplicar</button>`}`;
     };
     const resumen = p.ev.map((e, k) => {
       const ys = p.grupos[k].map(i => st.usadas[i].y);
@@ -39279,19 +39284,58 @@ function fmpInitPanel(el, state, recalc) {
       ${tabla}
       <div class="verdict-row" style="margin-top:.4rem"><span>Relación de masa global ΣMf/ΣM = ${fmt2(Mf)} / ${fmt2(Meq)} = <b>${fmt2(MR)}</b> (mínimo ${fmt0(MRmin)}; informativa)</span><span>${chip(MR >= MRmin)}</span></div>
       <div class="global-verdict ${p.ev.every(e => !e.fallas.length) ? 'ok' : 'bad'}"><span class="label">ESTATUS DE LOS ${n} BLOQUE${n > 1 ? 'S' : ''}</span><span class="label">${p.ev.every(e => !e.fallas.length) ? (n > 1 ? 'CUMPLEN' : 'CUMPLE') : `${n > 1 ? 'NO CUMPLEN' : 'NO CUMPLE'} (${p.ev.filter(e => e.fallas.length).map((e, i) => 'B' + (p.ev.indexOf(e) + 1)).join(', ')})`}</span></div>
+      ${p.prop && p.prop.some(pr => pr && !(pr.choca && pr.choca.length)) ? `<div style="margin-top:.5rem"><button type="button" class="btn-add" id="fmp_aplicarTodos">Aplicar todos los rediseños que caben (${p.prop.filter(pr => pr && !(pr.choca && pr.choca.length)).length})</button> <span class="note" style="display:inline">Se aplican a la vez y se recalcula; si al crecer juntos se superponen, la Mesa lo avisa y ofrece unirlos.</span></div>` : ''}
       <div class="xlsx-section" style="margin-top:.8rem">Verificaciones que no cumplen y rediseño</div>
       <table class="results" style="margin-top:.4rem">
         <tr><th>Bloque</th><th>Nudos</th><th>L×B×H (m)</th><th>Verificaciones que no cumplen (valor obtenido; exigido)</th><th>Rediseño propuesto</th></tr>
         ${resumen}
       </table>
       <div class="note">Todos los bloques se calculan a la vez con el método de la planilla (Richart-Hall-Woods, ACI 351.3R), cada uno como bloque rígido independiente con su parte de la masa y de las fuerzas del equipo (Foz y Fox en proporción a su carga); no se considera el acoplamiento entre bloques a través de la estructura. ${esc(st.nota)} Valores en rojo: no cumplen. La relación de masa global es informativa y no reemplaza la de cada bloque. El rediseño busca el menor L × B en múltiplos de 5 cm, con el mismo centro y sin superponerse a otros bloques, con el que el bloque cumple todas las verificaciones; «Aplicar» lo escribe en la tabla de bloques y recalcula. La velocidad v es pico, igual que en la planilla. Las secciones 1 a 12 siguen siendo la planilla de un solo bloque.</div>`;
-    $('fmp_detalle').querySelectorAll('[data-aplicar]').forEach(b => b.addEventListener('click', () => {
-      const k = +b.dataset.aplicar, pr = p.prop[k];
+    $('fmp_detalle').querySelectorAll('[data-aplicar]').forEach(b => b.addEventListener('click', () => { aplicarProp([+b.dataset.aplicar]); }));
+    const bt = $('fmp_aplicarTodos');
+    if (bt) bt.addEventListener('click', () => aplicarProp(p.prop.map((pr, k) => (pr && !(pr.choca && pr.choca.length)) ? k : -1).filter(k => k >= 0)));
+    $('fmp_detalle').querySelectorAll('[data-unir]').forEach(b => b.addEventListener('click', () => unirBloques(+b.dataset.unir)));
+  }
+
+  /* Escribe en la tabla de bloques los rediseños indicados y recalcula. */
+  function aplicarProp(ks) {
+    const p = st.res;
+    let H = null;
+    ks.forEach(k => {
+      const pr = p.prop[k];
       st.bloques[k].L = String(pr.L); st.bloques[k].B = String(pr.B);
-      if (pr.cambiaH) { const h = document.getElementById('fed_H'); if (h) h.value = pr.H; }
-      $('fmp_bloques').innerHTML = ''; pintarBloques();
-      $('fmp_generar').click();
-    }));
+      if (pr.cambiaH) H = Math.max(H || 0, pr.H);
+    });
+    if (H) { const h = document.getElementById('fed_H'); if (h) h.value = H; }
+    $('fmp_bloques').innerHTML = ''; pintarBloques();
+    calcular();
+  }
+
+  /* Une el bloque k con los bloques con que chocaria su rediseño: un solo
+     bloque con todos sus nudos, del tamaño del rectángulo que envuelve a los
+     bloques unidos (múltiplos de 5 cm), centrado en ese rectángulo; luego
+     recalcula y, si el bloque unido aún no cumple y su rediseño cabe, lo aplica. */
+  function unirBloques(k) {
+    const p = st.res, pr = p.prop[k];
+    const js = [k].concat(pr.choca.map(t => +t.slice(1) - 1)).sort((a, b) => a - b);
+    const rs = js.map(j => p.rects[j]);
+    const x1 = Math.min(...rs.map(r => r.x1)), x2 = Math.max(...rs.map(r => r.x2));
+    const z1 = Math.min(...rs.map(r => r.z1)), z2 = Math.max(...rs.map(r => r.z2));
+    const idx = js.flatMap(j => p.grupos[j]);
+    const xs = idx.map(i => st.usadas[i].x), zs = idx.map(i => st.usadas[i].z);
+    const x0 = (Math.min(...xs) + Math.max(...xs)) / 2, z0 = (Math.min(...zs) + Math.max(...zs)) / 2;
+    const red = v => +(Math.ceil(v / FMP_PASO_RED - 1e-9) * FMP_PASO_RED).toFixed(2);
+    const nuevo = {
+      nudos: idx.map(i => st.usadas[i].id).join(' '),
+      L: String(red(x2 - x1)), B: String(red(z2 - z1)),
+      ex: String(+((x1 + x2) / 2 - x0).toFixed(3)), ez: String(+((z1 + z2) / 2 - z0).toFixed(3))
+    };
+    st.bloques = st.bloques.filter((b, j) => !js.includes(j) || j === js[0]);
+    st.bloques[js[0]] = nuevo;
+    $('fmp_nb').value = st.bloques.length;
+    $('fmp_bloques').innerHTML = ''; pintarBloques();
+    st.auto = js[0];
+    calcular();
   }
 }
 
