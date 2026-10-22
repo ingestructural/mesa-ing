@@ -38397,6 +38397,706 @@ function svgFundacionEquipoDinamico(state, r) {
   `, {viewBox:`0 0 460 ${yBaseE+60}`, maxWidth:440, aria:'Esquema de la fundación de equipo dinámico: planta con excentricidad del equipo, elevación con altura del bloque, altura del equipo y fuerzas de desbalance'});
 }
 
+/* =========================================================================
+   FUNDACION DE EQUIPO DINAMICO -- OPCION "EQUIPO CON VARIAS PATAS"
+   (modelo RAM Elements .etz o .zip del modelo)
+
+   Prefijo `fmp` (fundacion multipata). Tres piezas:
+     1) LECTOR .etz: fmpLeerArchivo(file) -> modelo {unidades, nudos, barras,
+        estados, secciones}. Acepta el .etz suelto o el .zip que arma RAM
+        (descomprime con DecompressionStream, sin librerias).
+     2) APOYOS Y CARGAS: fmpApoyos(modelo) identifica los nudos restringidos
+        (patas) y el pedestal de hormigon que llega a cada uno; las cargas
+        por pata salen de la tabla de reacciones de RAM pegada (parseRamPaste,
+        el mismo lector de Zapata y Losa de fundacion) o, si no se pega, de
+        un reparto lineal de cuerpo rigido del peso del equipo y la estructura.
+     3) PROPUESTAS: fmpPropuestas(...) enumera agrupaciones de patas en
+        bloques (una fundacion para todas, una por pata y las intermedias),
+        dimensiona cada bloque en multiplos de 5 cm, descarta las que se
+        traslapan o salen del espacio disponible y verifica cada bloque con
+        calcFundacionEquipoDinamico (bloque rigido, mismo metodo de la
+        planilla) con su parte de la masa y de las fuerzas del equipo.
+
+   Formato .etz (ingenieria inversa sobre "Mesas PLana_0.etz", RAM Elements
+   13.0.0.22, verificado byte a byte: el esquema termina exactamente donde
+   empieza la seccion de datos y la suma de tamanos coincide con el archivo):
+     cabecera: 3 x uint32 LE = (largo esquema, largo archivo, sin uso aqui)
+     esquema:  arbol de entradas [tipo][largo nombre][nombre](tamano);
+               tipo 0x08 = grupo (termina con 'X' = 0x58); hojas:
+               0x01 entero 1 byte, 0x04 entero 2 bytes, 0x03 double 8 bytes,
+               0x02 texto (tamano 1 byte; dato = [largo][texto]),
+               0x06/0x14 arreglo de enteros, 0x0a arreglo de doubles,
+               0x0f arreglo de textos (tamano: 01 n | 04 nn big-endian).
+     arreglos: [cod][n uint32] y luego
+               01 denso | 02 diccionario (nd, ancho, (repeticiones-1, valor)*)
+               03 mascara (ancho, k, k bytes MSB primero, valores marcados)
+               04 indices (cuenta, ancho, (indice, valor)*); lo no escrito = 0.
+   En RAM el eje vertical es Y; la planta es X-Z.
+   ========================================================================= */
+
+const FMP_G = 9.81;            // mismo valor que calcFundacionEquipoDinamico
+const FMP_PASO = 0.05;         // modulo de dimensiones del bloque (m)
+const FMP_MAX_ENUM = 8;        // hasta 8 patas se enumeran todas las agrupaciones
+
+/* ---------------- 1) Lector .zip / .etz ---------------- */
+async function fmpUnzip(buf) {
+  const u8 = new Uint8Array(buf), dv = new DataView(buf);
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('El archivo no es un .zip válido.');
+  const nEnt = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const archivos = {};
+  for (let k = 0; k < nEnt; k++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('Directorio del .zip dañado.');
+    const metodo = dv.getUint16(p + 10, true);
+    const tamC = dv.getUint32(p + 20, true);
+    const lNom = dv.getUint16(p + 28, true), lExt = dv.getUint16(p + 30, true), lCom = dv.getUint16(p + 32, true);
+    const offLocal = dv.getUint32(p + 42, true);
+    const nombre = new TextDecoder('latin1').decode(u8.subarray(p + 46, p + 46 + lNom));
+    p += 46 + lNom + lExt + lCom;
+    const ini = offLocal + 30 + dv.getUint16(offLocal + 26, true) + dv.getUint16(offLocal + 28, true);
+    const comp = u8.subarray(ini, ini + tamC);
+    let datos;
+    if (metodo === 0) datos = comp.slice();
+    else if (metodo === 8) {
+      if (typeof DecompressionStream === 'undefined') throw new Error('Este navegador no puede descomprimir .zip; cargue el .etz directamente.');
+      const ds = new Blob([comp]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      datos = new Uint8Array(await new Response(ds).arrayBuffer());
+    } else throw new Error(`Método de compresión ${metodo} no soportado en ${nombre}.`);
+    archivos[nombre.split('/').pop()] = datos;
+  }
+  return archivos;
+}
+
+function fmpEtzEsquema(d) {
+  const dv = new DataView(d.buffer, d.byteOffset, d.byteLength);
+  const hojas = [];
+  let p = 12;
+  const err = msg => { throw new Error(`Formato .etz no reconocido (${msg}, byte ${p}).`); };
+  const tam = () => {
+    const c = d[p++];
+    if (c === 0x01) return d[p++];
+    if (c === 0x04) { const v = (d[p] << 8) | d[p + 1]; p += 2; return v; }
+    err('código de tamaño 0x' + c.toString(16));
+  };
+  const grupo = ruta => {
+    for (;;) {
+      if (p >= d.length) err('esquema sin cierre');
+      const t = d[p++];
+      if (t === 0x58) return;
+      const L = d[p++];
+      const nombre = new TextDecoder('latin1').decode(d.subarray(p, p + L)); p += L;
+      if (t === 0x08) { grupo(ruta.concat(nombre)); continue; }
+      let size;
+      if (t === 0x01) size = 1;
+      else if (t === 0x04) size = 2;
+      else if (t === 0x03) size = 8;
+      else if (t === 0x02) size = d[p++];
+      else if (t === 0x06 || t === 0x0a || t === 0x0f || t === 0x14) size = tam();
+      else err('tipo 0x' + t.toString(16) + ' en ' + ruta.concat(nombre).join('/'));
+      hojas.push({ ruta: ruta.concat(nombre).join('/'), tipo: t, size });
+    }
+  };
+  if (d.length < 16 || d[12] !== 0x08) err('cabecera');
+  p = 13; p += 1 + d[p];         // grupo raiz ("\")
+  grupo([]);
+  if (p !== 12 + dv.getUint32(0, true) || dv.getUint32(4, true) !== d.length) err('largos de cabecera no coinciden');
+  return { hojas, inicioDatos: p };
+}
+
+function fmpEtzArreglo(b, tipo) {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const enc = b[0], n = dv.getUint32(1, true);
+  const esTexto = tipo === 0x0f, esReal = tipo === 0x0a;
+  const vacio = esTexto ? '' : 0;
+  let i = 5, wv = esReal ? 8 : 0;
+  const leerInt = (w) => { let v = 0; for (let k = 0; k < w; k++) v |= b[i + k] << (8 * k); i += w; return v; };
+  const leer = () => {
+    if (esReal) { const v = dv.getFloat64(i, true); i += 8; return v; }
+    if (esTexto) { const L = b[i]; const s = new TextDecoder('latin1').decode(b.subarray(i + 1, i + 1 + L)); i += 1 + L; return s; }
+    return leerInt(wv);
+  };
+  const out = [];
+  if (enc === 1) {
+    if (!esReal && !esTexto) wv = (b.length - 5) / Math.max(n, 1);
+    while (out.length < n) out.push(leer());
+  } else if (enc === 2) {
+    const nd = dv.getUint32(i, true); i += 4; const w = b[i++];
+    if (!esReal && !esTexto) wv = (b.length - 10) / Math.max(nd, 1) - w;
+    for (let k = 0; k < nd; k++) { const r = leerInt(w) + 1; const v = leer(); for (let j = 0; j < r; j++) out.push(v); }
+  } else if (enc === 3) {
+    i++; const k = b[i++]; const mask = b.subarray(i, i + k); i += k;
+    let marcados = 0;
+    for (let j = 0; j < n; j++) if ((mask[j >> 3] >> (7 - (j & 7))) & 1) marcados++;
+    if (!esReal && !esTexto) wv = (b.length - i) / Math.max(marcados, 1);
+    for (let j = 0; j < n; j++) out.push(((mask[j >> 3] >> (7 - (j & 7))) & 1) ? leer() : vacio);
+  } else if (enc === 4) {
+    const cnt = dv.getUint32(i, true); i += 4; const w = b[i++];
+    if (!esReal && !esTexto) wv = (b.length - 10) / Math.max(cnt, 1) - w;
+    for (let j = 0; j < n; j++) out.push(vacio);
+    for (let k = 0; k < cnt; k++) { const idx = leerInt(w); out[idx] = leer(); }
+  } else throw new Error('Codificación de arreglo 0x' + enc.toString(16) + ' no reconocida.');
+  if (!esTexto && (!Number.isInteger(wv) || wv < 1)) throw new Error('Ancho de entero no reconocido en un arreglo del .etz.');
+  if (i !== b.length || out.length !== n) throw new Error('Arreglo del .etz con largo inconsistente.');
+  return out;
+}
+
+function fmpEtzLeer(d) {
+  const { hojas, inicioDatos } = fmpEtzEsquema(d);
+  const dv = new DataView(d.buffer, d.byteOffset, d.byteLength);
+  const campos = {};
+  let q = inicioDatos;
+  for (const h of hojas) {
+    let v;
+    if (h.tipo === 0x01) v = d[q];
+    else if (h.tipo === 0x04) v = dv.getUint16(q, true);
+    else if (h.tipo === 0x03) v = dv.getFloat64(q, true);
+    else if (h.tipo === 0x02) {
+      if (d[q] !== h.size) throw new Error('Texto del .etz con largo inconsistente en ' + h.ruta + '.');
+      v = new TextDecoder('latin1').decode(d.subarray(q + 1, q + 1 + h.size)); q += 1;
+    } else v = (h.ruta.endsWith('/Values') && h.size > 0) ? fmpEtzArreglo(d.subarray(q, q + h.size), h.tipo) : null;
+    q += h.size;
+    campos[h.ruta] = v;
+  }
+  if (q !== d.length) throw new Error('El .etz no se leyó completo.');
+  const arr = (k, n) => {
+    const a = campos['ModelData1/' + k + '/Values'] || [];
+    const out = a.slice(0, n);
+    while (out.length < n) out.push(typeof a[0] === 'string' ? '' : 0);
+    return out;
+  };
+  const nN = Math.max((campos['ModelData1/Nodes/NudosID/Values'] || []).length, (campos['ModelData1/Nodes/NudosY/Values'] || []).length);
+  const nB = (campos['ModelData1/Members/VigasN1/Values'] || []).length;
+  const X = arr('Nodes/NudosX', nN), Y = arr('Nodes/NudosY', nN), Z = arr('Nodes/NudosZ', nN), ID = arr('Nodes/NudosID', nN);
+  const R = [1, 2, 3, 4, 5, 6].map(k => arr('Nodes/NudosRestric' + k, nN));
+  const unidades = campos['ModelProperties1/Units'] || '';
+  const fL = { m: 1, cm: 0.01, mm: 0.001, ft: 0.3048, in: 0.0254 }[(unidades.split('-')[1] || 'm').toLowerCase()];
+  if (!fL) throw new Error(`Unidades del modelo "${unidades}" no soportadas.`);
+  const nudos = [];
+  for (let k = 0; k < nN; k++) nudos.push({ n: k + 1, id: ID[k], x: X[k] * fL, y: Y[k] * fL, z: Z[k] * fL, restr: R.map(r => r[k]) });
+  const N1 = arr('Members/VigasN1', nB), N2 = arr('Members/VigasN2', nB);
+  const desc = arr('Members/VigasDescripcion', nB), secc = arr('Members/VigasSecc', nB), mat = arr('Members/VigasMat', nB);
+  const barras = [];
+  for (let k = 0; k < nB; k++) barras.push({ n1: N1[k], n2: N2[k], desc: desc[k], secc: secc[k], mat: mat[k] });
+  return {
+    unidades, version: campos['ModelProperties1/AnalysisVersion'],
+    estados: campos['ModelData1/LoadCases/EstadosIdCarga/Values'] || [],
+    nudos, barras, campos
+  };
+}
+
+/* Secciones: archivos .sec del zip (bloques [libreria] + tabla con tabulaciones).
+   Area en m2: columna "area" (mm2) o, para solidos rectangulares, b*h.
+   Las secciones compuestas "2 UPN200" sin area se toman como 2 x el perfil simple. */
+function fmpSecciones(archivos) {
+  const sec = {};
+  for (const [nom, datos] of Object.entries(archivos || {})) {
+    if (!/\.sec$/i.test(nom)) continue;
+    const lineas = new TextDecoder('latin1').decode(datos).split(/\r?\n/);
+    let enc = null, lib = '';
+    for (const l of lineas) {
+      if (/^\[.*\]$/.test(l.trim())) { lib = l.trim(); enc = null; continue; }
+      const c = l.split('\t');
+      if (!enc) { if (c[0] === 'Name') enc = c.map(s => s.trim().toLowerCase()); continue; }
+      if (c.length < 2) continue;
+      const f = {}; enc.forEach((h, j) => { f[h] = (c[j] || '').trim(); });
+      const u = { mm: 1e-3, cm: 1e-2, m: 1, in: 0.0254 }[(f.unit || 'mm').toLowerCase()] || 1e-3;
+      let area = null, solido = false;
+      if (f.area) area = parseFloat(f.area) * u * u;
+      else if (f.b && f.h && /RcCol|Rc/i.test(lib)) { area = parseFloat(f.b) * parseFloat(f.h) * u * u; solido = true; }
+      sec[f.name.toUpperCase()] = { area, solido, b: f.b ? parseFloat(f.b) * u : null, h: f.h ? parseFloat(f.h) * u : null, lib };
+    }
+  }
+  for (const [k, s] of Object.entries(sec)) {
+    const m = k.match(/^2\s*(\D+)\s*(\d+)$/);
+    if (s.area == null && m) {
+      const simple = Object.keys(sec).find(n => n.replace(/\s/g, '') === (m[1] + m[2]).replace(/\s/g, ''));
+      if (simple && sec[simple].area) s.area = 2 * sec[simple].area;
+    }
+  }
+  return sec;
+}
+
+async function fmpLeerArchivo(file) {
+  const buf = await file.arrayBuffer();
+  const u8 = new Uint8Array(buf);
+  let etz = null, archivos = {}, nombreEtz = file.name;
+  if (u8[0] === 0x50 && u8[1] === 0x4b) {
+    archivos = await fmpUnzip(buf);
+    const k = Object.keys(archivos).find(n => /\.etz$/i.test(n));
+    if (!k) throw new Error('El .zip no contiene un archivo .etz.');
+    etz = archivos[k]; nombreEtz = k;
+  } else etz = u8;
+  const modelo = fmpEtzLeer(etz);
+  modelo.archivo = nombreEtz;
+  modelo.secciones = fmpSecciones(archivos);
+  return modelo;
+}
+
+/* ---------------- 2) Apoyos, pedestales, pesos y cargas por pata ---------------- */
+function fmpApoyos(modelo) {
+  const porN = {}; modelo.nudos.forEach(n => { porN[n.n] = n; });
+  const apoyos = modelo.nudos.filter(n => n.restr.some(v => v)).map(n => ({ ...n, ped: null }));
+  for (const a of apoyos) {
+    for (const b of modelo.barras) {
+      if (b.n1 !== a.n && b.n2 !== a.n) continue;
+      const s = modelo.secciones[(b.secc || '').toUpperCase()];
+      const otro = porN[b.n1 === a.n ? b.n2 : b.n1];
+      if (s && s.solido && otro && Math.abs(otro.y - a.y) > 1e-6) {
+        a.ped = { secc: b.secc, b: s.b, h: s.h, alto: Math.abs(otro.y - a.y) };
+      }
+    }
+  }
+  return apoyos;
+}
+
+/* Peso de barras (kN) y su centro: acero 7,85 t/m3 (salvo solidos, con gammac). */
+function fmpPesoEstructura(modelo, gammac) {
+  const porN = {}; modelo.nudos.forEach(n => { porN[n.n] = n; });
+  let W = 0, Wx = 0, Wy = 0, Wz = 0, sinArea = new Set();
+  for (const b of modelo.barras) {
+    const s = modelo.secciones[(b.secc || '').toUpperCase()];
+    const i = porN[b.n1], j = porN[b.n2];
+    if (!i || !j) continue;
+    if (!s || !s.area) { sinArea.add(b.secc); continue; }
+    const L = Math.hypot(j.x - i.x, j.y - i.y, j.z - i.z);
+    const w = s.area * L * (s.solido ? gammac : 7.85) * FMP_G;
+    W += w; Wx += w * (i.x + j.x) / 2; Wy += w * (i.y + j.y) / 2; Wz += w * (i.z + j.z) / 2;
+  }
+  return { W, x: W ? Wx / W : 0, y: W ? Wy / W : 0, z: W ? Wz / W : 0, sinArea: [...sinArea] };
+}
+
+/* Reparto lineal de cuerpo rigido de una carga vertical W aplicada en (xc, zc)
+   entre las patas: P_i = a + b*dx_i + c*dz_i con equilibrio de fuerza y de
+   los dos momentos. Patas alineadas: se reparte solo en la direccion que existe. */
+function fmpRepartoRigido(patas, W, xc, zc) {
+  const n = patas.length;
+  const xm = patas.reduce((s, p) => s + p.x, 0) / n, zm = patas.reduce((s, p) => s + p.z, 0) / n;
+  let Sxx = 0, Szz = 0, Sxz = 0;
+  patas.forEach(p => { const dx = p.x - xm, dz = p.z - zm; Sxx += dx * dx; Szz += dz * dz; Sxz += dx * dz; });
+  const Mx = W * (xc - xm), Mz = W * (zc - zm);
+  let b = 0, c = 0;
+  const det = Sxx * Szz - Sxz * Sxz;
+  if (Math.abs(det) > 1e-9 * Math.max(1, Sxx * Szz)) { b = (Mx * Szz - Mz * Sxz) / det; c = (Mz * Sxx - Mx * Sxz) / det; }
+  else if (Sxx > 1e-9) b = Mx / Sxx;
+  else if (Szz > 1e-9) c = Mz / Szz;
+  return patas.map(p => W / n + b * (p.x - xm) + c * (p.z - zm));
+}
+
+/* Reacciones pegadas (parseRamPaste) -> P vertical por pata en kN, para una
+   combinacion. En el formato de 6 componentes de RAM la vertical es FY.
+   El nudo de la tabla se compara con el ID del .etz y con su numero correlativo;
+   se usa el que coincide con mas patas. */
+function fmpReaccionesPegadas(parsed, patas, combo, unidadFuerza) {
+  const f = (FUERZA_A_TON[unidadFuerza] || 1) * 9.80665;
+  const filas = parsed.rows.filter(r => parsed.format !== 'ram6' || !combo || r.combo === combo);
+  const val = r => parsed.format === 'ram6' ? r.FY : r.P;
+  const mapa = clave => { const m = {}; filas.forEach(r => { m[String(r.id).trim()] = val(r); }); return patas.map(p => m[String(p[clave])]); };
+  const porId = mapa('id'), porN = mapa('n');
+  const nId = porId.filter(v => v != null).length, nN = porN.filter(v => v != null).length;
+  const v = nId >= nN ? porId : porN;
+  return { P: v.map(x => x == null ? null : x * f), coinciden: Math.max(nId, nN), clave: nId >= nN ? 'ID' : 'N°' };
+}
+
+/* ---------------- 3) Agrupaciones y propuestas ---------------- */
+function fmpParticiones(n) {
+  const out = [], asign = new Array(n).fill(0);
+  const rec = (i, k) => {
+    if (i === n) { const g = []; for (let j = 0; j < n; j++) (g[asign[j]] = g[asign[j]] || []).push(j); out.push(g); return; }
+    for (let c = 0; c <= k; c++) { asign[i] = c; rec(i + 1, Math.max(k, c + 1)); }
+  };
+  rec(0, 0);
+  return out;
+}
+
+function fmpParticionesBasicas(patas) {
+  const n = patas.length, todas = [patas.map((_, i) => i)], cada = patas.map((_, i) => [i]);
+  const porLinea = (clave) => {
+    const g = {};
+    patas.forEach((p, i) => { const k = Math.round(p[clave] / FMP_PASO); (g[k] = g[k] || []).push(i); });
+    return Object.values(g);
+  };
+  const res = [todas, cada, porLinea('x'), porLinea('z')];
+  const vistos = new Set();
+  return res.filter(g => { const k = JSON.stringify(g.map(a => a.slice().sort((x, y) => x - y)).sort()); if (vistos.has(k) || g.length > n) return false; vistos.add(k); return true; });
+}
+
+const fmpRedondeo = v => +(Math.ceil(v / FMP_PASO - 1e-9) * FMP_PASO).toFixed(2);
+const fmpSeparacion = (a, b) => Math.max(a.x1 - b.x2, b.x1 - a.x2, a.z1 - b.z2, b.z1 - a.z2);
+
+/* Bloque minimo de un grupo: rectangulo de las patas + medio pedestal + vuelo,
+   centrado en las patas, con L y B en multiplos de 5 cm. */
+function fmpRectGrupo(patas, idx, op) {
+  const xs = idx.map(i => patas[i].x), zs = idx.map(i => patas[i].z);
+  const xc = (Math.min(...xs) + Math.max(...xs)) / 2, zc = (Math.min(...zs) + Math.max(...zs)) / 2;
+  const bx = Math.max(...idx.map(i => op.pedL(patas[i]))) / 2 + op.vuelo;
+  const bz = Math.max(...idx.map(i => op.pedB(patas[i]))) / 2 + op.vuelo;
+  const L = fmpRedondeo(Math.max(...xs) - Math.min(...xs) + 2 * bx);
+  const B = fmpRedondeo(Math.max(...zs) - Math.min(...zs) + 2 * bz);
+  return { xc, zc, L, B };
+}
+
+function fmpConCaja(r) { return { ...r, x1: r.xc - r.L / 2, x2: r.xc + r.L / 2, z1: r.zc - r.B / 2, z2: r.zc + r.B / 2 }; }
+
+function fmpConflicto(rects, k, op) {
+  const a = rects[k];
+  if (op.esp) {
+    const e = op.esp;
+    if (a.x1 < e.x1 - 1e-9 || a.x2 > e.x2 + 1e-9 || a.z1 < e.z1 - 1e-9 || a.z2 > e.z2 + 1e-9) return 'fuera del espacio disponible';
+  }
+  for (const o of op.obst) if (fmpSeparacion(a, o) < -1e-9) return 'se cruza con una zona prohibida';
+  for (let j = 0; j < rects.length; j++) {
+    if (j === k) continue;
+    if (fmpSeparacion(a, rects[j]) < op.sep - 1e-9) return 'queda a menos de la separación mínima de otro bloque';
+  }
+  return null;
+}
+
+/* Evalua un bloque con la planilla de bloque rigido. Masa sobre el bloque =
+   suma de cargas de sus patas / g; fuerzas de desbalance repartidas en la
+   misma proporcion; excentricidad = resultante de las patas respecto del
+   centro del bloque; altura del CG = H + hcg. */
+function fmpEvaluarBloque(rect, idx, patas, P, op, base) {
+  const Pg = idx.reduce((s, i) => s + P[i], 0);
+  const share = op.Ptot > 0 ? Pg / op.Ptot : 0;
+  const xr = Pg ? idx.reduce((s, i) => s + P[i] * patas[i].x, 0) / Pg : rect.xc;
+  const zr = Pg ? idx.reduce((s, i) => s + P[i] * patas[i].z, 0) / Pg : rect.zc;
+  const ex = xr - rect.xc, ez = zr - rect.zc;
+  const inp = Object.assign({}, base, {
+    Meq: Pg / FMP_G, Foz: base.Foz * share, Fox: base.Fox * share,
+    L: op.swap ? rect.B : rect.L, B: op.swap ? rect.L : rect.B,
+    exEq: op.swap ? ez : ex, eyEq: op.swap ? ex : ez, heq: base.H + op.hcg
+  });
+  const r = calcFundacionEquipoDinamico(inp);
+  const chk = ['okMasa', 'okExc', 'okPresion', 'okFreqVert', 'okFreqHoriz', 'okFreqRock', 'okFreqTors', 'okVelVert', 'okVelHoriz', 'okDeslizSis', 'okVolcSis'];
+  const fallas = chk.filter(c => !r[c]);
+  const rs = [r.rVert, r.rHoriz, r.rRock, r.rTors].filter(isFinite);
+  const peorR = rs.reduce((m, v) => Math.abs(v - 1) < Math.abs(m - 1) ? v : m, rs[0]);
+  return { inp, r, fallas, Pg, share, peorR, vMax: Math.max(r.vVert, r.vHoriz) };
+}
+
+function fmpPropuestas(patas, P, base, op) {
+  const n = patas.length;
+  const parts = n <= FMP_MAX_ENUM ? fmpParticiones(n) : fmpParticionesBasicas(patas);
+  op.Ptot = P.reduce((s, v) => s + v, 0);
+  const props = [];
+  for (const grupos of parts) {
+    let rects = grupos.map(g => fmpConCaja(fmpRectGrupo(patas, g, op)));
+    // Un bloque no puede tapar patas de otro grupo
+    const tapa = rects.some((rc, k) => patas.some((p, i) => !grupos[k].includes(i) && p.x > rc.x1 && p.x < rc.x2 && p.z > rc.z1 && p.z < rc.z2));
+    if (tapa) continue;
+    let motivo = null;
+    for (let k = 0; k < rects.length && !motivo; k++) motivo = fmpConflicto(rects, k, op);
+    if (motivo) continue;
+    // Crecimiento por pasos de 5 cm por lado hasta cumplir presion y relacion de masa
+    let ev = rects.map((rc, k) => fmpEvaluarBloque(rc, grupos[k], patas, P, op, base));
+    for (let it = 0; it < 80; it++) {
+      let cambio = false;
+      for (let k = 0; k < rects.length; k++) {
+        if (ev[k].r.okPresion && ev[k].r.okMasa) continue;
+        for (const dir of ['LB', 'L', 'B']) {
+          const dL = dir.includes('L') ? 2 * FMP_PASO : 0, dB = dir.includes('B') ? 2 * FMP_PASO : 0;
+          const prueba = rects.slice();
+          prueba[k] = fmpConCaja({ ...rects[k], L: +(rects[k].L + dL).toFixed(2), B: +(rects[k].B + dB).toFixed(2) });
+          if (!fmpConflicto(prueba, k, op)) { rects = prueba; ev[k] = fmpEvaluarBloque(rects[k], grupos[k], patas, P, op, base); cambio = true; break; }
+        }
+      }
+      if (!cambio) break;
+    }
+    const vol = rects.reduce((s, rc) => s + rc.L * rc.B * base.H, 0);
+    const nFallas = ev.reduce((s, e) => s + e.fallas.length, 0);
+    props.push({ grupos, rects, ev, vol, nFallas, cumple: nFallas === 0 });
+  }
+  props.sort((a, b) => (a.nFallas - b.nFallas) || (a.vol - b.vol) || (a.grupos.length - b.grupos.length));
+  return props;
+}
+
+/* Etiqueta corta de una agrupacion: "1-2-3 | 4-5-6" con los N° de pata. */
+function fmpTextoGrupos(grupos, patas) {
+  return grupos.map(g => g.map(i => patas[i].etq).join('-')).join(' | ');
+}
+
+const FMP_TXT_CHK = {
+  okMasa: 'relación de masa', okExc: 'excentricidad', okPresion: 'presión de contacto',
+  okFreqVert: 'resonancia vertical', okFreqHoriz: 'resonancia horizontal', okFreqRock: 'resonancia balanceo', okFreqTors: 'resonancia torsional',
+  okVelVert: 'velocidad vertical', okVelHoriz: 'velocidad horizontal', okDeslizSis: 'deslizamiento sísmico', okVolcSis: 'volcamiento sísmico'
+};
+
+/* ---------------- 4) Panel (dentro de renderFundacionEquipoDinamico) ----------------
+   fmpInitPanel(el, state, recalc): `state` y `recalc` son los de la planilla;
+   "Cargar en la planilla" escribe el bloque elegido en los campos fed_* y
+   recalcula, de modo que las secciones 5 a 12 y la impresion muestran ese bloque. */
+function fmpInitPanel(el, state, recalc) {
+  const st = { modelo: null, patas: [], peso: null, props: [], sel: 0, fuente: 'rigido', parsed: null };
+  const $ = id => el.querySelector('#' + id);
+  const num = (id, def) => { const v = parseFloat(String($(id).value).replace(',', '.')); return isNaN(v) ? def : v; };
+
+  el.innerHTML = `
+    <h3>0 · Equipo con varias patas — desde el modelo RAM Elements (opcional)</h3>
+    <div class="note">Cargue el .zip del modelo RAM Elements o el archivo .etz. La Mesa identifica los apoyos (patas), sus coordenadas y pedestales, y propone fundaciones: una para todas las patas, una por pata y las agrupaciones intermedias que caben en el espacio disponible. Cada bloque se verifica con esta misma planilla. Si no usa un modelo, ignore esta sección.</div>
+    <div class="field-grid" style="margin-top:.6rem">
+      <div class="field"><label>Modelo RAM Elements (.zip o .etz)</label><input type="file" id="fmp_file" accept=".zip,.etz"></div>
+    </div>
+    <div id="fmp_msg" class="note" style="margin-top:.4rem"></div>
+    <div id="fmp_cuerpo" hidden>
+      <div id="fmp_modelo" style="margin-top:.6rem"></div>
+      <div class="xlsx-section" style="margin-top:.8rem">Cargas por pata</div>
+      <div class="modo-toggle">
+        <button type="button" class="modo-btn active" data-fmp="rigido">Reparto rígido (sin tabla)</button>
+        <button type="button" class="modo-btn" data-fmp="tabla">Pegar tabla de reacciones de RAM</button>
+      </div>
+      <div id="fmp_rigido">
+        <div class="field-grid">
+          <div class="field"><label>X del CG del equipo en planta (m, ejes RAM)</label><input type="text" inputmode="decimal" id="fmp_xcg"></div>
+          <div class="field"><label>Z del CG del equipo en planta (m, ejes RAM)</label><input type="text" inputmode="decimal" id="fmp_zcg"></div>
+          <div class="field"><label>Incluir peso de la estructura del modelo</label><select id="fmp_inclEst"><option value="1">Sí</option><option value="0">No</option></select></div>
+        </div>
+        <div class="note">P por pata = reparto lineal de cuerpo rígido del peso del equipo (Meq de la sección 1) aplicado en su CG, más el peso de las barras del modelo (acero 7,85 t/m³; secciones macizas con γc) aplicado en su centro de gravedad. Es una simplificación: la distribución real depende de la rigidez de la estructura; para cargas exactas pegue la tabla de reacciones de RAM.</div>
+      </div>
+      <div id="fmp_tabla" hidden>
+        <textarea class="ram-box" id="fmp_ramText" placeholder="Node&#9;FX&#9;FY&#9;FZ&#9;MX&#9;MY&#9;MZ&#10;Condition DL=Dead Load&#10;98&#9;0&#9;1,50&#9;0&#9;0&#9;0&#9;0"></textarea>
+        <div class="field-grid" style="margin-top:.6rem">
+          <div class="field"><label>Unidad de fuerza de la tabla</label><select id="fmp_ramFuerza"><option value="Tonf">Tonf</option><option value="kgf">kgf</option><option value="kN">kN</option><option value="kip">kip</option></select></div>
+          <div class="field"><label>Estado o combinación de servicio (cargas permanentes)</label><select id="fmp_combo"></select></div>
+        </div>
+        <div class="note">Se usa la reacción vertical FY (en RAM el eje vertical es Y) del estado elegido. Debe representar el peso de servicio que vibra con el equipo (peso propio de estructura y equipo); la masa sobre cada bloque se toma como ΣP/g. El nudo de la tabla se busca por el ID del modelo o por su número correlativo.</div>
+      </div>
+      <div class="xlsx-section" style="margin-top:.8rem">Bloques y espacio disponible</div>
+      <div class="field-grid">
+        <div class="field"><label>Pedestal o placa en planta, lado en X (m)</label><input type="text" inputmode="decimal" id="fmp_pedX"></div>
+        <div class="field"><label>Pedestal o placa en planta, lado en Z (m)</label><input type="text" inputmode="decimal" id="fmp_pedZ"></div>
+        <div class="field"><label>Vuelo mínimo del bloque desde la cara del pedestal (m)</label><input type="text" inputmode="decimal" id="fmp_vuelo" value="0.30"></div>
+        <div class="field"><label>Separación libre mínima entre bloques (m)</label><input type="text" inputmode="decimal" id="fmp_sep" value="0.30"></div>
+        <div class="field"><label>hcg — altura del CG de la masa sobre la cara superior del bloque (m)</label><input type="text" inputmode="decimal" id="fmp_hcg"></div>
+        <div class="field"><label>Dirección L de la planilla (balanceo, Fox)</label><select id="fmp_swap"><option value="0">Eje X de RAM</option><option value="1">Eje Z de RAM</option></select></div>
+        <div class="field"><label>Espacio disponible, X mín / X máx (m)</label><input type="text" id="fmp_espX" placeholder="sin límite"></div>
+        <div class="field"><label>Espacio disponible, Z mín / Z máx (m)</label><input type="text" id="fmp_espZ" placeholder="sin límite"></div>
+      </div>
+      <div class="field" style="margin-top:.5rem"><label>Zonas prohibidas en planta (una por línea: X1 Z1 X2 Z2, en m)</label><textarea class="ram-box" id="fmp_obst" style="min-height:60px" placeholder="-1.0 1.0 1.0 2.4"></textarea></div>
+      <div class="note">El espesor H es el de la sección 3 y se aplica a todos los bloques. Cada bloque parte del rectángulo de sus patas más medio pedestal y el vuelo, en múltiplos de 5 cm, y crece de a 5 cm por lado hasta cumplir presión de contacto y relación de masa sin salir del espacio ni acercarse a otro bloque más que la separación mínima. Las fuerzas de desbalance Foz y Fox se reparten en proporción a la carga de cada bloque.</div>
+      <button type="button" class="btn-add" id="fmp_generar">Generar propuestas de fundación</button>
+      <div id="fmp_props" style="margin-top:.8rem"></div>
+      <div id="fmp_detalle" style="margin-top:.8rem"></div>
+    </div>`;
+
+  const msg = (t, mal) => { $('fmp_msg').innerHTML = t ? `<span style="color:${mal ? 'var(--bad)' : 'var(--ink-muted)'}">${t}</span>` : ''; };
+
+  $('fmp_file').addEventListener('change', async ev => {
+    const f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    msg('Leyendo ' + esc(f.name) + '…');
+    try {
+      const m = await fmpLeerArchivo(f);
+      const patas = fmpApoyos(m);
+      if (!patas.length) throw new Error('El modelo no tiene nudos con restricciones (apoyos).');
+      patas.forEach((p, i) => { p.etq = i + 1; p.usar = true; });
+      st.modelo = m; st.patas = patas; st.props = []; st.sel = 0;
+      st.peso = fmpPesoEstructura(m, state.gammac || 2.4);
+      const ped = patas.find(p => p.ped);
+      $('fmp_pedX').value = ped && patas.every(p => p.ped && p.ped.b === ped.ped.b) ? ped.ped.b : '';
+      $('fmp_pedZ').value = ped && patas.every(p => p.ped && p.ped.h === ped.ped.h) ? ped.ped.h : '';
+      const xm = patas.reduce((s, p) => s + p.x, 0) / patas.length, zm = patas.reduce((s, p) => s + p.z, 0) / patas.length;
+      $('fmp_xcg').value = +xm.toFixed(3); $('fmp_zcg').value = +zm.toFixed(3);
+      const ySup = Math.max(...patas.map(p => p.y));
+      $('fmp_hcg').value = st.peso.W ? +(st.peso.y - ySup).toFixed(2) : '';
+      msg('');
+      pintarModelo();
+      $('fmp_cuerpo').hidden = false;
+      $('fmp_props').innerHTML = ''; $('fmp_detalle').innerHTML = '';
+    } catch (e) {
+      st.modelo = null; $('fmp_cuerpo').hidden = true;
+      msg('No se pudo leer el modelo: ' + esc(e.message), true);
+    }
+  });
+
+  function pintarModelo() {
+    const m = st.modelo, pe = st.peso;
+    const filas = st.patas.map((p, i) => `<tr>
+      <td><input type="checkbox" data-pata="${i}"${p.usar ? ' checked' : ''}></td>
+      <td class="num">${p.etq}</td><td class="num">${esc(p.id)}</td>
+      <td class="num">${fmt3(p.x)}</td><td class="num">${fmt3(p.z)}</td><td class="num">${fmt3(p.y)}</td>
+      <td>${p.restr.every(v => v) ? 'Empotrado' : esc(p.restr.join(''))}</td>
+      <td>${p.ped ? `${esc(p.ped.secc)} (${fmt2(p.ped.b)}×${fmt2(p.ped.h)} m, alto ${fmt2(p.ped.alto)} m)` : '—'}</td>
+      <td class="num" data-p="${i}">—</td></tr>`).join('');
+    $('fmp_modelo').innerHTML = `
+      <table class="results">
+        <tr><td>Archivo</td><td>${esc(m.archivo)}</td></tr>
+        <tr><td>Unidades del modelo</td><td>${esc(m.unidades)}</td></tr>
+        <tr><td>Nudos / barras</td><td class="num">${m.nudos.length} / ${m.barras.length}</td></tr>
+        <tr><td>Estados de carga del modelo</td><td>${esc(m.estados.join(', ') || '—')}</td></tr>
+        <tr><td>Peso de las barras del modelo (acero 7,85 t/m³; macizas con γc)</td><td class="num">${fmt2(pe.W)} kN${pe.sinArea.length ? ` <span class="chip warn">sin área: ${esc(pe.sinArea.join(', '))}</span>` : ''}</td></tr>
+      </table>
+      <div class="xlsx-section" style="margin-top:.8rem">Apoyos identificados (patas)</div>
+      <table class="results">
+        <tr><th>Usar</th><th>N°</th><th>ID RAM</th><th>X (m)</th><th>Z (m)</th><th>Y (m)</th><th>Restricción</th><th>Pedestal en el modelo</th><th>P (kN)</th></tr>
+        ${filas}
+      </table>
+      <div class="note">En RAM Elements el eje vertical es Y; la planta es X-Z. El .etz guarda geometría, apoyos y estados de carga, pero no las reacciones: las cargas por pata salen del reparto rígido o de la tabla de reacciones pegada.</div>`;
+    $('fmp_modelo').querySelectorAll('input[data-pata]').forEach(c => c.addEventListener('change', () => { st.patas[+c.dataset.pata].usar = c.checked; actualizarP(); }));
+    actualizarP();
+  }
+
+  el.querySelectorAll('[data-fmp]').forEach(b => b.addEventListener('click', () => {
+    st.fuente = b.dataset.fmp;
+    el.querySelectorAll('[data-fmp]').forEach(x => x.classList.toggle('active', x === b));
+    $('fmp_rigido').hidden = st.fuente !== 'rigido'; $('fmp_tabla').hidden = st.fuente !== 'tabla';
+    actualizarP();
+  }));
+  $('fmp_ramText').addEventListener('input', () => {
+    st.parsed = parseRamPaste($('fmp_ramText').value);
+    const combos = st.parsed.comboLabels || [];
+    $('fmp_combo').innerHTML = combos.length ? combos.map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('') : '<option value="">(tabla sin combinaciones)</option>';
+    actualizarP();
+  });
+  ['fmp_combo', 'fmp_ramFuerza', 'fmp_xcg', 'fmp_zcg', 'fmp_inclEst'].forEach(id => $(id).addEventListener('input', actualizarP));
+  ['fmp_combo', 'fmp_ramFuerza', 'fmp_inclEst'].forEach(id => $(id).addEventListener('change', actualizarP));
+
+  /* Cargas por pata (kN) de las patas en uso; null + mensaje si faltan datos. */
+  function cargas() {
+    const usadas = st.patas.filter(p => p.usar);
+    if (st.fuente === 'tabla') {
+      if (!st.parsed || !st.parsed.rows.length) return { error: 'Pegue la tabla de reacciones de RAM.' };
+      const r = fmpReaccionesPegadas(st.parsed, usadas, $('fmp_combo').value, $('fmp_ramFuerza').value);
+      if (r.P.some(v => v == null)) return { error: `La tabla tiene reacciones para ${r.coinciden} de ${usadas.length} patas; revise que el estado elegido incluya todos los apoyos.` };
+      return { P: r.P, usadas, nota: `Reacciones de la tabla pegada (nudos por ${r.clave}).` };
+    }
+    recalc();
+    const W1 = (state.Meq || 0) * FMP_G;
+    const P1 = fmpRepartoRigido(usadas, W1, num('fmp_xcg', 0), num('fmp_zcg', 0));
+    const inc = $('fmp_inclEst').value === '1' && st.peso.W > 0;
+    const P2 = inc ? fmpRepartoRigido(usadas, st.peso.W, st.peso.x, st.peso.z) : usadas.map(() => 0);
+    return { P: P1.map((v, i) => v + P2[i]), usadas, nota: 'Reparto rígido (simplificación).' };
+  }
+
+  function actualizarP() {
+    if (!st.modelo) return;
+    const c = cargas();
+    st.patas.forEach((p, i) => {
+      const td = $('fmp_modelo').querySelector(`td[data-p="${i}"]`);
+      const k = c.usadas ? c.usadas.indexOf(p) : -1;
+      if (td) td.textContent = (c.P && k >= 0) ? fmt2(c.P[k]) : '—';
+    });
+    if (c.error) msg(c.error, true); else msg('');
+    if (c.P && c.P.some(v => v < 0)) msg('Hay patas con carga vertical negativa (levantamiento): revise la ubicación del CG o la tabla.', true);
+  }
+
+  const par = id => { const t = String($(id).value).trim(); if (!t) return null; const v = t.split(/[\s;/]+/).map(s => parseFloat(s.replace(',', '.'))); return (v.length >= 2 && v.every(isFinite)) ? [Math.min(v[0], v[1]), Math.max(v[0], v[1])] : NaN; };
+
+  $('fmp_generar').addEventListener('click', () => {
+    recalc();
+    const c = cargas();
+    if (c.error) { msg(c.error, true); return; }
+    if (c.usadas.length < 1) { msg('Marque al menos una pata.', true); return; }
+    const pedX = num('fmp_pedX', NaN), pedZ = num('fmp_pedZ', NaN);
+    if (!(pedX > 0 && pedZ > 0)) { msg('Indique el lado del pedestal o placa en X y en Z (el modelo no trae un pedestal único para todas las patas).', true); return; }
+    const ex = par('fmp_espX'), ez = par('fmp_espZ');
+    if (Number.isNaN(ex) || Number.isNaN(ez)) { msg('Espacio disponible: escriba dos valores, mínimo y máximo.', true); return; }
+    const obst = [];
+    for (const l of $('fmp_obst').value.split(/\r?\n/)) {
+      if (!l.trim()) continue;
+      const v = l.trim().split(/[\s;]+/).map(s => parseFloat(s.replace(',', '.')));
+      if (v.length < 4 || !v.slice(0, 4).every(isFinite)) { msg('Zona prohibida mal escrita: «' + esc(l) + '». Use X1 Z1 X2 Z2.', true); return; }
+      obst.push({ x1: Math.min(v[0], v[2]), x2: Math.max(v[0], v[2]), z1: Math.min(v[1], v[3]), z2: Math.max(v[1], v[3]) });
+    }
+    const hcg = num('fmp_hcg', NaN);
+    if (!isFinite(hcg)) { msg('Indique hcg, la altura del CG de la masa sobre el bloque.', true); return; }
+    const esp = (ex || ez) ? { x1: ex ? ex[0] : -Infinity, x2: ex ? ex[1] : Infinity, z1: ez ? ez[0] : -Infinity, z2: ez ? ez[1] : Infinity } : null;
+    const op = { vuelo: num('fmp_vuelo', 0), sep: num('fmp_sep', 0), hcg, swap: $('fmp_swap').value === '1', esp, obst, pedL: () => pedX, pedB: () => pedZ };
+    msg('');
+    st.op = op; st.usadas = c.usadas; st.P = c.P; st.nota = c.nota;
+    st.props = fmpPropuestas(c.usadas, c.P, Object.assign({}, state), op);
+    st.sel = 0;
+    pintarPropuestas();
+  });
+
+  function pintarPropuestas() {
+    if (!st.props.length) {
+      $('fmp_props').innerHTML = '<div class="note" style="color:var(--bad)">Ninguna agrupación cabe en el espacio disponible con la separación y el vuelo indicados.</div>';
+      $('fmp_detalle').innerHTML = ''; return;
+    }
+    const top = st.props.slice(0, 10);
+    $('fmp_props').innerHTML = `
+      <div class="xlsx-section">Propuestas (${st.props.length} agrupaciones factibles; se muestran las 10 mejores)</div>
+      <table class="results">
+        <tr><th>#</th><th>Agrupación de patas</th><th>Bloques</th><th>Dimensiones L×B (m)</th><th>Hormigón (m³)</th><th>Verificaciones</th><th></th></tr>
+        ${top.map((p, k) => `<tr${k === st.sel ? ' style="background:color-mix(in srgb, var(--accent) 8%, transparent)"' : ''}>
+          <td class="num">${k + 1}</td><td>${esc(fmpTextoGrupos(p.grupos, st.usadas))}</td><td class="num">${p.grupos.length}</td>
+          <td>${p.rects.map(r => fmt2(r.L) + '×' + fmt2(r.B)).join(' · ')}</td><td class="num">${fmt2(p.vol)}</td>
+          <td>${p.cumple ? chip(true) : `<span class="chip bad">${p.nFallas} NO CUMPLE</span>`}</td>
+          <td><button type="button" class="modo-btn" data-ver="${k}">Ver</button></td></tr>`).join('')}
+      </table>
+      <div class="note">Orden: primero las que cumplen todas las verificaciones de la planilla en todos sus bloques, luego menos verificaciones fallidas y menor volumen de hormigón. ${esc(st.nota)} Cada bloque se analiza como bloque rígido independiente con su parte de la masa y de las fuerzas del equipo; no se considera el acoplamiento entre bloques a través de la estructura.</div>`;
+    $('fmp_props').querySelectorAll('[data-ver]').forEach(b => b.addEventListener('click', () => { st.sel = +b.dataset.ver; pintarPropuestas(); }));
+    pintarDetalle();
+  }
+
+  function pintarDetalle() {
+    const p = st.props[st.sel];
+    const filas = p.ev.map((e, k) => {
+      const r = e.r;
+      return `<tr><td class="num">${k + 1}</td><td>${esc(p.grupos[k].map(i => st.usadas[i].etq).join('-'))}</td>
+        <td>${fmt2(e.inp.L)}×${fmt2(e.inp.B)}×${fmt2(e.inp.H)}</td><td class="num">${fmt1(e.Pg)}</td><td class="num">${fmt2(e.inp.Meq)}</td>
+        <td class="num">${fmt1(r.q)}</td><td class="num">${fmt2(r.MRmasa)}</td><td class="num">${fmt3(e.peorR)}</td><td class="num">${fmt2(e.vMax)}</td>
+        <td>${e.fallas.length ? `<span class="chip bad" title="${esc(e.fallas.map(f => FMP_TXT_CHK[f]).join(', '))}">${esc(e.fallas.map(f => FMP_TXT_CHK[f]).join(', '))}</span>` : chip(true)}</td>
+        <td><button type="button" class="modo-btn" data-cargar="${k}">Cargar en la planilla</button></td></tr>`;
+    }).join('');
+    $('fmp_detalle').innerHTML = `
+      <div class="xlsx-section">Propuesta ${st.sel + 1}: ${esc(fmpTextoGrupos(p.grupos, st.usadas))}</div>
+      ${fmpSvgPlanta(p, st.usadas, st.op)}
+      <table class="results" style="margin-top:.6rem">
+        <tr><th>Bloque</th><th>Patas</th><th>L×B×H (m)</th><th>ΣP (kN)</th><th>Masa sobre el bloque (ton)</th><th>q (kPa)</th><th>Mf/M</th><th>r más cercano a 1</th><th>v máx. (mm/s)</th><th>Estado</th><th></th></tr>
+        ${filas}
+      </table>
+      <div class="note">«Cargar en la planilla» copia ese bloque a las secciones 1 y 3 (masa, fuerzas repartidas, excentricidad, altura del CG, L y B) y las secciones 5 a 12 y la impresión pasan a mostrar ese bloque. La velocidad v es pico, igual que en la planilla.</div>`;
+    $('fmp_detalle').querySelectorAll('[data-cargar]').forEach(b => b.addEventListener('click', () => {
+      const e = p.ev[+b.dataset.cargar];
+      const set = (id, v) => { const x = document.getElementById(id); if (x) x.value = +(+v).toFixed(3); };
+      set('fed_Meq', e.inp.Meq); set('fed_Foz', e.inp.Foz); set('fed_Fox', e.inp.Fox);
+      set('fed_exEq', e.inp.exEq); set('fed_eyEq', e.inp.eyEq); set('fed_heq', e.inp.heq);
+      set('fed_L', e.inp.L); set('fed_B', e.inp.B);
+      const d = document.getElementById('fed_descEquipo');
+      const base = String(d.value).replace(/ — bloque \d+ \(patas [^)]*\)$/, '');
+      d.value = `${base} — bloque ${+b.dataset.cargar + 1} (patas ${p.grupos[+b.dataset.cargar].map(i => st.usadas[i].etq).join('-')})`;
+      recalc();
+      const dest = document.getElementById('fed_geometria');
+      if (dest && dest.scrollIntoView) dest.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
+  }
+}
+
+/* Planta de una propuesta: espacio disponible, zonas prohibidas, bloques y patas (ejes RAM X-Z). */
+function fmpSvgPlanta(p, patas, op) {
+  const xs = [], zs = [];
+  p.rects.forEach(r => { xs.push(r.x1, r.x2); zs.push(r.z1, r.z2); });
+  op.obst.forEach(o => { xs.push(o.x1, o.x2); zs.push(o.z1, o.z2); });
+  if (op.esp) { [op.esp.x1, op.esp.x2].forEach(v => isFinite(v) && xs.push(v)); [op.esp.z1, op.esp.z2].forEach(v => isFinite(v) && zs.push(v)); }
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
+  const W = 440, m = 30, s = Math.min((W - 2 * m) / Math.max(x1 - x0, 0.1), 300 / Math.max(z1 - z0, 0.1));
+  const H = (z1 - z0) * s + 2 * m + 16;
+  const X = x => m + (x - x0) * s, Y = z => m + (z1 - z) * s;
+  const rect = (r, extra) => `<rect x="${X(r.x1)}" y="${Y(r.z2)}" width="${(r.x2 - r.x1) * s}" height="${(r.z2 - r.z1) * s}" ${extra}/>`;
+  let out = '';
+  if (op.esp) {
+    const e = { x1: isFinite(op.esp.x1) ? op.esp.x1 : x0 - 0.5, x2: isFinite(op.esp.x2) ? op.esp.x2 : x1 + 0.5, z1: isFinite(op.esp.z1) ? op.esp.z1 : z0 - 0.5, z2: isFinite(op.esp.z2) ? op.esp.z2 : z1 + 0.5 };
+    out += rect(e, 'fill="none" stroke="var(--ink-muted)" stroke-dasharray="6,4" stroke-width="1"');
+  }
+  op.obst.forEach(o => { out += rect(o, 'fill="var(--bad)" fill-opacity="0.12" stroke="var(--bad)" stroke-width="1"'); });
+  p.rects.forEach((r, k) => {
+    const ok = !p.ev[k].fallas.length;
+    out += rect(r, `fill="var(--surface-alt)" fill-opacity="0.5" stroke="${ok ? 'var(--good)' : 'var(--ink)'}" stroke-width="2"`);
+    out += `<text x="${X(r.xc)}" y="${Y(r.z2) - 5}" font-size="10" fill="var(--ink)" font-family="IBM Plex Mono, monospace" text-anchor="middle">B${k + 1} ${fmt2(r.L)}×${fmt2(r.B)}</text>`;
+  });
+  patas.forEach(pt => {
+    out += `<circle cx="${X(pt.x)}" cy="${Y(pt.z)}" r="5" fill="var(--accent-warm)"/>`;
+    out += `<text x="${X(pt.x) + 7}" y="${Y(pt.z) + 12}" font-size="9.5" fill="var(--accent-warm)" font-family="IBM Plex Mono, monospace">${pt.etq}</text>`;
+  });
+  out += `<text x="${m}" y="${H - 6}" font-size="9" fill="var(--ink-muted)" font-family="IBM Plex Mono, monospace">Planta, ejes RAM: X → derecha, Z ↑ arriba</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="display:block; width:100%; max-width:${W}px; height:auto; margin:0 auto;" role="img" aria-label="Planta de la propuesta de fundaciones con patas y bloques">${out}</svg>`;
+}
+
 function renderFundacionEquipoDinamico(container) {
   const state = {
     // Datos!C12..C23
@@ -38419,6 +39119,8 @@ function renderFundacionEquipoDinamico(container) {
       <h1>Fundación de Equipo Dinámico</h1>
       <div class="sub">Bloque de fundación superficial para equipo con vibraciones (harnero, descortezador, motor, ventilador u otro equipo rotativo o alternativo): rigideces y frecuencias naturales del sistema suelo-fundación por el método del semi-espacio elástico de Richart, Hall &amp; Woods (ACI 351.3R Cap. 5), verificaciones estáticas (presión de contacto, excentricidad, deslizamiento, volcamiento) y una verificación sísmica preliminar simplificada.</div>
     </div>
+
+    <div class="panel" id="fmp_panel"></div>
 
     <div class="panel">
       <h3>1 · Equipo dinámico</h3>
@@ -38657,6 +39359,7 @@ function renderFundacionEquipoDinamico(container) {
   }
 
   container.querySelectorAll('input,select').forEach(el => el.addEventListener('input', recalc));
+  fmpInitPanel(container.querySelector('#fmp_panel'), state, recalc);
   recalc();
 }
 
