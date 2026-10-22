@@ -38657,20 +38657,66 @@ function fmpApoyos(modelo) {
   return apoyos;
 }
 
-/* Peso de barras (kN) y su centro: acero 7,85 t/m3 (salvo solidos, con gammac). */
+/* Area de una seccion (m2) y de donde sale, en este orden:
+   1) area ingresada por el usuario en la tabla de secciones del panel;
+   2) archivo .sec del zip (columna area, o b*h en solidos);
+   3) catalogos ya verificados de la Mesa: CATALOG_PERFILES_H (IPB, IPE, HEA,
+      HN, IN, UPN...), CATALOG_COSTANERAS (C, CA, Z), CATALOG_MASIVIDAD
+      (HEA/HEB/HEM/IPE/IPN/UPN) y TUBEST_CATALOGO, por nombre normalizado;
+   4) perfil "OC h x b x e": area geometrica de cajon rectangular de esquinas
+      rectas, 2e(h+b) - 4e^2. Supone que OC es un cajon/tubo rectangular; se
+      informa como tal para que el usuario lo confirme o lo corrija.
+   Sin ninguna de estas fuentes, la seccion queda "sin area". */
+const fmpNormSecc = n => String(n || '').toUpperCase().replace(/[\s*]/g, '').replace(/,/g, '.');
+let FMP_CAT_AREAS = null;
+function fmpAreaCatalogo(nombre) {
+  if (!FMP_CAT_AREAS) {
+    FMP_CAT_AREAS = {};
+    const add = (n, Acm2) => { if (n && Acm2 > 0 && !FMP_CAT_AREAS[fmpNormSecc(n)]) FMP_CAT_AREAS[fmpNormSecc(n)] = Acm2 * 1e-4; };
+    if (typeof CATALOG_PERFILES_H !== 'undefined') CATALOG_PERFILES_H.forEach(p => add(p.perfil, p.A));
+    if (typeof CATALOG_COSTANERAS !== 'undefined') CATALOG_COSTANERAS.forEach(p => add(p.perfil, p.A));
+    if (typeof CATALOG_MASIVIDAD !== 'undefined') CATALOG_MASIVIDAD.forEach(p => add(p.desig, p.A));
+    if (typeof TUBEST_CATALOGO !== 'undefined') TUBEST_CATALOGO.forEach(p => add(p.cod, p.A));
+  }
+  const k = fmpNormSecc(nombre);
+  return FMP_CAT_AREAS[k] || FMP_CAT_AREAS[k.replace(/^IPB/, 'HEB')] || FMP_CAT_AREAS[k.replace(/^HEB/, 'IPB')] || null;
+}
+function fmpAreaSeccion(nombre, modelo) {
+  const man = modelo.areasManual && modelo.areasManual[fmpNormSecc(nombre)];
+  if (man > 0) return { area: man, solido: false, fuente: 'ingresada' };
+  const s = modelo.secciones[String(nombre || '').toUpperCase()];
+  if (s && s.area) return { area: s.area, solido: s.solido, fuente: 'archivo .sec' };
+  const c = fmpAreaCatalogo(nombre);
+  if (c) return { area: c, solido: false, fuente: 'catálogo de la Mesa' };
+  const m = fmpNormSecc(nombre).match(/^OC(\d+(?:\.\d+)?)X(\d+(?:\.\d+)?)X(\d+(?:\.\d+)?)$/);
+  if (m) {
+    const h = +m[1], b = +m[2], e = +m[3];
+    if (e > 0 && 2 * e < Math.min(h, b)) return { area: (2 * e * (h + b) - 4 * e * e) * 1e-6, solido: false, fuente: 'cajón h×b×e (supuesto)' };
+  }
+  return { area: null, solido: false, fuente: 'sin área' };
+}
+
+/* Peso de barras (kN) y su centro: acero 7,85 t/m3 (salvo solidos, con gammac).
+   tabla: una fila por seccion con su area, fuente y largo total. */
 function fmpPesoEstructura(modelo, gammac) {
   const porN = {}; modelo.nudos.forEach(n => { porN[n.n] = n; });
-  let W = 0, Wx = 0, Wy = 0, Wz = 0, sinArea = new Set();
+  let W = 0, Wx = 0, Wy = 0, Wz = 0;
+  const tabla = {};
   for (const b of modelo.barras) {
-    const s = modelo.secciones[(b.secc || '').toUpperCase()];
     const i = porN[b.n1], j = porN[b.n2];
     if (!i || !j) continue;
-    if (!s || !s.area) { sinArea.add(b.secc); continue; }
     const L = Math.hypot(j.x - i.x, j.y - i.y, j.z - i.z);
+    const s = fmpAreaSeccion(b.secc, modelo);
+    const t = tabla[b.secc] || (tabla[b.secc] = { secc: b.secc, area: s.area, fuente: s.fuente, solido: s.solido, L: 0, W: 0 });
+    t.L += L;
+    if (!s.area) continue;
     const w = s.area * L * (s.solido ? gammac : 7.85) * FMP_G;
+    t.W += w;
     W += w; Wx += w * (i.x + j.x) / 2; Wy += w * (i.y + j.y) / 2; Wz += w * (i.z + j.z) / 2;
   }
-  return { W, x: W ? Wx / W : 0, y: W ? Wy / W : 0, z: W ? Wz / W : 0, sinArea: [...sinArea] };
+  const filas = Object.values(tabla);
+  return { W, x: W ? Wx / W : 0, y: W ? Wy / W : 0, z: W ? Wz / W : 0, tabla: filas,
+           sinArea: filas.filter(t => !t.area).map(t => t.secc) };
 }
 
 /* Reparto lineal de cuerpo rigido de una carga vertical W aplicada en (xc, zc)
@@ -38931,8 +38977,17 @@ function fmpInitPanel(el, state, recalc) {
         <tr><td>Unidades del modelo</td><td>${esc(m.unidades)}</td></tr>
         <tr><td>Nudos / barras</td><td class="num">${m.nudos.length} / ${m.barras.length}</td></tr>
         <tr><td>Estados de carga del modelo</td><td>${esc(m.estados.join(', ') || '—')}</td></tr>
-        <tr><td>Peso de las barras del modelo (acero 7,85 t/m³; macizas con γc)</td><td class="num">${fmt2(pe.W)} kN${pe.sinArea.length ? ` <span class="chip warn">sin área: ${esc(pe.sinArea.join(', '))}</span>` : ''}</td></tr>
+        <tr><td>Peso de las barras del modelo (acero 7,85 t/m³; macizas con γc)</td><td class="num" id="fmp_pesoTxt">${fmt2(pe.W)} kN${pe.sinArea.length ? ` <span class="chip warn">incompleto: ${pe.sinArea.length} sección(es) sin área</span>` : ''}</td></tr>
       </table>
+      <div class="xlsx-section" style="margin-top:.8rem">Secciones de las barras</div>
+      <table class="results editable">
+        <tr><th>Sección</th><th>Largo total (m)</th><th>Área (cm²)</th><th>Origen del área</th><th>Peso (kN)</th></tr>
+        ${pe.tabla.map((t, k) => `<tr><td>${esc(t.secc)}</td><td class="num">${fmt2(t.L)}</td>
+          <td><input type="text" inputmode="decimal" data-secc="${k}" value="${t.area ? +(t.area * 1e4).toFixed(2) : ''}" placeholder="ingresar"></td>
+          <td>${t.area ? (t.fuente === 'cajón h×b×e (supuesto)' ? `<span class="chip warn">${esc(t.fuente)}</span>` : esc(t.fuente)) : '<span class="chip bad">sin área</span>'}</td>
+          <td class="num">${t.area ? fmt2(t.W) : '—'}</td></tr>`).join('')}
+      </table>
+      <div class="note">Área por sección: archivo .sec del zip, catálogos de perfiles de la Mesa o, para «OC h×b×e», área geométrica de cajón rectangular de esquinas rectas 2e(h+b)−4e², que supone que OC es un cajón o tubo rectangular. Puede escribir el área real de cualquier sección y el peso se recalcula.</div>
       <div class="xlsx-section" style="margin-top:.8rem">Apoyos identificados (patas)</div>
       <table class="results">
         <tr><th>Usar</th><th>N°</th><th>ID RAM</th><th>X (m)</th><th>Z (m)</th><th>Y (m)</th><th>Restricción</th><th>Pedestal en el modelo</th><th>P (kN)</th></tr>
@@ -38940,6 +38995,14 @@ function fmpInitPanel(el, state, recalc) {
       </table>
       <div class="note">En RAM Elements el eje vertical es Y; la planta es X-Z. El .etz guarda geometría, apoyos y estados de carga, pero no las reacciones: las cargas por pata salen del reparto rígido o de la tabla de reacciones pegada.</div>`;
     $('fmp_modelo').querySelectorAll('input[data-pata]').forEach(c => c.addEventListener('change', () => { st.patas[+c.dataset.pata].usar = c.checked; actualizarP(); }));
+    $('fmp_modelo').querySelectorAll('input[data-secc]').forEach(c => c.addEventListener('change', () => {
+      const t = st.peso.tabla[+c.dataset.secc];
+      const v = parseFloat(String(c.value).replace(',', '.'));
+      st.modelo.areasManual = st.modelo.areasManual || {};
+      if (v > 0) st.modelo.areasManual[fmpNormSecc(t.secc)] = v * 1e-4; else delete st.modelo.areasManual[fmpNormSecc(t.secc)];
+      st.peso = fmpPesoEstructura(st.modelo, state.gammac || 2.4);
+      pintarModelo();
+    }));
     actualizarP();
   }
 
