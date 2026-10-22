@@ -38425,7 +38425,7 @@ function svgFundacionEquipoDinamico(state, r) {
                tipo 0x08 = grupo (termina con 'X' = 0x58); hojas:
                0x01 entero 1 byte, 0x04 entero 2 bytes, 0x03 double 8 bytes,
                0x02 texto (tamano 1 byte; dato = [largo][texto]),
-               0x06/0x14 arreglo de enteros, 0x0a arreglo de doubles,
+               0x06/0x07/0x14 arreglo de enteros, 0x0a arreglo de doubles,
                0x0f arreglo de textos (tamano: 01 n | 04 nn big-endian).
      arreglos: [cod][n uint32] y luego
                01 denso | 02 diccionario (nd, ancho, (repeticiones-1, valor)*)
@@ -38437,6 +38437,10 @@ function svgFundacionEquipoDinamico(state, r) {
 const FMP_G = 9.81;            // mismo valor que calcFundacionEquipoDinamico
 const FMP_PASO = 0.05;         // modulo de dimensiones del bloque (m)
 const FMP_MAX_ENUM = 8;        // hasta 8 patas se enumeran todas las agrupaciones
+// Arreglos de enteros: 0x06 y 0x14 vistos en Mesas PLana_0; 0x07 en un modelo
+// mayor (IDs de barras). El ancho de cada valor se deduce del tamano del arreglo;
+// los controles de largo de cabecera y de datos detectan una lectura desfasada.
+const FMP_TIPOS_ENTEROS = [0x05, 0x06, 0x07, 0x14, 0x15, 0x16];
 
 /* ---------------- 1) Lector .zip / .etz ---------------- */
 async function fmpUnzip(buf) {
@@ -38495,7 +38499,7 @@ function fmpEtzEsquema(d) {
       else if (t === 0x04) size = 2;
       else if (t === 0x03) size = 8;
       else if (t === 0x02) size = d[p++];
-      else if (t === 0x06 || t === 0x0a || t === 0x0f || t === 0x14) size = tam();
+      else if (t === 0x0a || t === 0x0f || FMP_TIPOS_ENTEROS.includes(t)) size = tam();
       else err('tipo 0x' + t.toString(16) + ' en ' + ruta.concat(nombre).join('/'));
       hojas.push({ ruta: ruta.concat(nombre).join('/'), tipo: t, size });
     }
