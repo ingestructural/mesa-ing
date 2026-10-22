@@ -2064,25 +2064,25 @@ const TOOLS = [
   { id:'sismo', cat:'Cargas', name:'Fuerzas Sísmicas NCh433.Of1996 Mod.2009 + DS61 — Método Estático', file:'Fuerzas_Sismicas_Metodo_Estatico_NCh433.xlsx',
     desc:'Coeficiente sísmico C, corte basal Qo y su distribución en altura, para estructuras de hasta 5 niveles.',
     tag:'NCh433 + DS61', calc:'sismo' },
-  { id:'combustible', cat:'Normativa', name:'Estudio de Carga Combustible', file:'Estudio_Carga_Combustible_OGUC_1.xlsx',
+  { id:'combustible', cat:'Estudios contra el fuego', name:'Estudio de Carga Combustible', file:'Estudio_Carga_Combustible_OGUC_1.xlsx',
     desc:'Determinación del tipo de resistencia al fuego exigido, hasta 4 sectores independientes.',
     tag:'OGUC', calc:'combustible' },
-  { id:'proteccion-fuego', cat:'Normativa', name:'Soluciones de Protección al Fuego (MINVU)', file:null,
+  { id:'proteccion-fuego', cat:'Estudios contra el fuego', name:'Soluciones de Protección al Fuego (MINVU)', file:null,
     desc:'Consulta de soluciones tabuladas (sin ensayo de laboratorio) de resistencia al fuego para muros y pilares, según elemento, material y F-xx requerido — a partir del Listado Oficial de Comportamiento al Fuego MINVU-DITEC.',
     tag:'MINVU-DITEC ED17-2025', calc:'proteccionFuego' },
-  { id:'fuego-losas', cat:'Normativa', name:'Resistencia al Fuego de Losas — Macizas, Nervadas y Colaborantes', file:null,
+  { id:'fuego-losas', cat:'Estudios contra el fuego', name:'Resistencia al Fuego de Losas — Macizas, Nervadas y Colaborantes', file:null,
     desc:'Verificación de la exigencia F-30 a F-240 (OGUC 4.3.3) para losas macizas y nervadas de H.A. por el método tabulado (espesor, ancho de nervio y distancia al eje de la armadura) y para losas con placa colaborante (Instadeck u otra) por EN 1994-1-2 Anexo D: espesor efectivo, temperaturas de placa y barras, momentos resistentes en incendio, barra mínima por nervio e informe con tabla comparativa de soluciones.',
     tag:'EN 1992-1-2 §5.7 · EN 1994-1-2 Anexo D · OGUC 4.3.3', calc:'fuegoLosas' },
-  { id:'sobreancho-madera-fuego', cat:'Normativa', name:'Sobreancho por Carbonización en Madera', file:null,
+  { id:'sobreancho-madera-fuego', cat:'Estudios contra el fuego', name:'Sobreancho por Carbonización en Madera', file:null,
     desc:'Sobreancho de sección (mm por cara) que debe agregarse a un elemento de madera aserrada o laminada encolada para compensar la carbonización bajo exposición al fuego, según tipo de madera, número de caras expuestas y resistencia al fuego F-xx requerida — método de la sección de madera reducida del Eurocódigo 5.',
     tag:'EN 1995-1-2', calc:'sobreanchoMadera' },
   { id:'puente-grua', cat:'Cargas', name:'Cargas de Puente Grúa', file:'PuenteGrua_Cargas_Estaticas_Sismicas_3_version_1.xlsx',
     desc:'Cargas de rueda, impacto, empuje lateral, tracción longitudinal y sismo horizontal para grúa viajera birrail.',
     tag:'AISC DG7 · ASCE7 · CMAA-74', calc:'puenteGrua' },
-  { id:'asimilacion-fuego', cat:'Normativa', name:'Asimilación Viga–Pilar y Pérdida de Fy en Incendio', file:'—',
+  { id:'asimilacion-fuego', cat:'Estudios contra el fuego', name:'Asimilación Viga–Pilar y Pérdida de Fy en Incendio', file:'—',
     desc:'Hasta 20 perfiles (IPE, HEA/HEB=IPB/HEM, UPN, H soldados, L, U, SHS/RHS/CHS, cañerías Sch 40, cajón, Tubest, C/CA o manual): masividad a 3 y 4 caras, asimilación de vigas a tablas de quema de pilares (NCh 3684) con espesores de pintura intumescente IDIEM (Stofire y Cerefire X200), y temperatura del acero sin protección con pérdida de fluencia ky,θ (EN 1993-1-2) en F-15 a F-120.',
     tag:'NCh3684 · NCh935/1 · EN 1993-1-2', calc:'asimilacionFuego' },
-  { id:'estudio-fuego', cat:'Normativa', name:'Estudio de Resistencia al Fuego — Estructura de Acero', file:null,
+  { id:'estudio-fuego', cat:'Estudios contra el fuego', name:'Estudio de Resistencia al Fuego — Estructura de Acero', file:null,
     desc:'Estudio encadenado para edificios de acero: densidad de carga combustible media y puntual (NCh 1916 / NCh 1993), tipo de edificio por las Tablas 1, 2 y 3 del Art. 4.3.4 OGUC, exigencia F por elemento según su función (Art. 4.3.3), masividad, temperatura del acero y temperatura crítica (EN 1993-1-2, clase 4 a 350 °C), espesor de pintura intumescente por tabla ensayada IDIEM y lista de chequeo para asimilación (Art. 4.3.2, NCh 3684/1-2:2022).',
     tag:'OGUC 4.3.2-4.3.4 · NCh3684 · EN 1993-1-2', calc:'estudioFuego' },
   { id:'sismo-nch2369', cat:'Cargas', name:'Fuerzas Sísmicas NCh2369.Of2003 (Industrial)', file:'Fuerzas_Sismicas_Metodo_Estatico_NCh2369_1.xlsx',
@@ -2096,11 +2096,11 @@ const TOOLS = [
     desc:'Reacciones de apoyo de una cuerda de vida horizontal (un vano, hasta 3 operarios simultáneos): estática de cable con cargas puntuales, verificación de anclajes y diseño de la placa "oreja" de sujeción (tracción neta, aplastamiento, desgarramiento).',
     tag:'OSHA 1926.502(d) · ANSI Z359 · AISC 360', calc:'cuerdaVida' },
 
-  { id:'biblioteca-normas', cat:'Normativa', name:'Biblioteca de Normas de Diseño', file:null,
+  { id:'biblioteca-normas', cat:'Documentos', name:'Biblioteca de Normas de Diseño', file:null,
     desc:'Acceso rápido a las normas y reglamentos más usados en estructuras, arquitectura, hidráulica y mecánica (NCh, OGUC, RIDAA, ACI, AISC, ASCE, AWWA, API, ASME, NFPA, Eurocódigos), con enlaces a la fuente oficial, búsqueda, favoritas y enlace a su propia copia de cada norma.',
     tag:'NCh · OGUC · ACI · AISC · AWWA · ASME', calc:'bibliotecaNormas' },
 ];
-const CATS = ['Documentos','Acero','Conexiones','Hormigón armado','Geotecnia y fundaciones','Madera','Cargas','Normativa','Protección contra caídas'];
+const CATS = ['Documentos','Acero','Conexiones','Hormigón armado','Geotecnia y fundaciones','Madera','Cargas','Estudios contra el fuego','Protección contra caídas'];
 
 /* =========================================================================
    CATÁLOGOS (extraídos de las planillas .xlsx subidas por el usuario)
