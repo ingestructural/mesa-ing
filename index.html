@@ -38939,7 +38939,7 @@ function fmpInitPanel(el, state, recalc) {
   /* Modo varias patas: con un modelo cargado se ocultan los datos y resultados
      que solo valen para la planilla de un bloque (L, B, excentricidad y altura
      del equipo, carga horizontal estatica y secciones 5 a 12). */
-  const modo = on => { raiz.classList.toggle('fmp-modo', !!on); };
+  const modo = on => { raiz.classList.toggle('fmp-modo', !!on); state.fmpPrint = on ? () => fmpHojaImprimible(st, state) : null; };
   const st = { modelo: null, total: null, estructuras: [], est: 0, patas: [], peso: null, bloques: [], res: null, fuente: 'rigido', parsed: null };
   const $ = id => el.querySelector('#' + id);
   const num = (id, def) => { const v = parseFloat(String($(id).value).replace(',', '.')); return isNaN(v) ? def : v; };
@@ -39227,7 +39227,7 @@ function fmpInitPanel(el, state, recalc) {
     const op = { hcg, swap: $('fmp_swap').value === '1', Ptot: c.P.reduce((s, v) => s + v, 0) };
     const base = Object.assign({}, state);
     const ev = rects.map((r, k) => fmpEvaluarBloque(r, grupos[k], c.usadas, c.P, op, base));
-    st.usadas = c.usadas; st.nota = c.nota;
+    st.usadas = c.usadas; st.nota = c.nota; st.P = c.P;
     st.res = { grupos, rects, ev, avisos, traslapes, vol: rects.reduce((s, r) => s + r.L * r.B * base.H, 0) };
     st.res.prop = ev.map((e, k) => e.fallas.length ? fmpRedisenoBloque(k, st.res, c.usadas, c.P, op, base) : null);
     msg(g.txt.join('<br>'), g.txt.length > 0);
@@ -39238,6 +39238,7 @@ function fmpInitPanel(el, state, recalc) {
       st.auto = null;
       if (pr && !(pr.choca && pr.choca.length)) aplicarProp([k]);
     }
+    fmpHojaImprimible(st, state);
   }
 
   function pintarDetalle() {
@@ -39352,6 +39353,119 @@ function fmpInitPanel(el, state, recalc) {
     st.auto = js[0];
     calcular();
   }
+}
+
+/* Hoja imprimible (Imprimir completo / Resumen / PDF / Memoria) del modo
+   varias patas: datos comunes, modelo, patas, bloques y verificaciones de
+   cada bloque. Solo contenido tecnico: sin notas de uso del programa. */
+function fmpHojaImprimible(st, state) {
+  if (typeof xlsxSetPrintSheets !== 'function' || !st.modelo) return;
+  const row = (l, v, cls) => `<tr><td class="xv-label">${l}</td><td class="${cls || 'xv-input'}" colspan="3">${v}</td></tr>`;
+  const m = st.modelo, T = st.total || m, pe = st.peso;
+  const meta = typeof PROYECTO_META !== 'undefined' && PROYECTO_META ? PROYECTO_META : {};
+  const g = v => xlsxNum(v, 2), g3 = v => xlsxNum(v, 3);
+  const rango = a => a[0] === a[1] ? g(a[0]) : `${g(a[0])} a ${g(a[1])}`;
+  const usadas = st.patas.filter(p => p.usar);
+  const res = st.res;
+  let datos = `
+    <div class="xlsx-title-bar">DATOS GENERALES</div>
+    <div class="xlsx-section">A. Identificación del proyecto</div>
+    <table class="xlsx-table"><tbody>
+      ${row('Proyecto', esc(meta.proyecto || '____________________'))}
+      ${row('Equipo / Tag', esc(meta.calculo || '____________________'))}
+      ${row('Descripción del equipo', esc(state.descEquipo || '—'))}
+    </tbody></table>
+    <div class="xlsx-section">B. Estructura del equipo (modelo RAM Elements)</div>
+    <table class="xlsx-table"><tbody>
+      ${row('Archivo del modelo', esc(m.archivo || '—'))}
+      ${row('Unidades del modelo', esc(m.unidades || '—'))}
+      ${row('Estructura analizada', `X ${rango(m.ext ? m.ext.x : [0, 0])} m; Z ${rango(m.ext ? m.ext.z : [0, 0])} m; Y ${rango(m.ext ? m.ext.y : [0, 0])} m`)}
+      ${row('Nudos / barras de la estructura', `${m.nudos.length} / ${m.barras.length}${T !== m ? ` (modelo completo: ${T.nudos.length} / ${T.barras.length})` : ''}`)}
+      ${row('Peso de las barras (acero 7,85 t/m³) [kN]', g(pe.W), 'xv-num')}
+      ${row('Cargas por pata', st.fuente === 'tabla' ? 'Reacciones verticales FY de RAM Elements' : 'Reparto lineal de cuerpo rígido del peso del equipo y de las barras')}
+    </tbody></table>
+    <div class="xlsx-section">C. Datos del equipo dinámico</div>
+    <table class="xlsx-table"><tbody>
+      ${row('Tipo de equipo', esc(state.tipoEquipo))}
+      ${row('Masa del equipo, Meq [ton]', g(state.Meq), 'xv-num')}
+      ${row('Velocidad de operación, N [rpm]', xlsxNum(state.N, 0), 'xv-num')}
+      ${row('Fuerza de desbalance vertical total, Foz (0-pico) [kN]', g(state.Foz), 'xv-num')}
+      ${row('Fuerza de desbalance horizontal total, Fox (0-pico) [kN]', g(state.Fox), 'xv-num')}
+      ${row('Altura del CG de la masa sobre el bloque, hcg [m]', res ? g(res.ev[0].inp.heq - res.ev[0].inp.H) : '—', 'xv-num')}
+    </tbody></table>
+    <div class="xlsx-section">D. Suelo y hormigón</div>
+    <table class="xlsx-table"><tbody>
+      ${row('Módulo de corte dinámico, G [MPa]', g(state.G), 'xv-num')}
+      ${row('Razón de Poisson, ν', g(state.nu), 'xv-num')}
+      ${row('Densidad del suelo, ρ [ton/m³]', g(state.rho), 'xv-num')}
+      ${row('Tensión admisible, qadm [kPa]', g(state.qadm), 'xv-num')}
+      ${row('Coeficiente de fricción, μ', g(state.mu), 'xv-num')}
+      ${row('Densidad del hormigón, γc [ton/m³]', g(state.gammac), 'xv-num')}
+      ${row('Espesor de los bloques, H [m]', g(state.H), 'xv-num')}
+    </tbody></table>
+    <div class="xlsx-section">E. Sismo y criterios de verificación</div>
+    <table class="xlsx-table"><tbody>
+      ${row('Coeficiente sísmico horizontal, Ah [g]', g(state.Ah), 'xv-num')}
+      ${row('Margen de separación de frecuencias [%]', xlsxNum(state.margen * 100, 0), 'xv-num')}
+      ${row('Velocidad de vibración admisible, pico [mm/s]', g(state.vadm), 'xv-num')}
+      ${row('FS mínimo al deslizamiento / volcamiento', `${g(state.FSdeslizMin)} / ${g(state.FSvolcMin)}`, 'xv-num')}
+      ${row('Excentricidad admisible [%]', xlsxNum(state.excAdm * 100, 1), 'xv-num')}
+    </tbody></table>
+    <div class="xlsx-section">F. Apoyos de la estructura (patas)</div>
+    <table class="xlsx-table"><tbody>
+      <tr><td class="xv-label"><b>Nudo RAM</b></td><td class="xv-num"><b>X [m]</b></td><td class="xv-num"><b>Z [m]</b></td><td class="xv-num"><b>Y [m]</b></td><td class="xv-num"><b>P [kN]</b></td></tr>
+      ${usadas.map((p, i) => `<tr><td class="xv-label">${esc(p.id)}</td><td class="xv-num">${g3(p.x)}</td><td class="xv-num">${g3(p.z)}</td><td class="xv-num">${g3(p.y)}</td><td class="xv-num">${st.P && st.P[i] != null ? g(st.P[i]) : '—'}</td></tr>`).join('')}
+    </tbody></table>`;
+  if (!res) { xlsxSetPrintSheets(datos, '', ''); return; }
+  datos += `
+    <div class="xlsx-section">G. Bloques de fundación</div>
+    <table class="xlsx-table"><tbody>
+      <tr><td class="xv-label"><b>Bloque / nudos</b></td><td class="xv-num"><b>L × B × H [m]</b></td><td class="xv-num"><b>e = (ex; ez) [m]</b></td><td class="xv-num"><b>Centro X; Z [m]</b></td><td class="xv-num"><b>Bordes X / Z [m]</b></td></tr>
+      ${res.rects.map((r, k) => `<tr><td class="xv-label">B${k + 1}: ${esc(res.grupos[k].map(i => st.usadas[i].id).join(', '))}</td><td class="xv-num">${g(r.L)} × ${g(r.B)} × ${g(res.ev[k].inp.H)}</td><td class="xv-num">${g3(r.ex)}; ${g3(r.ez)}</td><td class="xv-num">${g3(r.xc)}; ${g3(r.zc)}</td><td class="xv-num">${g3(r.x1)} a ${g3(r.x2)} / ${g3(r.z1)} a ${g3(r.z2)}</td></tr>`).join('')}
+    </tbody></table>`;
+  const m0 = res.ev[0].inp.margen || 0, b0 = res.ev[0].inp;
+  const fuera = `fuera de ${g(1 - m0)} – ${g(1 + m0)}`;
+  const fila = (lab, v, ok, exig) => `<tr><td class="xv-label">${lab}</td><td class="xv-num">${v}</td><td class="xv-dc">${exig || ''}</td><td class="xv-num">${ok === undefined ? '' : xlsxEstadoSpan(ok)}</td><td class="xv-dc"></td></tr>`;
+  const bloque = (e, k, resumen) => {
+    const r = e.r;
+    const filas = [
+      !resumen && fila('Carga de sus nudos, ΣP [kN]', g(e.Pg)),
+      !resumen && fila('Masa soportada, M = ΣP/g [ton]', g(e.inp.Meq)),
+      !resumen && fila('Fuerzas de desbalance asignadas, Foz / Fox [kN]', `${g(e.inp.Foz)} / ${g(e.inp.Fox)}`),
+      !resumen && fila('Masa del bloque, Mf = L·B·H·γc [ton]', g(r.Mf)),
+      fila('Relación de masa, Mf/M', g(r.MRmasa), r.okMasa, `≥ ${xlsxNum(r.MRmin, 0)}`),
+      fila('Presión de contacto, q [kPa]', xlsxNum(r.q, 1), r.okPresion, `≤ ${xlsxNum(b0.qadm, 1)}`),
+      fila('Excentricidad ex/L ; ey/B [%]', `${xlsxNum(r.exRel * 100, 1)} ; ${xlsxNum(r.eyRel * 100, 1)}`, r.okExc, `≤ ${xlsxNum(b0.excAdm * 100, 1)}`),
+      !resumen && fila('Frecuencia de operación, fop [Hz]', g(r.fop)),
+      fila('Vertical: fn [Hz] ; r = fop/fn', `${g(r.fnVert)} ; ${g3(r.rVert)}`, r.okFreqVert, `r ${fuera}`),
+      fila('Horizontal: fn [Hz] ; r', `${g(r.fnHoriz)} ; ${g3(r.rHoriz)}`, r.okFreqHoriz, `r ${fuera}`),
+      fila('Balanceo: fn [Hz] ; r', `${g(r.fnRock)} ; ${g3(r.rRock)}`, r.okFreqRock, `r ${fuera}`),
+      fila('Torsional: fn [Hz] ; r', `${g(r.fnTors)} ; ${g3(r.rTors)}`, r.okFreqTors, `r ${fuera}`),
+      !resumen && fila('Amplitud dinámica vertical / horizontal [mm]', `${g3(r.deltaDinVert)} / ${g3(r.deltaDinHoriz)}`),
+      fila('Velocidad pico vertical [mm/s]', g(r.vVert), r.okVelVert, `≤ ${g(b0.vadm)}`),
+      fila('Velocidad pico horizontal [mm/s]', g(r.vHoriz), r.okVelHoriz, `≤ ${g(b0.vadm)}`),
+      fila('FS deslizamiento sísmico', g(r.FSdeslizSis), r.okDeslizSis, `≥ ${g(b0.FSdeslizMin)}`),
+      fila('FS volcamiento sísmico', g(r.FSvolcSis), r.okVolcSis, `≥ ${g(b0.FSvolcMin)}`),
+      fila(`<b>Estado del bloque B${k + 1}</b>`, '', !e.fallas.length)
+    ].filter(Boolean).join('');
+    return `<div class="xlsx-section">${k + 2}. Bloque B${k + 1} — nudos ${esc(res.grupos[k].map(i => st.usadas[i].id).join(', '))} — ${g(e.inp.L)} × ${g(e.inp.B)} × ${g(e.inp.H)} m</div>
+      <table class="xlsx-table"><tbody>${filas}</tbody></table>`;
+  };
+  const Mf = res.ev.reduce((t, e) => t + e.r.Mf, 0), Meq = res.ev.reduce((t, e) => t + e.inp.Meq, 0), MRmin = res.ev[0].r.MRmin;
+  const n = res.ev.length;
+  const calc = resumen => `
+    <div class="xlsx-title-bar">CÁLCULO Y VERIFICACIONES POR BLOQUE</div>
+    <div class="xlsx-section">1. Método</div>
+    <div class="xlsx-desc-row">Cada bloque se analiza como bloque rígido sobre el semi-espacio elástico, método de Richart, Hall &amp; Woods (1970) adoptado por ACI 351.3R Cap. 5, con la masa de los nudos que recibe (M = ΣP/g) y las fuerzas de desbalance del equipo repartidas en proporción a su carga. No se considera el acoplamiento entre bloques a través de la estructura. Verificación sísmica preliminar simplificada (coeficiente sísmico), referencial a NCh433/DS61.</div>
+    ${res.ev.map((e, k) => bloque(e, k, resumen)).join('')}
+    <div class="xlsx-section">${n + 2}. Resumen</div>
+    <table class="xlsx-table"><tbody>
+      ${fila('Relación de masa global, ΣMf/ΣM', `${g(Mf)} / ${g(Meq)} = ${g(Meq > 0 ? Mf / Meq : NaN)}`, Meq > 0 && Mf / Meq >= MRmin, `≥ ${xlsxNum(MRmin, 0)}`)}
+      ${res.ev.map((e, k) => fila(`Bloque B${k + 1}`, e.fallas.length ? esc(e.fallas.map(f => FMP_TXT_CHK[f]).join(', ')) : '', !e.fallas.length)).join('')}
+      ${res.traslapes.length ? fila('Superposición de bloques', esc(res.traslapes.map(t => `B${t.a + 1} con B${t.b + 1}`).join('; ')), false) : ''}
+      ${fila(`<b>ESTADO GLOBAL (${n} bloque${n > 1 ? 's' : ''})</b>`, '', res.ev.every(e => !e.fallas.length) && !res.traslapes.length)}
+    </tbody></table>`;
+  xlsxSetPrintSheets(datos, calc(false), calc(true));
 }
 
 /* Planta de los bloques (ejes RAM X-Z) con cotas: largo en X bajo cada bloque,
@@ -39672,7 +39786,9 @@ function renderFundacionEquipoDinamico(container) {
       <div class="verdict-row"><span>Deslizamiento sísmico (preliminar)</span><span>${chip(r.okDeslizSis)}</span></div>
       <div class="global-verdict ${r.global ? 'ok' : 'bad'}"><span class="label">ESTATUS GLOBAL</span><span class="label">${r.global ? 'CUMPLE' : 'NO CUMPLE'}</span></div>`;
 
-    if (typeof buildPrintSheetsFundacionEquipoDinamico === 'function') buildPrintSheetsFundacionEquipoDinamico(state, r);
+    // Con el modelo RAM cargado (varias patas) la hoja imprimible es la de los bloques
+    if (typeof state.fmpPrint === 'function') state.fmpPrint();
+    else if (typeof buildPrintSheetsFundacionEquipoDinamico === 'function') buildPrintSheetsFundacionEquipoDinamico(state, r);
   }
 
   container.querySelectorAll('input,select').forEach(el => el.addEventListener('input', recalc));
