@@ -20896,9 +20896,10 @@ function cbDestinoOpts(sel) {
 function cbAlturasEsp(txt) {
   const t = String(txt == null ? '' : txt).trim();
   if (!t) return { vals: [], err: null };
-  const vals = t.split(';').map(x => cbNum(x));
-  if (vals.some(v => !isFinite(v) || v <= CB_PISO)) return { vals: [], err: 'cada altura de piso especial debe ser un número mayor que 3,5 m (separar con «;»)' };
-  return { vals, err: null };
+  const todas = t.split(';').map(x => cbNum(x));
+  if (todas.some(v => !isFinite(v) || v <= 0)) return { vals: [], n: 0, err: 'las alturas de piso deben ser números mayores que 0 (separar con «;»)' };
+  // Las alturas hasta 3,5 m son pisos normales; solo las mayores se suman aparte (4.3.5 n°1).
+  return { vals: todas.filter(v => v > CB_PISO), n: todas.length, err: null };
 }
 // N° de pisos para clasificar (OGUC 4.3.5 n°1).
 function cbPisos(s, media) {
@@ -20907,7 +20908,7 @@ function cbPisos(s, media) {
   if (!Number.isInteger(N) || N < 1) errs.push('el N° de pisos debe ser un entero ≥ 1');
   const esp = cbAlturasEsp(s.alturasEsp);
   if (esp.err) errs.push(esp.err);
-  if (!errs.length && esp.vals.length > N) errs.push('hay más alturas de piso especial que pisos');
+  if (!errs.length && esp.n > N) errs.push(`se indicaron ${esp.n} alturas de piso para ${N} piso(s)`);
   if (errs.length) return { valor: null, errs };
   const sumEsp = esp.vals.reduce((a, b) => a + b, 0);
   const q = Math.round(sumEsp / CB_PISO * 1e9) / 1e9;
@@ -21091,7 +21092,7 @@ function cbSectoresDatosTableHtml(state, r) {
     </tr>`;
   }).join('');
   return `<table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td>Sector</td><td>¿Activo?</td><td>Nombre</td><td>Uso</td><td>Destino (Art. 4.3.4)</td><td>N° pisos</td><td>Alturas pisos &gt; 3,5 m</td><td>Altillos</td><td>Sup. (m²)</td><td>Ocup.</td><td>Estudio carga comb.</td></tr>
+    <tr class="xlsx-hdr-de"><td>Sector</td><td>¿Activo?</td><td>Nombre</td><td>Uso</td><td>Destino (Art. 4.3.4)</td><td>N° pisos</td><td>Alturas de piso (m)</td><td>Altillos</td><td>Sup. (m²)</td><td>Ocup.</td><td>Estudio carga comb.</td></tr>
     ${rows}</tbody></table>
     <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">Sectores de distinto destino separados en planta: ${state.separados === 'No' ? 'No — rige el estándar más exigente para todos (Art. 4.3.5 n°4)' : 'Sí — cada sector se clasifica por separado (Art. 4.3.5 n°3)'}.</div>`;
 }
@@ -21213,7 +21214,7 @@ function renderCombustible(container) {
     </div>
     <div class="panel">
       <h3 class="lbl-left">A · SECTORES DEL PROYECTO (hasta 10)</h3>
-      <p class="note">Elija el destino según el Art. 4.3.4: los destinos de la Tabla 3 (industria, supermercados y centros comerciales, bodegaje, combustibles y lubricantes) se clasifican por densidad de carga combustible; sin estudio corresponden a tipo a. Los de las Tablas 1 y 2 se clasifican por superficie u ocupantes. N° de pisos: pisos físicos del edificio que contiene al sector (en uso mixto, la altura total del edificio, Art. 4.3.5 n°2). En «Alturas pisos &gt; 3,5 m» anote la altura de cada piso que exceda 3,5 m, separadas por «;» (ej.: un galpón de un piso de 8 m → N° pisos 1 y altura 8).</p>
+      <p class="note">Elija el destino según el Art. 4.3.4: los destinos de la Tabla 3 (industria, supermercados y centros comerciales, bodegaje, combustibles y lubricantes) se clasifican por densidad de carga combustible; sin estudio corresponden a tipo a. Los de las Tablas 1 y 2 se clasifican por superficie u ocupantes. N° de pisos: pisos físicos del edificio que contiene al sector (en uso mixto, la altura total del edificio, Art. 4.3.5 n°2). En «Alturas de piso» puede anotar la altura de cada piso, separadas por «;» (opcional): las de hasta 3,5 m cuentan como un piso y las mayores se suman aparte y se dividen por 3,5 m (ej.: un galpón de un piso de 8 m → N° pisos 1 y altura 8).</p>
       <div class="field-grid" style="margin-bottom:.9rem">
         <div class="field"><label>¿Los sectores de distinto destino están separados en planta? (Art. 4.3.5 n°3 y n°4)</label>
           <select id="cb_separados"><option value="Si">Sí — cada sector se clasifica por separado</option><option value="No">No — rige el tipo más exigente para todos</option></select></div>
@@ -21277,7 +21278,7 @@ function renderCombustible(container) {
     }).join('');
     const box = document.getElementById('cb_sectoresTable');
     box.innerHTML = `<table class="results editable">
-        <tr><th>Sector</th><th>Activo</th><th>Nombre</th><th>Uso</th><th>Destino (Art. 4.3.4)</th><th>N° pisos</th><th>Alturas pisos &gt; 3,5 m</th><th>Altillos</th><th>Sup. (m²)</th><th>Ocup.</th><th>Estudio</th><th></th></tr>
+        <tr><th>Sector</th><th>Activo</th><th>Nombre</th><th>Uso</th><th>Destino (Art. 4.3.4)</th><th>N° pisos</th><th>Alturas de piso (m)</th><th>Altillos</th><th>Sup. (m²)</th><th>Ocup.</th><th>Estudio</th><th></th></tr>
         ${rows}</table>`;
     const campo = { 'cb-s-activo':'activo', 'cb-s-nombre':'nombre', 'cb-s-uso':'uso', 'cb-s-destino':'destino', 'cb-s-pisos':'pisos', 'cb-s-altesp':'alturasEsp',
       'cb-s-altillos':'altillos', 'cb-s-superficie':'superficie', 'cb-s-ocupacion':'ocupacion', 'cb-s-requiere':'estudio' };
@@ -21375,6 +21376,7 @@ function renderCombustible(container) {
       if (!cell) return;
       if (s.activo !== 'Si') { cell.textContent = 'Sector inactivo'; return; }
       const p = s.puntual;
+      if (s.tabla && s.tabla !== 3 && p.calc == null) { cell.textContent = `No se usa (destino de la Tabla ${s.tabla})`; return; }
       cell.innerHTML = p.calc != null
         ? `${fmt1(p.calc)} MJ/m² <span class="tag">${ea(p.zonas.length ? p.zonas[0].zona : 'distribuido')}</span>`
         : `No determinada (${ea(p.motivo || '—')})`;
@@ -42254,7 +42256,7 @@ function cbMemoriaHtml(state, r, meta) {
   const errs = r.errGlobal.slice();
   act.forEach(s => s.errs.forEach(e => errs.push(`${s.nSector}: ${e}.`)));
   const tablaSect = `${MEM_T('Sectores analizados')}
-    <table class="inf-t"><tr><th>Sector</th><th>Nombre</th><th>Uso</th><th>Destino (Art. 4.3.4)</th><th>N° pisos</th><th>Alturas de pisos sobre 3,5 m</th><th>Pisos para clasificación</th><th>Superficie (m²)</th><th>Carga de ocupación (pers.)</th></tr>
+    <table class="inf-t"><tr><th>Sector</th><th>Nombre</th><th>Uso</th><th>Destino (Art. 4.3.4)</th><th>N° pisos</th><th>Alturas de piso (m)</th><th>Pisos para clasificación</th><th>Superficie (m²)</th><th>Carga de ocupación (pers.)</th></tr>
     ${act.map(s => `<tr><td>${s.nSector}</td><td class="l">${esc(s.nombre)}</td><td class="l">${esc(s.uso)}</td><td class="l">${esc(s.destino || '—')}</td><td>${esc(s.pisos)}</td><td>${esc(s.alturasEsp || '—')}</td><td>${s.pisosEfectivo != null ? s.pisosEfectivo : '—'}</td><td>${MEM_N(s.S,1)}</td><td>${esc(s.ocupacion)}</td></tr>`).join('')}</table>`;
   const tablaMat = act.map(s => !s.detalleMateriales.length ? '' : `${MEM_T('Inventario de materiales combustibles — ' + s.nSector + (s.nombre ? ' (' + esc(s.nombre) + ')' : ''))}
     <table class="inf-t"><tr><th>N°</th><th>Material</th><th>Cantidad (kg)</th><th>Calor de combustión (MJ/kg)</th><th>Base</th><th>Carga combustible (MJ)</th><th>Ubicación 2×2 m</th><th>Fuente del calor de combustión</th></tr>
