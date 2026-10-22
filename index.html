@@ -651,6 +651,7 @@
     <button id="printResumenBtn" class="print-btn alt" onclick="printResumen()" title="Imprimir solo un resumen de una hoja (inputs relevantes y resultados)">📄 Resumen</button>
     <button id="pdfBtn" class="print-btn" onclick="pdfMenu(this)" title="Descargar PDF (sirve en iPad y celular)">⬇ PDF</button>
     <button id="memBtn" class="print-btn alt" onclick="mvsCapturar()" title="Llevar este cálculo al Constructor de Memorias: memoria resumida + planilla Excel">📑 Memoria</button>
+    <button id="revBtn" class="print-btn alt" onclick="revMenu(this)" title="Exportar para revisión externa: Excel, PDF y código fuente de esta planilla">🔎 Revisión</button>
   </div>
   <div class="fs-overlay" id="fsOverlay"></div>
   <div class="fs-panel" id="fsPanel">
@@ -938,7 +939,7 @@
       el.replaceWith(sp);
     });
   }
-  async function exportarPDF(resumen){
+  async function exportarPDF(resumen, soloBlob){ // soloBlob: devuelve {blob, nombre} sin entregar (paquete de revisión)
     var btn = document.getElementById('pdfBtn'), txt0 = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando…'; }
     var cont = null;
@@ -1000,8 +1001,10 @@
         pdf.text('Página ' + i + ' de ' + n, W - 8, H - 9.5, { align: 'right' });
       }
       var blob = pdf.output('blob');
+      if (soloBlob) return {blob: blob, nombre: nombre};
       pdfEntregar(blob, nombre, titulo);
     } catch (e) {
+      if (soloBlob) throw e;
       alertaPDF((e && e.message) || 'No se pudo generar el PDF.');
     } finally {
       if (cont && cont.parentNode && cont.parentNode !== document.body) cont.parentNode.remove(); else if (cont) cont.remove();
@@ -49112,6 +49115,8 @@ function renderHome(container) {
         <div class="stat"><b>${ready}</b> / ${total} con calculadora interactiva</div>
         <div class="stat"><b>${CATS.length}</b> especialidades</div>
       </div>
+      <div class="rev-home"><p><b>🔎 Revisión externa.</b> Exporta todas las planillas en un solo .zip (Excel, código fuente, valores de entrada y encargo de revisión; PDF opcional) para entregarlas a un revisor. Cada planilla también tiene su botón «🔎 Revisión» junto a PDF.</p>
+        <button type="button" class="print-btn" onclick="revTodasDialogo()">📦 Exportar todas para revisión</button></div>
     </div>`;
 }
 
@@ -49836,6 +49841,303 @@ route();
 </script>
 
 
+<script>
+/* =========================================================================
+   EXPORTAR PARA REVISIÓN EXTERNA (botón «🔎 Revisión» junto a PDF y Memoria)
+   Entrega, de la planilla abierta, un paquete .zip para que un revisor externo (persona u otra IA)
+   verifique información, hipótesis, cálculos, presentación y consistencia normativa:
+     · Planilla Excel (.xlsx) con datos de entrada, cálculo y resumen de verificaciones (mismo
+       generador que el anexo del Constructor de Memorias: mvsLeerHoja / mvsLeerPaneles + mvsXlsx).
+     · PDF completo de la planilla (mismo generador que «⬇ PDF»: exportarPDF).
+     · Código fuente de la planilla: los bloques de nivel superior del script principal que usa su
+       función de dibujo/cálculo (CALC_RENDERERS), siguiendo las referencias entre funciones y
+       constantes. Los catálogos de datos grandes van en un archivo aparte. Se omite la interfaz
+       común (navegación, carpetas, Constructor de Memorias, EETT, impresión).
+     · Los valores de los campos (JSON) y un LEEME con el encargo de revisión sugerido.
+   Desde el inicio de la Mesa se exporta el mismo paquete para todas las planillas, en un solo .zip.
+   ========================================================================= */
+const REV_EXCLUIR = n => /^(TOOLS|CATS|CALC_RENDERERS|TOOL_STATE_CACHE|CURRENT_ROUTE_ID|PENDING_RESTORE|route|renderHome|buildSidebar|renderFicha|renderMemorias|renderEETT)$/.test(n)
+  || /^(fs|mcm|mvs|MCM_|MVS_|ett|ETT_|rev|REV_)/.test(n);
+const REV_SIN = ['memorias', 'eett', 'biblioteca-normas']; // documentos, no planillas de cálculo
+const REV_ID = '[A-Za-z_$\\u00C0-\\u024F][\\w$\\u00C0-\\u024F]*';
+const revSinComentarios = t => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[\s;{}])\/\/.*$/gm, '$1');
+// nombres declarados en «const a = 1, b = [..]»: solo los que están fuera de (), [], {} y textos
+function revNombresDecl(t) {
+  const out = [], ini = new RegExp('^(' + REV_ID + ')\\s*=(?!=)'), letra = /[A-Za-z_$À-ɏ]/;
+  let d = 0, q = null, esperar = true;
+  for (let i = 0; i < t.length && d >= 0; i++) {
+    const c = t[i];
+    if (q) { if (c === '\\') i++; else if (c === q) q = null; continue; }
+    if (c === '"' || c === "'" || c === '`') q = c;
+    else if ('([{'.includes(c)) d++;
+    else if (')]}'.includes(c)) d--;
+    else if (d === 0 && c === ',') esperar = true;
+    else if (d === 0 && esperar && letra.test(c)) { const m = t.slice(i).match(ini); if (m) out.push(m[1]); esperar = false; }
+  }
+  return out;
+}
+// Divide el script en bloques de nivel superior: cada declaración en columna 0 con los comentarios que la preceden
+function revBloques(src) {
+  const L = src.split('\n'), B = []; let cur = null, com = [];
+  const INI = /^(?:async\s+function\*?\s|function\*?\s|const\s|let\s|var\s|class\s|\(function|\(\(\)|\(async|;\(|[A-Za-z_$][\w$.]*\s*(?:\(|=[^=]|\+=)|if\s*\(|for\s*\(|try\s*\{|\/\*|\/\/)/;
+  const fnRe = new RegExp('^(?:async\\s+)?function\\*?\\s+(' + REV_ID + ')'), clRe = new RegExp('^class\\s+(' + REV_ID + ')'), asRe = new RegExp('^(?:window\\.)?(' + REV_ID + ')\\s*(?:=[^=]|\\+=)');
+  const cerrar = () => { if (cur) { B.push(cur); cur = null; } };
+  for (let i = 0; i < L.length; i++) {
+    const s = L[i];
+    if (s && !/^\s/.test(s) && INI.test(s)) {
+      if (/^(\/\*|\/\/)/.test(s)) { // comentario en columna 0: se pega al bloque que sigue
+        cerrar(); com.push(s);
+        if (/^\/\*/.test(s) && !/\*\//.test(s)) while (++i < L.length) { com.push(L[i]); if (/\*\//.test(L[i])) break; }
+        continue;
+      }
+      cerrar();
+      let m, nombres = [];
+      if ((m = s.match(fnRe) || s.match(clRe))) nombres = [m[1]];
+      else if ((m = s.match(/^(?:const|let|var)\s+([\s\S]*)/))) nombres = revNombresDecl(revSinComentarios(m[1]));
+      else if ((m = s.match(asRe))) nombres = [m[1]];
+      cur = {nombres, com:com.join('\n'), lineas:[s], ini:i + 1 - com.length};
+      com = [];
+    } else if (cur) cur.lineas.push(s);
+    else if (com.length) com.push(s);
+  }
+  cerrar();
+  B.forEach(b => { b.cod = b.lineas.join('\n').replace(/\s+$/, ''); b.txt = (b.com ? b.com + '\n' : '') + b.cod; });
+  return B;
+}
+let REV_SRC = null;
+function revFuente() {
+  if (REV_SRC) return REV_SRC;
+  const marca = 'const CALC_' + 'RENDERERS';
+  const sc = Array.from(document.scripts).find(s => !s.src && s.textContent.indexOf(marca) >= 0);
+  if (!sc) throw new Error('No se encontró el código de las planillas.');
+  REV_SRC = {texto:sc.textContent, bloques:revBloques(sc.textContent), linea0:null};
+  return REV_SRC;
+}
+// Línea del index.html donde parte el script principal (para citar números de línea); si no se puede leer, se omite
+async function revLinea0() {
+  const F = revFuente(); if (F.linea0 !== null) return F.linea0;
+  F.linea0 = 0;
+  try {
+    const r = await fetch('index.html', {cache:'force-cache'}); const h = await r.text();
+    const k = h.indexOf(F.texto.slice(0, 4000)); if (k >= 0) F.linea0 = h.slice(0, k).split('\n').length - 1;
+  } catch (e) {}
+  return F.linea0;
+}
+// Bloques que usa una planilla: cierre de referencias desde su función de dibujo/cálculo
+function revSeleccion(tool) {
+  const F = revFuente(), B = F.bloques, por = new Map();
+  B.forEach(b => b.nombres.forEach(n => { if (!por.has(n)) por.set(n, []); por.get(n).push(b); }));
+  const fn = CALC_RENDERERS[tool.calc], raiz = fn && fn.name;
+  const sel = new Set(), cola = [], idRe = new RegExp(REV_ID, 'g');
+  const add = b => { if (!sel.has(b) && !b.nombres.some(REV_EXCLUIR)) { sel.add(b); cola.push(b); } };
+  (por.get(raiz) || []).forEach(add);
+  const idTxt = new RegExp('[\'"]' + tool.id.replace(/[-]/g, '\\-') + '[\'"]');
+  B.forEach(b => { if (b.nombres.length && b.cod.length < 100000 && idTxt.test(b.cod)) add(b); });
+  const cerrar = () => { while (cola.length) {
+    const b = cola.shift(), vistos = new Set();
+    (revSinComentarios(b.cod).match(idRe) || []).forEach(id => { if (vistos.has(id)) return; vistos.add(id); (por.get(id) || []).forEach(add); });
+  } };
+  cerrar();
+  // sentencias sueltas (sin nombre) que completan o modifican lo seleccionado, p. ej. catálogos armados con forEach
+  const nombresSel = new Set(); sel.forEach(b => b.nombres.forEach(n => nombresSel.add(n)));
+  B.forEach(b => { if (!b.nombres.length && b.cod.length < 20000 && (revSinComentarios(b.cod).match(idRe) || []).some(id => nombresSel.has(id))) add(b); });
+  cerrar();
+  const usados = B.filter(b => sel.has(b));
+  if (!usados.length && fn) usados.push({nombres:[raiz || 'renderer'], com:'', cod:String(fn), txt:String(fn), ini:0});
+  const esDato = b => b.cod.length > 20000 && /^(?:const|let|var)\s+[^=]+=\s*[\[{]/.test(b.lineas[0]) && !/=>|function\s*\(/.test(b.lineas[0].slice(0, 300));
+  return {raiz, codigo:usados.filter(b => !esDato(b)), datos:usados.filter(esDato)};
+}
+const revVersion = () => { const d = new Date(document.lastModified); return isNaN(d) ? '—' : 'publicada el ' + d.toLocaleString('es-CL'); };
+const revSlug = t => (mcmSlug(String(t.name || t.id).replace(/\(.*?\)/g, '')) || t.id).slice(0, 48);
+async function revCodigoArchivos(tool, slug) {
+  const S = revSeleccion(tool), l0 = await revLinea0(), hoy = new Date().toLocaleString('es-CL');
+  const lin = b => l0 && b.ini ? ' — index.html línea ' + (l0 + b.ini) : '';
+  const nom = b => b.nombres.length ? b.nombres.join(', ') : '(sentencia sin nombre)';
+  const cab = (que, lista) => ['/* ' + '='.repeat(96),
+    '   MESA DE CÁLCULO — ING ESTRUCTURAL · ' + que,
+    '   Planilla: ' + tool.name + '  (id «' + tool.id + '», función de entrada ' + (S.raiz || '—') + ')',
+    '   Normativa declarada en la ficha: ' + (tool.tag || '—'),
+    '   Descripción: ' + (tool.desc || '—'),
+    '   Versión de la Mesa: ' + revVersion() + ' · Exportado: ' + hoy,
+    '   Código extraído automáticamente de index.html (JavaScript, se ejecuta en el navegador).',
+    '   Se incluyen las funciones y constantes que la planilla usa, siguiendo las referencias desde su función',
+    '   de entrada; se omite la interfaz común de la Mesa (navegación, carpetas, memorias, impresión y PDF).',
+    '   Bloques incluidos (' + lista.length + '):'].concat(lista.map((b, i) => '     ' + String(i + 1).padStart(3) + '. ' + nom(b) + lin(b)), ['   ' + '='.repeat(96) + ' */', '']).join('\n');
+  const cuerpo = lista => lista.map((b, i) => '\n/* ---------- [' + (i + 1) + '] ' + nom(b) + lin(b) + ' ---------- */\n' + b.txt).join('\n');
+  const out = [{name:slug + '_codigo_calculo.js', data:cab('CÓDIGO DE CÁLCULO', S.codigo) + cuerpo(S.codigo) + '\n'}];
+  if (S.datos.length) out.push({name:slug + '_catalogos_datos.js', data:cab('CATÁLOGOS Y TABLAS DE DATOS', S.datos) + cuerpo(S.datos) + '\n'});
+  return {archivos:out, S};
+}
+function revLeeme(tool, slug, nombres, S, P) {
+  const N = String(tool.tag || '').split(/\s*·\s*/).filter(Boolean);
+  return [
+    '# Paquete de revisión — ' + tool.name,
+    '',
+    'Mesa de Cálculo de ING Estructural · versión ' + revVersion() + ' · exportado el ' + new Date().toLocaleString('es-CL'),
+    P.proyecto || P.calculo ? 'Proyecto: ' + (P.proyecto || '—') + ' · Cálculo: ' + (P.calculo || '—') : 'Planilla exportada con los valores que tenía en pantalla.',
+    '',
+    '## Archivos',
+    '',
+    nombres.map(n => '- `' + n + '` — ' + (/\.xlsx$/.test(n) ? 'planilla Excel: Portada, Datos (entradas en azul sobre amarillo), Calculo (desarrollo y verificaciones) y Resumen de verificaciones.'
+      : /\.pdf$/.test(n) ? 'impresión completa de la planilla tal como la entrega la Mesa (membrete, datos, cálculo, esquemas).'
+      : /_codigo_calculo\.js$/.test(n) ? 'código fuente JavaScript de la planilla (' + S.codigo.length + ' bloques: funciones de cálculo, dibujo, tablas y hoja de impresión), con índice al inicio.'
+      : /_catalogos_datos\.js$/.test(n) ? 'catálogos y tablas de datos que usa la planilla (' + S.datos.map(b => b.nombres.join(', ')).join('; ') + ').'
+      : /\.json$/.test(n) ? 'valores de todos los campos de la planilla al exportar, para reproducir el caso.' : 'este archivo.')).join('\n'),
+    '',
+    '## Normativa declarada por la planilla',
+    '',
+    N.length ? N.map(x => '- ' + x).join('\n') : '- (la ficha no declara normas; identificarlas desde el código)',
+    '',
+    '## Encargo de revisión sugerido (copiar y pegar al revisor)',
+    '',
+    'Eres un ingeniero civil estructural revisor. Revisa la planilla «' + tool.name + '» de la Mesa de Cálculo de ING Estructural (Chile) usando los archivos adjuntos: el Excel y el PDF muestran lo que ve el usuario; el código JavaScript es lo que realmente calcula. Revisa:',
+    '',
+    '1. **Información y datos de entrada**: unidades, valores por defecto, rangos admitidos, catálogos (dimensiones y propiedades de perfiles, barras, pernos, materiales) contra la fuente que corresponda.',
+    '2. **Hipótesis**: supuestos de modelo, condiciones de apoyo, combinaciones de carga, simplificaciones; si están declaradas al usuario y si son razonables.',
+    '3. **Cálculos**: cada fórmula del código contra la norma citada (factores φ/Ω, coeficientes, unidades y conversiones, casos límite, divisiones por cero, redondeos); recalcula a mano al menos los resultados principales con los datos del Excel y compáralos.',
+    '4. **Forma y presentación**: que el Excel, el PDF y el código digan lo mismo; rótulos, unidades, numeración, textos de CUMPLE / NO CUMPLE y advertencias.',
+    '5. **Consistencia con la normativa vigente en Chile**: edición vigente de cada norma citada (NCh, DS MINVU/MOP, ACI, AISC, AISI, AASHTO, etc.), artículos aplicables y requisitos que falten.',
+    '',
+    'Entrega una tabla con: N°, archivo y ubicación (función del código o fila/hoja del Excel), observación, referencia normativa exacta (norma, edición y artículo), gravedad (crítica / mayor / menor / forma) y corrección propuesta con la fórmula o el valor correcto. No supongas: si algo no se puede verificar con lo entregado o requiere el texto de una norma que no tienes, indícalo como «no verificable» en vez de dar un valor.',
+    '',
+  ].join('\n');
+}
+async function revBin(b) { return new Uint8Array(await b.arrayBuffer()); }
+// Arma los archivos del paquete para la planilla abierta en #mainView
+async function revPaquete(tool, opt, pre) {
+  const main = document.getElementById('mainView'), slug = revSlug(tool), F = [], avisos = [];
+  const meta = Array.from(main.querySelectorAll('.calc-meta input')).map(i => i.value);
+  const P = {proyecto:meta[0] || '', calculo:meta[1] || '', fecha:MCM_HOY()};
+  if (opt.excel) try {
+    const sheet = document.getElementById('printSheetCompleto');
+    const secs = sheet && sheet.innerHTML.trim() ? mvsLeerHoja(sheet) : mvsLeerPaneles(main);
+    if (secs.length) {
+      const C = {nombre:mvsTxt(main.querySelector('.calc-head h1')) || tool.name, tag:tool.tag || '', desc:tool.desc || '', meta:meta.filter(Boolean), secs};
+      F.push({name:slug + '_planilla.xlsx', data:await revBin(mvsXlsx(C, {proyecto:P.proyecto, fecha:P.fecha}))});
+    } else avisos.push('Excel: la planilla no tiene datos ni resultados legibles.');
+  } catch (e) { avisos.push('Excel: ' + ((e && e.message) || 'error')); }
+  if (opt.pdf) try {
+    const r = await exportarPDF(false, true);
+    F.push({name:slug + '_memoria.pdf', data:await revBin(r.blob)});
+  } catch (e) { avisos.push('PDF: ' + ((e && e.message) || 'error')); }
+  let S = {codigo:[], datos:[]};
+  if (opt.codigo) try { const r = await revCodigoArchivos(tool, slug); S = r.S; r.archivos.forEach(a => F.push(a)); } catch (e) { avisos.push('Código: ' + ((e && e.message) || 'error')); }
+  try { F.push({name:slug + '_datos_entrada.json', data:JSON.stringify({planilla:tool.name, id:tool.id, version:revVersion(), exportado:new Date().toISOString(), proyecto:P.proyecto, calculo:P.calculo, campos:fsCaptureMain(main)}, null, 1)}); } catch (e) {}
+  const leeme = slug + '_LEEME_REVISION.md';
+  F.unshift({name:leeme, data:revLeeme(tool, slug, [leeme].concat(F.map(f => f.name)), S, P) + (avisos.length ? '\n## Avisos de la exportación\n\n' + avisos.map(a => '- ' + a).join('\n') + '\n' : '')});
+  if (pre) F.forEach(f => f.name = pre + f.name);
+  return {archivos:F, avisos};
+}
+const revZip = F => new Blob([mvsZip(F)], {type:'application/zip'});
+// PC: «Guardar como» (o descarga); iPad/iPhone/Android: menú Compartir
+async function revEntregar(blob, nombre) {
+  if (mvsMovil()) return mvsEntregar([{nombre, blob}]);
+  const ext = nombre.slice(nombre.lastIndexOf('.'));
+  return mcmGuardarArchivo(nombre, blob, blob.type || 'application/octet-stream', {'.zip':'Paquete de revisión', '.xlsx':'Planilla Excel', '.pdf':'PDF', '.js':'Código JavaScript'}[ext] || 'Archivo', ext);
+}
+function revToolActual() {
+  const id = (location.hash || '').replace('#', '');
+  const t = TOOLS.find(x => x.id === id);
+  return t && t.calc && CALC_RENDERERS[t.calc] && REV_SIN.indexOf(t.id) < 0 ? t : null;
+}
+function revMenu(btn) {
+  let m = document.getElementById('revMenu');
+  if (m) { m.remove(); return; }
+  if (!revToolActual()) { fsToast('Abre primero una planilla de cálculo. Para exportar todas, usa el botón del inicio de la Mesa.'); return; }
+  m = document.createElement('div'); m.id = 'revMenu';
+  m.innerHTML = '<div class="rev-t">Exportar para revisión externa</div>'
+    + '<button type="button" data-k="zip">📦 Paquete completo (.zip)<small>Excel + PDF + código fuente + LEEME</small></button>'
+    + '<button type="button" data-k="excel">📊 Solo Excel</button><button type="button" data-k="pdf">📄 Solo PDF</button><button type="button" data-k="codigo">🧾 Solo código fuente</button>';
+  document.body.appendChild(m);
+  const r = btn.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(window.innerWidth - 268, r.right - 260)) + 'px';
+  if (r.top > window.innerHeight / 2) m.style.bottom = (window.innerHeight - r.top + 6) + 'px'; else m.style.top = (r.bottom + 6) + 'px';
+  m.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; m.remove(); revExportar(b.dataset.k); });
+  setTimeout(() => document.addEventListener('click', function cerrar(e) { if (!m.contains(e.target) && e.target !== btn) m.remove(); document.removeEventListener('click', cerrar); }), 0);
+}
+async function revExportar(k) {
+  const tool = revToolActual(); if (!tool) return;
+  const btn = document.getElementById('revBtn'), t0 = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Preparando…'; }
+  try {
+    const opt = {excel:k === 'zip' || k === 'excel', pdf:k === 'zip' || k === 'pdf', codigo:k === 'zip' || k === 'codigo'};
+    const slug = revSlug(tool), fecha = new Date().toISOString().slice(0, 10);
+    if (k === 'pdf') { const r = await exportarPDF(false, true); await revEntregar(r.blob, 'Revision_' + slug + '_' + fecha + '.pdf'); return; }
+    const {archivos, avisos} = await revPaquete(tool, opt);
+    if (k === 'excel') { const x = archivos.find(a => /\.xlsx$/.test(a.name)); if (!x) throw new Error(avisos.join(' ') || 'Sin datos para el Excel.'); await revEntregar(new Blob([x.data], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), 'Revision_' + slug + '_' + fecha + '.xlsx'); return; }
+    if (k === 'codigo') { const js = archivos.filter(a => /\.js$/.test(a.name)); if (!js.length) throw new Error(avisos.join(' ') || 'Sin código.');
+      if (js.length === 1) await revEntregar(new Blob([js[0].data], {type:'text/javascript'}), js[0].name); else await revEntregar(revZip(js), 'Revision_' + slug + '_codigo_' + fecha + '.zip'); return; }
+    await revEntregar(revZip(archivos), 'Revision_' + slug + '_' + fecha + '.zip');
+    if (avisos.length) fsToast('Paquete exportado con avisos: ' + avisos.join(' · '));
+  } catch (e) {
+    fsToast('No se pudo exportar: ' + ((e && e.message) || 'error'));
+  } finally { if (btn) { btn.disabled = false; btn.textContent = t0; } }
+}
+/* ---------- todas las planillas en un solo .zip (desde el inicio de la Mesa) ---------- */
+const revPausa = ms => new Promise(r => setTimeout(r, ms));
+function revTodasDialogo() {
+  const lista = TOOLS.filter(t => t.calc && CALC_RENDERERS[t.calc] && REV_SIN.indexOf(t.id) < 0);
+  const ov = document.createElement('div'); ov.id = 'revProg';
+  ov.innerHTML = '<div class="rev-card"><b>Exportar todas las planillas para revisión</b>'
+    + '<p>Se abre cada una de las ' + lista.length + ' planillas con sus valores actuales (o los de ejemplo) y se arma un solo .zip con una carpeta por planilla: Excel, código fuente, valores de entrada y LEEME con el encargo de revisión.</p>'
+    + '<label><input type="checkbox" id="revConPdf"> Incluir también el PDF de cada planilla (tarda varios minutos y el archivo pesa bastante más)</label>'
+    + '<div class="rev-msg" id="revMsg"></div><div class="rev-bar"><i id="revBar"></i></div>'
+    + '<div class="rev-acc"><button type="button" class="print-btn" id="revIr">Exportar</button><button type="button" class="print-btn alt" id="revNo">Cancelar</button></div></div>';
+  document.body.appendChild(ov);
+  let cancelar = false, corriendo = false;
+  ov.querySelector('#revNo').onclick = () => { if (corriendo) { cancelar = true; ov.querySelector('#revMsg').textContent = 'Cancelando…'; } else ov.remove(); };
+  ov.querySelector('#revIr').onclick = async () => {
+    if (corriendo) return; corriendo = true;
+    const conPdf = ov.querySelector('#revConPdf').checked, msg = ov.querySelector('#revMsg'), bar = ov.querySelector('#revBar');
+    ov.querySelector('#revIr').disabled = true; ov.querySelector('#revConPdf').disabled = true;
+    const hash0 = location.hash, todos = [], indice = [], fecha = new Date().toISOString().slice(0, 10);
+    try {
+      for (let i = 0; i < lista.length && !cancelar; i++) {
+        const t = lista[i];
+        msg.textContent = 'Planilla ' + (i + 1) + ' de ' + lista.length + ': ' + t.name; bar.style.width = (100 * i / lista.length) + '%';
+        if (location.hash !== '#' + t.id) { location.hash = t.id; await revPausa(50); }
+        if (CURRENT_ROUTE_ID !== t.id) route();
+        await revPausa(500);
+        try {
+          const dir = String(i + 1).padStart(2, '0') + '_' + revSlug(t) + '/';
+          const r = await revPaquete(t, {excel:true, pdf:conPdf, codigo:true}, dir);
+          r.archivos.forEach(a => todos.push(a));
+          indice.push('| ' + (i + 1) + ' | ' + t.cat + ' | ' + t.name + ' | `' + dir + '` | ' + (t.tag || '—') + ' | ' + (r.avisos.length ? r.avisos.join('; ') : 'OK') + ' |');
+        } catch (e) { indice.push('| ' + (i + 1) + ' | ' + t.cat + ' | ' + t.name + ' | — | ' + (t.tag || '—') + ' | ERROR: ' + ((e && e.message) || 'error') + ' |'); }
+      }
+      if (cancelar) { ov.remove(); fsToast('Exportación cancelada.'); return; }
+      bar.style.width = '100%'; msg.textContent = 'Armando el archivo .zip…';
+      todos.unshift({name:'00_INDICE_REVISION.md', data:['# Mesa de Cálculo ING Estructural — paquete de revisión de todas las planillas', '',
+        'Versión ' + revVersion() + ' · exportado el ' + new Date().toLocaleString('es-CL') + ' — Cada carpeta trae su propio LEEME con el encargo de revisión sugerido.', '',
+        'Sugerencia: revisar una carpeta por conversación, para que el revisor lea completo el código de cada planilla.', '',
+        '| N° | Especialidad | Planilla | Carpeta | Normativa declarada | Exportación |', '|---|---|---|---|---|---|'].concat(indice).join('\n') + '\n'});
+      await revEntregar(revZip(todos), 'Revision_Mesa_ING_todas_' + fecha + '.zip');
+      ov.remove();
+    } catch (e) {
+      msg.textContent = 'No se pudo exportar: ' + ((e && e.message) || 'error'); corriendo = false;
+    } finally {
+      if (cancelar || !document.getElementById('revProg')) location.hash = hash0;
+    }
+  };
+}
+(function () {
+  const st = document.createElement('style');
+  st.textContent = '#revMenu{position:fixed;z-index:200;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.2);padding:.35rem;display:flex;flex-direction:column;gap:.2rem;width:260px}'
+    + '#revMenu .rev-t{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#667);padding:.35rem .6rem .2rem}'
+    + '#revMenu button{font:inherit;font-size:.85rem;padding:.5rem .7rem;border:none;border-radius:7px;background:transparent;color:var(--ink);text-align:left;cursor:pointer}'
+    + '#revMenu button small{display:block;font-size:.72rem;opacity:.75;margin-top:.1rem}'
+    + '#revMenu button:hover{background:var(--surface-alt)}'
+    + '#revProg{position:fixed;inset:0;z-index:210;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:1rem}'
+    + '#revProg .rev-card{background:var(--surface);color:var(--ink);border-radius:14px;padding:1.1rem 1.2rem;width:min(460px,100%);display:flex;flex-direction:column;gap:.6rem;box-shadow:0 10px 30px rgba(0,0,0,.3);font-size:.88rem}'
+    + '#revProg p{margin:0;line-height:1.45}#revProg label{display:flex;gap:.5rem;align-items:flex-start;font-size:.84rem}'
+    + '#revProg .rev-msg{min-height:1.2em;font-size:.8rem;color:var(--muted,#667)}'
+    + '#revProg .rev-bar{height:6px;border-radius:3px;background:var(--surface-alt,#eee);overflow:hidden}#revProg .rev-bar i{display:block;height:100%;width:0;background:var(--accent,#0060c1);transition:width .2s}'
+    + '#revProg .rev-acc{display:flex;gap:.5rem;justify-content:flex-end}'
+    + '.rev-home{margin-top:1.2rem;padding:.9rem 1rem;border:1px solid var(--line);border-radius:10px;background:var(--surface);display:flex;gap:1rem;align-items:center;justify-content:space-between;flex-wrap:wrap}'
+    + '.rev-home p{margin:0;font-size:.85rem;max-width:620px}';
+  document.head.appendChild(st);
+})();
+</script>
 <script>
 /* App instalable (PWA) — versión 20261009-1300. Funciona sin conexión y se actualiza sola al abrirla con internet. */
 if ('serviceWorker' in navigator) {
