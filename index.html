@@ -14320,7 +14320,7 @@ function renderMuros(container) {
         <div class="field-grid">
           <div class="field"><label>γc — peso unitario del hormigón (Ton/m³)</label><input type="text" inputmode="decimal" step="0.05" id="v_gammaC" value="${state.gammaC1}" list="dl_v_gammaC"><datalist id="dl_v_gammaC"><option value="2.3">Hormigón simple</option><option value="2.4">Típico H.A.</option><option value="2.5">Hormigón armado denso</option><option value="2.6">Alta densidad</option></datalist></div>
           <div class="field"><label>f'c — hormigón (t/cm²)</label><input type="text" inputmode="decimal" step="0.005" id="v_fc" value="${state.fc1}" list="dl_v_fc"><datalist id="dl_v_fc"><option value="0.18">H20 (bajo)</option><option value="0.21">H25</option><option value="0.25">H30 (típico muros)</option><option value="0.28">H35</option><option value="0.30">H40 (alta resistencia)</option></datalist></div>
-          <div class="field"><label>fy — acero de refuerzo (t/cm²)</label><input type="text" inputmode="decimal" step="0.1" id="v_fy" value="${state.fy1}" list="dl_v_fy"><datalist id="dl_v_fy"><option value="2.8">A63-42H (antiguo)</option><option value="4.2">A630-420H (estándar CL)</option><option value="5.0">Alta resistencia</option></datalist></div>
+          <div class="field"><label>fy — acero de refuerzo (t/cm²)</label><input type="text" inputmode="decimal" step="0.1" id="v_fy" value="${state.fy1}" list="dl_v_fy"><datalist id="dl_v_fy"><option value="2.8">A440-280H (A44-28H)</option><option value="4.2">A630-420H (estándar CL)</option><option value="5.0">Alta resistencia</option></datalist></div>
           <div class="field"><label>Recubrimiento — pantalla (cm)</label><input type="text" inputmode="decimal" step="0.5" id="v_recPantalla" value="${state.recPantalla}" list="dl_v_recPantalla"><datalist id="dl_v_recPantalla"><option value="4">Formado, barra ≤16mm</option><option value="5">Típico exterior</option><option value="6">Conservador</option><option value="7.5">Exposición severa</option></datalist></div>
           <div class="field"><label>Recubrimiento — zapata (cm)</label><input type="text" inputmode="decimal" step="0.5" id="v_recZapata" value="${state.recZapata}" list="dl_v_recZapata"><datalist id="dl_v_recZapata"><option value="5">Con solado de limpieza</option><option value="7.5">Contra el terreno (ACI 318)</option><option value="10">Sin solado</option><option value="12.5">Conservador</option></datalist></div>
           <div class="field"><label>Factor de mayoración, caso estático</label><input type="text" inputmode="decimal" step="0.1" id="v_factorMayEstatico" value="${state.factorMayEstatico}" list="dl_v_factorMayEstatico"><datalist id="dl_v_factorMayEstatico"><option value="1.4">Mínimo LRFD</option><option value="1.6">Típico ACI 318 (carga H)</option><option value="1.7">Conservador</option></datalist></div>
@@ -49265,16 +49265,182 @@ route();
    Detecta las verificaciones que no cumplen en la planilla abierta
    (textos "NO CUMPLE", chips y veredictos en rojo), y busca, variable por
    variable, el valor más cercano al actual con el que la planilla queda
-   CUMPLE: búsqueda por pasos crecientes y luego bisección sobre los campos
-   numéricos, y recorrido ordenado de las listas (perfiles, diámetros,
-   calidades). Si ninguna variable sola resuelve, arma una combinación
-   (método codicioso, hasta 4 variables). Siempre restaura los valores
+   CUMPLE, solo entre valores factibles: calidades y tamaños comerciales
+   (catálogos más abajo), enteros y módulos constructivos, dentro de ×½ – ×2
+   del valor actual. Las dimensiones del proyecto se proponen aparte, en
+   amarillo. Si ninguna variable sola resuelve, arma una combinación
+   (método codicioso, hasta 5 variables) o declara que no hay solución factible. Siempre restaura los valores
    originales; el usuario aplica la sugerencia con un botón.
    ========================================================================= */
 (function () {
   const FAIL_RE = /\bNO CUMPLE\b|\bINESTABLE\b|FUERA DE RANGO|excentricidad excesiva|NO VERIFICA/i;
   const LOAD_RE = /carga|fuerza|momento|corte|cortante|axial|\bP[uút]\b|\bV[uúr]\b|\bM[uúr]\b|\bN[uú]\b|\bT[uú]\b|reacci|sobrecarga|viento|velocidad|sism|zona|suelo|categor|importancia|exposici|q_?adm|presi[oó]n admisible|densidad|gamma|peso (propio|espec)|coeficiente|factor|\bR\b —|amortig|per[ií]odo|luz|vano|longitud (libre|no arriostrada|de pandeo)|altura (de piso|libre|total del edificio)|t[ií]tulo|proyecto|fecha|n[°º] de pisos|temperatura|tiempo|resistencia al fuego|humedad|absorci|m[oó]dulo de finura|asentamiento|mayorad|solicitaci|servicio|Ω|φ|\bphi\b|omega|m[oó]dulo de elasticidad|\bE —|\bK —|factor de longitud|m[eé]todo|norma|criterio|unidad|combinaci|condici[oó]n (del tramo|de apoyo)|tipo de losa/i;
   const INT_RE = /\bn[°º]|n[uú]mero|cantidad|\bN —|pernos|barras|filas|columnas de pernos|ramas|estribos|n\s*=|nPernos/i;
+
+  /* ---------- Factibilidad: catálogos comerciales y límites prácticos ----------
+     Cada variable numérica se clasifica según su etiqueta y la planilla:
+     · calidades de material (f'c, fy, Fy, fya, Fexx) → solo grados que existen;
+     · diámetros de barras y pernos, espesores de plancha, tamaños de soldadura → catálogo;
+     · cantidades → enteros; espaciamientos y dimensiones → módulo constructivo;
+     · factores normativos, propiedades del material y datos del suelo → no se proponen.
+     Las dimensiones de elementos (secciones, zapatas, placas, luces) se ofrecen como
+     alternativas que modifican el proyecto (en amarillo). Ningún valor sale de ×½ – ×2
+     del actual, salvo los de catálogo, que ya son finitos. */
+  const MPA = 10.19716;   // kgf/cm² por MPa
+  const NAT = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  const crudo = el => el.tagName === 'INPUT' ? NAT.get.call(el) : el.value;
+  const aNum = s => parseFloat(String(s).replace(',', '.'));
+  const herr = () => location.hash.replace('#', '');
+  const r6 = x => Math.round(x * 1e6) / 1e6;
+
+  // Hormigón: grados NCh170:2016 (f'c en MPa). Barras: NCh204 (catálogo AZA 2025; ø40 y ø43 sujetos a consulta, no se proponen).
+  const G_HORM = [20, 25, 30, 35, 40, 45, 50];
+  const G_REF = [['A440-280H', 280], ['A630-420H', 420]];
+  // Acero estructural: [designación, Fy MPa, Fu MPa, Fy kgf/cm², Fu kgf/cm²]. NCh203.Of77 (kgf/mm² en el nombre),
+  // NCh203:2006 Tabla 2 (mínimos en MPa; Fu = límite inferior del rango), ASTM A36 / A572 (ksi × 70,307).
+  const G_EST = [
+    ['A37-24ES', 235, 363, 2400, 3700], ['A240ES', 240, 360, 2447, 3671], ['ASTM A36', 250, 400, 2530, 4080],
+    ['A42-27ES', 265, 412, 2700, 4200], ['A270ES', 270, 410, 2753, 4181], ['ASTM A572 Gr.50', 345, 450, 3515, 4570],
+    ['A345ES', 345, 510, 3518, 5200], ['ASTM A572 Gr.60', 415, 520, 4218, 5273]];
+  // Plegados en frío (costaneras): ASTM A653 SS (ksi × 70,307).
+  const G_PLEG = [['A653 SS Gr.33', 230, 2320], ['A653 SS Gr.37', 255, 2601], ['A42-27ES', 265, 2700], ['A653 SS Gr.40', 275, 2812], ['A653 SS Gr.50', 340, 3515]];
+  // Pernos de anclaje: ASTM F1554 y barra redonda A37-24ES / A42-27ES. [designación, MPa, kgf/cm²]
+  const G_ANC = [['A37-24ES', 235, 2400], ['F1554 Gr.36', 248, 2530], ['A42-27ES', 265, 2700], ['F1554 Gr.55', 380, 3866], ['F1554 Gr.105', 724, 7383]];
+  const G_ELEC = [60, 70, 80, 90, 100, 110];   // AWS A5.1 / A5.5: E60XX … E110XX (ksi)
+  const D_BARRA = [8, 10, 12, 16, 18, 22, 25, 28, 32, 36];
+  const D_ESTRIBO = [8, 10, 12, 16];
+  // ASTM F1554, serie UNC; mínimo 3/4" (AISC Design Guide 1).
+  const D_ANCLA = [['3/4"', 19.1], ['7/8"', 22.2], ['1"', 25.4], ['1 1/8"', 28.6], ['1 1/4"', 31.8], ['1 3/8"', 34.9], ['1 1/2"', 38.1], ['1 3/4"', 44.5], ['2"', 50.8]];
+  // Plancha laminada en caliente (2–12 mm) y plancha gruesa (hasta 100 mm), ASTM A36 / A572 Gr.50, catálogo de distribuidor nacional.
+  const E_PLACA = [2, 2.5, 3, 4, 5, 6, 8, 10, 12, 14, 16, 20, 22, 25, 32, 38, 50, 63, 75, 100];
+  const S_FILETE_IN = [['1/8"', 3.2], ['3/16"', 4.8], ['1/4"', 6.4], ['5/16"', 7.9], ['3/8"', 9.5], ['7/16"', 11.1], ['1/2"', 12.7], ['5/8"', 15.9]];
+  const S_FILETE_MM = [3, 4, 5, 6, 8, 10, 12, 14, 16];
+
+  const FTE = {
+    horm: 'Grados de hormigón NCh170:2016', ref: 'Calidades de barra NCh204', est: 'Aceros NCh203 / ASTM A36, A572',
+    pleg: 'Aceros para perfiles plegados ASTM A653 SS / NCh203', anc: 'Pernos de anclaje ASTM F1554', elec: 'Electrodos AWS A5.1 / A5.5',
+    barra: 'Diámetros de barra NCh204 (8–36 mm)', estribo: 'Diámetros usuales de estribo (8–16 mm)', dancla: 'Diámetros ASTM F1554 (3/4"–2")',
+    placa: 'Espesores comerciales de plancha (2–100 mm)', filete: 'Tamaños de filete en 1/16" (1/8"–5/8")', filmm: 'Tamaños de filete 3–16 mm',
+    lista: 'Valores de la lista de la planilla', ent: 'Cantidad entera', esp: 'Espaciamiento: múltiplo de 1 cm, mínimo 5 cm',
+    espAc: 'Distancias en conexiones: múltiplo de 5 mm', dimHA: 'Dimensión de hormigón: múltiplo de 5 cm', losa: 'Espesor de losa o capa: múltiplo de 1 cm',
+    dimAc: 'Dimensión de placa o pieza: múltiplo de 5 mm', dimMad: 'Madera: adoptar la escuadría comercial igual o mayor', pas: 'Diámetro: múltiplo de 1 mm',
+    ang: 'Ángulo: múltiplo de 1°', geo: 'Dimensión geométrica: múltiplo de 5 cm', emb: 'Profundidad de anclaje: múltiplo de 1 cm', gen: 'Cambio acotado a ×½ – ×2 del valor actual' };
+  const ACERO = /^(costaneras|metalcon|perfiles-h|flexion-atiesadores|acero-inoxidable|estanque-acero|chimenea-acero|tubest|placas-base|soldaduras|conexiones-diagonal|empalme-viga|seleccion-pernos|oreja-conexion|cuerda-vida|muro-berlines|losa-colaborante|anclajes-hilti)$/;
+  const MADERA = /^(madera|costaneras-madera|tabique-madera|sobreancho-madera-fuego)$/;
+
+  function contexto(L, P, t) {
+    if (MADERA.test(t) || /tabl[oó]n|madera/i.test(P + ' ' + L)) return 'madera';
+    if (ACERO.test(t)) return (/fundaci[oó]n|zapata|hormig[oó]n|grout|losa/i.test(P + ' ' + L) && !/placa|plancha|perno|platina/i.test(L)) ? 'ha' : 'acero';
+    return 'ha';
+  }
+  function unidadLong(L, id) {
+    if (/_t\d+$/.test(id) && /espesor t \(mm\)/.test(L)) return 'mm';     // chimenea: «altura h (m) · espesor t (mm)»
+    const m = L.match(/[(\[,;]\s*(mm|cm|m)(?=[\s)\],;·]|$)/);
+    return m ? m[1] : '';
+  }
+  const fuera = motivo => ({ modo: 'fuera', motivo });
+  const cat = (lista, fuente, extra) => Object.assign({ modo: 'cat', lista: lista.slice().sort((a, b) => a.v - b.v), fuente }, extra || {});
+  const paso = (p, lo, hi, fuente, extra) => Object.assign({ modo: 'paso', paso: p, lo, hi, fuente }, extra || {});
+  // Convención del valor actual: nominal (MPa × 10, p. ej. 4200 o 250 kgf/cm²) o exacta (MPa × 10,197).
+  function kgConv(v0, mpas) {
+    let best = { d: Infinity, f: MPA };
+    mpas.forEach(m => [10, MPA].forEach(f => { const d = Math.abs(v0 - m * f); if (d < best.d) best = { d, f }; }));
+    return best.f;
+  }
+  function deLista(el) {
+    const dl = el.list; if (!dl) return null;
+    const l = [...dl.options].map(o => ({ v: aNum(o.value), t: (o.textContent || '').split(/\s[—(-]\s?/)[0].trim().slice(0, 28) })).filter(o => isFinite(o.v));
+    return l.length >= 2 ? l : null;
+  }
+  function parFu(el) {
+    const panel = el.closest('.panel'); if (!panel) return null;
+    return [...panel.querySelectorAll('input')].find(x => x !== el && x.id && /^\s*Fu\b|rotura/i.test(etiqueta(x).label) && /kgf\/cm²|MPa/.test(etiqueta(x).label)) || null;
+  }
+
+  function factible(c) {
+    const L = c.label, P = c.panel, id = c.el.id, v0 = c.v0, t = herr();
+    const u = unidadLong(L, id), mmU = { mm: 1, cm: 10, m: 1000 }[u] || 0;
+    const ctx = contexto(L, P, t);
+    const lim = (a, b) => [Math.min(a, b), Math.max(a, b)];
+    // 1. Lo que no es una decisión de diseño
+    if (/recubrimiento|\brec\b/i.test(L)) return fuera('Recubrimiento mínimo por durabilidad (ACI 318-19 §20.5.1.3)');
+    if (/(^|[\s—])E[sm]? —|^\s*G —/.test(L) || /E albañiler|m[oó]dulo de (elasticidad|corte)|poisson|(^|\s)ν\b|densidad|peso unitario|(^|\s)γ|gamma|emisividad|conductividad|absorci|humedad|m[oó]dulo de finura|constante \(J|convecci|asentamiento de cono/i.test(L)) return fuera('Propiedad física del material o del suelo');
+    if (/tr[aá]nsito|TPDA|EE de dise|camiones/i.test(L)) return fuera('Dato de tránsito (solicitación del pavimento)');
+    if (/^ch_y\d/.test(id)) return fuera('Posición de la capa: se obtiene de la geometría y el recubrimiento');
+    if (/^ph_(om|phi)[TCB]$/.test(id)) return fuera('Factor o criterio normativo');
+    if (/suelo|admisible del terreno|geot|cohesi|fricci[oó]n interna|balasto|\bks\b|napa|CBR|q_?adm|qadm|q,adm|presi[oó]n admisible|ensayo de placa/i.test(L) || /ensayo de placa/i.test(P)) return fuera('Dato del estudio de mecánica de suelos');
+    if (/operarios|n[°º] de (pisos|niveles|v[ií]as|barreras|veredas|ruedas)/i.test(L)) return fuera('Dato del proyecto o de las cargas');
+    if (!/momento|fuerza|corte/i.test(L) && /punto de aplicaci|excentricidad|brazo de aplicaci|altura del CG|CM[xy] manual|dimensi[oó]n en planta|altura retenida|excavaci[oó]n|altura de la pantalla|altura de (agua|dise[ñn]o del l[ií]quido)|enterramiento/i.test(L)) return fuera('Posición de la carga o dato geométrico del proyecto');
+    if (/tensi[oó]n admisible|Fb'|Fv'/i.test(L)) return fuera('Tensión admisible de la madera: depende de la especie y el grado (NCh1198)');
+    if (/φ|\bphi\b|Ω|\bomega\b|\bFS\b|seguridad|factor|coeficiente|coef\.|λ|confiabilidad|serviciabilidad|desv\.|eficiencia|\bCb\b|\bK[xyzt]?\b|Kzt|\bCf\b|\bR\b —|\bRc\b|\bU\b —|rezago|l[ií]mite de (deformaci|deflexi)|\(%|%\)|paso de tiempo|margen|tasa|vida [uú]til|^\s*(μ|mu)\b|(^|\s)η|γ[fEQ]|ψ|K1\b/i.test(L) && !/ø|Ø|di[aá]metro/i.test(L)) return fuera('Factor o criterio normativo');
+    if (/L \/|Lc \/|L\/n/.test(L)) return fuera('Factor o criterio normativo');
+    if (/perfil/i.test(P) && !/placa|plancha|platina/i.test(L) && /espesor|ancho del ala|peralte|lado del|\b(tf|tw|bf|b_L|t_L)\b|\bd —/i.test(L)) return fuera('Dimensión de un perfil de catálogo: cambie el perfil en su lista');
+    // 2. Calidades de material
+    const uS = /MPa/.test(L) ? 'mpa' : /ksi/.test(L) ? 'ksi' : /kgf\/cm²/.test(L) ? 'kg' : /t\/cm²/.test(L) ? 't' : '';
+    if (uS && (/f'c|f′c|\bf[yu]|\bF[yu]|Fexx|fluencia|rotura|electrodo/.test(L) || !/fuerza|carga|momento|corte|presi[oó]n|sobrecarga|\bq\b/i.test(L))) {
+      const k = uS === 't' ? 0.001 : 1;
+      if (/f'c|f′c|hormig/i.test(L)) {
+        const f = uS === 'mpa' ? 1 : kgConv(v0 / k, G_HORM);
+        return cat(G_HORM.map(g => ({ v: r6(uS === 'mpa' ? g : (f === 10 ? g * 10 : Math.round(g * MPA)) * k), t: 'G' + g })), FTE.horm);
+      }
+      if (/Fexx|electrodo/i.test(L)) return uS === 'ksi' ? cat(G_ELEC.map(g => ({ v: g, t: 'E' + g + 'XX' })), FTE.elec) : fuera('Resistencia del electrodo: elíjala en ksi');
+      if (/\bfya\b|perno/i.test(L)) return cat(G_ANC.map(g => ({ v: uS === 'mpa' ? g[1] : g[2] * k, t: g[0] })), FTE.anc);
+      if (/\bfyt?\b/.test(L) || /refuerzo|barras|estribo/i.test(L)) {
+        const f = uS === 'mpa' ? 1 : kgConv(v0 / k, G_REF.map(g => g[1]));
+        return cat(G_REF.map(g => ({ v: r6(uS === 'mpa' ? g[1] : (f === 10 ? g[1] * 10 : Math.round(g[1] * MPA * 10) / 10) * k), t: g[0] })), FTE.ref);
+      }
+      if (/^\s*Fu\b|rotura/i.test(L)) return fuera('Fu se ajusta junto con Fy al cambiar la calidad del acero');
+      if (/\bFy\b/.test(L)) {
+        if (t === 'costaneras') return cat(G_PLEG.map(g => ({ v: uS === 'mpa' ? g[1] : g[2] * k, t: g[0] })), FTE.pleg);
+        const dl = deLista(c.el); if (dl && /metalcon|acero-inoxidable/.test(t)) return cat(dl, FTE.lista);
+        const fu = parFu(c.el);
+        return cat(G_EST.map(g => ({ v: uS === 'mpa' ? g[1] : g[3] * k, fu: uS === 'mpa' ? g[2] : g[4] * k, t: g[0] })), FTE.est, { par: fu });
+      }
+      const dl = deLista(c.el); if (dl) return cat(dl, FTE.lista);
+      return fuera('Propiedad del material sin catálogo de calidades');
+    }
+    // 3. Diámetros
+    if (mmU && /ø|Ø|di[aá]metro|\bda\b —/i.test(L)) {
+      const conv = l => l.map(x => Array.isArray(x) ? { v: r6(x[1] / mmU), t: x[0] } : { v: r6(x / mmU), t: 'ø' + x });
+      if (/perno|anclaje/i.test(L) && !/c[ií]rculo|barra de anclaje/i.test(L)) return cat(conv(D_ANCLA), FTE.dancla);
+      if (/estribo|refuerzo de corte|cerrado/i.test(L)) return cat(conv(D_ESTRIBO), FTE.estribo);
+      if (ctx !== 'acero' && /barra|armadura|ø|Ø/i.test(L)) return cat(conv(D_BARRA), FTE.barra);
+      const dl = deLista(c.el); if (dl && t === 'acero-inoxidable') return cat(dl, FTE.lista);
+      if (/pasador|agujero/i.test(L)) { const [lo, hi] = lim(v0 / 2, v0 * 2); return paso(1 / mmU, lo, hi, FTE.pas); }
+    }
+    // 4. Soldadura
+    if (mmU && /soldadura/i.test(L + ' ' + P) && /tama[ñn]o|pierna/i.test(L)) {
+      const enPulg = S_FILETE_IN.some(s => Math.abs(s[1] / mmU - v0) < 0.05 / mmU) && !Number.isInteger(v0 * mmU);
+      return enPulg ? cat(S_FILETE_IN.map(s => ({ v: r6(s[1] / mmU), t: s[0] })), FTE.filete) : cat(S_FILETE_MM.map(s => ({ v: r6(s / mmU), t: s + ' mm' })), FTE.filmm);
+    }
+    // 5. Espesores de plancha de acero
+    if (mmU && ctx === 'acero' && (/espesor|\bt[a-z_]*\b —|\btp\b|\bts\b|\btg\b|t_costilla|\bt\b —/i.test(L) || /_t\d+$/.test(id)) && !/grout|losa|tabl[oó]n|pared/i.test(L) && !(/altura h/.test(L) && !/_t\d+$/.test(id))) {
+      return cat(E_PLACA.map(e => ({ v: r6(e / mmU), t: e + ' mm' })), FTE.placa);
+    }
+    if (mmU && ctx === 'acero' && t === 'acero-inoxidable') { const dl = deLista(c.el); if (dl) return cat(dl, FTE.lista); }
+    if (mmU && /grout/i.test(L)) { const [lo, hi] = lim(v0 / 2, v0 * 2); return paso(5 / mmU, lo, hi, FTE.dimAc); }
+    if (!mmU && /[aá]ngulo|inclinaci[oó]n|\(°\)|\(grados\)/i.test(L)) { const [lo, hi] = lim(v0 / 2, v0 * 2); return paso(1, lo, hi, FTE.ang, { proy: true }); }
+    // 6. Espaciamientos
+    if (u === 'm' && (ctx !== 'ha' || /luz|long|altura|distancia|separaci/i.test(L)) && !/espesor/i.test(L)) { const [lo, hi] = lim(v0 / 2, v0 * 2); return paso(0.05, lo, hi, FTE.geo, { proy: true }); }
+    if (mmU && /luz|entre (costaneras|vigas|columnas|pie|colgadores|rieles|ejes)/i.test(L)) { const [lo, hi] = lim(v0 / 2, v0 * 2); return paso((ctx === 'ha' ? 50 : 5) / mmU, lo, hi, ctx === 'ha' ? FTE.dimHA : FTE.dimAc, { proy: true }); }
+    if (mmU && /\bhef\b|embebid/i.test(L)) { const [lo, hi] = lim(v0 / 2, v0 * 2); return paso(10 / mmU, lo, hi, FTE.emb); }
+    if (mmU && /espaciamiento|separaci[oó]n|\bs —|\bs_|gramil/i.test(L)) {
+      if (ctx === 'ha') { const [lo, hi] = lim(Math.max(v0 / 2, 50 / mmU), v0 * 2); return paso(10 / mmU, lo, hi, FTE.esp); }
+      const [lo, hi] = lim(v0 / 2, v0 * 2); return paso(5 / mmU, lo, hi, FTE.espAc);
+    }
+    // 7. Cantidades
+    if (c.entero) { const p = /m[uú]ltiplo de 4/i.test(L) ? 4 : 1; return paso(p, p, Math.max(2 * v0, v0 + 4 * p), FTE.ent); }
+    // 8. Dimensiones de elementos: alternativas que modifican el proyecto
+    if (mmU) {
+      const [lo, hi] = lim(v0 / 2, v0 * 2);
+      if (ctx === 'madera') return paso(5 / mmU, lo, hi, FTE.dimMad, { proy: true });
+      if (ctx === 'acero') return paso(5 / mmU, lo, hi, /distancia|borde|extremo|junta|eje/i.test(L) ? FTE.espAc : FTE.dimAc, { proy: !/distancia|borde|extremo|junta|eje/i.test(L) });
+      const losa = /losa|carpeta|base —|subbase/i.test(L) && /espesor|\bh —|\bht\b/i.test(L);
+      return paso((losa ? 10 : 50) / mmU, lo, hi, losa ? FTE.losa : FTE.dimHA, { proy: true });
+    }
+    const [lo, hi] = lim(v0 / 2, v0 * 2);
+    return paso(0, lo, hi, FTE.gen);
+  }
 
   const main = () => document.getElementById('mainView');
   const visible = el => !!(el && (el.offsetParent !== null || el.getClientRects().length));
@@ -49286,8 +49452,8 @@ route();
     m.querySelectorAll('.chip.bad,.global-verdict.bad').forEach(el => { if (!inPrint(el) && visible(el)) set.add(el); });
     const tw = document.createTreeWalker(m, NodeFilter.SHOW_TEXT);
     let t; while ((t = tw.nextNode())) {
-      if (!FAIL_RE.test(t.nodeValue)) continue;
-      const el = t.parentElement; if (!el || inPrint(el) || !visible(el)) continue;
+      if (!FAIL_RE.test(t.nodeValue) || /\bsi NO CUMPLE\b/i.test(t.nodeValue)) continue;
+      const el = t.parentElement; if (!el || inPrint(el) || !visible(el) || el.closest('h1,h2,h3,h4,label,summary,option')) continue;
       if (![...set].some(s => s.contains(el) || el.contains(s))) set.add(el);
     }
     const items = [...set].map(el => {
@@ -49307,27 +49473,36 @@ route();
     const h3 = el.closest('.panel') && el.closest('.panel').querySelector('h3');
     return { label: (l || el.id).replace(/\s+/g, ' ').trim(), panel: h3 ? h3.textContent.trim() : '' };
   }
+  const OPC_LIBRE = /personaliz|\botr[oa]s?\b|manual|definido por|ingreso directo|libre/i;
   function candidatos() {
     const m = main(); if (!m) return [];
     const out = [];
     m.querySelectorAll('input,select').forEach(el => {
-      if (inPrint(el) || el.disabled || !visible(el) || !el.id) return;
+      if (inPrint(el) || el.disabled || el.readOnly || !visible(el) || !el.id) return;
       if (/^meta|^fs|^pp_q|^dh_criterio$/.test(el.id)) return;
       const { label, panel } = etiqueta(el);
       if (el.tagName === 'SELECT') {
-        if (el.options.length < 2) return;
-        out.push({ el, tipo: 'select', label, panel, def: !LOAD_RE.test(label + ' ' + panel) });
+        if ([...el.options].filter(o => !o.disabled && o.value !== '' && !OPC_LIBRE.test(o.text)).length < 2) return;
+        out.push({ el, tipo: 'select', label, panel, def: !LOAD_RE.test(label + ' ' + panel), fac: { fuente: FTE.lista, proy: /\btipo\b|^\s*(forma|configuraci|condici)/i.test(label) } });
         return;
       }
       if (el.type === 'checkbox' || el.type === 'radio' || el.type === 'file' || el.type === 'color' || el.type === 'date') return;
-      const v = parseFloat(String(el.value).replace(',', '.'));
-      if (!isFinite(v) || String(el.value).trim() === '') return;
-      out.push({ el, tipo: 'num', label, panel, v0: v, entero: INT_RE.test(label) || (Number.isInteger(v) && /n[°º]|cantidad|número/i.test(label)), def: v !== 0 && !LOAD_RE.test(label + ' ' + panel) });
+      const s0 = crudo(el), v = aNum(s0);
+      if (!isFinite(v) || String(s0).trim() === '') return;
+      const c = { el, tipo: 'num', label, panel, v0: v, s0, coma: /,/.test(s0) && !/\./.test(s0) };
+      c.carga = /\b(ton|tonf|tf|kn|kpa)\b|\bkgf\b(?!\/cm)/i.test(label) || /peso adicional|accesorios/i.test(label);
+      c.entero = (INT_RE.test(label) || /^ch_n\d/.test(el.id)) && !unidadLong(label, el.id) && !c.carga;
+      c.fac = factible(c);
+      c.excl = c.fac.modo === 'fuera';
+      c.def = !c.excl && v !== 0 && !c.carga && (c.fac.modo === 'cat' || !!c.fac.proy || !!c.fac.paso || !LOAD_RE.test(label + ' ' + panel));
+      out.push(c);
     });
     return out;
   }
-  function fijar(el, val) {
-    el.value = val;
+  function fijar(el, val, coma) {
+    let s = typeof val === 'number' ? String(r6(val)) : String(val);
+    if (typeof val === 'number' && coma) s = s.replace('.', ',');
+    if (el.tagName === 'INPUT') NAT.set.call(el, s); else el.value = s;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
@@ -49340,22 +49515,65 @@ route();
     const r = (haciaArriba ? Math.ceil(x / paso - 1e-9) : Math.floor(x / paso + 1e-9)) * paso;
     return Math.round(r * 1e6) / 1e6;
   }
+  const aPaso = (x, p, arriba) => r6((arriba ? Math.ceil(x / p - 1e-9) : Math.floor(x / p + 1e-9)) * p);
 
-  async function evaluar(c, val) { fijar(c.el, val); await pausa(); return fallas().n; }
+  // Fija un valor (y el Fu de la misma calidad, si la variable es Fy con su Fu al lado).
+  function poner(c, r) {
+    if (c.tipo === 'select') { c.el.selectedIndex = r.i; c.el.dispatchEvent(new Event('input', { bubbles: true })); c.el.dispatchEvent(new Event('change', { bubbles: true })); return; }
+    if (c.fac.par && r.fu != null) fijar(c.fac.par, r.fu);
+    fijar(c.el, r.v, c.coma);
+  }
+  function restaurar(c) {
+    if (c.tipo === 'select') { if (c.el.selectedIndex !== c.i0) { c.el.selectedIndex = c.i0; c.el.dispatchEvent(new Event('input', { bubbles: true })); c.el.dispatchEvent(new Event('change', { bubbles: true })); } return; }
+    if (c.fac.par) fijar(c.fac.par, c.fu0);
+    fijar(c.el, c.s0);
+  }
+  async function evaluar(c, val) { fijar(c.el, val, c.coma); await pausa(); return fallas().n; }
+
+  // Catálogo: recorre los valores comerciales hacia arriba y hacia abajo del actual.
+  async function buscarCat(c, f0, prog) {
+    const v0 = c.v0, lista = c.fac.lista, res = [];
+    const tol = Math.max(Math.abs(v0) * 1e-3, 1e-9);
+    if (c.fac.par) c.fu0 = crudo(c.fac.par);
+    for (const dir of [1, -1]) {
+      const tramo = lista.filter(x => dir > 0 ? x.v > v0 + tol : x.v < v0 - tol);
+      if (dir < 0) tramo.reverse();
+      let mejor = null;
+      for (let k = 0; k < tramo.length; k++) {
+        const x = tramo[k];
+        poner(c, x); await pausa(); prog();
+        const n = fallas().n;
+        const r = { v: x.v, t: x.t, fu: x.fu, dir, cambio: Math.abs(x.v - v0) / Math.max(Math.abs(v0), 1e-9) };
+        if (n === 0) { res.push(Object.assign(r, { ok: true })); break; }
+        if (!mejor || n < mejor.n) mejor = Object.assign(r, { ok: false, n, tope: k === tramo.length - 1 });
+      }
+      if (mejor && mejor.n < f0 && !res.some(r => r.ok && r.dir === dir)) res.push(mejor);
+      if (!tramo.length) continue;
+    }
+    restaurar(c);
+    res.sort((x, y) => (y.ok - x.ok) || (x.ok ? x.cambio - y.cambio : x.n - y.n));
+    return res[0] || null;
+  }
 
   async function buscarNum(c, f0, prog) {
-    const v0 = c.v0, res = [];
+    if (c.fac.modo === 'cat') return buscarCat(c, f0, prog);
+    const v0 = c.v0, F = c.fac, res = [];
+    const lo = F.lo, hi = F.hi;
+    const ajusta = (x, arriba) => F.paso ? aPaso(x, F.paso, arriba) : redondeo(x, arriba, c.entero);
     for (const dir of [1, -1]) {
       let prev = v0, hallado = null, mejor = { n: f0, v: v0 };
       for (let k = 1; k <= 14; k++) {
-        let v = c.entero ? v0 + dir * Math.max(1, Math.round(Math.abs(v0) * (Math.pow(1.25, k) - 1))) : v0 * (dir > 0 ? Math.pow(1.25, k) : Math.pow(0.8, k));
-        if (c.entero && v < 1) break;
+        let v = c.entero ? v0 + dir * Math.max(F.paso || 1, Math.round(Math.abs(v0) * (Math.pow(1.25, k) - 1))) : v0 * (dir > 0 ? Math.pow(1.25, k) : Math.pow(0.8, k));
+        let tope = false;
+        if (v > hi) { v = hi; tope = true; }
+        if (v < lo) { v = lo; tope = true; }
+        if (Math.abs(v - prev) < 1e-12) break;
         if (!c.entero && Math.abs(v) < 1e-9) break;
-        if (dir < 0 && v0 > 0 && v <= 0) break;
         const n = await evaluar(c, v); prog();
         if (n < mejor.n) mejor = { n, v };
         if (n === 0) { hallado = v; break; }
         prev = v;
+        if (tope) break;
       }
       if (hallado != null) {
         let a = prev, b = hallado;                     // a: falla, b: cumple
@@ -49366,13 +49584,24 @@ route();
           const n = await evaluar(c, m); prog();
           if (n === 0) b = m; else a = m;
         }
-        let r = redondeo(b, dir > 0, c.entero);
-        if ((dir > 0 && r < b) || (dir < 0 && r > b)) r = b;
-        if ((await evaluar(c, r)) !== 0) r = b;
-        res.push({ ok: true, v: r, dir, cambio: Math.abs(r - v0) / Math.max(Math.abs(v0), 1e-9) });
-      } else if (mejor.n < f0) res.push({ ok: false, v: redondeo(mejor.v, dir > 0, c.entero), n: mejor.n, dir, cambio: Math.abs(mejor.v - v0) / Math.max(Math.abs(v0), 1e-9) });
+        // Lleva el valor al módulo constructivo, hacia el lado seguro, sin salir de los límites.
+        let r = ajusta(b, dir > 0), okR = false;
+        for (let i = 0; i < 4; i++) {
+          if (r < lo - 1e-9 || r > hi + 1e-9) break;
+          if ((await evaluar(c, r)) === 0) { okR = true; break; }
+          r = F.paso ? r6(r + dir * F.paso) : ajusta(r * (1 + dir * 0.02), dir > 0);
+        }
+        if (okR) res.push({ ok: true, v: r, dir, cambio: Math.abs(r - v0) / Math.max(Math.abs(v0), 1e-9) });
+        else hallado = null;
+      }
+      if (hallado == null && mejor.n < f0) {
+        let r = ajusta(mejor.v, dir > 0);
+        if (r > hi + 1e-9 || r < lo - 1e-9) r = ajusta(mejor.v, dir < 0);
+        const n = await evaluar(c, r); prog();
+        if (n < f0) res.push({ ok: false, v: r, n, dir, tope: true, cambio: Math.abs(r - v0) / Math.max(Math.abs(v0), 1e-9) });
+      }
     }
-    fijar(c.el, c.v0);
+    fijar(c.el, c.s0);
     res.sort((x, y) => (y.ok - x.ok) || (x.ok ? x.cambio - y.cambio : x.n - y.n));
     return res[0] || null;
   }
@@ -49382,7 +49611,7 @@ route();
       let mejor = null;
       for (let k = 1; k <= 160; k++) {
         const i = i0 + dir * k; if (i < 0 || i >= opts.length) break;
-        if (opts[i].disabled || opts[i].value === '') continue;
+        if (opts[i].disabled || opts[i].value === '' || OPC_LIBRE.test(opts[i].text)) continue;
         el.selectedIndex = i; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
         await pausa(); prog();
         const n = fallas().n;
@@ -49443,6 +49672,13 @@ route();
   #solOv.dock button.ap .t{display:none}#solOv.dock button.ap .m{display:inline}
   #solOv.dock #solRes>p.sol-ok,#solOv.dock #solRes>p.sol-par{font-size:.7rem;margin:2px 0}
   #solBox tr.aplicado td{background:rgba(30,122,69,.08)}
+  #solBox tr.proy td{background:#FFF3BF}
+  #solBox tr.proy.aplicado td{background:#F4E7A1}
+  #solBox .sol-amar{color:#7A5B00;background:#FFF3BF;border:1px solid #E8C94A;border-radius:6px;padding:4px 8px;font-weight:700;text-align:center;margin:4px 0}
+  #solBox label.proy{background:#FFF3BF;border-radius:4px}
+  #solBox label.excl{opacity:.6}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) #solBox tr.proy td,:root:not([data-theme="light"]) #solBox label.proy{background:rgba(232,201,74,.18)}:root:not([data-theme="light"]) #solBox .sol-amar{background:rgba(232,201,74,.18);color:#F2D675;border-color:#8A7322}}
+  :root[data-theme="dark"] #solBox tr.proy td,:root[data-theme="dark"] #solBox label.proy{background:rgba(232,201,74,.18)}:root[data-theme="dark"] #solBox .sol-amar{background:rgba(232,201,74,.18);color:#F2D675;border-color:#8A7322}
   html.sol-dock #esqLive{max-height:52vh!important}
   .esq-estado{position:absolute;top:6px;left:8px;z-index:3;font:700 .74rem/1 'IBM Plex Sans',system-ui,sans-serif;letter-spacing:.04em;padding:5px 9px;border-radius:5px;color:#fff;pointer-events:none}
   .esq-estado.ok{background:#1E7A45}
@@ -49476,13 +49712,16 @@ route();
     const f = fallas(), cands = candidatos();
     const ov = document.createElement('div'); ov.id = 'solOv';
     const fmt = v => (typeof v === 'number' ? v.toLocaleString('es-CL', { maximumFractionDigits: 4 }) : String(v));
+    const usables = cands.filter(c => !c.excl), excl = cands.filter(c => c.excl);
+    const actual = c => c.tipo === 'select' ? c.el.options[c.el.selectedIndex].text : crudo(c.el);
     ov.innerHTML = `<div id="solBox" role="dialog" aria-label="Rediseño">
       <div class="sol-row" style="justify-content:space-between;flex-wrap:nowrap"><button id="solAmp" class="sol-dk" title="Volver a la ventana completa">⤢</button><span class="sol-nodk" style="width:62px"></span><h2>Rediseño</h2><button id="solX">Cerrar</button></div>
       ${f.n === 0 ? `<p class="sol-ok">${cumpleAlgo() ? 'Todas las verificaciones de esta planilla cumplen. No hay nada que corregir.' : 'No se detectan verificaciones con NO CUMPLE en esta planilla.'}</p>` :
       `<div id="solFallas">${fallasHtml(f)}</div>
-      <p class="sol-sub sol-c sol-intro">El asistente prueba cada variable marcada, una a la vez, y busca el valor más cercano al actual con el que toda la planilla queda CUMPLE. Las cargas y los datos del sitio (zona, suelo, exposición, luces) quedan fuera por defecto: márcalos si también se pueden cambiar. Al terminar se restauran tus valores; tú eliges qué sugerencia aplicar.</p>
-      <details class="sol-intro"><summary>Variables que se pueden modificar (${cands.filter(c => c.def).length} de ${cands.length} marcadas)</summary>
-        <div class="sol-vars">${cands.map((c, i) => `<label title="${esc(c.label)}"><input type="checkbox" data-i="${i}" ${c.def ? 'checked' : ''}> <span>${esc(c.label)}${c.panel ? ` <span class="sol-sub">· ${esc(c.panel)}</span>` : ''} <span class="sol-sub">= ${esc(c.tipo === 'select' ? c.el.options[c.el.selectedIndex].text : c.el.value)}</span></span></label>`).join('')}</div>
+      <p class="sol-sub sol-c sol-intro">El asistente prueba cada variable marcada, una a la vez, y busca el valor factible más cercano al actual con el que toda la planilla queda CUMPLE: calidades de material que existen (NCh170, NCh203, NCh204, ASTM), diámetros y espesores comerciales, cantidades enteras y dimensiones en módulos constructivos, sin salir de ×½ – ×2 del valor actual. Las cargas y los datos del sitio quedan fuera por defecto; los factores normativos, propiedades del material y datos del suelo no se proponen. Las dimensiones que modifican el proyecto se muestran aparte, en amarillo. Al terminar se restauran tus valores.</p>
+      <details class="sol-intro"><summary>Variables que se pueden modificar (${usables.filter(c => c.def).length} de ${usables.length} marcadas)</summary>
+        <div class="sol-vars">${usables.map(c => `<label title="${esc(c.label)} — ${esc(c.fac.fuente || '')}"${c.fac.proy ? ' class="proy"' : ''}><input type="checkbox" data-i="${cands.indexOf(c)}" ${c.def ? 'checked' : ''}> <span>${esc(c.label)}${c.panel ? ` <span class="sol-sub">· ${esc(c.panel)}</span>` : ''} <span class="sol-sub">= ${esc(actual(c))}</span></span></label>`).join('')}
+        ${excl.length ? `<p class="sol-sub" style="margin:8px 0 2px;font-weight:600">No se proponen (${excl.length})</p>${excl.map(c => `<label class="excl" title="${esc(c.fac.motivo)}"><input type="checkbox" disabled> <span>${esc(c.label)} <span class="sol-sub">— ${esc(c.fac.motivo)}</span></span></label>`).join('')}` : ''}</div>
       </details>
       <div class="sol-row sol-intro"><button class="pri" id="solGo">Buscar rediseño</button></div><div class="sol-sub sol-c sol-intro" id="solProg"></div>
       <div id="solRes"></div>`}
@@ -49503,55 +49742,64 @@ route();
     const go = ov.querySelector('#solGo'); if (!go) return;
     go.onclick = async () => {
       go.disabled = true;
-      const sel = [...ov.querySelectorAll('.sol-vars input:checked')].map(x => cands[+x.dataset.i]);
+      cands.forEach(c => { if (c.tipo === 'num') { c.s0 = crudo(c.el); c.v0 = aNum(c.s0); c.fac = factible(c); if (c.fac.par) c.fu0 = crudo(c.fac.par); } else c.i0 = c.el.selectedIndex; });
+      const sel = [...ov.querySelectorAll('.sol-vars input:checked')].map(x => cands[+x.dataset.i]).filter(c => c.fac.modo !== 'fuera');
       const f0 = fallas().n; let evals = 0;
       const prog = ov.querySelector('#solProg'), out = [];
       const tick = () => { evals++; if (evals % 5 === 0) prog.textContent = `Probando… ${evals} cálculos`; };
-      cands.forEach(c => { if (c.tipo === 'num') c.v0 = parseFloat(String(c.el.value).replace(',', '.')); else c.i0 = c.el.selectedIndex; });
       for (let k = 0; k < sel.length; k++) {
         const c = sel[k]; prog.textContent = `Probando ${k + 1} de ${sel.length}: ${c.label}`;
         if (c.tipo === 'num') { const r = await buscarNum(c, f0, tick); if (r) out.push({ c, r }); }
         else (await buscarSel(c, f0, tick)).forEach(r => out.push({ c, r }));
       }
-      // combinación codiciosa si ninguna variable sola resuelve
+      const proy = x => !!(x.c.fac && x.c.fac.proy);
+      // Combinación codiciosa si ninguna variable sola resuelve: primero las que no modifican el proyecto.
       let combo = null;
       if (!out.some(x => x.r.ok) && out.length) {
         const aplicados = []; let fAct = f0;
-        const pend = out.slice().sort((a, b) => a.r.n - b.r.n);
-        for (const x of pend.slice(0, 4)) {
-          if (x.c.tipo === 'num') fijar(x.c.el, x.r.v); else { x.c.el.selectedIndex = x.r.i; x.c.el.dispatchEvent(new Event('change', { bubbles: true })); x.c.el.dispatchEvent(new Event('input', { bubbles: true })); }
-          await pausa(); const n = fallas().n; evals++;
-          if (n < fAct) { aplicados.push(x); fAct = n; } else { if (x.c.tipo === 'num') fijar(x.c.el, x.c.v0); else { x.c.el.selectedIndex = x.c.i0; x.c.el.dispatchEvent(new Event('change', { bubbles: true })); } }
+        const pend = out.slice().sort((a, b) => (proy(a) - proy(b)) || (a.r.n - b.r.n));
+        for (const x of pend.slice(0, 5)) {
+          poner(x.c, x.r); await pausa(); const n = fallas().n; evals++;
+          if (n < fAct) { aplicados.push(x); fAct = n; } else restaurar(x.c);
           if (fAct === 0) break;
         }
         combo = { items: aplicados, n: fAct };
-        // restaurar
-        cands.forEach(c => { if (c.tipo === 'num') fijar(c.el, c.v0); else if (c.el.selectedIndex !== c.i0) { c.el.selectedIndex = c.i0; c.el.dispatchEvent(new Event('change', { bubbles: true })); c.el.dispatchEvent(new Event('input', { bubbles: true })); } });
+        cands.forEach(c => { if (c.tipo === 'num') { if (crudo(c.el) !== c.s0) restaurar(c); } else restaurar(c); });
         await pausa();
       }
       prog.textContent = `Listo: ${evals} cálculos. Tus valores originales se restauraron.`;
-      const valTxt = (c, r) => c.tipo === 'num' ? fmt(r.v) : esc(r.txt);
-      const actTxt = c => c.tipo === 'num' ? fmt(c.v0) : esc(c.el.options[c.i0].text);
-      const ok = out.filter(x => x.r.ok).sort((a, b) => (a.c.tipo === 'num' ? a.r.cambio : a.r.dist / 10) - (b.c.tipo === 'num' ? b.r.cambio : b.r.dist / 10));
+      const valTxt = (c, r) => c.tipo === 'num' ? fmt(r.v) + (r.t && r.t !== fmt(r.v) + ' mm' ? `<span class="sol-sub" style="display:block;font-weight:400">${esc(r.t)}${r.fu != null && c.fac.par ? ' · Fu ' + fmt(r.fu) : ''}</span>` : '') : esc(r.txt);
+      const actTxt = c => c.tipo === 'num' ? esc(c.s0) : esc(c.el.options[c.i0].text);
+      const orden = (a, b) => (a.c.tipo === 'num' ? a.r.cambio : a.r.dist / 10) - (b.c.tipo === 'num' ? b.r.cambio : b.r.dist / 10);
+      const ok = out.filter(x => x.r.ok && !proy(x)).sort(orden);
+      const okP = out.filter(x => x.r.ok && proy(x)).sort(orden);
       const par = out.filter(x => !x.r.ok);
-      const fila = (x, i) => `<tr><td class="v" title="${esc(x.c.label)}${x.c.panel ? ' · ' + esc(x.c.panel) : ''}">${esc(x.c.label)}${x.c.panel ? `<span class="p">${esc(x.c.panel)}</span>` : ''}</td><td class="n rojo" title="${actTxt(x.c)}">${actTxt(x.c)}</td><td class="n verde" title="${valTxt(x.c, x.r)}">${valTxt(x.c, x.r)}${x.c.tipo === 'num' ? `<span class="sol-sub" style="display:block;font-weight:400">${x.r.dir > 0 ? '+' : '−'}${(x.r.cambio * 100).toFixed(0)} %</span>` : ''}</td><td class="c-res">${x.r.ok ? '<span class="verde">CUMPLE</span>' : `<span class="rojo">Quedan ${x.r.n}</span>`}</td><td><button class="ap" data-ap="${i}" title="Aplicar este valor"><span class="t">Aplicar</span><span class="m">✓</span></button></td></tr>`;
-      const lista = [...ok, ...par];
+      const fila = (x, i) => `<tr${proy(x) ? ' class="proy"' : ''}><td class="v" title="${esc(x.c.label)}${x.c.panel ? ' · ' + esc(x.c.panel) : ''} — ${esc(x.c.fac.fuente || '')}">${esc(x.c.label)}<span class="p">${esc(x.c.fac.fuente || x.c.panel || '')}</span></td><td class="n rojo">${actTxt(x.c)}</td><td class="n verde">${valTxt(x.c, x.r)}</td><td class="c-res">${x.r.ok ? '<span class="verde">CUMPLE</span>' : `<span class="rojo">Quedan ${x.r.n}</span>`}</td><td><button class="ap" data-ap="${i}" title="Aplicar este valor"><span class="t">Aplicar</span><span class="m">✓</span></button></td></tr>`;
+      const tabla = (xs, base) => `<div class="sol-tbl"><table><colgroup><col style="width:44%"><col style="width:15%"><col style="width:17%"><col class="c-res" style="width:12%"><col style="width:12%"></colgroup><tr><th class="v">Variable · criterio</th><th>Actual</th><th>Sugerido</th><th class="c-res">Resultado</th><th></th></tr>${xs.map((x, j) => fila(x, base + j)).join('')}</table></div>`;
+      const lista = [...ok, ...okP, ...par];
       let html = '';
-      if (ok.length) html += `<p class="sol-ok">Variables que, cambiadas solas, hacen cumplir toda la planilla (de menor a mayor cambio)</p>`;
-      else html += `<p class="sol-par">Ninguna variable sola resuelve todas las verificaciones.${combo && combo.items.length ? ` Combinación propuesta (${combo.n === 0 ? 'CUMPLE todo' : 'quedan ' + combo.n}):` : ''}</p>`;
-      if (!ok.length && combo && combo.items.length) html += `<div class="sol-tbl"><table><colgroup><col style="width:56%"><col style="width:22%"><col style="width:22%"></colgroup><tr><th class="v">Variable</th><th>Actual</th><th>Sugerido</th></tr>${combo.items.map(x => `<tr><td class="v" title="${esc(x.c.label)}">${esc(x.c.label)}</td><td class="n rojo">${actTxt(x.c)}</td><td class="n verde">${valTxt(x.c, x.r)}</td></tr>`).join('')}</table></div><div class="sol-row"><button class="pri" id="solCombo">Aplicar combinación</button></div>`;
-      if (lista.length) html += `<div class="leyenda"><span class="rojo">■ Valor actual (no cumple)</span><span class="verde">■ Valor sugerido</span></div><div class="sol-tbl"><table><colgroup><col style="width:44%"><col style="width:15%"><col style="width:17%"><col class="c-res" style="width:12%"><col style="width:12%"></colgroup><tr><th class="v">Variable</th><th>Actual</th><th>Sugerido</th><th class="c-res">Resultado</th><th></th></tr>${lista.map(fila).join('')}</table></div>`;
-      else html += '<p class="sol-sub">Ninguna de las variables marcadas mejora el resultado en un rango razonable (hasta ×18 o ÷18 del valor actual). Marca otras variables o revisa las cargas.</p>';
-      html += `<p class="sol-sub sol-c">Las sugerencias son valores mínimos para cumplir con los datos actuales, redondeados. Revísalas con criterio de diseño (disponibilidad comercial, detalles constructivos, otras combinaciones de carga) antes de adoptarlas.</p>`;
+      if (ok.length) html += `<p class="sol-ok">Opciones factibles que, cambiadas solas, hacen cumplir toda la planilla (de menor a mayor cambio)</p>${tabla(ok, 0)}`;
+      if (okP.length) html += `<p class="sol-amar">Alternativas que modifican dimensiones del proyecto — pueden alterar el proyecto; revísalas antes de adoptarlas</p>${tabla(okP, ok.length)}`;
+      if (!ok.length && !okP.length) {
+        if (combo && combo.items.length && combo.n === 0) {
+          html += `<p class="sol-par">Ninguna variable sola resuelve todas las verificaciones. Combinación factible que cumple todo:</p><div class="sol-tbl"><table><colgroup><col style="width:56%"><col style="width:22%"><col style="width:22%"></colgroup><tr><th class="v">Variable</th><th>Actual</th><th>Sugerido</th></tr>${combo.items.map(x => `<tr${proy(x) ? ' class="proy"' : ''}><td class="v" title="${esc(x.c.label)}">${esc(x.c.label)}</td><td class="n rojo">${actTxt(x.c)}</td><td class="n verde">${valTxt(x.c, x.r)}</td></tr>`).join('')}</table></div><div class="sol-row"><button class="pri" id="solCombo">Aplicar combinación</button></div>`;
+        } else {
+          html += `<p class="sol-par">No existe una solución factible con las variables marcadas: ningún valor comercial ni dimensión dentro de ×½ – ×2 del actual logra que todo cumpla${combo && combo.items.length ? ` (la mejor combinación deja ${combo.n} sin cumplir)` : ''}. Corresponde cambiar el sistema (perfil, sección, tipo de conexión o de fundación) o revisar las solicitaciones.</p>`;
+          if (combo && combo.items.length) html += `<div class="sol-row"><button id="solCombo">Aplicar la mejor combinación parcial</button></div>`;
+        }
+      }
+      if (par.length) html += `<p class="sol-sub sol-c" style="font-weight:600">Mejoras parciales (no logran CUMPLE dentro de los límites)</p>${tabla(par, ok.length + okP.length)}`;
+      if (!out.length) html += '<p class="sol-sub">Ninguna de las variables marcadas mejora el resultado con valores comerciales o dentro de ×½ – ×2 del valor actual. Marca otras variables o revisa las cargas.</p>';
+      html += `<p class="sol-sub sol-c">Las sugerencias son los valores factibles mínimos para cumplir con los datos actuales. Revísalas con criterio de diseño (detalles constructivos, otras combinaciones de carga, disponibilidad con el proveedor) antes de adoptarlas.</p>`;
       const res = ov.querySelector('#solRes'); res.innerHTML = html;
       res.querySelectorAll('[data-ap]').forEach(b => b.onclick = () => {
         const x = lista[+b.dataset.ap];
-        if (x.c.tipo === 'num') fijar(x.c.el, x.r.v); else { x.c.el.selectedIndex = x.r.i; x.c.el.dispatchEvent(new Event('input', { bubbles: true })); x.c.el.dispatchEvent(new Event('change', { bubbles: true })); }
+        poner(x.c, x.r);
         b.innerHTML = '✓'; b.title = 'Aplicado'; b.closest('tr').classList.add('aplicado');
-        anclar(); if (typeof fsToast === 'function') fsToast(`Aplicado: ${x.c.label} = ${x.c.tipo === 'num' ? fmt(x.r.v) : x.r.txt}`);
+        anclar(); if (typeof fsToast === 'function') fsToast(`Aplicado: ${x.c.label} = ${x.c.tipo === 'num' ? fmt(x.r.v) + (x.r.t ? ' (' + x.r.t + ')' : '') : x.r.txt}`);
       });
       const bc = res.querySelector('#solCombo');
-      if (bc) bc.onclick = () => { combo.items.forEach(x => { if (x.c.tipo === 'num') fijar(x.c.el, x.r.v); else { x.c.el.selectedIndex = x.r.i; x.c.el.dispatchEvent(new Event('input', { bubbles: true })); x.c.el.dispatchEvent(new Event('change', { bubbles: true })); } }); bc.textContent = '✓ Combinación aplicada'; anclar(); if (typeof fsToast === 'function') fsToast('Combinación aplicada'); };
+      if (bc) bc.onclick = () => { combo.items.forEach(x => poner(x.c, x.r)); bc.textContent = '✓ Combinación aplicada'; anclar(); if (typeof fsToast === 'function') fsToast('Combinación aplicada'); };
     };
   }
 
