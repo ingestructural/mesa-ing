@@ -228,6 +228,12 @@
   table.results.editable select.cb-s-activo,
   table.results.editable select.cb-s-requiere{min-width:calc(4ch + 20px);}
   table.results.editable select.cb-m-sector{min-width:calc(10ch + 24px);}
+  table.results.editable input.cb-s-uso{min-width:12ch;}
+  table.results.editable select.cb-s-destino{min-width:calc(22ch + 20px); font-size:.78rem;}
+  table.results.editable input.cb-s-altesp{min-width:7ch;}
+  table.results.editable select.cb-s-altillos{min-width:calc(3ch + 20px);}
+  table.results.editable input.cb-m-ubic{min-width:10ch;}
+  table.results.editable input.cb-p-fuente{min-width:22ch;}
   /* Columna Material: el <select> ya no necesita ser tan ancho como el nombre completo del material — abajo
      de él (.cb-m-material-caption) se muestra el nombre completo en texto chico, en hasta 2 líneas, así que el
      select solo necesita ancho para leer el inicio del texto + la flechita nativa. */
@@ -413,7 +419,9 @@
     table.results.editable input.cb-s-superficie, table.results.editable input.cb-s-ocupacion,
     table.results.editable input.cb-m-cantidad,
     table.results.editable select.cb-s-activo, table.results.editable select.cb-s-requiere,
-    table.results.editable select.cb-m-sector, table.results.editable select.cb-m-material{
+    table.results.editable select.cb-m-sector, table.results.editable select.cb-m-material,
+    table.results.editable input.cb-s-uso, table.results.editable select.cb-s-destino, table.results.editable input.cb-s-altesp,
+    table.results.editable select.cb-s-altillos, table.results.editable input.cb-m-ubic, table.results.editable input.cb-p-fuente{
       min-width:0 !important;
     }
 
@@ -20793,918 +20801,629 @@ function renderSismo(container) {
 
 
 // ===================== ESTUDIO DE CARGA COMBUSTIBLE — OGUC =====================
+/* Estudio de carga combustible por sectores (versión 2026-10-22 rev. 2).
+   - Carga combustible Cc = Σ mᵢ·Hᵢ y densidad media qm = Cc / S (NCh 1916).
+   - Densidad puntual máxima (NCh 1993): densidad en un área de 2 m × 2 m. Se calcula por ubicación: cada acopio
+     se asigna a una superficie de 2×2 m (etiqueta libre) o se declara «distribuido» de forma uniforme en el
+     sector; qp = máx(Σ cargas de la ubicación / 4 m² + Σ cargas distribuidas / S). Es invariante a dividir o
+     unir filas de inventario. Sin ubicación para todos los acopios (ni valor medido con procedencia) la
+     puntual queda «no determinada».
+   - Tipo a/b/c/d según el destino (OGUC 4.3.4): Tabla 1 (superficie), Tabla 2 (ocupantes) o Tabla 3
+     (densidad media y puntual; se usa la mayor de ambas columnas). Tablas EF_T1/EF_T2/EF_T3, compartidas con
+     el «Estudio de Resistencia al Fuego» (ver su encabezado para la fuente). Límites «hasta» inclusivos.
+     Destino de Tabla 3 sin estudio de carga combustible → tipo a (OGUC 4.3.4).
+   - N° de pisos (OGUC 4.3.5 n°1): piso hasta 3,5 m; las alturas de pisos sobre 3,5 m se suman aparte y se
+     dividen por 3,5 m (la fracción es un piso más). Excepción: estructura de un piso, sin altillos ni
+     superficies intermedias, con densidad media < 500 MJ/m² → 1 piso.
+   - Uso mixto (4.3.5 n°3 y n°4): con sectores separados en planta cada uno se clasifica por separado; sin
+     separación rige el tipo más exigente para todos.
+   - Resistencias por elemento según OGUC 4.3.3 (EF_T433), con las condiciones de aplicación del 4.3.5.
+   Las exigencias son requisitos calculados; el cumplimiento se acredita con el Listado Oficial MINVU,
+   ensayo NCh 935/1 o asimilación (OGUC 4.3.2). */
+
+const CB_PISO = 3.5;        // OGUC 4.3.5 n°1
+const CB_AREA_PUNTUAL = 4;  // NCh 1993: 2 m × 2 m
+const CB_OTRO = 'Otro material (calor de combustión y fuente del usuario)';
+const CB_DIST = 'distribuido';
+
+// Catálogo de calores de combustión H (MJ/kg). base: 'PCI' (agua en vapor) o 'PCS'; nivel: 'primaria' (NIST),
+// 'secundaria' (compilación que cita NIST/CRC, sin verificar en la fuente primaria) o 'sin fuente' (valor
+// heredado del catálogo original, sin fuente ni base documentadas). Para sustancias puras PCI = (|ΔcH°| − n·44,0)
+// / M, con n = moles de agua formados y 44,0 kJ/mol la entalpía de vaporización del agua a 25 °C.
 const PODER_CALORIFICO_COMB = {
-  'Madera y derivados (pino, aglomerado, contrachapado, OSB)': 18.4,
-  'Papel y cartón': 16.7,
-  'Libros y documentos apilados': 16.7,
-  'Textiles naturales (algodón, lana)': 17,
-  'Textiles sintéticos (poliéster, nylon)': 29,
-  'Cuero': 19,
-  'Caucho / goma natural': 33.5,
-  'Poliestireno expandido (EPS)': 40,
-  'Poliuretano (espuma rígida/flexible)': 24,
-  'PVC (cloruro de polivinilo)': 17,
-  'Polietileno (PE)': 46,
-  'Polipropileno (PP)': 46,
-  'Gasolina / bencina': 44,
-  'Petróleo diésel': 42.5,
-  'Alcohol etílico': 27,
-  'Aceites y lubricantes minerales': 41,
-  'Mobiliario mixto (madera+textil+espuma, promedio)': 20,
-  'Neumáticos (acopio)': 32,
-  // Sustancias químicas típicas de bodegas de productos peligrosos (líquidos/sólidos inflamables, corrosivos,
-  // aerosoles) — valores de referencia usual en estudios de carga combustible de este tipo de instalaciones.
-  'Metil etil cetona (MEK)': 31.5,
-  'Tolueno': 42.3,
-  'Ácido acrílico': 18,
-  'Ácido oxálico': 29.3,
-  'Ácido benzoico': 25.1,
-  'Zinc en polvo': 41.9,
-  'Propano (aerosol)': 50.2,
-  'Butano (aerosol)': 46,
-  'Acetona': 30.8,
-  'Metanol': 22.7,
-  'Xileno': 43.4,
-  'Hexano': 44.7,
-  'Ácido acético': 14.6
+  'Madera y derivados (pino, aglomerado, contrachapado, OSB)': { pc:18.4, base:'—', estado:'Sólido', comp:'Celulósico, mezcla de especies y tableros', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Papel y cartón': { pc:16.7, base:'—', estado:'Sólido', comp:'Celulósico', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Libros y documentos apilados': { pc:16.7, base:'—', estado:'Sólido', comp:'Celulósico', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Textiles naturales (algodón, lana)': { pc:17, base:'—', estado:'Sólido', comp:'Mezcla algodón/lana sin proporción declarada', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Textiles sintéticos (poliéster, nylon)': { pc:29, base:'—', estado:'Sólido', comp:'Mezcla poliéster/nylon sin proporción declarada', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Cuero': { pc:19, base:'—', estado:'Sólido', comp:'—', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Caucho / goma natural': { pc:33.5, base:'—', estado:'Sólido', comp:'—', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Poliestireno expandido (EPS)': { pc:40, base:'—', estado:'Sólido', comp:'(C8H8)n', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Poliuretano (espuma rígida/flexible)': { pc:24, base:'—', estado:'Sólido', comp:'Formulación variable', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'PVC (cloruro de polivinilo)': { pc:17, base:'—', estado:'Sólido', comp:'(C2H3Cl)n', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Polietileno (PE)': { pc:46, base:'—', estado:'Sólido', comp:'(C2H4)n', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Polipropileno (PP)': { pc:46, base:'—', estado:'Sólido', comp:'(C3H6)n', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Gasolina / bencina': { pc:44, base:'—', estado:'Líquido', comp:'Mezcla de hidrocarburos', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Petróleo diésel': { pc:42.5, base:'—', estado:'Líquido', comp:'Mezcla de hidrocarburos', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Alcohol etílico': { pc:26.9, pcs:29.8, base:'PCI', estado:'Líquido', comp:'C2H6O, M = 46,069 g/mol, 3 H2O', nivel:'secundaria', fuente:'ΔcH°líq = −1371 kJ/mol (Wikipedia «Ethanol»); PCI = (1371 − 3·44,0)/46,069' },
+  'Aceites y lubricantes minerales': { pc:41, base:'—', estado:'Líquido', comp:'Mezcla de hidrocarburos', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Mobiliario mixto (madera+textil+espuma, promedio)': { pc:20, base:'—', estado:'Sólido', comp:'Promedio sin composición declarada', nivel:'sin fuente', fuente:'Catálogo original de la planilla (promedio de mezcla no trazable)' },
+  'Neumáticos (acopio)': { pc:32, base:'—', estado:'Sólido', comp:'Caucho, negro de humo, acero', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Metil etil cetona (MEK)': { pc:31.5, pcs:33.9, base:'PCI', estado:'Líquido', comp:'C4H8O, M = 72,106 g/mol, 4 H2O', nivel:'primaria', fuente:'NIST Chemistry WebBook: ΔcH°líq = −2444,2 kJ/mol (Sinke y Oetting, 1964); PCI = (2444,2 − 4·44,0)/72,106' },
+  'Tolueno': { pc:40.6, pcs:42.5, base:'PCI', estado:'Líquido', comp:'C7H8, M = 92,138 g/mol, 4 H2O', nivel:'primaria', fuente:'NIST Chemistry WebBook: ΔcH°líq = −3920 ± 20 kJ/mol (promedio NIST); PCI = (3920 − 4·44,0)/92,138' },
+  'Ácido acrílico': { pc:18, base:'—', estado:'Líquido', comp:'C3H4O2', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Ácido oxálico': { pc:2.33, pcs:2.82, base:'PCI', estado:'Sólido (anhidro)', comp:'C2H2O4, M = 90,035 g/mol, 1 H2O', nivel:'primaria', fuente:'NIST Chemistry WebBook: ΔcH°sól = −242,9 (Wilhoit y Shiao, 1964) y −253,5 kJ/mol (Verkade et al., 1926; Cox y Pilcher, 1970) → PCS 2,70–2,82 MJ/kg; PCI con el valor mayor = (253,5 − 44,0)/90,035' },
+  'Ácido benzoico': { pc:25.4, pcs:26.4, base:'PCI', estado:'Sólido', comp:'C7H6O2, M = 122,12 g/mol, 3 H2O', nivel:'secundaria', fuente:'ΔcH°sól = −3228 kJ/mol (Wikipedia «Benzoic acid»; patrón de calorimetría); PCI = (3228 − 3·44,0)/122,12' },
+  'Zinc en polvo': { pc:5.36, pcs:5.36, base:'PCI = PCS', estado:'Sólido (polvo)', comp:'Zn → ZnO, M = 65,38 g/mol, no forma agua', nivel:'secundaria', fuente:'ΔfH°(ZnO, s) = −350,46 kJ/mol (Wikipedia «Zinc oxide», CRC Handbook); H = 350,46/65,38' },
+  'Propano (aerosol)': { pc:46.3, pcs:50.3, base:'PCI', estado:'Gas licuado', comp:'C3H8, M = 44,097 g/mol, 4 H2O', nivel:'secundaria', fuente:'ΔcH°gas = −2219,2 kJ/mol (NIST, citado en Wikipedia «Propane»); PCI = (2219,2 − 4·44,0)/44,097' },
+  'Butano (aerosol)': { pc:45.7, pcs:49.5, base:'PCI', estado:'Gas licuado', comp:'C4H10, M = 58,124 g/mol, 5 H2O', nivel:'secundaria', fuente:'ΔcH° = −2877 kJ/mol (Wikipedia «Butane»); PCI = (2877 − 5·44,0)/58,124' },
+  'Acetona': { pc:28.5, pcs:30.8, base:'PCI', estado:'Líquido', comp:'C3H6O, M = 58,08 g/mol, 3 H2O', nivel:'secundaria', fuente:'ΔcH° = −1790 kJ/mol (Wikipedia «Acetone»); PCI = (1790 − 3·44,0)/58,08' },
+  'Metanol': { pc:19.9, pcs:22.6, base:'PCI', estado:'Líquido', comp:'CH4O, M = 32,042 g/mol, 2 H2O', nivel:'secundaria', fuente:'PCS = 725,7 kJ/mol (Wikipedia «Methanol»); PCI = (725,7 − 2·44,0)/32,042' },
+  'Xileno': { pc:43.4, base:'—', estado:'Líquido', comp:'C8H10 (mezcla de isómeros)', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
+  'Hexano': { pc:44.7, pcs:48.3, base:'PCI', estado:'Líquido', comp:'C6H14, M = 86,178 g/mol, 7 H2O', nivel:'secundaria', fuente:'ΔcH° = −4140 a −4180 kJ/mol (Wikipedia «Hexane»); PCI = (4160 − 7·44,0)/86,178' },
+  'Ácido acético': { pc:13.1, pcs:14.6, base:'PCI', estado:'Líquido', comp:'C2H4O2, M = 60,052 g/mol, 2 H2O', nivel:'secundaria', fuente:'ΔcH° = −875,2 kJ/mol (Wikipedia «Acetic acid»); PCI = (875,2 − 2·44,0)/60,052' }
 };
 
-const DESTINO_OPTS_COMB = [
-  'Bodegaje / Almacenamiento', 'Establecimiento industrial', 'Supermercado', 'Centro comercial / Comercio',
-  'Almacenamiento de combustibles o lubricantes', 'Oficina / Administración', 'Estacionamiento',
-  'Vivienda', 'Salud', 'Educación',
-  // Destinos típicos de bodegas de productos peligrosos (según clasificación de sustancias almacenadas):
-  'Líquidos inflamables', 'Líquidos y sólidos inflamables', 'Sólidos inflamables',
-  'Corrosivos, tóxicos y varios', 'Líquidos inflamables y aerosoles',
-  'Otro'
+// Número finito a partir de un dato de entrada (acepta coma decimal); NaN si está vacío o no es número.
+function cbNum(v) {
+  if (typeof v === 'number') return v;
+  if (v == null || String(v).trim() === '') return NaN;
+  return Number(String(v).trim().replace(',', '.'));
+}
+function cbTablaDestino(dest) {
+  if (!dest) return 0;
+  if (EF_T3[dest]) return 3;
+  if (EF_T1[dest]) return 1;
+  if (EF_T2[dest]) return 2;
+  return 0;
+}
+function cbDestinoOpts(sel) {
+  const g = (label, keys) => `<optgroup label="${label}">${keys.map(k => `<option value="${escapeHtmlAttr(k)}"${k === sel ? ' selected' : ''}>${k}</option>`).join('')}</optgroup>`;
+  return `<option value=""${!sel ? ' selected' : ''}>— elegir —</option>`
+    + g('Tabla 3 · por densidad de carga combustible', Object.keys(EF_T3))
+    + g('Tabla 1 · por superficie edificada', Object.keys(EF_T1))
+    + g('Tabla 2 · por máximo de ocupantes', Object.keys(EF_T2));
+}
+// Lista "8; 4,2" → alturas en m de los pisos de altura especial (> 3,5 m).
+function cbAlturasEsp(txt) {
+  const t = String(txt == null ? '' : txt).trim();
+  if (!t) return { vals: [], err: null };
+  const vals = t.split(';').map(x => cbNum(x));
+  if (vals.some(v => !isFinite(v) || v <= CB_PISO)) return { vals: [], err: 'cada altura de piso especial debe ser un número mayor que 3,5 m (separar con «;»)' };
+  return { vals, err: null };
+}
+// N° de pisos para clasificar (OGUC 4.3.5 n°1).
+function cbPisos(s, media) {
+  const errs = [];
+  const N = cbNum(s.pisos);
+  if (!Number.isInteger(N) || N < 1) errs.push('el N° de pisos debe ser un entero ≥ 1');
+  const esp = cbAlturasEsp(s.alturasEsp);
+  if (esp.err) errs.push(esp.err);
+  if (!errs.length && esp.vals.length > N) errs.push('hay más alturas de piso especial que pisos');
+  if (errs.length) return { valor: null, errs };
+  const sumEsp = esp.vals.reduce((a, b) => a + b, 0);
+  const q = Math.round(sumEsp / CB_PISO * 1e9) / 1e9;
+  const pisosEsp = esp.vals.length ? Math.ceil(q) : 0;
+  const nNormal = N - esp.vals.length;
+  const calc = nNormal + pisosEsp;
+  const excepcion = N === 1 && s.altillos !== 'Si' && media != null && media < 500;
+  const valor = excepcion ? 1 : calc;
+  const detalle = esp.vals.length
+    ? `${nNormal} piso(s) ≤ 3,5 m + ⌈${fmt1(sumEsp)} / 3,5⌉ = ${nNormal} + ${pisosEsp} = ${calc}` + (excepcion ? ' → 1 (excepción 4.3.5 n°1: un piso sin altillos, qm < 500 MJ/m²)' : '')
+    : `${N} piso(s) de altura ≤ 3,5 m`;
+  return { valor, calc, excepcion, nFisicos: N, sumEsp, nEsp: esp.vals.length, detalle, errs };
+}
+// Densidad puntual máxima del sector (NCh 1993, 2 × 2 m).
+function cbPuntual(s, ms, media, S) {
+  const out = { zonas: [], dist: 0, calc: null, motivo: '', manual: null, manualErr: null, valor: null, origen: null };
+  const conCarga = ms.filter(m => m.carga > 0);
+  const sinUbic = conCarga.filter(m => !String(m.ubicacion || '').trim());
+  if (!conCarga.length) out.motivo = 'sin acopios con carga';
+  else if (sinUbic.length) out.motivo = 'acopio(s) sin ubicación 2×2 m: ' + sinUbic.map(m => 'n° ' + m.n).join(', ');
+  else if (!(S > 0)) out.motivo = 'superficie inválida';
+  else {
+    const z = {};
+    let cargaDist = 0;
+    conCarga.forEach(m => {
+      const u = String(m.ubicacion).trim();
+      if (u.toLowerCase() === CB_DIST) cargaDist += m.carga;
+      else z[u] = (z[u] || 0) + m.carga;
+    });
+    out.dist = cargaDist / S;
+    out.zonas = Object.keys(z).map(k => ({ zona: k, carga: z[k], dens: z[k] / CB_AREA_PUNTUAL + out.dist })).sort((a, b) => b.dens - a.dens);
+    if (out.zonas.length * CB_AREA_PUNTUAL > S) out.motivo = `${out.zonas.length} ubicaciones de 4 m² no caben en ${fmt1(S)} m²`;
+    else out.calc = out.zonas.length ? out.zonas[0].dens : out.dist;
+  }
+  const raw = s.puntualManual;
+  if (raw != null && String(raw).trim() !== '') {
+    const v = cbNum(raw);
+    if (!isFinite(v) || v < 0) out.manualErr = 'la densidad puntual medida debe ser un número ≥ 0';
+    else if (media != null && v < media - 1e-9) out.manualErr = `la densidad puntual medida (${fmt1(v)}) no puede ser menor que la media (${fmt1(media)} MJ/m²)`;
+    else if (!String(s.puntualFuente || '').trim()) out.manualErr = 'falta indicar la procedencia de la densidad puntual medida';
+    else out.manual = v;
+  }
+  if (out.manual != null) { out.valor = out.manual; out.origen = 'medida'; }
+  else if (!out.manualErr && out.calc != null) { out.valor = out.calc; out.origen = 'ubicaciones'; }
+  return out;
+}
+// Exigencias del Art. 4.3.3 para un tipo, con las condiciones de aplicación del Art. 4.3.5.
+const CB_COND_433 = [
+  '',
+  'Art. 4.3.5 n°7: se exige solo en edificios de siete o más pisos.',
+  'Art. 4.3.5 n°8: obligatoria solo si el ascensor circula por una caja cerrada por sus cuatro costados; las puertas de acceso quedan exentas, pero deben ser de materiales no combustibles.',
+  '',
+  'Art. 4.3.5 n°9: no se exige al elemento protegido por otro interpuesto que tenga, a lo menos, la resistencia exigida al elemento protegido.',
+  'Art. 4.3.5 n°10: se exige solo si separa de piso a cielo resistente al fuego recintos contiguos dentro de una unidad y no contiene puertas ni superficies vidriadas. n°16: las divisiones entre bodegas pueden ser tabiquerías de F-15 mínimo.',
+  'Art. 4.3.5 n°9 (protección por elemento interpuesto) y n°13: las escaleras que comunican hasta dos pisos dentro de una misma unidad quedan exentas.',
+  'Art. 4.3.5 n°9 y n°12: los soportantes inclinados en 20° o más respecto de la vertical se consideran horizontales.',
+  'Art. 4.3.5 n°6: el cielo falso no protege la estructura de entrepiso salvo que figure en el Listado Oficial o se demuestre por ensayo.'
 ];
-
-const DENSIDAD_TABLA_COMB = [
-  { limMedia:0, limPuntual:0, pisos:{1:'d',2:'d',3:'d',4:'d','5+':'c'} },
-  { limMedia:500.0001, limPuntual:3500.0001, pisos:{1:'d',2:'d',3:'d',4:'c','5+':'c'} },
-  { limMedia:1000.0001, limPuntual:6000.0001, pisos:{1:'d',2:'d',3:'c',4:'c','5+':'b'} },
-  { limMedia:2000.0001, limPuntual:10000.0001, pisos:{1:'d',2:'c',3:'c',4:'b','5+':'b'} },
-  { limMedia:4000.0001, limPuntual:16000.0001, pisos:{1:'c',2:'c',3:'b',4:'b','5+':'a'} },
-  { limMedia:8000.0001, limPuntual:24000.0001, pisos:{1:'c',2:'b',3:'b',4:'a','5+':'a'} },
-  { limMedia:16000.0001, limPuntual:32000.0001, pisos:{1:'b',2:'b',3:'a',4:'a','5+':'a'} }
-];
-
-const RESISTENCIA_FUEGO_COMB = [
-  { elemento:'Muros soportantes verticales / cortafuego / fachada', A:'F-180', B:'F-150', C:'F-120', D:'F-120' },
-  { elemento:'Muros de caja de escalera de escape', A:'F-120', B:'F-120', C:'F-90', D:'F-60' },
-  { elemento:'Muros de caja de ascensores / ductos verticales', A:'F-120', B:'F-90', C:'F-60', D:'F-60' },
-  { elemento:'Muros de separación entre unidades / recintos', A:'F-120', B:'F-90', C:'F-60', D:'F-60' },
-  { elemento:'Elementos verticales soportantes (pilares, columnas)', A:'F-120', B:'F-90', C:'F-60', D:'F-30' },
-  { elemento:'Tabiques no soportantes / divisorios', A:'F-30', B:'F-15', C:'N.R.', D:'N.R.' },
-  { elemento:'Escaleras (estructura)', A:'F-60', B:'F-30', C:'F-15', D:'N.R.' },
-  { elemento:'Elementos horizontales soportantes (vigas, losas, entrepisos)', A:'F-120', B:'F-90', C:'F-60', D:'F-30' },
-  { elemento:'Complejo cielo - techumbre', A:'F-60', B:'F-60', C:'F-30', D:'F-15' }
-];
-
-function pisosColComb(pisos) { return pisos >= 5 ? '5+' : Math.max(1, Math.min(4, pisos)); }
-function lookupBucketComb(value, limKey) {
-  let idx = 0;
-  for (let i=0;i<DENSIDAD_TABLA_COMB.length;i++) if (DENSIDAD_TABLA_COMB[i][limKey] <= value) idx = i;
-  return DENSIDAD_TABLA_COMB[idx];
+function cbResistencias(tipo, pisos) {
+  if (!tipo) return null;
+  return EF_FUNC.map((el, i) => {
+    const min = EF_T433[tipo][i];
+    let txt = min == null ? 'Sin exigencia' : 'F-' + min;
+    let noExigible = false;
+    if (i === 1 && pisos != null && pisos < 7 && min != null) { txt = 'No exigible'; noExigible = true; }
+    return { elemento: el, min, txt, noExigible, cond: CB_COND_433[i] };
+  });
 }
-function tipoGeneralComb(pisos, ocupacion) {
-  if (pisos > 16 || ocupacion > 1000) return 'A';
-  if (pisos >= 10 && pisos <= 16) return 'B';
-  if (pisos >= 5 && pisos <= 9) return 'C';
-  if (pisos >= 2 && pisos <= 4) return 'D';
-  if (pisos <= 1) return 'E';
-  return 'Verificar';
-}
-function tipoIndustrialComb(densidadMedia, densidadPuntual, pisos) {
-  const col = pisosColComb(pisos);
-  const tipoMedia = lookupBucketComb(densidadMedia, 'limMedia').pisos[col];
-  const tipoPuntual = lookupBucketComb(densidadPuntual, 'limPuntual').pisos[col];
-  const rank = {a:1,b:2,c:3,d:4};
-  const worse = Math.min(rank[tipoMedia], rank[tipoPuntual]);
-  return { tipoMedia, tipoPuntual, tipoIndustrial: {1:'a',2:'b',3:'c',4:'d'}[worse] };
-}
-function tipoFinalComb(tipoGen, requiereEstudio, tipoInd) {
-  const rankGen = {A:1,B:2,C:3,D:4,E:4,Verificar:4};
-  const rankInd = {a:1,b:2,c:3,d:4};
-  const g = rankGen[tipoGen];
-  const i = requiereEstudio === 'Si' ? rankInd[tipoInd] : g;
-  const worse = Math.min(g, i);
-  return {1:'A',2:'B',3:'C',4:'D'}[worse];
-}
+const CB_NOTA_PERIMETRAL = 'Art. 4.3.5 n°11: los muros perimetrales deben cumplir la resistencia que corresponda según la tabla del Art. 4.3.3, sean soportantes o no, cualquiera sea el destino (salvo el n°14); las superficies vidriadas, antepechos y dinteles no estructurales quedan exentos. La columna aplicable depende de la función del muro (cortafuego, divisorio, soportante): no se asimila automáticamente a la de muros cortafuego.';
 
 function calcCombustible(inp) {
-  // Cada sector ES un único recinto, con una sola superficie (la declarada en la Sección A). Los acopios de
-  // materiales (Sección B) se agrupan directamente por sector — ya no existe un "Recinto" independiente que
-  // deba coincidir por nombre de texto con otra tabla. Cc = Σ(cantidad_i × poder calorífico_i); Dc = Cc / S.
-  const cargaPorSector = {};
-  const capacidadPorSector = {};
-  const detalleMaterialesPorSector = {};
-  inp.materiales.forEach(m => {
-    const key = m.sector;
-    const pc = PODER_CALORIFICO_COMB[m.material] || 0;
-    const carga = m.cantidad * pc;
-    cargaPorSector[key] = (cargaPorSector[key] || 0) + carga;
-    capacidadPorSector[key] = (capacidadPorSector[key] || 0) + (m.cantidad || 0);
-    if (!detalleMaterialesPorSector[key]) detalleMaterialesPorSector[key] = [];
-    if (m.material && m.cantidad > 0) detalleMaterialesPorSector[key].push({ material: m.material, cantidad: m.cantidad, pc, carga });
+  const errGlobal = [];
+  const ids = new Set(inp.sectores.map(s => s.id));
+  const mats = inp.materiales.map((m, i) => {
+    const r = Object.assign({}, m, { n: i + 1, errs: [], pc: null, carga: null });
+    const cat = PODER_CALORIFICO_COMB[m.material];
+    if (m.material === CB_OTRO) {
+      r.pc = cbNum(m.pcOtro);
+      r.base = m.baseOtro || '—'; r.fuente = String(m.fuenteOtro || '').trim(); r.nivel = 'usuario'; r.nombre = String(m.nombreOtro || '').trim() || 'Otro material';
+      if (!(isFinite(r.pc) && r.pc > 0)) r.errs.push('calor de combustión del material «Otro» inválido');
+      if (!r.fuente) r.errs.push('falta la fuente del calor de combustión del material «Otro»');
+    } else if (cat) {
+      Object.assign(r, { pc: cat.pc, base: cat.base, fuente: cat.fuente, nivel: cat.nivel, nombre: m.material });
+    } else r.errs.push('material desconocido');
+    r.cantidadNum = cbNum(m.cantidad);
+    if (!isFinite(r.cantidadNum)) r.errs.push('cantidad no numérica');
+    else if (r.cantidadNum < 0) r.errs.push('cantidad negativa');
+    if (!ids.has(m.sectorId)) r.errs.push('sin sector asignado');
+    if (!r.errs.length) r.carga = r.cantidadNum * r.pc;
+    return r;
   });
-
-  // La norma exige evaluar además la carga puntual máxima en la superficie más desfavorable del recinto, de
-  // 2×2 m (4 m²). Peor escenario posible: para cada material del sector se calcula su propia carga puntual —
-  // (cantidad total de ese material × su poder calorífico) / 4 m², es decir, como si todo ese acopio pudiera
-  // llegar a concentrarse en el punto más desfavorable — y la Densidad Puntual Máxima del sector es la mayor
-  // de esos valores entre todos sus materiales (no hace falta indicar por separado qué se concentra ahí: ya
-  // se deduce de los acopios de la Sección B).
-  const AREA_REF_PUNTUAL = 4; // 2 m x 2 m
-  const alturaPisoTipo = inp.alturaPisoTipo > 0 ? inp.alturaPisoTipo : 3.5;
+  mats.filter(m => m.errs.length).forEach(m => errGlobal.push(`Acopio n° ${m.n}: ${m.errs.join('; ')}.`));
 
   const sectores = inp.sectores.map((s, idx) => {
-    const nSector = 'Sector ' + (idx+1);
-    if (s.activo !== 'Si') return { ...s, activo:'No', nSector };
+    const nSector = 'Sector ' + (idx + 1);
+    if (s.activo !== 'Si') return Object.assign({}, s, { activo: 'No', nSector });
+    const errs = [], avisos = [];
+    const S = cbNum(s.superficie);
+    if (!(isFinite(S) && S > 0)) errs.push('la superficie debe ser mayor que 0');
+    const ms = mats.filter(m => m.sectorId === s.id);
+    const msErr = ms.filter(m => m.errs.length);
+    if (msErr.length) errs.push('acopio(s) con datos inválidos: ' + msErr.map(m => 'n° ' + m.n).join(', '));
+    const okMats = !msErr.length;
+    const cargaTotal = okMats ? ms.reduce((a, m) => a + m.carga, 0) : null;
+    const capacidad = okMats ? ms.reduce((a, m) => a + m.cantidadNum, 0) : null;
+    const media = (okMats && S > 0) ? cargaTotal / S : null;
+    const tabla = cbTablaDestino(s.destino);
+    if (!s.destino) errs.push('elija el destino según el Art. 4.3.4');
+    const pis = cbPisos(s, media);
+    pis.errs.forEach(e => errs.push(e));
+    const O = cbNum(s.ocupacion);
+    if (tabla === 2 && !(Number.isInteger(O) && O > 0)) errs.push('la carga de ocupación (Tabla 2) debe ser un entero mayor que 0');
+    const pun = cbPuntual(s, okMats ? ms : [], media, S);
+    if (pun.manualErr) errs.push(pun.manualErr);
+    const sinFuente = ms.filter(m => m.nivel === 'sin fuente' && m.carga > 0);
+    if (sinFuente.length) avisos.push('Calor de combustión sin fuente ni base documentadas: ' + sinFuente.map(m => m.nombre).join('; ') + '.');
 
-    const cargaTotal = cargaPorSector[nSector] || 0;
-    const capacidadAlmacenamiento = capacidadPorSector[nSector] || 0;
-    const detalleMateriales = detalleMaterialesPorSector[nSector] || [];
-    const densidadMedia = s.superficieDeclarada > 0 ? cargaTotal / s.superficieDeclarada : 0;
-
-    let peorMaterial = null;
-    detalleMateriales.forEach(d => {
-      const puntual = d.carga / AREA_REF_PUNTUAL;
-      if (!peorMaterial || puntual > peorMaterial.puntual) peorMaterial = { material: d.material, puntual };
-    });
-    const densidadPuntualCalc = peorMaterial ? peorMaterial.puntual : null;
-
-    let densidadPuntualMaxima, origenPuntual;
-    if (s.densidadPuntualManual != null) {
-      densidadPuntualMaxima = s.densidadPuntualManual; origenPuntual = 'manual';
-    } else if (densidadPuntualCalc != null) {
-      densidadPuntualMaxima = densidadPuntualCalc; origenPuntual = '2x2';
-    } else {
-      densidadPuntualMaxima = densidadMedia * 1.6; origenPuntual = 'estimado';
+    let tipo = null, tipoMotivo = '', provisorio = false, t3 = null;
+    if (!errs.length) {
+      if (tabla === 3) {
+        if (s.estudio === 'No') { tipo = 'a'; tipoMotivo = 'Destino de la Tabla 3 sin Estudio de Carga Combustible: tipo a (Art. 4.3.4).'; }
+        else {
+          t3 = efLetraT3(EF_T3[s.destino], media, pun.valor, pis.valor);
+          tipo = t3 && t3.letra;
+          if (pun.valor == null) { provisorio = true; tipoMotivo = 'Tabla 3 con densidad media solamente: densidad puntual no determinada, clasificación provisoria.'; }
+          else tipoMotivo = `Tabla 3, ${t3.porPuntual ? 'gobierna la densidad puntual' : 'gobierna la densidad media'}.`;
+        }
+      } else if (tabla === 1) { tipo = efLetra(EF_T1[s.destino], S, 7, pis.valor); tipoMotivo = 'Tabla 1, superficie edificada del sector.'; }
+      else if (tabla === 2) { tipo = efLetra(EF_T2[s.destino], O, 6, pis.valor); tipoMotivo = 'Tabla 2, máximo de ocupantes.'; }
+      if (!tipo) tipoMotivo = 'No fue posible determinar el tipo con los datos del sector.';
     }
-
-    // N° de pisos para efectos de clasificación: si se indica la altura total del sector (típico en galpones/
-    // naves de un solo nivel sin entrepisos), se deriva un N° de pisos equivalente = altura / altura de piso tipo
-    // (redondeado hacia arriba), en vez de exigir que el usuario cuente pisos que no existen físicamente.
-    const pisosEfectivo = s.alturaTotal > 0 ? Math.ceil(s.alturaTotal / alturaPisoTipo) : s.pisos;
-
-    const tipoGen = tipoGeneralComb(pisosEfectivo, s.ocupacion);
-    let tipoInd = null, detalleInd = null;
-    if (s.requiereEstudio === 'Si') {
-      detalleInd = tipoIndustrialComb(densidadMedia, densidadPuntualMaxima, pisosEfectivo);
-      tipoInd = detalleInd.tipoIndustrial;
-    }
-    const tipoFinal = tipoFinalComb(tipoGen, s.requiereEstudio, tipoInd);
-
-    const resistencias = RESISTENCIA_FUEGO_COMB.map(row => ({ elemento: row.elemento, exigencia: row[tipoFinal] }));
-
-    return { ...s, nSector, pisosEfectivo, cargaTotal, capacidadAlmacenamiento, detalleMateriales, densidadMedia,
-      densidadPuntualMaxima, densidadPuntualCalc, origenPuntual, peorMaterial, tipoGen, tipoInd, detalleInd, tipoFinal, resistencias };
+    if (pun.valor == null && !pun.manualErr && tabla === 3 && s.estudio !== 'No') avisos.push('Densidad puntual no determinada (' + (pun.motivo || 'sin datos') + ').');
+    return Object.assign({}, s, { nSector, errs, avisos, S, O, tabla, pisos: pis, pisosEfectivo: pis.valor, detalleMateriales: ms, cargaTotal, capacidadAlmacenamiento: capacidad,
+      densidadMedia: media, puntual: pun, densidadPuntualMaxima: pun.valor, origenPuntual: pun.origen, t3, tipoSector: tipo, tipoMotivo, provisorio });
   });
 
-  return { sectores };
+  // Uso mixto sin separación en planta (4.3.5 n°4): rige el estándar más exigente para todos los sectores.
+  const act = sectores.filter(s => s.activo === 'Si');
+  let tipoComun = null;
+  const mixtoSinSep = inp.separados === 'No' && act.length > 1;
+  if (mixtoSinSep) tipoComun = act.every(s => s.tipoSector) ? efMasExigente(act.map(s => s.tipoSector)) : null;
+  const bloqueado = errGlobal.length > 0;
+  act.forEach(s => {
+    s.tipoFinal = bloqueado ? null : (mixtoSinSep ? tipoComun : s.tipoSector);
+    s.provisorioFinal = !!s.tipoFinal && (mixtoSinSep ? act.some(x => x.provisorio) : s.provisorio);
+    const pisosRef = mixtoSinSep ? Math.max(...act.map(x => x.pisosEfectivo || 0)) : s.pisosEfectivo;
+    s.resistencias = cbResistencias(s.tipoFinal, pisosRef);
+  });
+  return { sectores, materiales: mats, errGlobal, bloqueado, mixtoSinSep, tipoComun, separados: inp.separados };
 }
+const cbTipoTxt = s => s.tipoFinal ? s.tipoFinal + (s.provisorioFinal ? ' (provisorio)' : '') : '—';
 
-/* =========================================================================
-   IMPRESION ESTILO PLANILLA EXCEL -- ESTUDIO DE CARGA COMBUSTIBLE (OGUC)
-   id interno "combustible"
-   Fuente de verdad: /root/work/planillas_src/Estudio_Carga_Combustible_OGUC_1.xlsx
-   Hojas del xlsx: "Portada e Instrucciones", "Datos del Proyecto", "Poder
-   Calorifico Ref.", "Calculo Carga Combustible", "Clasificacion Tipo
-   Edificio", "Resistencia al Fuego", "BD Soluciones MINVU", "Resumen
-   Informe". Replicadas aquí como "Datos" ⇄ hoja "Datos del Proyecto", y
-   "Cálculo" ⇄ fusión de "Calculo Carga Combustible" + los resultados
-   case-specific de "Clasificacion Tipo Edificio" y "Resistencia al Fuego"
-   (sus tablas de definiciones/rangos NO se replican, ver punto 5). "Portada
-   e Instrucciones", "Poder Calorifico Ref." y "BD Soluciones MINVU" son
-   documentación/catálogos puros (mismo criterio que "Tablas"/"Portada" en
-   balasto.js/sismo.js: no son datos de entrada ni resultados de un caso
-   concreto) -- NO se replican. "Resumen Informe" es, celda por celda, el
-   mismo contenido que ya arma "Clasificacion Tipo Edificio" + "Resistencia
-   al Fuego" para el caso activo -- cubierto por el propio mecanismo
-   Completo/Resumen del motor genérico, no requiere una hoja aparte.
-   Reutiliza el motor genérico ya existente en mesa_calculo_26.html
-   (xlsxNum, xlsxCalcRowHtml, xlsxSetPrintSheets). Ver balasto.js/sismo.js
-   como referencia de patrón "sin CUMPLE/NO CUMPLE, builder local propio con
-   extraHtml" (misma familia que esta calculadora).
-
-   Decisiones de fidelidad (ver también el bloque INTEGRACION PENDIENTE al
-   final de este archivo):
-
-   1. SIN CONCEPTO CUMPLE/NO CUMPLE. "Estudio de Carga Combustible" es una
-      herramienta de CLASIFICACIÓN (determina el Tipo de Edificación A-D de
-      cada sector y, con eso, la resistencia al fuego F exigida por
-      elemento), no una verificación de capacidad de un elemento contra un
-      límite admisible. Ni el xlsx (ninguna de sus hojas trae una columna
-      "Estado"/CUMPLE/NO CUMPLE -- revisadas las 8 hojas completas) ni el
-      panel interactivo (renderCombustible: sin ningún chip/estado
-      CUMPLE⇄NO CUMPLE en ninguna de sus tablas) tienen ese concepto. Por lo
-      tanto NO se usa xlsxBuildCalculoHtml()/opts.global (mecanismo t:'chk')
-      -- se define un builder local propio cbBuildCalculoHtml() (mismo
-      layout/clases CSS que el motor genérico, filtra la vista Resumen por
-      `resumen===true` por fila + `extraInResumen` por sección, igual patrón
-      que smBuildCalculoHtml en sismo.js), con soporte para `sec.extraHtml`
-      (tablas propias por sector/por acopio, ver puntos 2-4).
-
-   2. LISTA DE ACOPIOS DE MATERIALES: LONGITUD VARIABLE, NO FILAS FIJAS. El
-      xlsx reserva 30 filas fijas (Calculo!A6:G35, la mayoría vacías en el
-      caso de ejemplo) para el detalle de acopios; el panel interactivo
-      (state.materiales) es una lista realmente dinámica sin límite superior
-      (+ Agregar acopio de material). Se generó una tabla HTML propia,
-      compacta, de una fila por acopio REALMENTE INGRESADO (sin filas
-      muertas "-": a diferencia de la tabla de niveles de sismo.js, que sí
-      rellena hasta un máximo fijo de 5 porque el xlsx define ese tope duro,
-      aquí no existe ningún tope y rellenar 30 filas vacías como el xlsx
-      sería puro ruido) -- ver cbMaterialesTableHtml(). Cada fila muestra
-      N°, Sector, Material, Cantidad, Poder Calorífico (lookup de
-      PODER_CALORIFICO_COMB, igual fórmula que usa calcCombustible) y Carga
-      Combustible Parcial = Cantidad × P.Calorífico, más una fila TOTAL al
-      final (=Σ Carga Parcial de TODOS los acopios, sin filtrar por sector
-      activo -- igual que Calculo!G36 =SUM(G6:G35), que tampoco filtra).
-      Esta tabla se ubica ÚNICAMENTE en la hoja Cálculo (sección 2), NO en
-      Datos -- replica exactamente la separación real del xlsx: "Datos del
-      Proyecto" NO tiene ninguna tabla de acopios (esa hoja solo trae
-      Sectores); el detalle de materiales vive enteramente en "Calculo Carga
-      Combustible", Sección 1. Se omite del modo Resumen (extraInResumen:
-      false) -- es el detalle que alimenta el resultado, no el resultado en
-      sí (mismo criterio que la tabla de fórmula intermedia vs. el resumen
-      final en balasto.js).
-
-   3. SECTORES: HASTA 10 EN LA WEB, HASTA 4 EN EL XLSX -- Y SIN LA
-      "SUPERFICIE DE RECINTO" INTERMEDIA DEL XLSX. Esta es la divergencia
-      más importante entre el xlsx y el resultado numérico de esta
-      calculadora, YA DOCUMENTADA en el propio comentario de cabecera de
-      calcCombustible() (mesa_calculo_26.html): el xlsx modela cada Sector
-      como un contenedor de uno o más "Recintos/Áreas" con nombre libre
-      (Calculo!C6:C35, columna "Recinto / Área"), cada uno con SU PROPIA
-      superficie (Calculo!D42:D57, Sección 2 "Resumen de densidad de carga
-      combustible por recinto") que puede ser MENOR que la superficie total
-      declarada del sector (Datos!C21) -- y trae además una fila
-      "Verificación de superficie" (Calculo!C67/D67, fórmula
-      `=IF(...,"Revisar diferencia > 10%","OK")`) que compara la suma de
-      superficies de recinto contra la superficie declarada del sector. El
-      panel interactivo de esta migración YA DECIDIÓ (antes de este archivo,
-      en calcCombustible mismo) eliminar ese nivel intermedio: "Cada sector
-      ES un único recinto, con una sola superficie (la declarada en la
-      Sección A)... ya no existe un 'Recinto' independiente que deba
-      coincidir por nombre de texto con otra tabla." En consecuencia:
-        - NO existe aquí ninguna tabla equivalente a "Calculo Carga
-          Combustible" Sección 2 (resumen por recinto) ni a su fila
-          "Verificación de superficie" -- no hay campo en `state`/`r` que la
-          represente, y no tendría sentido reconstruirla synthetically.
-        - Densidad Media (Dc) usa SIEMPRE la superficie DECLARADA del sector
-          completo (s.superficieDeclarada), nunca una suma de sub-áreas.
-        - Esto hace que, con LOS MISMOS materiales y cantidades del caso de
-          ejemplo del xlsx (Madera 2.500 kg Sector 1, Mobiliario 800 kg
-          Sector 2), el Dc resultante en esta calculadora (verificado con
-          una réplica Node.js de calcCombustible(), ver punto 6) sea 92,0
-          MJ/m² (=46.000/500) para el Sector 1, MUY distinto del Dc=368,0
-          MJ/m² cacheado en Calculo!F42 del xlsx (=46.000/125, donde 125 m²
-          es la superficie del "recinto" Bodega Nivel 1, no los 500 m²
-          declarados del sector completo) -- NO es un error de fórmula, es
-          la consecuencia directa y ya documentada de la simplificación de
-          modelo adoptada por calcCombustible. Se advierte explícitamente en
-          combustibleDatosHtml()/cbClasificacionTableHtml() con una nota de
-          fidelidad visible en la hoja impresa.
-        - Como consecuencia de lo anterior, el Tipo Final del Sector 1 con
-          esos mismos datos también difiere: C aquí vs. D en el xlsx (ver
-          punto 6) -- puramente por el Dc de partida, no por un error en
-          tipoIndustrialComb/tipoFinalComb (esas tablas de corte SÍ son
-          idénticas, celda por celda, a "Clasificacion Tipo Edificio"
-          Sección 1-2 del xlsx -- ya están cableadas 1:1 en
-          DENSIDAD_TABLA_COMB/RESISTENCIA_FUEGO_COMB dentro de
-          mesa_calculo_26.html, no se tocan aquí).
-      Dado que el conteo de sectores activos es dinámico (1 a 10) y no hay
-      columnas fijas que igualar a las 4 del xlsx, se generaron tablas
-      propias de UNA FILA POR SECTOR (igual criterio que las tablas propias
-      del panel interactivo cb_sectoresTable/cb_recintosCalc/cb_clasificacion,
-      que YA usan fila-por-sector en vez de la transposición
-      columna-por-sector del xlsx) en vez de imitar el layout de columnas
-      Sector 1..4 del xlsx -- más legible y sin tope artificial en 4.
-
-   4. DENSIDAD PUNTUAL MÁXIMA: DOS MÉTODOS DISTINTOS, EL WEB YA MEJORA AL
-      XLSX (documentado en el propio código de calcCombustible). El xlsx
-      SIEMPRE calcula la densidad puntual máxima de cada recinto como
-      Dc,recinto × 1,6 (Calculo!G42 `=IFERROR(F42*1.6,"")`, un factor fijo
-      sin relación con qué material específico se concentra), y en la
-      Sección 3 toma el MAX de esos G42:G57 por sector (Calculo!C70
-      `=MAXIFS(G42:G57,...)`). El panel interactivo, en cambio, calcula por
-      DEFECTO el escenario 2×2 m real: para cada material del sector,
-      (cantidad × poder calorífico)/4 m², y toma el peor de todos los
-      materiales (s.densidadPuntualCalc/s.peorMaterial) -- solo cae al
-      heurístico ×1,6 del xlsx (s.origenPuntual==='estimado') cuando el
-      sector no tiene ningún acopio de materiales cargado, y permite además
-      un valor MANUAL con prioridad (s.densidadPuntualManual,
-      s.origenPuntual==='manual') que el xlsx no ofrece en absoluto. Las
-      tres hojas impresas (Datos sección D, Cálculo sección 3) muestran
-      explícitamente cuál de los tres orígenes se usó por sector, para que
-      quede claro por qué el número puede no coincidir con un ×1,6 simple
-      del xlsx.
-
-   5. TABLAS DE REFERENCIA/CLASIFICACIÓN (DENSIDAD_TABLA_COMB, equivalente a
-      "Clasificacion Tipo Edificio" Secciones 1-2 del xlsx, y la tabla
-      genérica Tipo A-D × elemento de "Resistencia al Fuego" Sección 1) NO
-      se replican como tablas independientes en la hoja impresa -- son
-      catálogos normativos fijos (Art. 4.3.4/4.3.3 OGUC), iguales para
-      cualquier caso, no datos de entrada ni resultados de ESTE caso; mismo
-      criterio que las hojas "Tablas" excluidas en balasto.js/sismo.js. Ya
-      están además disponibles en el panel interactivo como paneles de
-      referencia "A.1 · TABLA 1" / "A.2 · TABLA 3" (siempre sincronizados
-      con DENSIDAD_TABLA_COMB). Lo que SÍ se imprime es el resultado
-      case-specific de cruzar esas tablas con los datos del proyecto:
-      Sección 3 de "Clasificacion Tipo Edificio" (Tipo General/Industrial/
-      Final por sector) y Sección 3 de "Resistencia al Fuego" (exigencia F
-      por elemento y por sector), que SÍ son resultados del caso concreto.
-
-   6. VERIFICACIÓN NUMÉRICA (réplica Node.js de calcCombustible(), usando
-      exactamente los 2 sectores y 2 acopios del caso de ejemplo del xlsx:
-      Sector 1 "Bodega Principal" superficie=500 m², ocupación=20,
-      requiereEstudio='Si', con 2.500 kg de "Madera y derivados..."
-      (PC=18,4 MJ/kg); Sector 2 "Área Administrativa" superficie=300 m²,
-      ocupación=25, requiereEstudio='No', con 800 kg de "Mobiliario mixto..."
-      (PC=20 MJ/kg)): cargaTotal Sector1=46.000 MJ (coincide con
-      Calculo!C68/G36 del xlsx: 46.000), densidadMedia Sector1=92,0 MJ/m²
-      (diverge de F42=368,0 del xlsx por el motivo del punto 3),
-      densidadPuntualMaxima Sector1=11.500 MJ/m² (origen '2x2', peor
-      material=Madera; diverge de G42=588,8 del xlsx por el motivo del
-      punto 4), tipoGen Sector1='D', tipoInd Sector1='c' (Dc=92<500→'d' por
-      media, pero Dc,puntual=11.500 cae en el rango >4.000-8.000→'c' a 2
-      pisos, y 'c' es más restrictivo que 'd' → tipoIndustrial='c'),
-      tipoFinal Sector1='C' (min de rankGen('D')=4 y rankInd('c')=3 → 'C').
-      Sector 2: cargaTotal=16.000 MJ (coincide con Calculo!D68=16.000),
-      densidadMedia=53,33 MJ/m² (diverge de F43=80,0 por el mismo motivo del
-      punto 3), tipoGen='D', tipoInd=null ('No aplica', requiereEstudio=
-      'No'), tipoFinal='D' (coincide con Calculo!D42/Resumen Informe!D24=
-      'D' del xlsx -- Sector 2 SÍ coincide, porque no requiere estudio de
-      carga combustible y por lo tanto su Tipo Final depende solo del Tipo
-      General por N° de pisos/ocupación, que SÍ usa la misma fórmula 1:1 que
-      el xlsx). Confirmado además que RESISTENCIA_FUEGO_COMB (mesa_calculo_
-      26.html) coincide celda por celda con "Resistencia al Fuego" Sección 1
-      del xlsx para las 9 filas × 4 columnas (A-D), y que DENSIDAD_TABLA_COMB
-      coincide celda por celda con "Clasificacion Tipo Edificio" Sección 2
-      (7 filas de rango × 5 columnas de N° de pisos). calcCombustible() NO
-      necesita ningún cambio -- ya expone todos los campos que la hoja
-      impresa necesita (incluido `resistencias`, ya armado por sector a
-      partir de RESISTENCIA_FUEGO_COMB).
-
-   7. "N° de subterráneos" (Datos del Proyecto!B20/C20, un input del xlsx)
-      NO tiene ningún control editable en el panel interactivo de esta
-      versión web (state.sectores[i].subterraneos existe en el objeto de
-      estado inicial pero cb_sectoresTable no genera ningún <input> para él
-      -- permanece siempre en 0 y no se usa en ningún punto de
-      calcCombustible). Se documenta como nota de fidelidad en la Sección C
-      de Datos en vez de agregar una columna con un valor que el usuario no
-      puede en realidad cambiar.
-
-   8. "A. Identificación del proyecto" -- la hoja "Datos del Proyecto" del
-      xlsx trae 8 campos (Nombre del Proyecto, Dirección/Comuna, Rol de
-      Avalúo SII, Propietario/Mandante, Profesional Responsable del Estudio,
-      Cargo/Especialidad, Fecha del estudio, N° de Informe/Código interno) --
-      más que el par genérico Proyecto/Elemento de otras calculadoras. El
-      `state` de renderCombustible no guarda NINGUNO de estos campos
-      (calculadora de sectores/materiales, sin panel de identificación del
-      proyecto). Se usa PROYECTO_META.proyecto (mismo mecanismo global que
-      el resto de la migración) SOLO para "Nombre del Proyecto"; los otros 7
-      campos no tienen ningún equivalente en PROYECTO_META (que solo trae
-      {proyecto, calculo}, y "calculo" -- normalmente usado como "Elemento/
-      eje" en calculadoras de un elemento estructural -- no encaja con
-      ninguna fila de esta hoja, que es a nivel de PROYECTO completo, no de
-      elemento) y se imprimen con el texto de respaldo estándar "No
-      disponible en esta versión web — ver planilla Excel, hoja Datos del
-      Proyecto, sección 1".
-   ========================================================================= */
-
-// ---- builder local (misma forma que xlsxBuildCalculoHtml/smBuildCalculoHtml de sismo.js) --
-// filtra la vista Resumen por `row.resumen===true` (no existe ninguna fila 'chk' en esta
-// planilla, ver punto 1) y agrega soporte para `sec.extraHtml` (tablas propias por acopio/por
-// sector, ver puntos 2-4), mostrado en Completo y en Resumen salvo `sec.extraInResumen===false`.
+/* ---------------- Hojas imprimibles (Datos / Cálculo) ---------------- */
 function cbBuildCalculoHtml(sections, d, opts) {
   opts = opts || {};
   const resumen = !!opts.resumen;
   let html = `<div class="xlsx-title-bar">CÁLCULO</div>`;
-  if (opts.intro) html += `<div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">${opts.intro}${resumen ? ' (Resumen: solo los resultados finales por sector — el detalle de acopios está en Imprimir completo.)' : ''}</div>`;
-
   sections.forEach(sec => {
-    const rows = resumen ? sec.rows.filter(rr => rr.t === 'desc' || rr.resumen === true) : sec.rows;
     const showExtra = !!sec.extraHtml && (!resumen || sec.extraInResumen !== false);
-    if (resumen && !rows.length && !showExtra) return;
+    if (resumen && !showExtra) return;
     html += `<div class="xlsx-section">${sec.num}. ${sec.title}</div>`;
-    if (rows.length) {
-      html += `<table class="xlsx-table xlsx-calc-table"><tbody>`;
-      rows.forEach(row => { html += xlsxCalcRowHtml(row, d); });
-      html += `</tbody></table>`;
-    }
     if (showExtra) html += sec.extraHtml;
   });
-
   return html;
 }
-
-// ---- Sección "Sectores del proyecto" (Datos del Proyecto!B15:C23 del xlsx, transpuesto a
-// fila-por-sector -- ver punto 3). Muestra TODOS los sectores (activos e inactivos, estos
-// últimos atenuados), igual que la propia tabla editable del panel interactivo.
-function cbSectoresDatosTableHtml(state) {
+function cbErroresHtml(r) {
+  const l = r.errGlobal.slice();
+  r.sectores.filter(s => s.activo === 'Si').forEach(s => s.errs.forEach(e => l.push(`${s.nSector}: ${e}.`)));
+  return l.length ? `<div class="xlsx-desc-row" style="padding:.3rem;color:#b00020"><b>Datos inválidos — clasificación no emitida:</b><br>${l.map(esc).join('<br>')}</div>` : '';
+}
+function cbSectoresDatosTableHtml(state, r) {
   const rows = state.sectores.map((s, i) => {
     const activo = s.activo === 'Si';
     return `<tr${activo ? '' : ' style="opacity:.55"'}>
-      <td style="width:7%;text-align:center">${i + 1}</td>
-      <td class="xv-num">${activo ? 'Sí' : 'No'}</td>
-      <td class="xv-label">${s.nombre || '—'}</td>
-      <td class="xv-label">${s.destino || '—'}</td>
-      <td class="xv-num">${s.alturaTotal > 0 ? xlsxNum(s.alturaTotal, 2) + ' m' : '—'}</td>
-      <td class="xv-num">${xlsxNum(s.pisos, 0)}</td>
-      <td class="xv-num">${xlsxNum(s.superficieDeclarada, 1)}</td>
-      <td class="xv-num">${xlsxNum(s.ocupacion, 0)}</td>
-      <td class="xv-num">${s.requiereEstudio}</td>
+      <td style="text-align:center">${i + 1}</td><td class="xv-num">${activo ? 'Sí' : 'No'}</td>
+      <td class="xv-label">${esc(s.nombre || '—')}</td><td class="xv-label">${esc(s.uso || '—')}</td><td class="xv-label">${esc(s.destino || '—')}</td>
+      <td class="xv-num">${esc(s.pisos)}</td><td class="xv-num">${esc(s.alturasEsp || '—')}</td><td class="xv-num">${s.altillos === 'Si' ? 'Sí' : 'No'}</td>
+      <td class="xv-num">${esc(s.superficie)}</td><td class="xv-num">${esc(s.ocupacion)}</td>
+      <td class="xv-num">${cbTablaDestino(s.destino) === 3 ? (s.estudio === 'No' ? 'No' : 'Sí') : 'No aplica'}</td>
     </tr>`;
   }).join('');
   return `<table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td style="width:7%">Sector</td><td>¿Activo?</td><td>Nombre</td><td>Destino</td><td>Alt. total (m)</td><td>N° pisos</td><td>Sup. (m²)</td><td>Ocup.</td><td>¿Req. estudio?</td></tr>
-    ${rows || '<tr><td colspan="9" style="text-align:center;color:#888">Sin sectores</td></tr>'}
-  </tbody></table>`;
+    <tr class="xlsx-hdr-de"><td>Sector</td><td>¿Activo?</td><td>Nombre</td><td>Uso</td><td>Destino (Art. 4.3.4)</td><td>N° pisos</td><td>Alturas pisos &gt; 3,5 m</td><td>Altillos</td><td>Sup. (m²)</td><td>Ocup.</td><td>Estudio carga comb.</td></tr>
+    ${rows}</tbody></table>
+    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">Sectores de distinto destino separados en planta: ${state.separados === 'No' ? 'No — rige el estándar más exigente para todos (Art. 4.3.5 n°4)' : 'Sí — cada sector se clasifica por separado (Art. 4.3.5 n°3)'}.</div>`;
 }
-
-// ---- Sección "Densidad puntual máxima -- override manual" (sin equivalente en el xlsx, que
-// no ofrece esta opción -- ver punto 4). Solo lista los sectores activos.
 function cbPuntualDatosTableHtml(state) {
-  const activos = state.sectores.map((s, i) => ({ s, i })).filter(x => x.s.activo === 'Si');
-  const rows = activos.map(({ s, i }) => `<tr>
-      <td>Sector ${i + 1} — ${s.nombre || '—'}</td>
-      <td class="xv-num">${s.densidadPuntualManual != null ? xlsxNum(s.densidadPuntualManual, 1) + ' MJ/m²' : '—'}</td>
-    </tr>`).join('');
-  return `<table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td>Sector</td><td class="xv-num">Valor manual ingresado (MJ/m²)</td></tr>
-    ${rows || '<tr><td colspan="2" style="text-align:center;color:#888">Sin sectores activos</td></tr>'}
-  </tbody></table>`;
+  const rows = state.sectores.filter(s => s.activo === 'Si').map(s => `<tr><td>${esc(s.nombre || '—')}</td>
+    <td class="xv-num">${String(s.puntualManual || '').trim() ? esc(s.puntualManual) + ' MJ/m²' : '—'}</td><td>${esc(s.puntualFuente || '—')}</td></tr>`).join('');
+  return `<table class="xlsx-table"><tbody><tr class="xlsx-hdr-de"><td>Sector</td><td class="xv-num">Densidad puntual medida</td><td>Procedencia</td></tr>${rows}</tbody></table>`;
 }
-
-function combustibleDatosHtml(state) {
-  function row(label, value, span) {
-    return `<tr><td class="xv-label">${label}</td><td class="xv-input" colspan="${span || 3}">${value}</td></tr>`;
-  }
-  const FALLBACK = '____________________';
-  const proyecto = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.proyecto) ? PROYECTO_META.proyecto : '____________________';
-
+function combustibleDatosHtml(state, r) {
+  const proyecto = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.proyecto) ? esc(PROYECTO_META.proyecto) : '____________________';
   return `
     <div class="xlsx-title-bar">DATOS DEL PROYECTO</div>
-
     <div class="xlsx-section">1. Antecedentes generales</div>
-    <table class="xlsx-table"><tbody>
-      ${row('Nombre del Proyecto', proyecto)}
-      ${row('Dirección / Comuna', FALLBACK)}
-      ${row('Rol de Avalúo (SII)', FALLBACK)}
-      ${row('Propietario / Mandante', FALLBACK)}
-      ${row('Profesional Responsable del Estudio', FALLBACK)}
-      ${row('Cargo / Especialidad', FALLBACK)}
-      ${row('Fecha del estudio', '____________________')}
-      ${row('N° de Informe / Código interno', FALLBACK)}
-    </tbody></table>
-
-    <div class="xlsx-section">2. Parámetros generales</div>
-    <table class="xlsx-table"><tbody>
-      ${row('Altura de piso tipo — para estimar N° de pisos equivalente desde la altura total (m)', xlsxNum(state.alturaPisoTipo, 2))}
-    </tbody></table>
-    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">En un sector de un solo nivel sin entrepisos (galpón, nave industrial), el N° de pisos que exige la norma para clasificar se estima como la altura total del sector dividida por la altura de piso tipo, redondeando hacia arriba. Si el sector tiene pisos físicos reales, se ingresa el N° de pisos directamente (altura total = 0).</div>
-
-    <div class="xlsx-section">3. Sectores del proyecto (hasta 10 — el xlsx original admite hasta 4)</div>
-    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">Conforme al Art. 4.3.4 de la OGUC (Tabla 3), deben contar con Estudio de Carga Combustible los sectores destinados a: establecimientos industriales, bodegaje, supermercados, centros comerciales y almacenamiento de combustibles o lubricantes. Cada sector se evalúa como un único recinto, con una sola superficie (la indicada en esta tabla).</div>
-    ${cbSectoresDatosTableHtml(state)}
-
-    <div class="xlsx-section">4. Densidad puntual máxima — override manual (opcional, sin equivalente en el xlsx)</div>
+    <table class="xlsx-table"><tbody><tr><td class="xv-label">Nombre del Proyecto</td><td class="xv-input" colspan="3">${proyecto}</td></tr></tbody></table>
+    <div class="xlsx-section">2. Sectores del proyecto</div>
+    ${cbSectoresDatosTableHtml(state, r)}
+    <div class="xlsx-section">3. Inventario de materiales combustibles</div>
+    ${cbMaterialesTableHtml(r)}
+    <div class="xlsx-section">4. Densidad puntual medida (opcional)</div>
     ${cbPuntualDatosTableHtml(state)}`;
 }
-
-// ---- Sección "Detalle de materiales combustibles por sector" (Calculo Carga Combustible!
-// A6:G36 del xlsx, Sección 1 -- ver punto 2. Longitud variable, sin filas fijas/muertas).
-function cbMaterialesTableHtml(state) {
-  let total = 0;
-  const rows = state.materiales.map((m, i) => {
-    const pc = (typeof PODER_CALORIFICO_COMB !== 'undefined' && PODER_CALORIFICO_COMB[m.material]) || 0;
-    const carga = (m.cantidad || 0) * pc;
-    total += carga;
-    return `<tr>
-      <td style="width:6%;text-align:center">${i + 1}</td>
-      <td>${m.sector || '—'}</td>
-      <td>${m.material || '—'}</td>
-      <td class="xv-num">${xlsxNum(m.cantidad, 0)}</td>
-      <td class="xv-num">${xlsxNum(pc, 1)}</td>
-      <td class="xv-num">${xlsxNum(carga, 0)}</td>
-    </tr>`;
-  }).join('');
+function cbMaterialesTableHtml(r) {
+  const secName = id => { const i = r.sectores.findIndex(s => s.id === id); return i >= 0 ? 'Sector ' + (i + 1) : '— sin sector —'; };
+  const rows = r.materiales.map(m => `<tr>
+      <td style="text-align:center">${m.n}</td><td>${secName(m.sectorId)}</td><td>${esc(m.nombre || m.material || '—')}</td>
+      <td class="xv-num">${xlsxNum(m.cantidadNum, 0) || esc(m.cantidad)}</td><td class="xv-num">${xlsxNum(m.pc, 2)}</td><td>${esc(m.base || '—')}</td>
+      <td class="xv-num">${m.carga != null ? xlsxNum(m.carga, 0) : 'inválido'}</td><td>${esc(String(m.ubicacion || '').trim() || '—')}</td>
+      <td style="font-size:.7rem">${esc(m.nivel === 'sin fuente' ? 'Sin fuente documentada' : (m.fuente || '—'))}</td></tr>`).join('');
   return `<table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td style="width:6%">N°</td><td>Sector</td><td>Material o elemento combustible</td><td class="xv-num">Cantidad (kg)</td><td class="xv-num">P. Calorífico Inf. (MJ/kg)</td><td class="xv-num">Carga Combustible Parcial (MJ)</td></tr>
-    ${rows || '<tr><td colspan="6" style="text-align:center;color:#888">Sin acopios ingresados</td></tr>'}
-    <tr class="xlsx-estado"><td colspan="5" class="xv-label" style="text-align:right">TOTAL</td><td class="xv-num">${xlsxNum(total, 0)}</td></tr>
-  </tbody></table>
-  <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">Cc (por sector) = Σ Cantidad × Poder Calorífico de todos los acopios de ese sector. TOTAL = suma de todos los acopios del proyecto (todos los sectores, activos o no), igual criterio que Calculo!G36 del xlsx.</div>`;
+    <tr class="xlsx-hdr-de"><td>N°</td><td>Sector</td><td>Material</td><td class="xv-num">Cantidad (kg)</td><td class="xv-num">H (MJ/kg)</td><td>Base</td><td class="xv-num">Carga (MJ)</td><td>Ubicación 2×2 m</td><td>Fuente de H</td></tr>
+    ${rows || '<tr><td colspan="9" style="text-align:center;color:#888">Sin acopios</td></tr>'}</tbody></table>`;
 }
-
-// ---- Sección "Resumen y clasificación por sector" (Calculo Carga Combustible! Sección 3 +
-// Clasificacion Tipo Edificio! Sección 3-4 del xlsx, fusionadas -- ver punto 3/5). Solo
-// sectores activos (igual que la tabla D del panel interactivo).
 function cbClasificacionTableHtml(r) {
-  const activos = r.sectores.filter(s => s.activo === 'Si');
-  const origenTxt = (s) => s.origenPuntual === '2x2'
-    ? `peor material: ${s.peorMaterial.material}`
-    : s.origenPuntual === 'manual' ? 'valor manual' : 'estimado 1,6× densidad media';
-  const rows = activos.map(s => `<tr>
-      <td>${s.nSector} — ${s.nombre || '—'}</td>
-      <td class="xv-num">${xlsxNum(s.superficieDeclarada, 1)}</td>
-      <td class="xv-num">${xlsxNum(s.capacidadAlmacenamiento, 0)}</td>
-      <td class="xv-num">${xlsxNum(s.cargaTotal, 0)}</td>
-      <td class="xv-num">${xlsxNum(s.densidadMedia, 1)}</td>
-      <td class="xv-num">${xlsxNum(s.densidadPuntualMaxima, 1)}</td>
-      <td style="font-size:.72rem;color:#555">${origenTxt(s)}</td>
-      <td class="xv-num">${s.pisosEfectivo}${s.alturaTotal > 0 ? ' *' : ''}</td>
-      <td class="xv-num">${s.tipoGen}</td>
-      <td class="xv-num">${s.tipoInd || 'No aplica'}</td>
-      <td class="xv-num" style="font-weight:700">${s.tipoFinal}</td>
-    </tr>`).join('');
-  return `<table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td>Sector</td><td class="xv-num">Sup. (m²)</td><td class="xv-num">Capac. almac. (kg)</td><td class="xv-num">Carga Total Cc (MJ)</td><td class="xv-num">Dens. Media Dc (MJ/m²)</td><td class="xv-num">Dens. Puntual Máx. (MJ/m²)</td><td>Origen dens. puntual</td><td class="xv-num">N° pisos usado</td><td class="xv-num">Tipo Gral. (A-E)</td><td class="xv-num">Tipo Ind. (a-d)</td><td class="xv-num">TIPO FINAL</td></tr>
-    ${rows || '<tr><td colspan="11" style="text-align:center;color:#888">Sin sectores activos</td></tr>'}
-  </tbody></table>
-  <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">* N° de pisos estimado desde la altura total del sector ÷ altura de piso tipo (redondeado hacia arriba). Dc = Cc / Superficie del sector completo (ver nota de fidelidad sobre "superficie de recinto" al inicio de este archivo — el Dc de esta hoja puede diferir del calculado en el xlsx original para el mismo material/cantidad). Tipo General considera solo N° de pisos y carga de ocupación (Art. 4.3.4 OGUC; verificar/ajustar manualmente si el destino corresponde a salud, industria de riesgo elevado -Tipo B-, o vivienda aislada/galpón agrícola de bajo riesgo -Tipo E-). TIPO FINAL = el más restrictivo entre el Tipo General (con E acotado a D) y el Tipo Industrial por carga combustible (cuando el sector requiere estudio).</div>`;
+  const act = r.sectores.filter(s => s.activo === 'Si');
+  const rows = act.map(s => {
+    const p = s.puntual;
+    const pTxt = p.valor != null ? xlsxNum(p.valor, 1) + (p.origen === 'medida' ? ' (medida)' : '') : s.tabla === 3 ? 'No determinada' : '—';
+    return `<tr><td>${s.nSector} — ${esc(s.nombre || '—')}</td><td class="xv-num">${xlsxNum(s.S, 1)}</td><td class="xv-num">${xlsxNum(s.cargaTotal, 0)}</td>
+      <td class="xv-num">${xlsxNum(s.densidadMedia, 1)}</td><td class="xv-num">${pTxt}</td><td class="xv-num">${s.pisosEfectivo != null ? s.pisosEfectivo : '—'}</td>
+      <td>${s.tabla ? 'Tabla ' + s.tabla : '—'}</td><td class="xv-num">${s.tipoSector || '—'}</td><td class="xv-num" style="font-weight:700">${cbTipoTxt(s)}</td></tr>`;
+  }).join('');
+  const notas = act.map(s => `${s.nSector}: ${esc(s.tipoMotivo || '')} Pisos: ${esc(s.pisos.detalle || '—')}.${s.avisos.length ? ' ' + s.avisos.map(esc).join(' ') : ''}`).join('<br>');
+  return `${cbErroresHtml(r)}<table class="xlsx-table"><tbody>
+    <tr class="xlsx-hdr-de"><td>Sector</td><td class="xv-num">Sup. (m²)</td><td class="xv-num">Cc (MJ)</td><td class="xv-num">qm (MJ/m²)</td><td class="xv-num">qp,máx (MJ/m²)</td><td class="xv-num">Pisos (4.3.5)</td><td>Tabla</td><td class="xv-num">Tipo sector</td><td class="xv-num">TIPO</td></tr>
+    ${rows}</tbody></table>
+    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">${notas}${r.mixtoSinSep ? '<br>Sectores sin separación en planta: rige el tipo más exigente (Art. 4.3.5 n°4).' : ''}</div>`;
 }
-
-// ---- Sección "Resistencia al fuego requerida por sector" (Resistencia al Fuego! Sección 3
-// del xlsx). r.sectores[i].resistencias ya viene armado 1:1 desde RESISTENCIA_FUEGO_COMB
-// dentro de calcCombustible -- no requiere ningún cálculo local adicional.
+function cbPuntualCalcHtml(r) {
+  const act = r.sectores.filter(s => s.activo === 'Si' && (s.tabla === 3 || s.puntual.valor != null));
+  if (!act.length) return `<div class="xlsx-desc-row">Ningún sector con destino de la Tabla 3.</div>`;
+  return act.map(s => {
+    const p = s.puntual;
+    const z = p.zonas.map(x => `<tr><td>${esc(x.zona)}</td><td class="xv-num">${xlsxNum(x.carga, 0)}</td><td class="xv-num">${xlsxNum(x.dens, 1)}</td></tr>`).join('');
+    return `<div class="xlsx-desc-row" style="padding:.2rem .3rem"><b>${s.nSector}</b> — ${p.calc != null ? 'qp por ubicaciones = ' + xlsxNum(p.calc, 1) + ' MJ/m²' : 'puntual no determinada por ubicaciones (' + esc(p.motivo) + ')'}${p.dist > 0 ? ' · aporte distribuido = ' + xlsxNum(p.dist, 1) + ' MJ/m²' : ''}${p.manual != null ? ' · valor medido adoptado = ' + xlsxNum(p.manual, 1) + ' MJ/m² (' + esc(s.puntualFuente) + ')' : ''}</div>
+      ${z ? `<table class="xlsx-table"><tbody><tr class="xlsx-hdr-de"><td>Ubicación 2×2 m</td><td class="xv-num">Carga en la ubicación (MJ)</td><td class="xv-num">Carga/4 m² + distribuida (MJ/m²)</td></tr>${z}</tbody></table>` : ''}`;
+  }).join('');
+}
 function cbResistenciaTableHtml(r) {
-  const activos = r.sectores.filter(s => s.activo === 'Si');
-  if (!activos.length) return `<div class="xlsx-desc-row">Sin sectores activos.</div>`;
-  const nEl = activos[0].resistencias.length;
-  const filas = [];
-  for (let i = 0; i < nEl; i++) {
-    filas.push(`<tr><td>${activos[0].resistencias[i].elemento}</td>${activos.map(s => `<td class="xv-num">${s.resistencias[i].exigencia}</td>`).join('')}</tr>`);
-  }
+  const act = r.sectores.filter(s => s.activo === 'Si' && s.resistencias);
+  if (!act.length) return `<div class="xlsx-desc-row">Sin tipo determinado: no se emiten exigencias.</div>`;
+  const filas = EF_FUNC.map((el, i) => `<tr><td>${el}</td>${act.map(s => `<td class="xv-num">${s.resistencias[i].txt}</td>`).join('')}<td style="font-size:.7rem">${CB_COND_433[i]}</td></tr>`).join('');
   return `<table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td>Elemento constructivo</td>${activos.map(s => `<td class="xv-num">${s.nSector} (Tipo ${s.tipoFinal})</td>`).join('')}</tr>
-    ${filas.join('')}
-  </tbody></table>`;
+    <tr class="xlsx-hdr-de"><td>Elemento (Art. 4.3.3)</td>${act.map(s => `<td class="xv-num">${s.nSector} (tipo ${cbTipoTxt(s)})</td>`).join('')}<td>Condición de aplicación</td></tr>
+    ${filas}</tbody></table>
+    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">${CB_NOTA_PERIMETRAL} Estas son exigencias calculadas; el cumplimiento se acredita con soluciones del Listado Oficial MINVU, ensayo NCh 935/1 o asimilación (OGUC 4.3.2).</div>`;
 }
-
 function combustibleCalcHtml(d, opts) {
-  const resumen = !!(opts && opts.resumen);
   const sections = [
-    { num: '1', title: 'Parámetros generales y superficie construida total', rows: [
-      { t: 'var1', label: 'Altura de piso tipo [m]', f: 'alturaPisoTipo', d: 2 },
-      { t: 'var1', label: 'Superficie construida total (m², suma sectores activos)', f: 'superficieTotal', d: 1, resumen: true },
-      { t: 'var1', label: 'N° de sectores activos', f: 'nSectoresActivos', d: 0, resumen: true },
-    ] },
-    { num: '2', title: 'Detalle de materiales combustibles por sector', rows: [], extraHtml: d.materialesTableHtml, extraInResumen: false },
-    { num: '3', title: 'Resumen y clasificación por sector', rows: [], extraHtml: d.clasificacionTableHtml },
-    { num: '4', title: 'Resistencia al fuego requerida por sector (Art. 4.3.3 OGUC)', rows: [], extraHtml: d.resistenciaTableHtml },
+    { num: '1', title: 'Carga combustible, densidades y clasificación por sector (OGUC 4.3.4)', extraHtml: d.clasificacionTableHtml },
+    { num: '2', title: 'Densidad puntual máxima en 2×2 m (NCh 1993)', extraHtml: d.puntualHtml, extraInResumen: false },
+    { num: '3', title: 'Resistencia al fuego exigida por elemento (OGUC 4.3.3 y 4.3.5)', extraHtml: d.resistenciaTableHtml },
   ];
-  return cbBuildCalculoHtml(sections, d, {
-    resumen,
-  });
+  return cbBuildCalculoHtml(sections, d, opts);
 }
-
-// state: objeto de estado de renderCombustible (alturaPisoTipo, sectores[], materiales[]).
-// r: resultado de calcCombustible({sectores, materiales, alturaPisoTipo}) ya calculado en recalc().
 function buildPrintSheetsCombustible(state, r) {
-  const superficieTotal = state.sectores.filter(s => s.activo === 'Si').reduce((s, x) => s + (x.superficieDeclarada || 0), 0);
-  const nSectoresActivos = state.sectores.filter(s => s.activo === 'Si').length;
-
-  const d = Object.assign({}, r, {
-    alturaPisoTipo: state.alturaPisoTipo,
-    superficieTotal,
-    nSectoresActivos,
-    materialesTableHtml: cbMaterialesTableHtml(state),
-    clasificacionTableHtml: cbClasificacionTableHtml(r),
-    resistenciaTableHtml: cbResistenciaTableHtml(r),
-  });
-
-  xlsxSetPrintSheets(combustibleDatosHtml(state), combustibleCalcHtml(d, { resumen: false }), combustibleCalcHtml(d, { resumen: true }));
+  const d = { clasificacionTableHtml: cbClasificacionTableHtml(r), puntualHtml: cbPuntualCalcHtml(r), resistenciaTableHtml: cbResistenciaTableHtml(r) };
+  xlsxSetPrintSheets(combustibleDatosHtml(state, r), combustibleCalcHtml(d, { resumen: false }), combustibleCalcHtml(d, { resumen: true }));
 }
 
+/* ---------------- Interfaz ---------------- */
 function renderCombustible(container) {
+  let nextId = 3;
   const state = {
-    alturaPisoTipo: 3.5,
+    separados: 'Si',
     sectores: [
-      { activo:'Si', nombre:'Bodega Principal', destino:'Bodegaje', pisos:2, alturaTotal:0, subterraneos:0, superficieDeclarada:500, ocupacion:20, requiereEstudio:'Si', densidadPuntualManual:null },
-      { activo:'Si', nombre:'Área Administrativa', destino:'Oficina', pisos:2, alturaTotal:0, subterraneos:0, superficieDeclarada:300, ocupacion:25, requiereEstudio:'No', densidadPuntualManual:null }
+      { id:'S1', activo:'Si', nombre:'Bodega Principal', uso:'Bodegaje', destino:'Establecimientos de bodegaje', pisos:'2', alturasEsp:'', altillos:'No', superficie:'500', ocupacion:'20', estudio:'Si', puntualManual:'', puntualFuente:'' },
+      { id:'S2', activo:'Si', nombre:'Área Administrativa', uso:'Oficina', destino:'Oficinas', pisos:'2', alturasEsp:'', altillos:'No', superficie:'300', ocupacion:'25', estudio:'Si', puntualManual:'', puntualFuente:'' }
     ],
     materiales: [
-      { sector:'Sector 1', material:'Madera y derivados (pino, aglomerado, contrachapado, OSB)', cantidad:2500 },
-      { sector:'Sector 1', material:'Metil etil cetona (MEK)', cantidad:400 },
-      { sector:'Sector 2', material:'Mobiliario mixto (madera+textil+espuma, promedio)', cantidad:800 }
+      { sectorId:'S1', material:'Madera y derivados (pino, aglomerado, contrachapado, OSB)', cantidad:'2500', ubicacion:'' },
+      { sectorId:'S1', material:'Metil etil cetona (MEK)', cantidad:'400', ubicacion:'' },
+      { sectorId:'S2', material:'Mobiliario mixto (madera+textil+espuma, promedio)', cantidad:'800', ubicacion:'' }
     ]
   };
-
-  const optMaterial = Object.keys(PODER_CALORIFICO_COMB).map(m => `<option value="${m}">${m} (${PODER_CALORIFICO_COMB[m]} MJ/kg)</option>`).join('');
-  // lista de sectores para el <select> de la Sección B: se recalcula según los sectores que existan en ese
-  // momento (en vez de una lista fija), para que siempre coincida con las filas realmente creadas en A.
-  function getOptSector() {
-    return state.sectores.map((s,i) => `Sector ${i+1}`).map(s => `<option value="${s}">${s}</option>`).join('');
+  const ea = escapeHtmlAttr;
+  const nivelTxt = { primaria: 'NIST (fuente primaria)', secundaria: 'Fuente secundaria', 'sin fuente': 'Sin fuente documentada' };
+  function optMaterial(sel) {
+    return Object.keys(PODER_CALORIFICO_COMB).map(m => `<option value="${ea(m)}"${m === sel ? ' selected' : ''}>${m} (${fmt1(PODER_CALORIFICO_COMB[m].pc)} MJ/kg${PODER_CALORIFICO_COMB[m].nivel === 'sin fuente' ? ', sin fuente' : ''})</option>`).join('')
+      + `<option value="${ea(CB_OTRO)}"${sel === CB_OTRO ? ' selected' : ''}>${CB_OTRO}</option>`
+      + (sel && !PODER_CALORIFICO_COMB[sel] && sel !== CB_OTRO ? `<option value="${ea(sel)}" selected>${ea(sel)} (desconocido)</option>` : '');
   }
-  // Nombre corto de un material: solo el nombre principal, sin el detalle entre paréntesis (que puede ser
-  // largo — ej. "Madera y derivados (pino, aglomerado, contrachapado, OSB)" → "Madera y derivados"). Se usa
-  // en celdas compactas (Sección C, chips) donde el nombre completo desborda; el nombre completo queda
-  // disponible como title (tooltip) para no perder la información.
-  function nombreCorto(material) {
-    if (!material) return '';
-    const idx = material.indexOf(' (');
-    return idx > 0 ? material.slice(0, idx) : material;
+  function optSector(sel) {
+    return (state.sectores.some(s => s.id === sel) ? '' : `<option value="" selected>— sin sector —</option>`)
+      + state.sectores.map((s, i) => `<option value="${s.id}"${s.id === sel ? ' selected' : ''}>Sector ${i + 1}${s.nombre ? ' — ' + ea(s.nombre) : ''}</option>`).join('');
   }
-
-  // Tablas de referencia (siempre generadas desde DENSIDAD_TABLA_COMB, la misma tabla que usa el cálculo,
-  // para que nunca queden desincronizadas del resultado real):
-  //  - "Tabla 1": clasificación Dc1-Dc7 según densidad de carga combustible (media y puntual máxima).
-  //  - "Tabla 3" (asimilable al ítem 2, Establecimientos de bodegaje, Art. 4.3.4 OGUC): la misma tabla de
-  //    densidades, cruzada con el N° de pisos, para obtener el tipo a/b/c/d.
-  function limiteEntero(v) { return Math.floor(v); }
-  function rangoTexto(rows, i, key) {
-    const inf = limiteEntero(rows[i][key]);
-    const sup = i < rows.length-1 ? limiteEntero(rows[i+1][key]) : null;
-    if (i === 0) return `Hasta ${fmt0(sup)}`;
-    if (sup === null) return `Más de ${fmt0(inf)}`;
-    return `Más de ${fmt0(inf)} hasta ${fmt0(sup)}`;
-  }
-  const tabla1Html = `
-    <table class="results piso-compare">
-      <tr><th>Clasificación</th><th>Densidad de carga combustible media (MJ/m²)</th><th>Densidad de carga combustible puntual máxima (MJ/m²)</th></tr>
-      ${DENSIDAD_TABLA_COMB.map((row,i) => `<tr><td>D<sub>C${i+1}</sub></td><td>${rangoTexto(DENSIDAD_TABLA_COMB,i,'limMedia')}</td><td>${rangoTexto(DENSIDAD_TABLA_COMB,i,'limPuntual')}</td></tr>`).join('')}
-    </table>`;
-  const tabla3Html = `
-    <table class="results piso-compare">
-      <tr><th>Densidad media de carga combustible (MJ/m²)</th><th>Carga puntual máxima (MJ/m²)</th><th>N° pisos = 1</th><th>N° pisos = 2</th><th>N° pisos = 3</th><th>N° pisos = 4</th><th>N° pisos ≥ 5</th></tr>
-      ${DENSIDAD_TABLA_COMB.map((row,i) => `<tr><td>${rangoTexto(DENSIDAD_TABLA_COMB,i,'limMedia')}</td><td>${rangoTexto(DENSIDAD_TABLA_COMB,i,'limPuntual')}</td><td>${row.pisos[1]}</td><td>${row.pisos[2]}</td><td>${row.pisos[3]}</td><td>${row.pisos[4]}</td><td>${row.pisos['5+']}</td></tr>`).join('')}
-    </table>`;
+  const rango = (lo, hi) => lo == null ? `Hasta ${fmt0(hi)}` : hi == null ? `Sobre ${fmt0(lo)}` : `Sobre ${fmt0(lo)} hasta ${fmt0(hi)}`;
+  const rowsInd = EF_T3['Establecimientos industriales'];
+  const tablaDcHtml = `<table class="results piso-compare"><tr><th>Clase</th><th>Densidad media (MJ/m²)</th><th>Densidad puntual máxima (MJ/m²)</th></tr>
+    ${rowsInd.map((f, i) => `<tr><td>D<sub>C${i + 1}</sub></td><td>${rango(i ? rowsInd[i - 1][0] : null, f[0])}</td><td>${rango(i ? rowsInd[i - 1][1] : null, f[1])}</td></tr>`).join('')}</table>`;
+  const tabla3Html = Object.keys(EF_T3).map(dest => { const rows = EF_T3[dest];
+    return `<tr><th colspan="7" style="text-align:left">${dest}</th></tr>` + rows.map((f, i) => `<tr><td>${rango(i ? rows[i - 1][0] : null, f[0])}</td><td>${rango(i ? rows[i - 1][1] : null, f[1])}</td>${f[2].split('').map(c => `<td>${c}</td>`).join('')}</tr>`).join(''); }).join('');
+  const catalogoHtml = `<table class="results"><tr><th>Material</th><th>H adoptado (MJ/kg)</th><th>Base</th><th>PCS (MJ/kg)</th><th>Estado</th><th>Composición</th><th>Fuente</th></tr>
+    ${Object.keys(PODER_CALORIFICO_COMB).map(k => { const c = PODER_CALORIFICO_COMB[k]; return `<tr><td>${k}</td><td class="num">${fmt1(c.pc)}</td><td>${c.base}</td><td class="num">${c.pcs != null ? fmt1(c.pcs) : '—'}</td><td>${c.estado}</td><td>${c.comp}</td><td style="font-size:.75rem">${nivelTxt[c.nivel]}: ${c.fuente}</td></tr>`; }).join('')}</table>`;
 
   container.innerHTML = `
     <div class="calc-head">
       <h1>Estudio de Carga Combustible</h1>
-      <div class="sub">Determinación del tipo de resistencia al fuego exigido, hasta 10 sectores independientes (bodegas). Cada sector es un único recinto con una sola superficie, que puede reunir distintos acopios de materiales.</div>
+      <div class="sub">Carga combustible por sector (NCh 1916), densidad media y puntual máxima en 2×2 m (NCh 1993), tipo de edificación según el destino (OGUC 4.3.4, Tablas 1, 2 y 3) y resistencias exigidas por elemento (OGUC 4.3.3 y 4.3.5).</div>
     </div>
     <div class="panel">
       <h3 class="lbl-left">A · SECTORES DEL PROYECTO (hasta 10)</h3>
-      <p class="note">Conforme al Art. 4.3.4 de la OGUC (Tabla 3), deben contar con Estudio de Carga Combustible los sectores destinados a: establecimientos industriales, bodegaje, supermercados, centros comerciales y almacenamiento de combustibles o lubricantes. Cada sector se evalúa como un único recinto, con una sola superficie (la indicada aquí).</p>
+      <p class="note">Elija el destino según el Art. 4.3.4: los destinos de la Tabla 3 (industria, supermercados y centros comerciales, bodegaje, combustibles y lubricantes) se clasifican por densidad de carga combustible; sin estudio corresponden a tipo a. Los de las Tablas 1 y 2 se clasifican por superficie u ocupantes. N° de pisos: pisos físicos del edificio que contiene al sector (en uso mixto, la altura total del edificio, Art. 4.3.5 n°2). En «Alturas pisos &gt; 3,5 m» anote la altura de cada piso que exceda 3,5 m, separadas por «;» (ej.: un galpón de un piso de 8 m → N° pisos 1 y altura 8).</p>
       <div class="field-grid" style="margin-bottom:.9rem">
-        <div class="field"><label>Altura de piso tipo, para estimar el N° de pisos equivalente desde la altura total (m)</label><input type="text" inputmode="decimal" id="cb_alturaPisoTipo" value="${state.alturaPisoTipo}"></div>
+        <div class="field"><label>¿Los sectores de distinto destino están separados en planta? (Art. 4.3.5 n°3 y n°4)</label>
+          <select id="cb_separados"><option value="Si">Sí — cada sector se clasifica por separado</option><option value="No">No — rige el tipo más exigente para todos</option></select></div>
       </div>
-      <p class="note">En un sector de un solo nivel sin entrepisos (galpón, nave industrial), el N° de pisos que exige la norma para clasificar no es 1: se estima como la altura total del sector dividida por la altura de piso tipo, redondeando hacia arriba (ej.: h=8,00 m / 3,5 m → 3 pisos). Complete "Altura total" en la tabla de sectores para que el N° de pisos se calcule así automáticamente; si el sector sí tiene pisos físicos reales, deje la altura en 0 e ingrese el N° de pisos directamente.</p>
       <div id="cb_sectoresTable"></div>
       <button class="btn-add" id="cb_addSector" type="button">+ Agregar sector</button>
-      <div id="cb_sectoresResumen" style="margin-top:.6rem"></div>
-      <datalist id="dl_cb_destino">${DESTINO_OPTS_COMB.map(d => `<option value="${d}"></option>`).join('')}</datalist>
     </div>
-
     <div class="panel">
-      <h3 class="lbl-left">A.1 · TABLA 1 — CLASIFICACIÓN DE EDIFICIOS (O SECTORES) POR DENSIDAD DE CARGA COMBUSTIBLE</h3>
-      <p class="note">Clasificación Dc según densidad de carga combustible (NCh1993.Of86), reproducida aquí como referencia — es la misma tabla que usa el cálculo de la Sección D, por lo que siempre está sincronizada con el resultado.</p>
-      ${tabla1Html}
+      <h3 class="lbl-left">A.1 · CLASIFICACIÓN POR DENSIDAD DE CARGA COMBUSTIBLE (NCh 1993)</h3>
+      ${tablaDcHtml}
     </div>
-
     <div class="panel">
-      <h3 class="lbl-left">A.2 · TABLA 3 — TIPO INDUSTRIAL (A/B/C/D) SEGÚN DENSIDAD Y N° DE PISOS</h3>
-      <p class="note">Tabla N°3 del Art. 4.3.4 OGUC (cruce de densidad de carga combustible con N° de pisos → Tipo a/b/c/d), reproducida aquí como referencia — es la misma tabla que usa el cálculo de la Sección D, por lo que siempre está sincronizada con el resultado. Corresponde al ítem 2 (Establecimientos de bodegaje) del Art. 4.3.4 OGUC. Si el destino del sector es otro (industrial, comercial, etc.), verifique si a ese ítem le corresponde una tabla de clasificación distinta — esta planilla aplica la misma tabla a todos los sectores.</p>
-      ${tabla3Html}
+      <h3 class="lbl-left">A.2 · TABLA 3 DEL ART. 4.3.4 OGUC — TIPO SEGÚN DESTINO, DENSIDAD Y N° DE PISOS</h3>
+      <p class="note">Se usa la mayor de las dos densidades (la columna que da la clasificación más exigente). Los límites «hasta» incluyen el valor.</p>
+      <table class="results piso-compare"><tr><th>Densidad media (MJ/m²)</th><th>Densidad puntual máxima (MJ/m²)</th><th>1 piso</th><th>2</th><th>3</th><th>4</th><th>5 o más</th></tr>${tabla3Html}</table>
     </div>
-
     <div class="panel">
-      <h3 class="lbl-left">B · ACOPIOS DE MATERIALES COMBUSTIBLES POR SECTOR</h3>
-      <p class="note">Cada sector es un único recinto, con una sola superficie (la de la Sección A). Agregue aquí cada acopio: material, su calor de combustión (se completa solo al elegir el material) y la cantidad almacenada. La planilla suma automáticamente Cantidad × Calor de Combustión de todos los acopios de un mismo sector para obtener su Carga Combustible Total (Cc = M1×C/c1 + M2×C/c2 + ... ; Dc = Cc / Superficie).</p>
+      <h3 class="lbl-left">B · INVENTARIO DE MATERIALES COMBUSTIBLES</h3>
+      <p class="note">Un acopio por fila, con su sector y su ubicación. Ubicación 2×2 m: misma etiqueta (ej.: «Rack 1») para todo lo que esté dentro de una misma superficie de 2×2 m; escriba «distribuido» si el material está repartido de forma uniforme en todo el sector. Dividir o unir filas con la misma ubicación no cambia el resultado. Si el material no está en el catálogo, elija «${CB_OTRO}» e indique su calor de combustión y la fuente.</p>
+      <datalist id="dl_cb_ubic"><option value="distribuido"></option></datalist>
       <div id="cb_materialesTable"></div>
       <button class="btn-add" id="cb_addMaterial" type="button">+ Agregar acopio de material</button>
+      <details style="margin-top:.6rem"><summary>Catálogo de calores de combustión (fuente, base y composición)</summary>
+        <p class="note">Base adoptada para sustancias puras: PCI (agua en vapor). Los valores «sin fuente documentada» provienen del catálogo original de la planilla y deben respaldarse (NCh 1916, ensayo NCh 1914/2 o ficha técnica) antes de emitir el estudio.</p>${catalogoHtml}</details>
     </div>
-
     <div class="panel">
-      <h3 class="lbl-left">C · DENSIDAD PUNTUAL MÁXIMA POR SECTOR (peor escenario, superficie de 2×2 m)</h3>
-      <p class="note">Cálculo automático (peor caso) a partir de los acopios de la Sección B: por cada material, (cantidad × calor) / 4 m²; se toma el mayor. Si cuenta con un valor medido, ingréselo como manual — tiene prioridad.</p>
+      <h3 class="lbl-left">C · DENSIDAD PUNTUAL MÁXIMA POR SECTOR (2×2 m)</h3>
+      <p class="note">Se calcula con las ubicaciones de la Sección B. Si dispone de un valor medido o de un estudio externo, ingréselo con su procedencia: tiene prioridad sobre el cálculo.</p>
       <div id="cb_puntualTable"></div>
     </div>
-
     <div class="panel">
       <h3 class="lbl-left">D · RESUMEN Y CLASIFICACIÓN POR SECTOR</h3>
-      <div id="cb_recintosCalc"></div>
-      <div id="cb_clasificacion" style="margin-top:.6rem"></div>
+      <div id="cb_errores"></div>
+      <div id="cb_clasificacion"></div>
     </div>
-
     <div class="panel">
-      <h3 class="lbl-left">E · RESISTENCIA AL FUEGO REQUERIDA POR SECTOR (Art. 4.3.3 OGUC)</h3>
+      <h3 class="lbl-left">E · RESISTENCIA AL FUEGO EXIGIDA POR ELEMENTO (Art. 4.3.3 y 4.3.5 OGUC)</h3>
       <div id="cb_resistenciaFuego"></div>
-      <p class="note">N.R. = No Requerido para ese Tipo/elemento según la fuente consultada. Cuando un elemento cumple más de una función, rige la exigencia más alta. Esta tabla fue reconstruida a partir de fuentes públicas secundarias — verificar contra el texto vigente de la OGUC. La base de datos de soluciones constructivas certificadas (Listado Oficial MINVU-DITEC, ~50 soluciones por categoría F) del Excel original no se incluye en esta versión web — consulte el Listado Oficial vigente en www.minvu.gob.cl/ditec para seleccionar una solución que cumpla la exigencia F de cada sector.</p>
     </div>
-
     ${memPanelHtml('cbi', 'F', 'MEMORIA DE CÁLCULO (INFORME)', 'Ej: Nave industrial de estructura metálica de un nivel, destinada a bodegaje de insumos...')}
-
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div><div id="printSheetInforme"></div>
   `;
 
   function renderSectoresTable() {
-    const rows = state.sectores.map((s,i) => {
-      const porAltura = s.alturaTotal > 0;
-      const pisosMostrado = porAltura ? Math.ceil(s.alturaTotal / (state.alturaPisoTipo>0?state.alturaPisoTipo:3.5)) : s.pisos;
-      return `
-      <tr>
-        <td>Sector ${i+1}</td>
-        <td><select class="cb-s-activo" data-i="${i}"><option value="Si" ${s.activo==='Si'?'selected':''}>Sí</option><option value="No" ${s.activo==='No'?'selected':''}>No</option></select></td>
-        <td><input type="text" class="cb-s-nombre" data-i="${i}" value="${s.nombre}"></td>
-        <td><input type="text" class="cb-s-destino" data-i="${i}" value="${s.destino}" list="dl_cb_destino"></td>
-        <td><input type="text" inputmode="decimal" class="cb-s-altura" data-i="${i}" value="${s.alturaTotal||''}" placeholder="opc"></td>
-        <td><input type="number" class="cb-s-pisos" data-i="${i}" value="${pisosMostrado}" ${porAltura?'disabled title="Calculado desde la altura total ÷ altura de piso tipo"':''}></td>
-        <td><input type="number" class="cb-s-superficie" data-i="${i}" value="${s.superficieDeclarada}"></td>
-        <td><input type="number" class="cb-s-ocupacion" data-i="${i}" value="${s.ocupacion}"></td>
-        <td><select class="cb-s-requiere" data-i="${i}"><option value="Si" ${s.requiereEstudio==='Si'?'selected':''}>Sí</option><option value="No" ${s.requiereEstudio==='No'?'selected':''}>No</option></select></td>
-        <td><button type="button" class="btn-remove" data-i="${i}" ${state.sectores.length<=1?'disabled':''} title="Eliminar este sector">✕</button></td>
+    const rows = state.sectores.map((s, i) => {
+      const t3 = cbTablaDestino(s.destino) === 3;
+      return `<tr>
+        <td>Sector ${i + 1}</td>
+        <td><select class="cb-s-activo" data-i="${i}"><option value="Si"${s.activo === 'Si' ? ' selected' : ''}>Sí</option><option value="No"${s.activo === 'No' ? ' selected' : ''}>No</option></select></td>
+        <td><input type="text" class="cb-s-nombre" data-i="${i}" value="${ea(s.nombre)}"></td>
+        <td><input type="text" class="cb-s-uso" data-i="${i}" value="${ea(s.uso)}" placeholder="descripción"></td>
+        <td><select class="cb-s-destino" data-i="${i}">${cbDestinoOpts(s.destino)}</select></td>
+        <td><input type="text" inputmode="numeric" class="cb-s-pisos" data-i="${i}" value="${ea(s.pisos)}"></td>
+        <td><input type="text" inputmode="decimal" class="cb-s-altesp" data-i="${i}" value="${ea(s.alturasEsp)}" placeholder="—"></td>
+        <td><select class="cb-s-altillos" data-i="${i}"><option value="No"${s.altillos !== 'Si' ? ' selected' : ''}>No</option><option value="Si"${s.altillos === 'Si' ? ' selected' : ''}>Sí</option></select></td>
+        <td><input type="text" inputmode="decimal" class="cb-s-superficie" data-i="${i}" value="${ea(s.superficie)}"></td>
+        <td><input type="text" inputmode="numeric" class="cb-s-ocupacion" data-i="${i}" value="${ea(s.ocupacion)}"></td>
+        <td><select class="cb-s-requiere" data-i="${i}" ${t3 ? '' : 'disabled title="Solo destinos de la Tabla 3"'}><option value="Si"${s.estudio !== 'No' ? ' selected' : ''}>Sí</option><option value="No"${s.estudio === 'No' ? ' selected' : ''}>No → tipo a</option></select></td>
+        <td><button type="button" class="btn-remove" data-i="${i}" ${state.sectores.length <= 1 ? 'disabled' : ''} title="Eliminar este sector">✕</button></td>
       </tr>`;
     }).join('');
-    document.getElementById('cb_sectoresTable').innerHTML = `
-      <table class="results editable">
-        <tr><th>Sector</th><th>Activo</th><th>Nombre</th><th>Destino</th><th>Alt. (m)</th><th>N° pisos</th><th>Sup. (m²)</th><th>Ocup.</th><th>¿Req. estudio?</th><th></th></tr>
-        ${rows}
-      </table>`;
-    document.getElementById('cb_sectoresTable').querySelectorAll('input, select').forEach(el => {
-      const evt = el.tagName === 'SELECT' ? 'change' : 'input';
-      el.addEventListener(evt, () => {
-        const i = +el.dataset.i;
-        if (el.classList.contains('cb-s-activo')) state.sectores[i].activo = el.value;
-        if (el.classList.contains('cb-s-nombre')) state.sectores[i].nombre = el.value;
-        if (el.classList.contains('cb-s-destino')) state.sectores[i].destino = el.value;
-        if (el.classList.contains('cb-s-altura')) { state.sectores[i].alturaTotal = parseFloat(el.value)||0; renderSectoresTable(); recalc(); return; }
-        if (el.classList.contains('cb-s-pisos')) state.sectores[i].pisos = parseFloat(el.value)||0;
-        if (el.classList.contains('cb-s-superficie')) state.sectores[i].superficieDeclarada = parseFloat(el.value)||0;
-        if (el.classList.contains('cb-s-ocupacion')) state.sectores[i].ocupacion = parseFloat(el.value)||0;
-        if (el.classList.contains('cb-s-requiere')) state.sectores[i].requiereEstudio = el.value;
+    const box = document.getElementById('cb_sectoresTable');
+    box.innerHTML = `<table class="results editable">
+        <tr><th>Sector</th><th>Activo</th><th>Nombre</th><th>Uso</th><th>Destino (Art. 4.3.4)</th><th>N° pisos</th><th>Alturas pisos &gt; 3,5 m</th><th>Altillos</th><th>Sup. (m²)</th><th>Ocup.</th><th>Estudio</th><th></th></tr>
+        ${rows}</table>`;
+    const campo = { 'cb-s-activo':'activo', 'cb-s-nombre':'nombre', 'cb-s-uso':'uso', 'cb-s-destino':'destino', 'cb-s-pisos':'pisos', 'cb-s-altesp':'alturasEsp',
+      'cb-s-altillos':'altillos', 'cb-s-superficie':'superficie', 'cb-s-ocupacion':'ocupacion', 'cb-s-requiere':'estudio' };
+    box.querySelectorAll('input, select').forEach(el => {
+      el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+        const s = state.sectores[+el.dataset.i];
+        const k = Object.keys(campo).find(c => el.classList.contains(c));
+        if (!k) return;
+        s[campo[k]] = el.value;
+        if (k === 'cb-s-destino') { renderSectoresTable(); }
+        if (k === 'cb-s-nombre' || k === 'cb-s-activo') { renderMaterialesTable(); renderPuntualTable(); }
         recalc();
       });
     });
-    document.getElementById('cb_sectoresTable').querySelectorAll('.btn-remove').forEach(el => el.addEventListener('click', () => {
+    box.querySelectorAll('.btn-remove').forEach(el => el.addEventListener('click', () => {
       const i = +el.dataset.i;
+      const id = state.sectores[i].id;
       state.sectores.splice(i, 1);
-      // los materiales/recintos (secciones B y C) referencian el sector por su nombre "Sector N": al eliminar
-      // un sector, los que apuntaban a sectores posteriores se renumeran junto con la tabla (mantienen el mismo
-      // sector físico), y los que apuntaban justo al sector eliminado vuelven a "Sector 1" para no quedar huérfanos.
-      const remap = (arr) => arr.forEach(item => {
-        const m = /^Sector (\d+)$/.exec(item.sector);
-        if (!m) return;
-        const n = parseInt(m[1], 10);
-        if (n === i+1) item.sector = state.sectores.length ? 'Sector 1' : '';
-        else if (n > i+1) item.sector = 'Sector ' + (n-1);
-      });
-      remap(state.materiales);
-      renderSectoresTable();
-      renderMaterialesTable();
-      renderPuntualTable();
-      recalc();
+      // Los acopios del sector eliminado no se reasignan: quedan «sin sector» y bloquean la clasificación hasta
+      // que se asignen a otro sector o se eliminen.
+      state.materiales.forEach(m => { if (m.sectorId === id) m.sectorId = ''; });
+      renderSectoresTable(); renderMaterialesTable(); renderPuntualTable(); recalc();
     }));
-    const addBtn = document.getElementById('cb_addSector');
-    if (addBtn) addBtn.disabled = state.sectores.length >= 10;
+    document.getElementById('cb_addSector').disabled = state.sectores.length >= 10;
   }
 
   function renderMaterialesTable() {
-    const rows = state.materiales.map((m,i) => `
-      <tr>
-        <td>Acopio ${i+1}</td>
-        <td><select class="cb-m-sector" data-i="${i}">${getOptSector().replace(`value="${m.sector}"`, `value="${m.sector}" selected`)}</select></td>
+    const rows = state.materiales.map((m, i) => {
+      const cat = PODER_CALORIFICO_COMB[m.material];
+      const otro = m.material === CB_OTRO;
+      const hTxt = cat ? `${fmt1(cat.pc)} MJ/kg ${cat.nivel === 'sin fuente' ? '<span class="tag" style="color:#b00020">sin fuente</span>' : `<span class="tag">${cat.base}</span>`}` : otro ? '' : '<span style="color:#b00020">desconocido</span>';
+      return `<tr>
+        <td>Acopio ${i + 1}</td>
+        <td><select class="cb-m-sector" data-i="${i}">${optSector(m.sectorId)}</select></td>
         <td><div class="cb-m-material-wrap">
-          <select class="cb-m-material" data-i="${i}" title="${m.material || ''}">${optMaterial.replace(`value="${m.material}"`, `value="${m.material}" selected`)}</select>
-          ${m.material ? `<div class="cb-m-material-caption" title="${escapeHtmlAttr(m.material)}">${escapeHtmlAttr(m.material)}</div>` : ''}
+          <select class="cb-m-material" data-i="${i}" title="${ea(m.material || '')}">${optMaterial(m.material)}</select>
+          ${otro ? `<input type="text" class="cb-m-onombre" data-i="${i}" value="${ea(m.nombreOtro || '')}" placeholder="nombre del material">
+            <input type="text" class="cb-m-ofuente" data-i="${i}" value="${ea(m.fuenteOtro || '')}" placeholder="fuente del calor de combustión (obligatoria)">
+            <select class="cb-m-obase" data-i="${i}"><option value="PCI"${m.baseOtro !== 'PCS' ? ' selected' : ''}>PCI</option><option value="PCS"${m.baseOtro === 'PCS' ? ' selected' : ''}>PCS</option></select>`
+            : m.material ? `<div class="cb-m-material-caption" title="${ea(m.material)}">${ea(m.material)}</div>` : ''}
         </div></td>
-        <td class="num">${fmt1(PODER_CALORIFICO_COMB[m.material] || 0)} MJ/kg</td>
-        <td><input type="number" class="cb-m-cantidad" data-i="${i}" value="${m.cantidad}"></td>
-        <td><button type="button" class="btn-remove" data-i="${i}" ${state.materiales.length<=1?'disabled':''}>✕</button></td>
-      </tr>`).join('');
-    document.getElementById('cb_materialesTable').innerHTML = `
-      <table class="results editable">
-        <tr><th>Acopio</th><th>Sector</th><th>Material</th><th>P. Calorífico</th><th>Cant. (kg)</th><th></th></tr>
-        ${rows}
-      </table>`;
-    document.getElementById('cb_materialesTable').querySelectorAll('input, select').forEach(el => {
-      const evt = el.tagName === 'SELECT' ? 'change' : 'input';
-      el.addEventListener(evt, () => {
-        const i = +el.dataset.i;
-        if (el.classList.contains('cb-m-sector')) state.materiales[i].sector = el.value;
-        if (el.classList.contains('cb-m-material')) { state.materiales[i].material = el.value; renderMaterialesTable(); recalc(); return; }
-        if (el.classList.contains('cb-m-cantidad')) state.materiales[i].cantidad = parseFloat(el.value)||0;
+        <td class="num">${otro ? `<input type="text" inputmode="decimal" class="cb-m-opc" data-i="${i}" value="${ea(m.pcOtro || '')}" placeholder="MJ/kg">` : hTxt}</td>
+        <td><input type="text" inputmode="decimal" class="cb-m-cantidad" data-i="${i}" value="${ea(m.cantidad)}"></td>
+        <td><input type="text" class="cb-m-ubic" data-i="${i}" value="${ea(m.ubicacion || '')}" list="dl_cb_ubic" placeholder="sin asignar"></td>
+        <td><button type="button" class="btn-remove" data-i="${i}" ${state.materiales.length <= 1 ? 'disabled' : ''}>✕</button></td>
+      </tr>`;
+    }).join('');
+    const box = document.getElementById('cb_materialesTable');
+    box.innerHTML = `<table class="results editable"><tr><th>Acopio</th><th>Sector</th><th>Material</th><th>Calor de combustión</th><th>Cant. (kg)</th><th>Ubicación 2×2 m</th><th></th></tr>${rows}</table>`;
+    const campo = { 'cb-m-sector':'sectorId', 'cb-m-material':'material', 'cb-m-cantidad':'cantidad', 'cb-m-ubic':'ubicacion',
+      'cb-m-onombre':'nombreOtro', 'cb-m-ofuente':'fuenteOtro', 'cb-m-obase':'baseOtro', 'cb-m-opc':'pcOtro' };
+    box.querySelectorAll('input, select').forEach(el => {
+      el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+        const m = state.materiales[+el.dataset.i];
+        const k = Object.keys(campo).find(c => el.classList.contains(c));
+        if (!k) return;
+        m[campo[k]] = el.value;
+        if (k === 'cb-m-material' || k === 'cb-m-sector') { renderMaterialesTable(); recalc(); return; }
+        if (k === 'cb-m-ubic') actualizarUbicaciones();
         recalc();
       });
     });
-    document.getElementById('cb_materialesTable').querySelectorAll('.btn-remove').forEach(el => el.addEventListener('click', () => {
+    box.querySelectorAll('.btn-remove').forEach(el => el.addEventListener('click', () => {
       state.materiales.splice(+el.dataset.i, 1);
-      renderMaterialesTable();
+      renderMaterialesTable(); recalc();
+    }));
+    actualizarUbicaciones();
+  }
+  function actualizarUbicaciones() {
+    const set = new Set(state.materiales.map(m => String(m.ubicacion || '').trim()).filter(u => u && u.toLowerCase() !== CB_DIST));
+    document.getElementById('dl_cb_ubic').innerHTML = `<option value="distribuido"></option>` + [...set].map(u => `<option value="${ea(u)}"></option>`).join('');
+  }
+
+  function renderPuntualTable() {
+    const rows = state.sectores.map((s, i) => `<tr>
+        <td>Sector ${i + 1} — ${ea(s.nombre || '—')}</td>
+        <td id="cb_puntual_auto_${i}" class="num" style="font-size:.85rem;color:#57636F">—</td>
+        <td><input type="text" inputmode="decimal" class="cb-p-puntual" data-i="${i}" placeholder="opc" value="${ea(s.puntualManual)}"></td>
+        <td><input type="text" class="cb-p-fuente" data-i="${i}" placeholder="informe, medición, fecha" value="${ea(s.puntualFuente)}"></td>
+      </tr>`).join('');
+    const box = document.getElementById('cb_puntualTable');
+    box.innerHTML = `<table class="results editable"><tr><th>Sector</th><th>Cálculo por ubicaciones</th><th>Medida (MJ/m²)</th><th>Procedencia del valor medido</th></tr>${rows}</table>`;
+    box.querySelectorAll('input').forEach(el => el.addEventListener('input', () => {
+      const s = state.sectores[+el.dataset.i];
+      if (el.classList.contains('cb-p-puntual')) s.puntualManual = el.value;
+      if (el.classList.contains('cb-p-fuente')) s.puntualFuente = el.value;
       recalc();
     }));
   }
 
-  // Densidad Puntual Máxima: un renglón por sector (1:1 con la Sección A, sin agregar/quitar filas propias),
-  // ya que cada sector es un único recinto. El cálculo automático (peor material de la Sección B) se muestra
-  // como texto informativo junto al campo de override, y se refresca en cada recalc().
-  function renderPuntualTable() {
-    const rows = state.sectores.map((s,i) => `
-      <tr>
-        <td>Sector ${i+1} — ${s.nombre||'—'}</td>
-        <td id="cb_puntual_auto_${i}" class="num" style="font-size:.85rem; color:#57636F;">—</td>
-        <td><input type="number" step="0.1" class="cb-p-puntual" data-i="${i}" placeholder="opc" value="${s.densidadPuntualManual!=null ? s.densidadPuntualManual : ''}"></td>
-      </tr>`).join('');
-    document.getElementById('cb_puntualTable').innerHTML = `
-      <table class="results editable">
-        <tr><th>Sector</th><th>Cálculo automático (peor caso)</th><th>Manual (MJ/m², opcional)</th></tr>
-        ${rows}
-      </table>`;
-    document.getElementById('cb_puntualTable').querySelectorAll('input, select').forEach(el => {
-      const evt = el.tagName === 'SELECT' ? 'change' : 'input';
-      el.addEventListener(evt, () => {
-        const i = +el.dataset.i;
-        if (el.classList.contains('cb-p-puntual')) state.sectores[i].densidadPuntualManual = el.value === '' ? null : parseFloat(el.value);
-        recalc();
-      });
-    });
-  }
-
   function recalc() {
-    const r = calcCombustible({ sectores: state.sectores, materiales: state.materiales, alturaPisoTipo: state.alturaPisoTipo });
-
-    document.getElementById('cb_sectoresResumen').innerHTML = `
-      <table class="results">
-        <tr><td>Superficie construida total (m², suma sectores activos)</td><td class="num">${fmt1(state.sectores.filter(s=>s.activo==='Si').reduce((s,x)=>s+x.superficieDeclarada,0))} m²</td></tr>
-        <tr><td>N° de sectores activos</td><td class="num">${state.sectores.filter(s=>s.activo==='Si').length}</td></tr>
-      </table>`;
-
-    // Densidad Puntual Máxima — texto informativo del cálculo automático (peor material) junto al override
-    // manual de la Sección C, refrescado en cada recálculo.
+    const r = calcCombustible({ sectores: state.sectores, materiales: state.materiales, separados: state.separados });
     r.sectores.forEach((s, i) => {
       const cell = document.getElementById('cb_puntual_auto_' + i);
       if (!cell) return;
       if (s.activo !== 'Si') { cell.textContent = 'Sector inactivo'; return; }
-      cell.innerHTML = s.densidadPuntualCalc != null
-        ? `${fmt1(s.densidadPuntualCalc)} MJ/m² <span style="font-weight:600" title="${s.peorMaterial.material}">(${nombreCorto(s.peorMaterial.material)})</span>`
-        : 'Sin acopios — sin cálculo automático';
+      const p = s.puntual;
+      cell.innerHTML = p.calc != null
+        ? `${fmt1(p.calc)} MJ/m² <span class="tag">${ea(p.zonas.length ? p.zonas[0].zona : 'distribuido')}</span>`
+        : `No determinada (${ea(p.motivo || '—')})`;
     });
 
-    // Cálculo por sector (computed, shown below the input tables). Bajo cada fila se agrega el detalle del
-    // cálculo (Cc = m1×pc1 + m2×pc2 + ... ; Dc = Cc / S, con S = superficie única del sector), igual al
-    // formato de un informe de Estudio de Carga Combustible tradicional.
-    const sectoresActivos = r.sectores.filter(s=>s.activo==='Si');
-    document.getElementById('cb_recintosCalc').innerHTML = `
-      <table class="results">
-        <tr><th>Sector</th><th>Superficie (m²)</th><th>Capacidad de Almacenamiento (kg)</th><th>Carga Combustible Total — Cc (MJ)</th><th>Densidad Media — Dc (MJ/m²)</th><th>Densidad Puntual Máx. (MJ/m²)</th></tr>
-        ${sectoresActivos.map(s => {
-          const terms = s.detalleMateriales.map(d => `${fmt0(d.cantidad)} kg × ${fmt1(d.pc)} MJ/kg`).join(' + ');
-          const formula = s.detalleMateriales.length
-            ? `Cc = ${terms} = ${fmt1(s.cargaTotal)} MJ &nbsp;·&nbsp; Dc = ${fmt1(s.cargaTotal)} MJ / ${fmt1(s.superficieDeclarada)} m² = <b>${fmt1(s.densidadMedia)} MJ/m²</b>`
-            : 'Sin acopios de materiales combustibles ingresados para este sector.';
-          return `<tr><td>${s.nSector} — ${s.nombre||'—'}</td><td class="num">${fmt1(s.superficieDeclarada)}</td><td class="num">${fmt0(s.capacidadAlmacenamiento)} kg</td><td class="num">${fmt1(s.cargaTotal)}</td><td class="num">${fmt1(s.densidadMedia)}</td><td class="num">${fmt1(s.densidadPuntualMaxima)} ${
-          s.origenPuntual === '2x2' ? `<span class="tag" title="${s.peorMaterial.material}">peor material: ${nombreCorto(s.peorMaterial.material)}</span>` :
-          s.origenPuntual === 'manual' ? '<span class="tag">valor manual</span>' :
-          '<span class="tag">estimado 1,6×</span>'
-        }</td></tr>
-        <tr><td colspan="6" class="calc-detail" style="font-size:.78rem; color:#57636F; padding:.2rem .6rem .5rem;">${formula}</td></tr>`;
-        }).join('')}
-      </table>`;
+    const act = r.sectores.filter(s => s.activo === 'Si');
+    const errs = r.errGlobal.slice();
+    act.forEach(s => s.errs.forEach(e => errs.push(`${s.nSector}: ${e}.`)));
+    document.getElementById('cb_errores').innerHTML = errs.length
+      ? `<div class="note" style="color:#b00020;border-left:3px solid #b00020;padding-left:.5rem"><b>Datos inválidos — no se emite la clasificación de los sectores afectados:</b><br>${errs.map(ea).join('<br>')}</div>` : '';
 
     document.getElementById('cb_clasificacion').innerHTML = `
       <table class="results piso-compare">
-        <tr><th>Sector</th><th>N° pisos usado</th><th>Superficie (m²)</th><th>Carga total (MJ)</th><th>Densidad media (MJ/m²)</th><th>Densidad puntual máx. (MJ/m²)</th><th>Tipo general</th><th>Tipo industrial (a-d)</th><th><b>Tipo final</b></th></tr>
-        ${sectoresActivos.map(s => `<tr>
-          <td>${s.nSector} — ${s.nombre||'—'}</td>
-          <td>${s.pisosEfectivo}${s.alturaTotal>0?` <span class="tag">desde h=${fmt1(s.alturaTotal)} m</span>`:''}</td>
-          <td class="num">${fmt1(s.superficieDeclarada)}</td>
-          <td class="num">${fmt1(s.cargaTotal)}</td>
-          <td class="num">${fmt1(s.densidadMedia)}</td>
-          <td class="num">${fmt1(s.densidadPuntualMaxima)}</td>
-          <td>${s.tipoGen}</td>
-          <td>${s.tipoInd || 'No aplica'}</td>
-          <td><b>${s.tipoFinal}</b></td>
-        </tr>`).join('')}
+        <tr><th>Sector</th><th>Sup. (m²)</th><th>Capacidad (kg)</th><th>Cc (MJ)</th><th>qm (MJ/m²)</th><th>qp,máx (MJ/m²)</th><th>Pisos (4.3.5)</th><th>Tabla</th><th>Tipo sector</th><th><b>Tipo</b></th></tr>
+        ${act.map(s => {
+          const p = s.puntual;
+          const terms = s.detalleMateriales.filter(m => m.carga != null).map(m => `${fmt0(m.cantidadNum)} kg × ${fmt1(m.pc)} MJ/kg`).join(' + ');
+          const formula = s.cargaTotal != null && s.densidadMedia != null
+            ? `Cc = ${terms || '0'} = ${fmt1(s.cargaTotal)} MJ · qm = ${fmt1(s.cargaTotal)} / ${fmt1(s.S)} = <b>${fmt1(s.densidadMedia)} MJ/m²</b>` : '';
+          return `<tr>
+          <td>${s.nSector} — ${ea(s.nombre || '—')}</td><td class="num">${fmt1(s.S)}</td><td class="num">${fmt0(s.capacidadAlmacenamiento)}</td>
+          <td class="num">${fmt1(s.cargaTotal)}</td><td class="num">${fmt1(s.densidadMedia)}</td>
+          <td class="num">${p.valor != null ? fmt1(p.valor) + (p.origen === 'medida' ? ' <span class="tag">medida</span>' : '') : s.tabla === 3 ? '<span style="color:#b00020">No determinada</span>' : '—'}</td>
+          <td>${s.pisosEfectivo != null ? s.pisosEfectivo : '—'}</td><td>${s.tabla ? 'Tabla ' + s.tabla : '—'}</td><td>${s.tipoSector || '—'}</td><td><b>${cbTipoTxt(s)}</b></td></tr>
+          <tr><td colspan="10" class="calc-detail" style="font-size:.78rem;color:#57636F;padding:.2rem .6rem .5rem">${formula}${formula ? '<br>' : ''}${ea(s.tipoMotivo || '')} Pisos: ${ea(s.pisos.detalle || '—')}.${s.avisos.length ? '<br>' + s.avisos.map(ea).join('<br>') : ''}</td></tr>`;
+        }).join('')}
       </table>
-      <p class="note">Tipo General considera solo N° de pisos (usado, ver columna) y carga de ocupación (Art. 4.3.4 OGUC); verificar/ajustar manualmente si el destino corresponde a salud, industria de riesgo elevado (Tipo B), o vivienda aislada/galpón agrícola de bajo riesgo (Tipo E, acotado a D). El Tipo Final es el más restrictivo entre la clasificación general y la clasificación por carga combustible (cuando el sector requiere estudio).</p>`;
+      ${r.mixtoSinSep ? `<p class="note">Sectores sin separación en planta: rige el tipo más exigente para todos (Art. 4.3.5 n°4)${r.tipoComun ? ': tipo ' + r.tipoComun : ''}.</p>` : ''}`;
 
-    document.getElementById('cb_resistenciaFuego').innerHTML = `
+    const conTipo = act.filter(s => s.resistencias);
+    document.getElementById('cb_resistenciaFuego').innerHTML = conTipo.length ? `
       <table class="results">
-        <tr><th>Elemento constructivo</th>${sectoresActivos.map(s => `<th>${s.nSector} (Tipo ${s.tipoFinal})</th>`).join('')}</tr>
-        ${RESISTENCIA_FUEGO_COMB.map(row => `<tr><td>${row.elemento}</td>${sectoresActivos.map(s => `<td class="num">${row[s.tipoFinal]}</td>`).join('')}</tr>`).join('')}
-      </table>`;
+        <tr><th>Elemento (Art. 4.3.3)</th>${conTipo.map(s => `<th>${s.nSector} (tipo ${cbTipoTxt(s)})</th>`).join('')}<th>Condición de aplicación (Art. 4.3.5)</th></tr>
+        ${EF_FUNC.map((el, i) => `<tr><td>${el}</td>${conTipo.map(s => `<td class="num">${s.resistencias[i].txt}</td>`).join('')}<td style="font-size:.75rem">${CB_COND_433[i]}</td></tr>`).join('')}
+      </table>
+      <p class="note">${CB_NOTA_PERIMETRAL}</p>
+      <p class="note">Exigencias calculadas: no acreditan cumplimiento. Este se demuestra con soluciones del Listado Oficial MINVU-DITEC, ensayo NCh 935/1 o asimilación (OGUC 4.3.2).</p>`
+      : '<p class="note">Sin tipo determinado: no se emiten exigencias.</p>';
 
-    if (typeof buildPrintSheetsCombustible === 'function') buildPrintSheetsCombustible(state, r);
+    buildPrintSheetsCombustible(state, r);
     cbUltimo = r;
   }
   let cbUltimo = null;
   document.getElementById('cbi_imprimir').addEventListener('click', () => {
-    const r = cbUltimo || calcCombustible({ sectores: state.sectores, materiales: state.materiales, alturaPisoTipo: state.alturaPisoTipo });
+    const r = cbUltimo || calcCombustible({ sectores: state.sectores, materiales: state.materiales, separados: state.separados });
     memImprimir(cbMemoriaHtml(state, r, memMeta('cbi')));
   });
-
-  document.getElementById('cb_alturaPisoTipo').addEventListener('input', (e) => {
-    state.alturaPisoTipo = parseFloat(e.target.value)||0;
-    renderSectoresTable();
-    recalc();
-  });
+  document.getElementById('cb_separados').addEventListener('change', e => { state.separados = e.target.value; recalc(); });
   document.getElementById('cb_addSector').addEventListener('click', () => {
     if (state.sectores.length >= 10) return;
-    state.sectores.push({ activo:'Si', nombre:'', destino:'', pisos:1, alturaTotal:0, subterraneos:0, superficieDeclarada:0, ocupacion:0, requiereEstudio:'No',
-      densidadPuntualManual:null });
-    renderSectoresTable();
-    renderMaterialesTable();
-    renderPuntualTable();
-    recalc();
+    // id estable: el mayor existente + 1 (agregar y quitar el último no deja huecos)
+    nextId = Math.max(0, ...state.sectores.map(s => +String(s.id).slice(1) || 0)) + 1;
+    state.sectores.push({ id: 'S' + nextId, activo:'Si', nombre:'', uso:'', destino:'', pisos:'1', alturasEsp:'', altillos:'No', superficie:'', ocupacion:'', estudio:'Si', puntualManual:'', puntualFuente:'' });
+    renderSectoresTable(); renderMaterialesTable(); renderPuntualTable(); recalc();
   });
   document.getElementById('cb_addMaterial').addEventListener('click', () => {
-    state.materiales.push({ sector:'Sector 1', material: Object.keys(PODER_CALORIFICO_COMB)[0], cantidad:0 });
-    renderMaterialesTable();
-    recalc();
+    state.materiales.push({ sectorId: state.sectores[0].id, material: Object.keys(PODER_CALORIFICO_COMB)[0], cantidad:'0', ubicacion:'' });
+    renderMaterialesTable(); recalc();
   });
 
   renderSectoresTable();
@@ -42522,77 +42241,95 @@ function fmMemoriaHtml(items, meta) {
 /* ---------------- Memoria: ESTUDIO DE CARGA COMBUSTIBLE ---------------- */
 function cbMemoriaHtml(state, r, meta) {
   const act = r.sectores.filter(s => s.activo === 'Si');
-  const tipoTxt = t => t ? String(t).toUpperCase() : '—';
+  const tipoTxt = s => s.tipoFinal ? s.tipoFinal.toUpperCase() + (s.provisorioFinal ? ' (provisorio)' : '') : 'no determinado';
+  const errs = r.errGlobal.slice();
+  act.forEach(s => s.errs.forEach(e => errs.push(`${s.nSector}: ${e}.`)));
   const tablaSect = `${MEM_T('Sectores analizados')}
-    <table class="inf-t"><tr><th>Sector</th><th>Nombre</th><th>Destino</th><th>N° pisos</th><th>Altura total (m)</th><th>Pisos para clasificación</th><th>Superficie (m²)</th><th>Carga de ocupación (pers.)</th><th>Estudio de carga combustible</th></tr>
-    ${act.map(s => `<tr><td>${s.nSector}</td><td class="l">${esc(s.nombre)}</td><td class="l">${esc(s.destino)}</td><td>${MEM_N(s.pisos,0)}</td><td>${s.alturaTotal > 0 ? MEM_N(s.alturaTotal,1) : '—'}</td><td>${MEM_N(s.pisosEfectivo,0)}</td><td>${MEM_N(s.superficieDeclarada,1)}</td><td>${MEM_N(s.ocupacion,0)}</td><td>${s.requiereEstudio === 'Si' ? 'Sí' : 'No'}</td></tr>`).join('')}</table>`;
-  const tablaMat = act.map(s => !s.detalleMateriales.length ? '' : `${MEM_T('Acopios de materiales combustibles — ' + s.nSector + (s.nombre ? ' (' + esc(s.nombre) + ')' : ''))}
-    <table class="inf-t"><tr><th>Material</th><th>Cantidad (kg)</th><th>Calor de combustión (MJ/kg)</th><th>Carga combustible (MJ)</th><th>Carga puntual 2×2 m (MJ/m²)</th></tr>
-    ${s.detalleMateriales.map(d => `<tr><td class="l">${esc(d.material)}</td><td>${MEM_N(d.cantidad,0)}</td><td>${MEM_N(d.pc,1)}</td><td>${MEM_N(d.carga,0)}</td><td>${MEM_N(d.carga/4,0)}</td></tr>`).join('')}
-    <tr><td class="l"><b>Total</b></td><td><b>${MEM_N(s.capacidadAlmacenamiento,0)}</b></td><td>—</td><td class="hl">${MEM_N(s.cargaTotal,0)}</td><td>—</td></tr></table>`).join('');
-  const origen = {manual:'medida (dato)', '2x2':'peor acopio en 2×2 m', estimado:'estimada 1,6·qm (sin acopios)'};
+    <table class="inf-t"><tr><th>Sector</th><th>Nombre</th><th>Uso</th><th>Destino (Art. 4.3.4)</th><th>N° pisos</th><th>Alturas de pisos sobre 3,5 m</th><th>Pisos para clasificación</th><th>Superficie (m²)</th><th>Carga de ocupación (pers.)</th></tr>
+    ${act.map(s => `<tr><td>${s.nSector}</td><td class="l">${esc(s.nombre)}</td><td class="l">${esc(s.uso)}</td><td class="l">${esc(s.destino || '—')}</td><td>${esc(s.pisos)}</td><td>${esc(s.alturasEsp || '—')}</td><td>${s.pisosEfectivo != null ? s.pisosEfectivo : '—'}</td><td>${MEM_N(s.S,1)}</td><td>${esc(s.ocupacion)}</td></tr>`).join('')}</table>`;
+  const tablaMat = act.map(s => !s.detalleMateriales.length ? '' : `${MEM_T('Inventario de materiales combustibles — ' + s.nSector + (s.nombre ? ' (' + esc(s.nombre) + ')' : ''))}
+    <table class="inf-t"><tr><th>N°</th><th>Material</th><th>Cantidad (kg)</th><th>Calor de combustión (MJ/kg)</th><th>Base</th><th>Carga combustible (MJ)</th><th>Ubicación 2×2 m</th><th>Fuente del calor de combustión</th></tr>
+    ${s.detalleMateriales.map(m => `<tr><td>${m.n}</td><td class="l">${esc(m.nombre || m.material)}</td><td>${MEM_N(m.cantidadNum,0)}</td><td>${MEM_N(m.pc,2)}</td><td>${esc(m.base || '—')}</td><td>${MEM_N(m.carga,0)}</td><td>${esc(String(m.ubicacion || '').trim() || 'sin asignar')}</td><td class="l">${esc(m.nivel === 'sin fuente' ? 'Sin fuente documentada' : m.fuente)}</td></tr>`).join('')}
+    <tr><td></td><td class="l"><b>Total</b></td><td><b>${MEM_N(s.capacidadAlmacenamiento,0)}</b></td><td>—</td><td>—</td><td class="hl">${MEM_N(s.cargaTotal,0)}</td><td>—</td><td>—</td></tr></table>`).join('');
+  const sinSector = r.materiales.filter(m => m.errs.includes('sin sector asignado'));
   const tablaDens = `${MEM_T('Carga combustible, densidades y clasificación por sector')}
-    <table class="inf-t"><tr><th>Sector</th><th>Carga total (MJ)</th><th>Superficie (m²)</th><th>Densidad media (MJ/m²)</th><th>Densidad puntual máx. (MJ/m²)</th><th>Origen de la puntual</th><th>Tipo general</th><th>Tipo por densidad media</th><th>Tipo por densidad puntual</th><th>Tipo final</th></tr>
-    ${act.map(s => `<tr><td>${s.nSector}</td><td>${MEM_N(s.cargaTotal,0)}</td><td>${MEM_N(s.superficieDeclarada,1)}</td><td>${MEM_N(s.densidadMedia,0)}</td><td>${MEM_N(s.densidadPuntualMaxima,0)}</td><td>${origen[s.origenPuntual] || '—'}</td><td>${tipoTxt(s.tipoGen)}</td><td>${s.detalleInd ? tipoTxt(s.detalleInd.tipoMedia) : '—'}</td><td>${s.detalleInd ? tipoTxt(s.detalleInd.tipoPuntual) : '—'}</td><td class="hl">${tipoTxt(s.tipoFinal)}</td></tr>`).join('')}</table>`;
-  const tablaRF = `${MEM_T('Resistencia al fuego exigida por elemento constructivo (OGUC Art. 4.3.3)')}
-    <table class="inf-t"><tr><th>Elemento constructivo</th>${act.map(s => `<th>${s.nSector}<br>Tipo ${tipoTxt(s.tipoFinal)}</th>`).join('')}</tr>
-    ${RESISTENCIA_FUEGO_COMB.map(row => `<tr><td class="l">${row.elemento}</td>${act.map(s => `<td>${row[s.tipoFinal]}</td>`).join('')}</tr>`).join('')}</table>`;
-  const tabla3 = `${MEM_T('Tipo de edificación según densidad de carga combustible y N° de pisos (Tabla 3, Art. 4.3.4 OGUC)')}
+    <table class="inf-t"><tr><th>Sector</th><th>Carga total (MJ)</th><th>Superficie (m²)</th><th>Densidad media (MJ/m²)</th><th>Densidad puntual máx. (MJ/m²)</th><th>Origen de la puntual</th><th>Tabla</th><th>Tipo del sector</th><th>Tipo adoptado</th></tr>
+    ${act.map(s => `<tr><td>${s.nSector}</td><td>${MEM_N(s.cargaTotal,0)}</td><td>${MEM_N(s.S,1)}</td><td>${MEM_N(s.densidadMedia,1)}</td><td>${s.puntual.valor != null ? MEM_N(s.puntual.valor,0) : 'no determinada'}</td><td class="l">${s.puntual.origen === 'medida' ? 'medida: ' + esc(s.puntualFuente) : s.puntual.origen === 'ubicaciones' ? 'ubicaciones 2×2 m' : esc(s.puntual.motivo || '—')}</td><td>${s.tabla ? s.tabla : '—'}</td><td>${s.tipoSector ? s.tipoSector.toUpperCase() : '—'}</td><td class="hl">${tipoTxt(s)}</td></tr>`).join('')}</table>`;
+  const tablaPun = act.filter(s => s.puntual.zonas.length).map(s => `${MEM_T('Densidad puntual por ubicación de 2×2 m — ' + s.nSector)}
+    <table class="inf-t"><tr><th>Ubicación</th><th>Carga en la ubicación (MJ)</th><th>Densidad (MJ/m²)</th></tr>
+    ${s.puntual.zonas.map(z => `<tr><td class="l">${esc(z.zona)}</td><td>${MEM_N(z.carga,0)}</td><td>${MEM_N(z.dens,1)}</td></tr>`).join('')}</table>`).join('');
+  const conTipo = act.filter(s => s.resistencias);
+  const tablaRF = conTipo.length ? `${MEM_T('Resistencia al fuego exigida por elemento constructivo (OGUC Art. 4.3.3 y 4.3.5)')}
+    <table class="inf-t"><tr><th>Elemento constructivo</th>${conTipo.map(s => `<th>${s.nSector}<br>Tipo ${tipoTxt(s)}</th>`).join('')}<th>Condición de aplicación</th></tr>
+    ${EF_FUNC.map((el, i) => `<tr><td class="l">${el}</td>${conTipo.map(s => `<td>${s.resistencias[i].txt}</td>`).join('')}<td class="l">${CB_COND_433[i]}</td></tr>`).join('')}</table>
+    <p>${CB_NOTA_PERIMETRAL}</p>` : '<p>No se determinó el tipo de ningún sector; no se emiten exigencias.</p>';
+  const rango = (lo, hi) => lo == null ? 'hasta ' + MEM_N(hi,0) : hi == null ? 'sobre ' + MEM_N(lo,0) : 'sobre ' + MEM_N(lo,0) + ' hasta ' + MEM_N(hi,0);
+  const destT3 = [...new Set(act.filter(s => s.tabla === 3).map(s => s.destino))];
+  const tabla3 = destT3.map(dest => { const rows = EF_T3[dest]; return `${MEM_T('Tabla 3 del Art. 4.3.4 OGUC — ' + dest)}
     <table class="inf-t"><tr><th>Densidad media (MJ/m²)</th><th>Densidad puntual máxima (MJ/m²)</th><th>1 piso</th><th>2</th><th>3</th><th>4</th><th>5 o más</th></tr>
-    ${DENSIDAD_TABLA_COMB.map((f, i) => { const sig = DENSIDAD_TABLA_COMB[i+1]; const rango = (a, b) => b ? (a > 0 ? 'sobre ' + MEM_N(Math.floor(a),0) + ' hasta ' + MEM_N(Math.floor(b),0) : 'hasta ' + MEM_N(Math.floor(b),0)) : 'sobre ' + MEM_N(Math.floor(a),0); return `<tr><td>${rango(f.limMedia, sig && sig.limMedia)}</td><td>${rango(f.limPuntual, sig && sig.limPuntual)}</td>${[1,2,3,4,'5+'].map(k => `<td>${f.pisos[k]}</td>`).join('')}</tr>`; }).join('')}</table>`;
-  const barrasMed = memBarras(act.map(s => ({label: s.nSector + (s.nombre ? ' ' + s.nombre : ''), v: s.densidadMedia, color:'#2a78d6'})), 'Densidad de carga combustible media (MJ/m²)', [{v:500,label:'500'},{v:1000,label:'1.000'},{v:2000,label:'2.000'},{v:4000,label:'4.000'}].filter(x => x.v <= Math.max(1, ...act.map(s => s.densidadMedia))*1.3));
-  const barrasPun = memBarras(act.map(s => ({label: s.nSector + (s.nombre ? ' ' + s.nombre : ''), v: s.densidadPuntualMaxima, color:'#eb6834'})), 'Densidad de carga combustible puntual máxima (MJ/m²)', [{v:3500,label:'3.500'},{v:6000,label:'6.000'},{v:10000,label:'10.000'},{v:16000,label:'16.000'}].filter(x => x.v <= Math.max(1, ...act.map(s => s.densidadPuntualMaxima))*1.3));
+    ${rows.map((f, i) => `<tr><td>${rango(i ? rows[i-1][0] : null, f[0])}</td><td>${rango(i ? rows[i-1][1] : null, f[1])}</td>${f[2].split('').map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</table>`; }).join('');
+  const conMedia = act.filter(s => s.densidadMedia != null);
+  const conPun = act.filter(s => s.puntual.valor != null);
+  const barrasMed = conMedia.length ? memBarras(conMedia.map(s => ({label: s.nSector + (s.nombre ? ' ' + s.nombre : ''), v: s.densidadMedia, color:'#2a78d6'})), 'Densidad de carga combustible media (MJ/m²)', [{v:500,label:'500'},{v:1000,label:'1.000'},{v:2000,label:'2.000'},{v:4000,label:'4.000'}].filter(x => x.v <= Math.max(1, ...conMedia.map(s => s.densidadMedia))*1.3)) : '';
+  const barrasPun = conPun.length ? memBarras(conPun.map(s => ({label: s.nSector + (s.nombre ? ' ' + s.nombre : ''), v: s.puntual.valor, color:'#eb6834'})), 'Densidad de carga combustible puntual máxima (MJ/m²)', [{v:3500,label:'3.500'},{v:6000,label:'6.000'},{v:10000,label:'10.000'},{v:16000,label:'16.000'}].filter(x => x.v <= Math.max(1, ...conPun.map(s => s.puntual.valor))*1.3)) : '';
+  const sinFuente = [...new Set(act.flatMap(s => s.detalleMateriales.filter(m => m.nivel === 'sin fuente' && m.carga > 0).map(m => m.nombre)))];
   const html = `<div class="mem-inf"><style>${MEM_CSS}</style>
     ${memPortada('MEMORIA DE CÁLCULO — ESTUDIO DE CARGA COMBUSTIBLE', 'Clasificación de la edificación y resistencia al fuego exigida (OGUC)', meta)}
     <div class="salto"></div>
     <h1>ÍNDICE</h1>
-    <p>1. Introducción<br>2. Descripción de la edificación<br>3. Marco regulatorio<br>4. Desarrollo teórico<br>&nbsp;&nbsp;&nbsp;4.1 Carga combustible<br>&nbsp;&nbsp;&nbsp;4.2 Densidad de carga combustible media y puntual máxima<br>&nbsp;&nbsp;&nbsp;4.3 Clasificación de la edificación<br>&nbsp;&nbsp;&nbsp;4.4 Resistencia al fuego exigida<br>5. Resultados<br>6. Conclusiones</p>
+    <p>1. Introducción<br>2. Descripción de la edificación<br>3. Marco regulatorio<br>4. Desarrollo teórico<br>&nbsp;&nbsp;&nbsp;4.1 Carga combustible<br>&nbsp;&nbsp;&nbsp;4.2 Densidad de carga combustible media y puntual máxima<br>&nbsp;&nbsp;&nbsp;4.3 Número de pisos<br>&nbsp;&nbsp;&nbsp;4.4 Clasificación de la edificación<br>&nbsp;&nbsp;&nbsp;4.5 Resistencia al fuego exigida<br>5. Resultados<br>6. Conclusiones</p>
     <h1>1. INTRODUCCIÓN</h1>
-    <p>La presente memoria determina la carga combustible de ${esc(meta.edif || 'la edificación en estudio')}${meta.cliente ? ', de ' + esc(meta.cliente) : ''}${meta.ubic ? ', ubicada en ' + esc(meta.ubic) : ''}, su densidad de carga combustible media y puntual máxima por sector, la clasificación de la edificación según el Art. 4.3.4 de la OGUC y la resistencia al fuego que deben cumplir sus elementos de construcción según el Art. 4.3.3.</p>
+    <p>La presente memoria determina la carga combustible de ${esc(meta.edif || 'la edificación en estudio')}${meta.cliente ? ', de ' + esc(meta.cliente) : ''}${meta.ubic ? ', ubicada en ' + esc(meta.ubic) : ''}, su densidad de carga combustible media y puntual máxima por sector, la clasificación de la edificación según el Art. 4.3.4 de la OGUC y la resistencia al fuego que deben cumplir sus elementos según los Art. 4.3.3 y 4.3.5.</p>
     <h1>2. DESCRIPCIÓN DE LA EDIFICACIÓN</h1>
     ${meta.desc ? `<p>${esc(meta.desc).replace(/\n/g, '<br>')}</p>` : '<p>La edificación se divide en los sectores que se indican en la tabla siguiente.</p>'}
     ${tablaSect}
-    <p>Cuando se indica la altura total de un sector sin entrepisos, el número de pisos para la clasificación se obtiene dividiendo esa altura por ${MEM_N(state.alturaPisoTipo > 0 ? state.alturaPisoTipo : 3.5,1)} m y redondeando hacia arriba (OGUC, criterio de piso de 3,5 m).</p>
+    <p>Sectores de distinto destino ${r.separados === 'No' ? 'sin separación en planta: rige el estándar más exigente para todos (Art. 4.3.5 n°4)' : 'separados en planta: las tablas se aplican por separado a cada sector (Art. 4.3.5 n°3)'}.</p>
     <h1>3. MARCO REGULATORIO</h1>
     <ul>
-      <li>Ley General de Urbanismo y Construcciones y Ordenanza General de Urbanismo y Construcciones (OGUC), Título 4, Capítulo 3, Art. 4.3.3 y 4.3.4 (Tablas 1, 2 y 3).</li>
+      <li>Ordenanza General de Urbanismo y Construcciones (OGUC), Título 4, Capítulo 3, Art. 4.3.3, 4.3.4 (Tablas 1, 2 y 3) y 4.3.5.</li>
       <li>NCh 1916 — Prevención de incendio en edificios. Determinación de cargas combustibles.</li>
       <li>NCh 1993 — Prevención de incendio en edificios. Clasificación de los edificios según su carga combustible.</li>
-      <li>NCh 934 — Prevención de incendio. Clasificación de fuegos.</li>
       <li>NCh 935/1 — Ensayo de resistencia al fuego. Parte 1: Elementos de construcción en general.</li>
       <li>Listado Oficial de Comportamiento al Fuego de Elementos y Componentes de la Construcción, MINVU (edición vigente).</li>
     </ul>
     <div class="salto"></div>
     <h1>4. DESARROLLO TEÓRICO</h1>
     <h2>4.1 Carga combustible</h2>
-    <p>La carga combustible de un sector es la energía calórica total que liberaría la combustión completa de los materiales que contiene (NCh 1916):</p>
+    <p>La carga combustible de un sector es la energía calórica que liberaría la combustión completa de los materiales que contiene (NCh 1916):</p>
     <div class="eq">Cc = Σ (mᵢ · Hᵢ) &nbsp;&nbsp;[MJ]</div>
-    <p>donde mᵢ es la masa del material i (kg) y Hᵢ su calor de combustión (MJ/kg).</p>
+    <p>donde mᵢ es la masa del material i (kg) y Hᵢ su calor de combustión (MJ/kg). Para sustancias puras se adopta el poder calorífico inferior (PCI): PCI = (|ΔcH°| − n · 44,0 kJ/mol) / M, con n los moles de agua formados por mol y M la masa molar. Cada valor se informa con su base y su fuente.</p>
     <h2>4.2 Densidad de carga combustible media y puntual máxima</h2>
     <div class="eq">qm = Cc / S &nbsp;&nbsp;[MJ/m²]</div>
-    <p>donde S es la superficie del sector. La densidad puntual máxima (NCh 1993) se evalúa en la superficie más desfavorable de 2 × 2 m (4 m²); en esta memoria se adopta el peor escenario: para cada material, su carga total concentrada en esos 4 m², tomando el mayor valor:</p>
-    <div class="eq">qp,máx = máx (mᵢ · Hᵢ / 4) &nbsp;&nbsp;[MJ/m²]</div>
-    <p>Si se dispone de un valor medido, se usa ese valor. Equivalencias: 1 MJ/m² = 238,85 kcal/m²; 1 MJ ≈ 0,053 kg de madera equivalente de 4.000 kcal/kg.</p>
-    <h2>4.3 Clasificación de la edificación</h2>
-    <p>La OGUC (Art. 4.3.4) clasifica la edificación en tipos a, b, c o d según su destino, número de pisos, superficie, carga de ocupación y, para establecimientos industriales, de bodegaje y comerciales, según la densidad de carga combustible (Tabla 3). Se aplica la densidad mayor de ambas columnas (media y puntual máxima) y, entre la clasificación general y la de carga combustible, la más exigente.</p>
+    <p>donde S es la superficie del sector. La densidad puntual (NCh 1993) es la existente en un área de 2 m × 2 m; la máxima corresponde a la ubicación más desfavorable. Se suman las cargas de los acopios ubicados en una misma superficie de 2×2 m, más el aporte de los materiales distribuidos uniformemente en el sector:</p>
+    <div class="eq">qp,máx = máx<sub>j</sub> ( Σ<sub>i∈j</sub> mᵢ·Hᵢ / 4 m² ) + Σ<sub>dist</sub> mᵢ·Hᵢ / S &nbsp;&nbsp;[MJ/m²]</div>
+    <p>Si no se dispone de la ubicación de todos los acopios ni de un valor medido con procedencia documentada, la densidad puntual se declara no determinada. Equivalencias: 1 MJ/m² = 238,85 kcal/m²; 1 MJ = 0,053 kg de madera equivalente de 4.000 kcal/kg.</p>
+    <h2>4.3 Número de pisos</h2>
+    <p>Se entiende por piso la distancia entre el suelo y el punto más alto del cielo del mismo recinto, con un máximo de 3,5 m. Las alturas de los pisos que sobrepasan esa medida se suman aparte y se dividen por 3,5 m; la fracción resultante se considera un piso más. Se exceptúan las estructuras de un solo piso, cualquiera sea su altura, con densidad de carga combustible media inferior a 500 MJ/m² y sin altillos ni superficies intermedias, que se consideran de un piso (Art. 4.3.5 n°1).</p>
+    <h2>4.4 Clasificación de la edificación</h2>
+    <p>El tipo a, b, c o d se obtiene según el destino del sector: Tabla 1 (superficie edificada), Tabla 2 (máximo de ocupantes) o Tabla 3 (densidad de carga combustible media y puntual máxima, aplicando la mayor de ambas columnas). Los destinos de la Tabla 3 que no presentan Estudio de Carga Combustible se proyectan como tipo a (Art. 4.3.4).</p>
     ${tabla3}
-    <h2>4.4 Resistencia al fuego exigida</h2>
-    <p>Con el tipo de la edificación, el Art. 4.3.3 de la OGUC fija la resistencia al fuego (F, en minutos, según NCh 935/1) de cada elemento de construcción. Si un elemento cumple varias funciones, rige la mayor exigencia.</p>
+    <h2>4.5 Resistencia al fuego exigida</h2>
+    <p>Según el tipo, el Art. 4.3.3 fija la resistencia al fuego por elemento; el Art. 4.3.5 establece sus condiciones de aplicación. Cuando un elemento cumple más de una función, debe satisfacer la mayor de las exigencias.</p>
     <div class="salto"></div>
     <h1>5. RESULTADOS</h1>
-    <h2>5.1 Acopios de materiales y carga combustible</h2>
+    ${errs.length ? `<p><b>Datos inválidos — la clasificación de los sectores afectados no se emite:</b><br>${errs.map(esc).join('<br>')}</p>` : ''}
+    <h2>5.1 Inventario de materiales y carga combustible</h2>
     ${tablaMat || '<p>No se ingresaron acopios de materiales.</p>'}
+    ${sinSector.length ? `<p>Acopios sin sector asignado: ${sinSector.map(m => 'n° ' + m.n).join(', ')}.</p>` : ''}
     <h2>5.2 Densidades de carga combustible y clasificación</h2>
     ${tablaDens}
-    <div class="fig">${barrasMed}</div>${MEM_F('Densidad de carga combustible media por sector, con los límites de la Tabla 3 OGUC')}
-    <div class="fig">${barrasPun}</div>${MEM_F('Densidad de carga combustible puntual máxima por sector, con los límites de la Tabla 3 OGUC')}
+    ${tablaPun}
+    ${barrasMed ? `<div class="fig">${barrasMed}</div>${MEM_F('Densidad de carga combustible media por sector')}` : ''}
+    ${barrasPun ? `<div class="fig">${barrasPun}</div>${MEM_F('Densidad de carga combustible puntual máxima por sector')}` : ''}
     <h2>5.3 Resistencia al fuego exigida</h2>
     ${tablaRF}
     <h1>6. CONCLUSIONES</h1>
     <ul>
-      ${act.map(s => `<li>${s.nSector}${s.nombre ? ' (' + esc(s.nombre) + ')' : ''}: carga combustible ${MEM_N(s.cargaTotal,0)} MJ, densidad media ${MEM_N(s.densidadMedia,0)} MJ/m² y puntual máxima ${MEM_N(s.densidadPuntualMaxima,0)} MJ/m²; se clasifica como <b>tipo ${tipoTxt(s.tipoFinal)}</b>, con exigencias de ${s.resistencias.filter(x => /soportantes|horizontales/i.test(x.elemento)).map(x => x.elemento.split('(')[0].trim().toLowerCase() + ' ' + x.exigencia).join(' y ')}.</li>`).join('')}
-      <li>Los elementos de construcción deben acreditar la resistencia al fuego exigida mediante soluciones del Listado Oficial MINVU, certificados de ensayo según NCh 935/1 o asimilación por profesional especialista (NCh 3684).</li>
-      <li>Los calores de combustión son valores de referencia; si el acopio real difiere del considerado (tipo o cantidad de material), la clasificación debe revisarse.</li>
+      ${act.map(s => `<li>${s.nSector}${s.nombre ? ' (' + esc(s.nombre) + ')' : ''}: carga combustible ${MEM_N(s.cargaTotal,0)} MJ, densidad media ${MEM_N(s.densidadMedia,1)} MJ/m² y puntual máxima ${s.puntual.valor != null ? MEM_N(s.puntual.valor,0) + ' MJ/m²' : 'no determinada'}; tipo <b>${tipoTxt(s)}</b>. ${esc(s.tipoMotivo || '')}</li>`).join('')}
+      ${act.some(s => s.provisorioFinal) ? '<li>La clasificación provisoria debe confirmarse determinando la densidad puntual máxima (ubicación de los acopios o medición).</li>' : ''}
+      ${sinFuente.length ? `<li>Los calores de combustión de: ${sinFuente.map(esc).join('; ')} no tienen fuente documentada y deben respaldarse (NCh 1916, ensayo NCh 1914/2 o ficha técnica).</li>` : ''}
+      <li>Las resistencias indicadas son exigencias calculadas. Su cumplimiento se acredita mediante soluciones del Listado Oficial MINVU, certificados de ensayo según NCh 935/1 o asimilación por profesional especialista (OGUC 4.3.2).</li>
+      <li>Si el acopio real difiere del considerado (tipo, cantidad o ubicación de los materiales), la clasificación debe revisarse.</li>
     </ul>
     ${memFirmas(meta)}
   </div>`;
