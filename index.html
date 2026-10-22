@@ -20826,42 +20826,50 @@ const CB_AREA_PUNTUAL = 4;  // NCh 1993: 2 m × 2 m
 const CB_OTRO = 'Otro material (calor de combustión y fuente del usuario)';
 const CB_DIST = 'distribuido';
 
-// Catálogo de calores de combustión H (MJ/kg). base: 'PCI' (agua en vapor) o 'PCS'; nivel: 'primaria' (NIST),
-// 'secundaria' (compilación que cita NIST/CRC, sin verificar en la fuente primaria) o 'sin fuente' (valor
-// heredado del catálogo original, sin fuente ni base documentadas). Para sustancias puras PCI = (|ΔcH°| − n·44,0)
-// / M, con n = moles de agua formados y 44,0 kJ/mol la entalpía de vaporización del agua a 25 °C.
+// Catálogo de calores de combustión H (MJ/kg). Fuente principal: NCh 1916.Of1999, Anexo (informativo), «Tabla –
+// Calores de combustión de materiales». La norma no declara si los valores son PCI o PCS (el calor de combustión
+// se determina según NCh 1914/2), por eso base = 'NCh 1916' y no se convierte. nivel: 'NCh 1916' (valor del anexo),
+// 'NCh 1916 asimilado' (material no listado, se usa el más próximo del anexo), 'secundaria' (no está en el anexo;
+// valor calculado de datos termoquímicos publicados) o 'sin fuente'. ref: dato de contraste cuando existe.
+const CB_N1916 = 'NCh 1916.Of1999, Anexo (informativo)';
 const PODER_CALORIFICO_COMB = {
-  'Madera y derivados (pino, aglomerado, contrachapado, OSB)': { pc:18.4, base:'—', estado:'Sólido', comp:'Celulósico, mezcla de especies y tableros', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Papel y cartón': { pc:16.7, base:'—', estado:'Sólido', comp:'Celulósico', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Libros y documentos apilados': { pc:16.7, base:'—', estado:'Sólido', comp:'Celulósico', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Textiles naturales (algodón, lana)': { pc:17, base:'—', estado:'Sólido', comp:'Mezcla algodón/lana sin proporción declarada', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Textiles sintéticos (poliéster, nylon)': { pc:29, base:'—', estado:'Sólido', comp:'Mezcla poliéster/nylon sin proporción declarada', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Cuero': { pc:19, base:'—', estado:'Sólido', comp:'—', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Caucho / goma natural': { pc:33.5, base:'—', estado:'Sólido', comp:'—', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Poliestireno expandido (EPS)': { pc:40, base:'—', estado:'Sólido', comp:'(C8H8)n', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Poliuretano (espuma rígida/flexible)': { pc:24, base:'—', estado:'Sólido', comp:'Formulación variable', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'PVC (cloruro de polivinilo)': { pc:17, base:'—', estado:'Sólido', comp:'(C2H3Cl)n', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Polietileno (PE)': { pc:46, base:'—', estado:'Sólido', comp:'(C2H4)n', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Polipropileno (PP)': { pc:46, base:'—', estado:'Sólido', comp:'(C3H6)n', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Gasolina / bencina': { pc:44, base:'—', estado:'Líquido', comp:'Mezcla de hidrocarburos', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Petróleo diésel': { pc:42.5, base:'—', estado:'Líquido', comp:'Mezcla de hidrocarburos', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Alcohol etílico': { pc:26.9, pcs:29.8, base:'PCI', estado:'Líquido', comp:'C2H6O, M = 46,069 g/mol, 3 H2O', nivel:'secundaria', fuente:'ΔcH°líq = −1371 kJ/mol (Wikipedia «Ethanol»); PCI = (1371 − 3·44,0)/46,069' },
-  'Aceites y lubricantes minerales': { pc:41, base:'—', estado:'Líquido', comp:'Mezcla de hidrocarburos', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Mobiliario mixto (madera+textil+espuma, promedio)': { pc:20, base:'—', estado:'Sólido', comp:'Promedio sin composición declarada', nivel:'sin fuente', fuente:'Catálogo original de la planilla (promedio de mezcla no trazable)' },
-  'Neumáticos (acopio)': { pc:32, base:'—', estado:'Sólido', comp:'Caucho, negro de humo, acero', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Metil etil cetona (MEK)': { pc:31.5, pcs:33.9, base:'PCI', estado:'Líquido', comp:'C4H8O, M = 72,106 g/mol, 4 H2O', nivel:'primaria', fuente:'NIST Chemistry WebBook: ΔcH°líq = −2444,2 kJ/mol (Sinke y Oetting, 1964); PCI = (2444,2 − 4·44,0)/72,106' },
-  'Tolueno': { pc:40.6, pcs:42.5, base:'PCI', estado:'Líquido', comp:'C7H8, M = 92,138 g/mol, 4 H2O', nivel:'primaria', fuente:'NIST Chemistry WebBook: ΔcH°líq = −3920 ± 20 kJ/mol (promedio NIST); PCI = (3920 − 4·44,0)/92,138' },
-  'Ácido acrílico': { pc:18, base:'—', estado:'Líquido', comp:'C3H4O2', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Ácido oxálico': { pc:2.33, pcs:2.82, base:'PCI', estado:'Sólido (anhidro)', comp:'C2H2O4, M = 90,035 g/mol, 1 H2O', nivel:'primaria', fuente:'NIST Chemistry WebBook: ΔcH°sól = −242,9 (Wilhoit y Shiao, 1964) y −253,5 kJ/mol (Verkade et al., 1926; Cox y Pilcher, 1970) → PCS 2,70–2,82 MJ/kg; PCI con el valor mayor = (253,5 − 44,0)/90,035' },
-  'Ácido benzoico': { pc:25.4, pcs:26.4, base:'PCI', estado:'Sólido', comp:'C7H6O2, M = 122,12 g/mol, 3 H2O', nivel:'secundaria', fuente:'ΔcH°sól = −3228 kJ/mol (Wikipedia «Benzoic acid»; patrón de calorimetría); PCI = (3228 − 3·44,0)/122,12' },
-  'Zinc en polvo': { pc:5.36, pcs:5.36, base:'PCI = PCS', estado:'Sólido (polvo)', comp:'Zn → ZnO, M = 65,38 g/mol, no forma agua', nivel:'secundaria', fuente:'ΔfH°(ZnO, s) = −350,46 kJ/mol (Wikipedia «Zinc oxide», CRC Handbook); H = 350,46/65,38' },
-  'Propano (aerosol)': { pc:46.3, pcs:50.3, base:'PCI', estado:'Gas licuado', comp:'C3H8, M = 44,097 g/mol, 4 H2O', nivel:'secundaria', fuente:'ΔcH°gas = −2219,2 kJ/mol (NIST, citado en Wikipedia «Propane»); PCI = (2219,2 − 4·44,0)/44,097' },
-  'Butano (aerosol)': { pc:45.7, pcs:49.5, base:'PCI', estado:'Gas licuado', comp:'C4H10, M = 58,124 g/mol, 5 H2O', nivel:'secundaria', fuente:'ΔcH° = −2877 kJ/mol (Wikipedia «Butane»); PCI = (2877 − 5·44,0)/58,124' },
-  'Acetona': { pc:28.5, pcs:30.8, base:'PCI', estado:'Líquido', comp:'C3H6O, M = 58,08 g/mol, 3 H2O', nivel:'secundaria', fuente:'ΔcH° = −1790 kJ/mol (Wikipedia «Acetone»); PCI = (1790 − 3·44,0)/58,08' },
-  'Metanol': { pc:19.9, pcs:22.6, base:'PCI', estado:'Líquido', comp:'CH4O, M = 32,042 g/mol, 2 H2O', nivel:'secundaria', fuente:'PCS = 725,7 kJ/mol (Wikipedia «Methanol»); PCI = (725,7 − 2·44,0)/32,042' },
-  'Xileno': { pc:43.4, base:'—', estado:'Líquido', comp:'C8H10 (mezcla de isómeros)', nivel:'sin fuente', fuente:'Catálogo original de la planilla' },
-  'Hexano': { pc:44.7, pcs:48.3, base:'PCI', estado:'Líquido', comp:'C6H14, M = 86,178 g/mol, 7 H2O', nivel:'secundaria', fuente:'ΔcH° = −4140 a −4180 kJ/mol (Wikipedia «Hexane»); PCI = (4160 − 7·44,0)/86,178' },
-  'Ácido acético': { pc:13.1, pcs:14.6, base:'PCI', estado:'Líquido', comp:'C2H4O2, M = 60,052 g/mol, 2 H2O', nivel:'secundaria', fuente:'ΔcH° = −875,2 kJ/mol (Wikipedia «Acetic acid»); PCI = (875,2 − 2·44,0)/60,052' }
+  'Madera y derivados (pino, aglomerado, contrachapado, OSB)': { pc:16.8, base:'NCh 1916', estado:'Sólido', comp:'Madera de pino seco, coníferas, contraplaca y placa de aglomerado: 16,8 MJ/kg (OSB asimilado a aglomerado)', nivel:'NCh 1916', fuente:CB_N1916 + ': madera de pino seco / coníferas / contraplaca / placa de aglomerado de madera, 16,8' },
+  'Papel y cartón': { pc:16.8, base:'NCh 1916', estado:'Sólido', comp:'Celulósico', nivel:'NCh 1916', fuente:CB_N1916 + ': papel 16,8; cartón 16,8' },
+  'Libros y documentos apilados': { pc:16.8, base:'NCh 1916', estado:'Sólido', comp:'Celulósico', nivel:'NCh 1916', fuente:CB_N1916 + ': libros y carpetas, 16,8' },
+  'Algodón': { pc:16.8, base:'NCh 1916', estado:'Sólido', comp:'Fibra celulósica', nivel:'NCh 1916', fuente:CB_N1916 + ': algodón 16,8 (tejido de algodón 16,7)' },
+  'Lana natural': { pc:22.8, base:'NCh 1916', estado:'Sólido', comp:'Fibra proteica', nivel:'NCh 1916', fuente:CB_N1916 + ': lana natural 22,8 (lana comprimida 20,9)' },
+  'Textiles naturales (algodón, lana)': { pc:22.8, base:'NCh 1916', estado:'Sólido', comp:'Mezcla sin proporción declarada: se adopta el mayor (lana natural 22,8; algodón 16,8)', nivel:'NCh 1916', fuente:CB_N1916 + ': lana natural 22,8' },
+  'Poliéster': { pc:25.1, base:'NCh 1916', estado:'Sólido', comp:'—', nivel:'NCh 1916', fuente:CB_N1916 + ': poliéster 25,1' },
+  'Poliamida (nylon)': { pc:29.3, base:'NCh 1916', estado:'Sólido', comp:'—', nivel:'NCh 1916', fuente:CB_N1916 + ': poliamida 29,3' },
+  'Textiles sintéticos (poliéster, nylon)': { pc:29.3, base:'NCh 1916', estado:'Sólido', comp:'Mezcla sin proporción declarada: se adopta el mayor (poliamida 29,3; poliéster 25,1)', nivel:'NCh 1916', fuente:CB_N1916 + ': poliamida 29,3' },
+  'Cuero': { pc:18.6, base:'NCh 1916', estado:'Sólido', comp:'—', nivel:'NCh 1916', fuente:CB_N1916 + ': cuero 18,6' },
+  'Caucho / goma natural': { pc:41.9, base:'NCh 1916', estado:'Sólido', comp:'Caucho (en planchas) 41,9; goma natural sin vulcanizar (poliisopreno) 45,2', nivel:'NCh 1916', fuente:CB_N1916 + ': caucho 41,9' },
+  'Poliisopreno (goma natural sin vulcanizar)': { pc:45.2, base:'NCh 1916', estado:'Sólido', comp:'(C5H8)n', nivel:'NCh 1916', fuente:CB_N1916 + ': poliisopreno 45,2' },
+  'Poliestireno expandido (EPS)': { pc:41.9, base:'NCh 1916', estado:'Sólido', comp:'(C8H8)n en espuma', nivel:'NCh 1916', fuente:CB_N1916 + ': poliestireno (estirol) en espuma 41,9' },
+  'Poliuretano (espuma rígida/flexible)': { pc:25.1, base:'NCh 1916', estado:'Sólido', comp:'Formulación variable', nivel:'NCh 1916', fuente:CB_N1916 + ': poliuretano 25,1' },
+  'PVC (cloruro de polivinilo)': { pc:18.8, base:'NCh 1916', estado:'Sólido', comp:'(C2H3Cl)n', nivel:'NCh 1916', fuente:CB_N1916 + ': cloruro de polivinilo 18,8' },
+  'Polietileno (PE)': { pc:46.5, base:'NCh 1916', estado:'Sólido', comp:'(C2H4)n', nivel:'NCh 1916', fuente:CB_N1916 + ': polietileno 46,5' },
+  'Polipropileno (PP)': { pc:46.0, base:'NCh 1916', estado:'Sólido', comp:'(C3H6)n', nivel:'NCh 1916', fuente:CB_N1916 + ': polipropileno 46,0' },
+  'Gasolina / bencina': { pc:47.3, base:'NCh 1916', estado:'Líquido', comp:'Mezcla de hidrocarburos', nivel:'NCh 1916', fuente:CB_N1916 + ': gasolina 46,0 a 47,3 (se adopta el límite superior)' },
+  'Petróleo diésel': { pc:46.0, base:'NCh 1916', estado:'Líquido', comp:'Mezcla de hidrocarburos', nivel:'NCh 1916', fuente:CB_N1916 + ': aceite diésel 46,0' },
+  'Alcohol etílico': { pc:29.7, base:'NCh 1916', estado:'Líquido', comp:'C2H6O', nivel:'NCh 1916', fuente:CB_N1916 + ': alcohol etílico 29,7' },
+  'Aceites y lubricantes minerales': { pc:42.7, base:'NCh 1916', estado:'Líquido', comp:'Mezcla de hidrocarburos', nivel:'NCh 1916 asimilado', fuente:CB_N1916 + ': aceite pesado de petróleo 42,7 (el anexo no lista lubricantes; asimilado, mayor que aceite de parafina y grasas 41,9)' },
+  'Mobiliario mixto (madera+textil+espuma, promedio)': { pc:20, base:'—', estado:'Sólido', comp:'Promedio sin composición declarada', nivel:'sin fuente', fuente:'Catálogo original de la planilla (promedio de mezcla no trazable): ingresar cada componente por separado' },
+  'Neumáticos (acopio)': { pc:25.1, base:'NCh 1916', estado:'Sólido', comp:'Caucho vulcanizado, negro de humo, acero', nivel:'NCh 1916', fuente:CB_N1916 + ': caucho (neumáticos, etc.) 25,1' },
+  'Metil etil cetona (MEK)': { pc:31.5, base:'NCh 1916', estado:'Líquido', comp:'C4H8O', nivel:'NCh 1916', fuente:CB_N1916 + ': metil etil cetona 31,5', ref:'NIST: ΔcH°líq = −2444,2 kJ/mol → PCS 33,9; PCI 31,5 MJ/kg' },
+  'Tolueno': { pc:42.3, base:'NCh 1916', estado:'Líquido', comp:'C7H8', nivel:'NCh 1916', fuente:CB_N1916 + ': tolueno 42,3 (toluol 41,9)', ref:'NIST: ΔcH°líq = −3920 kJ/mol → PCS 42,5; PCI 40,6 MJ/kg' },
+  'Ácido acrílico': { pc:18.0, base:'NCh 1916', estado:'Líquido', comp:'C3H4O2', nivel:'NCh 1916', fuente:CB_N1916 + ': ácido acrílico 18,0' },
+  'Ácido oxálico': { pc:29.3, base:'NCh 1916', estado:'Sólido', comp:'C2H2O4', nivel:'NCh 1916', fuente:CB_N1916 + ': ácido oxálico, n- 29,3',
+    ref:'NIST: ΔcH°sól = −242,9 a −253,5 kJ/mol → PCS 2,70–2,82 MJ/kg. El valor del anexo es unas 10 veces mayor que el termoquímico; se mantiene por ser el de la norma y quedar del lado de la seguridad', alerta:true },
+  'Ácido benzoico': { pc:25.1, base:'NCh 1916', estado:'Sólido', comp:'C7H6O2', nivel:'NCh 1916', fuente:CB_N1916 + ': ácido benzoico 25,1', ref:'ΔcH°sól = −3228 kJ/mol → PCS 26,4 MJ/kg' },
+  'Zinc en polvo': { pc:5.36, base:'PCI = PCS', estado:'Sólido (polvo)', comp:'Zn → ZnO, no forma agua', nivel:'secundaria', fuente:'No figura en NCh 1916. ΔfH°(ZnO, s) = −350,46 kJ/mol (CRC Handbook, citado en Wikipedia «Zinc oxide»); H = 350,46 / 65,38 g/mol' },
+  'Propano (aerosol)': { pc:50.2, base:'NCh 1916', estado:'Gas licuado', comp:'C3H8', nivel:'NCh 1916', fuente:CB_N1916 + ': propano 50,2' },
+  'Butano (aerosol)': { pc:49.4, base:'NCh 1916', estado:'Gas licuado', comp:'C4H10', nivel:'NCh 1916', fuente:CB_N1916 + ': butano (gas) 49,4 (el anexo lista también «butano» 46,0; se adopta el mayor)' },
+  'Acetona': { pc:30.6, base:'NCh 1916', estado:'Líquido', comp:'C3H6O', nivel:'NCh 1916', fuente:CB_N1916 + ': acetona 30,6' },
+  'Metanol': { pc:22.2, base:'NCh 1916', estado:'Líquido', comp:'CH4O', nivel:'NCh 1916', fuente:CB_N1916 + ': alcohol metílico 22,2 (el anexo lista también «metanol» 20,9; se adopta el mayor)' },
+  'Xileno': { pc:41.9, base:'NCh 1916', estado:'Líquido', comp:'C8H10', nivel:'NCh 1916', fuente:CB_N1916 + ': xilol 41,9' },
+  'Hexano': { pc:46.0, base:'NCh 1916', estado:'Líquido', comp:'C6H14', nivel:'NCh 1916', fuente:CB_N1916 + ': hexano 46,0' },
+  'Ácido acético': { pc:16.8, base:'NCh 1916', estado:'Líquido', comp:'C2H4O2', nivel:'NCh 1916', fuente:CB_N1916 + ': ácido acético 16,8' }
 };
 
 // Número finito a partir de un dato de entrada (acepta coma decimal); NaN si está vacío o no es número.
@@ -20982,7 +20990,7 @@ function calcCombustible(inp) {
       if (!(isFinite(r.pc) && r.pc > 0)) r.errs.push('calor de combustión del material «Otro» inválido');
       if (!r.fuente) r.errs.push('falta la fuente del calor de combustión del material «Otro»');
     } else if (cat) {
-      Object.assign(r, { pc: cat.pc, base: cat.base, fuente: cat.fuente, nivel: cat.nivel, nombre: m.material });
+      Object.assign(r, { pc: cat.pc, base: cat.base, fuente: cat.fuente, nivel: cat.nivel, nombre: m.material, ref: cat.ref, alerta: !!cat.alerta });
     } else r.errs.push('material desconocido');
     r.cantidadNum = cbNum(m.cantidad);
     if (!isFinite(r.cantidadNum)) r.errs.push('cantidad no numérica');
@@ -21015,7 +21023,8 @@ function calcCombustible(inp) {
     const pun = cbPuntual(s, okMats ? ms : [], media, S);
     if (pun.manualErr) errs.push(pun.manualErr);
     const sinFuente = ms.filter(m => m.nivel === 'sin fuente' && m.carga > 0);
-    if (sinFuente.length) avisos.push('Calor de combustión sin fuente ni base documentadas: ' + sinFuente.map(m => m.nombre).join('; ') + '.');
+    if (sinFuente.length) avisos.push('Calor de combustión sin fuente documentada: ' + sinFuente.map(m => m.nombre).join('; ') + '.');
+    ms.filter(m => m.alerta && m.carga > 0).forEach(m => avisos.push(m.nombre + ': ' + m.ref + '.'));
 
     let tipo = null, tipoMotivo = '', provisorio = false, t3 = null;
     if (!errs.length) {
@@ -21178,7 +21187,7 @@ function renderCombustible(container) {
     ]
   };
   const ea = escapeHtmlAttr;
-  const nivelTxt = { primaria: 'NIST (fuente primaria)', secundaria: 'Fuente secundaria', 'sin fuente': 'Sin fuente documentada' };
+  const nivelTxt = { 'NCh 1916': 'NCh 1916', 'NCh 1916 asimilado': 'NCh 1916 (asimilado)', secundaria: 'Fuente secundaria', 'sin fuente': 'Sin fuente documentada' };
   function optMaterial(sel) {
     return Object.keys(PODER_CALORIFICO_COMB).map(m => `<option value="${ea(m)}"${m === sel ? ' selected' : ''}>${m} (${fmt1(PODER_CALORIFICO_COMB[m].pc)} MJ/kg${PODER_CALORIFICO_COMB[m].nivel === 'sin fuente' ? ', sin fuente' : ''})</option>`).join('')
       + `<option value="${ea(CB_OTRO)}"${sel === CB_OTRO ? ' selected' : ''}>${CB_OTRO}</option>`
@@ -21194,8 +21203,8 @@ function renderCombustible(container) {
     ${rowsInd.map((f, i) => `<tr><td>D<sub>C${i + 1}</sub></td><td>${rango(i ? rowsInd[i - 1][0] : null, f[0])}</td><td>${rango(i ? rowsInd[i - 1][1] : null, f[1])}</td></tr>`).join('')}</table>`;
   const tabla3Html = Object.keys(EF_T3).map(dest => { const rows = EF_T3[dest];
     return `<tr><th colspan="7" style="text-align:left">${dest}</th></tr>` + rows.map((f, i) => `<tr><td>${rango(i ? rows[i - 1][0] : null, f[0])}</td><td>${rango(i ? rows[i - 1][1] : null, f[1])}</td>${f[2].split('').map(c => `<td>${c}</td>`).join('')}</tr>`).join(''); }).join('');
-  const catalogoHtml = `<table class="results"><tr><th>Material</th><th>H adoptado (MJ/kg)</th><th>Base</th><th>PCS (MJ/kg)</th><th>Estado</th><th>Composición</th><th>Fuente</th></tr>
-    ${Object.keys(PODER_CALORIFICO_COMB).map(k => { const c = PODER_CALORIFICO_COMB[k]; return `<tr><td>${k}</td><td class="num">${fmt1(c.pc)}</td><td>${c.base}</td><td class="num">${c.pcs != null ? fmt1(c.pcs) : '—'}</td><td>${c.estado}</td><td>${c.comp}</td><td style="font-size:.75rem">${nivelTxt[c.nivel]}: ${c.fuente}</td></tr>`; }).join('')}</table>`;
+  const catalogoHtml = `<table class="results"><tr><th>Material</th><th>H adoptado (MJ/kg)</th><th>Estado</th><th>Composición</th><th>Fuente</th><th>Contraste</th></tr>
+    ${Object.keys(PODER_CALORIFICO_COMB).map(k => { const c = PODER_CALORIFICO_COMB[k]; return `<tr><td>${k}</td><td class="num">${fmt1(c.pc)}</td><td>${c.estado}</td><td>${c.comp}</td><td style="font-size:.75rem">${nivelTxt[c.nivel]} — ${c.fuente}</td><td style="font-size:.75rem">${c.ref || '—'}</td></tr>`; }).join('')}</table>`;
 
   container.innerHTML = `
     <div class="calc-head">
@@ -21228,7 +21237,7 @@ function renderCombustible(container) {
       <div id="cb_materialesTable"></div>
       <button class="btn-add" id="cb_addMaterial" type="button">+ Agregar acopio de material</button>
       <details style="margin-top:.6rem"><summary>Catálogo de calores de combustión (fuente, base y composición)</summary>
-        <p class="note">Base adoptada para sustancias puras: PCI (agua en vapor). Los valores «sin fuente documentada» provienen del catálogo original de la planilla y deben respaldarse (NCh 1916, ensayo NCh 1914/2 o ficha técnica) antes de emitir el estudio.</p>${catalogoHtml}</details>
+        <p class="note">Valores del Anexo de NCh 1916 (informativo), que no declara si son PCI o PCS; el calor de combustión se determina según NCh 1914/2. Si el anexo da un rango o dos entradas para un mismo material, se adopta el mayor. El mobiliario mixto no tiene fuente: conviene ingresar cada componente por separado.</p>${catalogoHtml}</details>
     </div>
     <div class="panel">
       <h3 class="lbl-left">C · DENSIDAD PUNTUAL MÁXIMA POR SECTOR (2×2 m)</h3>
@@ -42297,7 +42306,7 @@ function cbMemoriaHtml(state, r, meta) {
     <h2>4.1 Carga combustible</h2>
     <p>La carga combustible de un sector es la energía calórica que liberaría la combustión completa de los materiales que contiene (NCh 1916):</p>
     <div class="eq">Cc = Σ (mᵢ · Hᵢ) &nbsp;&nbsp;[MJ]</div>
-    <p>donde mᵢ es la masa del material i (kg) y Hᵢ su calor de combustión (MJ/kg). Para sustancias puras se adopta el poder calorífico inferior (PCI): PCI = (|ΔcH°| − n · 44,0 kJ/mol) / M, con n los moles de agua formados por mol y M la masa molar. Cada valor se informa con su base y su fuente.</p>
+    <p>donde mᵢ es la masa del material i (kg) y Hᵢ su calor de combustión (MJ/kg). Los calores de combustión se toman del Anexo (informativo) de NCh 1916, que no declara si corresponden al poder calorífico inferior o superior; el calor de combustión de un material se determina según NCh 1914/2. Cuando el anexo da un rango o dos entradas para un mismo material, se adopta el mayor. Cada valor se informa con su fuente.</p>
     <h2>4.2 Densidad de carga combustible media y puntual máxima</h2>
     <div class="eq">qm = Cc / S &nbsp;&nbsp;[MJ/m²]</div>
     <p>donde S es la superficie del sector. La densidad puntual (NCh 1993) es la existente en un área de 2 m × 2 m; la máxima corresponde a la ubicación más desfavorable. Se suman las cargas de los acopios ubicados en una misma superficie de 2×2 m, más el aporte de los materiales distribuidos uniformemente en el sector:</p>
@@ -42351,8 +42360,9 @@ function cbMemoriaHtml(state, r, meta) {
    (5) Espesor de pintura intumescente según las tablas IDIEM ya cargadas en la Mesa (AF_TABLAS, afEspesor),
        entrando con la masividad a 4 caras (criterio de asimilación viga → pilar de la planilla existente).
    (6) Lista de chequeo para asimilación (OGUC 4.3.2; Listado Oficial ED17-2025 punto 7: NCh 3684/1 y /2:2022).
-   Fuentes de las tablas OGUC 4.3.3 y 4.3.4: transcripción de Biblioteca Nacional BIM (fuente secundaria),
-   verificada contra las tablas del Listado y del informe de referencia; confirmar contra el texto oficial.
+   Tablas OGUC 4.3.3 y 4.3.4 contrastadas fila por fila con el texto de la OGUC (edición MINVU julio 2024,
+   D.S. 32 D.O. 06.07.2024; Tabla 3 según D.S. 87 D.O. 09.09.04). Transcripción inicial: Biblioteca Nacional BIM,
+   coincidente con el texto oficial.
    ========================================================================= */
 
 // OGUC 4.3.4 Tabla 1: destino y superficie edificada (m²); columnas 1, 2, 3, 4, 5, 6, 7 o más pisos.
@@ -42371,8 +42381,7 @@ const EF_T1 = {
   'Edificios de estacionamientos': [[0, null, 'dcccbba']]
 };
 // OGUC 4.3.4 Tabla 2: destino y máximo de ocupantes; columnas 1, 2, 3, 4, 5, 6 o más pisos.
-// La fuente secundaria transcribe la última fila de Teatros y de Reuniones como "Hasta 500"; por continuidad
-// con la fila anterior ("sobre 250 y hasta 500") se usa "hasta 250". Verificar en el texto oficial.
+// Última fila de Teatros y de Reuniones: "Hasta 250" según el texto de la OGUC (julio 2024).
 const EF_T2 = {
   'Teatros y espectáculos': [[1000, null, 'baaaaa'], [500, 1000, 'bbaaaa'], [250, 500, 'ccbbaa'], [0, 250, 'ddccba']],
   'Reuniones': [[1000, null, 'baaaaa'], [500, 1000, 'bbaaaa'], [250, 500, 'ccbbaa'], [0, 250, 'dccbba']],
