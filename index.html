@@ -38410,12 +38410,13 @@ function svgFundacionEquipoDinamico(state, r) {
         por pata salen de la tabla de reacciones de RAM pegada (parseRamPaste,
         el mismo lector de Zapata y Losa de fundacion) o, si no se pega, de
         un reparto lineal de cuerpo rigido del peso del equipo y la estructura.
-     3) PROPUESTAS: fmpPropuestas(...) enumera agrupaciones de patas en
-        bloques (una fundacion para todas, una por pata y las intermedias),
-        dimensiona cada bloque en multiplos de 5 cm, descarta las que se
-        traslapan o salen del espacio disponible y verifica cada bloque con
-        calcFundacionEquipoDinamico (bloque rigido, mismo metodo de la
-        planilla) con su parte de la masa y de las fuerzas del equipo.
+     3) BLOQUES DEL USUARIO: el usuario indica cuantos bloques, que nudos
+        recibe cada uno, su largo en X y en Z y la excentricidad del centro
+        del bloque respecto del centro de sus nudos; las columnas llegan como
+        puntos (sin pedestal). Se dibuja la planta, se avisan superposiciones
+        y cada bloque se verifica con calcFundacionEquipoDinamico (bloque
+        rigido, mismo metodo de la planilla) con su parte de la masa y de
+        las fuerzas del equipo (fmpEvaluarBloque).
 
    Formato .etz (ingenieria inversa sobre "Mesas PLana_0.etz", RAM Elements
    13.0.0.22, verificado byte a byte: el esquema termina exactamente donde
@@ -38435,8 +38436,6 @@ function svgFundacionEquipoDinamico(state, r) {
    ========================================================================= */
 
 const FMP_G = 9.81;            // mismo valor que calcFundacionEquipoDinamico
-const FMP_PASO = 0.05;         // modulo de dimensiones del bloque (m)
-const FMP_MAX_ENUM = 8;        // hasta 8 patas se enumeran todas las agrupaciones
 // Arreglos de enteros: 0x06 y 0x14 vistos en Mesas PLana_0; 0x07 en un modelo
 // mayor (IDs de barras). El ancho de cada valor se deduce del tamano del arreglo;
 // los controles de largo de cabecera y de datos detectan una lectura desfasada.
@@ -38826,93 +38825,8 @@ function fmpReaccionesPegadas(parsed, patas, combo, unidadFuerza) {
 }
 
 /* ---------------- 3) Agrupaciones y propuestas ---------------- */
-function fmpParticiones(n) {
-  const out = [], asign = new Array(n).fill(0);
-  const rec = (i, k) => {
-    if (i === n) { const g = []; for (let j = 0; j < n; j++) (g[asign[j]] = g[asign[j]] || []).push(j); out.push(g); return; }
-    for (let c = 0; c <= k; c++) { asign[i] = c; rec(i + 1, Math.max(k, c + 1)); }
-  };
-  rec(0, 0);
-  return out;
-}
-
-function fmpParticionesBasicas(patas) {
-  const n = patas.length, todas = [patas.map((_, i) => i)], cada = patas.map((_, i) => [i]);
-  const porLinea = (clave) => {
-    const g = {};
-    patas.forEach((p, i) => { const k = Math.round(p[clave] / FMP_PASO); (g[k] = g[k] || []).push(i); });
-    return Object.values(g);
-  };
-  const res = [todas, cada, porLinea('x'), porLinea('z')];
-  const vistos = new Set();
-  return res.filter(g => { const k = JSON.stringify(g.map(a => a.slice().sort((x, y) => x - y)).sort()); if (vistos.has(k) || g.length > n) return false; vistos.add(k); return true; });
-}
-
-/* Agrupaciones por cercania en planta: enlace simple, una particion por cada
-   union sucesiva (de n grupos a 1). */
-function fmpParticionesCercania(patas) {
-  const n = patas.length, grupo = patas.map((_, i) => i), out = [];
-  const pares = [];
-  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) pares.push([Math.hypot(patas[i].x - patas[j].x, patas[i].z - patas[j].z), i, j]);
-  pares.sort((a, b) => a[0] - b[0]);
-  const raiz = i => grupo[i] === i ? i : (grupo[i] = raiz(grupo[i]));
-  for (const [, i, j] of pares) {
-    const a = raiz(i), b = raiz(j);
-    if (a === b) continue;
-    grupo[b] = a;
-    const g = {}; patas.forEach((_, k) => { (g[raiz(k)] = g[raiz(k)] || []).push(k); });
-    out.push(Object.values(g));
-  }
-  return out;
-}
-
-/* Une grupos cuyos bloques minimos se traslapan, quedan a menos de la
-   separacion minima o tapan patas de otro grupo, hasta que no quede conflicto. */
-function fmpReparar(grupos, patas, op) {
-  let g = grupos.map(a => a.slice());
-  for (let it = 0; it < patas.length; it++) {
-    const rc = g.map(a => fmpConCaja(fmpRectGrupo(patas, a, op)));
-    let par = null;
-    for (let k = 0; k < g.length && !par; k++) {
-      for (let j = k + 1; j < g.length && !par; j++) if (fmpSeparacion(rc[k], rc[j]) < op.sep - 1e-9) par = [k, j];
-      if (!par) for (let j = 0; j < g.length && !par; j++) if (j !== k && g[j].some(i => patas[i].x > rc[k].x1 && patas[i].x < rc[k].x2 && patas[i].z > rc[k].z1 && patas[i].z < rc[k].z2)) par = [k, j];
-    }
-    if (!par) break;
-    g[par[0]] = g[par[0]].concat(g[par[1]]); g.splice(par[1], 1);
-  }
-  return g;
-}
-
-const fmpRedondeo = v => +(Math.ceil(v / FMP_PASO - 1e-9) * FMP_PASO).toFixed(2);
-const fmpSeparacion = (a, b) => Math.max(a.x1 - b.x2, b.x1 - a.x2, a.z1 - b.z2, b.z1 - a.z2);
-
-/* Bloque minimo de un grupo: rectangulo de las patas + medio pedestal + vuelo,
-   centrado en las patas, con L y B en multiplos de 5 cm. */
-function fmpRectGrupo(patas, idx, op) {
-  const xs = idx.map(i => patas[i].x), zs = idx.map(i => patas[i].z);
-  const xc = (Math.min(...xs) + Math.max(...xs)) / 2, zc = (Math.min(...zs) + Math.max(...zs)) / 2;
-  const bx = Math.max(...idx.map(i => op.pedL(patas[i]))) / 2 + op.vuelo;
-  const bz = Math.max(...idx.map(i => op.pedB(patas[i]))) / 2 + op.vuelo;
-  const L = fmpRedondeo(Math.max(...xs) - Math.min(...xs) + 2 * bx);
-  const B = fmpRedondeo(Math.max(...zs) - Math.min(...zs) + 2 * bz);
-  return { xc, zc, L, B };
-}
-
 function fmpConCaja(r) { return { ...r, x1: r.xc - r.L / 2, x2: r.xc + r.L / 2, z1: r.zc - r.B / 2, z2: r.zc + r.B / 2 }; }
-
-function fmpConflicto(rects, k, op) {
-  const a = rects[k];
-  if (op.esp) {
-    const e = op.esp;
-    if (a.x1 < e.x1 - 1e-9 || a.x2 > e.x2 + 1e-9 || a.z1 < e.z1 - 1e-9 || a.z2 > e.z2 + 1e-9) return 'fuera del espacio disponible';
-  }
-  for (const o of op.obst) if (fmpSeparacion(a, o) < -1e-9) return 'se cruza con una zona prohibida';
-  for (let j = 0; j < rects.length; j++) {
-    if (j === k) continue;
-    if (fmpSeparacion(a, rects[j]) < op.sep - 1e-9) return 'queda a menos de la separación mínima de otro bloque';
-  }
-  return null;
-}
+const fmpSeparacion = (a, b) => Math.max(a.x1 - b.x2, b.x1 - a.x2, a.z1 - b.z2, b.z1 - a.z2);
 
 /* Evalua un bloque con la planilla de bloque rigido. Masa sobre el bloque =
    suma de cargas de sus patas / g; fuerzas de desbalance repartidas en la
@@ -38937,60 +38851,6 @@ function fmpEvaluarBloque(rect, idx, patas, P, op, base) {
   return { inp, r, fallas, Pg, share, peorR, vMax: Math.max(r.vVert, r.vHoriz) };
 }
 
-function fmpPropuestas(patas, P, base, op) {
-  const n = patas.length;
-  let parts;
-  if (n <= FMP_MAX_ENUM) parts = fmpParticiones(n);
-  else {
-    // Muchas patas: agrupaciones por cercania (enlace simple a cada distancia),
-    // por lineas X y Z, todas y una por pata; cada una se "repara" uniendo los
-    // grupos cuyos bloques se traslapan o quedan a menos de la separacion minima.
-    const vistos = new Set();
-    parts = [];
-    for (const g of fmpParticionesBasicas(patas).concat(fmpParticionesCercania(patas))) {
-      const r = fmpReparar(g, patas, op);
-      const k = JSON.stringify(r.map(a => a.slice().sort((x, y) => x - y)).sort());
-      if (!vistos.has(k)) { vistos.add(k); parts.push(r); }
-    }
-  }
-  op.Ptot = P.reduce((s, v) => s + v, 0);
-  const props = [];
-  for (const grupos of parts) {
-    let rects = grupos.map(g => fmpConCaja(fmpRectGrupo(patas, g, op)));
-    // Un bloque no puede tapar patas de otro grupo
-    const tapa = rects.some((rc, k) => patas.some((p, i) => !grupos[k].includes(i) && p.x > rc.x1 && p.x < rc.x2 && p.z > rc.z1 && p.z < rc.z2));
-    if (tapa) continue;
-    let motivo = null;
-    for (let k = 0; k < rects.length && !motivo; k++) motivo = fmpConflicto(rects, k, op);
-    if (motivo) continue;
-    // Crecimiento por pasos de 5 cm por lado hasta cumplir presion y relacion de masa
-    let ev = rects.map((rc, k) => fmpEvaluarBloque(rc, grupos[k], patas, P, op, base));
-    for (let it = 0; it < 80; it++) {
-      let cambio = false;
-      for (let k = 0; k < rects.length; k++) {
-        if (ev[k].r.okPresion && ev[k].r.okMasa) continue;
-        for (const dir of ['LB', 'L', 'B']) {
-          const dL = dir.includes('L') ? 2 * FMP_PASO : 0, dB = dir.includes('B') ? 2 * FMP_PASO : 0;
-          const prueba = rects.slice();
-          prueba[k] = fmpConCaja({ ...rects[k], L: +(rects[k].L + dL).toFixed(2), B: +(rects[k].B + dB).toFixed(2) });
-          if (!fmpConflicto(prueba, k, op)) { rects = prueba; ev[k] = fmpEvaluarBloque(rects[k], grupos[k], patas, P, op, base); cambio = true; break; }
-        }
-      }
-      if (!cambio) break;
-    }
-    const vol = rects.reduce((s, rc) => s + rc.L * rc.B * base.H, 0);
-    const nFallas = ev.reduce((s, e) => s + e.fallas.length, 0);
-    props.push({ grupos, rects, ev, vol, nFallas, cumple: nFallas === 0 });
-  }
-  props.sort((a, b) => (a.nFallas - b.nFallas) || (a.vol - b.vol) || (a.grupos.length - b.grupos.length));
-  return props;
-}
-
-/* Etiqueta corta de una agrupacion: "1-2-3 | 4-5-6" con los N° de pata. */
-function fmpTextoGrupos(grupos, patas) {
-  return grupos.map(g => g.map(i => patas[i].etq).join('-')).join(' | ');
-}
-
 const FMP_TXT_CHK = {
   okMasa: 'relación de masa', okExc: 'excentricidad', okPresion: 'presión de contacto',
   okFreqVert: 'resonancia vertical', okFreqHoriz: 'resonancia horizontal', okFreqRock: 'resonancia balanceo', okFreqTors: 'resonancia torsional',
@@ -39002,13 +38862,13 @@ const FMP_TXT_CHK = {
    "Cargar en la planilla" escribe el bloque elegido en los campos fed_* y
    recalcula, de modo que las secciones 5 a 12 y la impresion muestran ese bloque. */
 function fmpInitPanel(el, state, recalc) {
-  const st = { modelo: null, total: null, estructuras: [], est: 0, patas: [], peso: null, props: [], sel: 0, fuente: 'rigido', parsed: null };
+  const st = { modelo: null, total: null, estructuras: [], est: 0, patas: [], peso: null, bloques: [], res: null, fuente: 'rigido', parsed: null };
   const $ = id => el.querySelector('#' + id);
   const num = (id, def) => { const v = parseFloat(String($(id).value).replace(',', '.')); return isNaN(v) ? def : v; };
 
   el.innerHTML = `
     <h3>0 · Equipo con varias patas — desde el modelo RAM Elements (opcional)</h3>
-    <div class="note">Cargue el .zip del modelo RAM Elements o el archivo .etz. La Mesa identifica los apoyos (patas), sus coordenadas y pedestales, y propone fundaciones: una para todas las patas, una por pata y las agrupaciones intermedias que caben en el espacio disponible. Cada bloque se verifica con esta misma planilla. Si no usa un modelo, ignore esta sección.</div>
+    <div class="note">Cargue el .zip del modelo RAM Elements o el archivo .etz. La Mesa identifica los apoyos (patas) y sus coordenadas; usted define cuántos bloques, qué nudos recibe cada uno, sus dimensiones en planta y su excentricidad, y la planta se dibuja mientras escribe. Cada bloque se verifica con esta misma planilla. Si no usa un modelo, ignore esta sección.</div>
     <div class="field-grid" style="margin-top:.6rem">
       <div class="field"><label>Modelo RAM Elements (.zip o .etz)</label><input type="file" id="fmp_file" accept=".zip,.etz"></div>
     </div>
@@ -39036,21 +38896,16 @@ function fmpInitPanel(el, state, recalc) {
         </div>
         <div class="note">Se usa la reacción vertical FY (en RAM el eje vertical es Y) del estado elegido. Debe representar el peso de servicio que vibra con el equipo (peso propio de estructura y equipo); la masa sobre cada bloque se toma como ΣP/g. El nudo de la tabla se busca por el ID del modelo o por su número correlativo.</div>
       </div>
-      <div class="xlsx-section" style="margin-top:.8rem">Bloques y espacio disponible</div>
+      <div class="xlsx-section" style="margin-top:.8rem">Bloques de fundación</div>
       <div class="field-grid">
-        <div class="field"><label>Pedestal o placa en planta, lado en X (m)</label><input type="text" inputmode="decimal" id="fmp_pedX"></div>
-        <div class="field"><label>Pedestal o placa en planta, lado en Z (m)</label><input type="text" inputmode="decimal" id="fmp_pedZ"></div>
-        <div class="field"><label>Vuelo mínimo del bloque desde la cara del pedestal (m)</label><input type="text" inputmode="decimal" id="fmp_vuelo" value="0.30"></div>
-        <div class="field"><label>Separación libre mínima entre bloques (m)</label><input type="text" inputmode="decimal" id="fmp_sep" value="0.30"></div>
+        <div class="field"><label>Cantidad de bloques independientes</label><input type="number" id="fmp_nb" min="1" step="1" value="1"></div>
         <div class="field"><label>hcg — altura del CG de la masa sobre la cara superior del bloque (m)</label><input type="text" inputmode="decimal" id="fmp_hcg"></div>
         <div class="field"><label>Dirección L de la planilla (balanceo, Fox)</label><select id="fmp_swap"><option value="0">Eje X de RAM</option><option value="1">Eje Z de RAM</option></select></div>
-        <div class="field"><label>Espacio disponible, X mín / X máx (m)</label><input type="text" id="fmp_espX" placeholder="sin límite"></div>
-        <div class="field"><label>Espacio disponible, Z mín / Z máx (m)</label><input type="text" id="fmp_espZ" placeholder="sin límite"></div>
       </div>
-      <div class="field" style="margin-top:.5rem"><label>Zonas prohibidas en planta (una por línea: X1 Z1 X2 Z2, en m)</label><textarea class="ram-box" id="fmp_obst" style="min-height:60px" placeholder="-1.0 1.0 1.0 2.4"></textarea></div>
-      <div class="note">El espesor H es el de la sección 3 y se aplica a todos los bloques. Cada bloque parte del rectángulo de sus patas más medio pedestal y el vuelo, en múltiplos de 5 cm, y crece de a 5 cm por lado hasta cumplir presión de contacto y relación de masa sin salir del espacio ni acercarse a otro bloque más que la separación mínima. Las fuerzas de desbalance Foz y Fox se reparten en proporción a la carga de cada bloque.</div>
-      <button type="button" class="btn-add" id="fmp_generar">Generar propuestas de fundación</button>
-      <div id="fmp_props" style="margin-top:.8rem"></div>
+      <div id="fmp_bloques" style="margin-top:.5rem"></div>
+      <div id="fmp_previa" style="margin-top:.6rem"></div>
+      <div class="note">Para cada bloque indique los nudos que recibe (ID RAM de la tabla de apoyos, separados por espacio o coma), su largo en X (horizontal en planta) y en Z (vertical en planta), y la excentricidad: desplazamiento del centro del bloque respecto del centro de sus nudos (punto medio entre los nudos extremos en X y en Z; positiva hacia +X y +Z). Cada columna llega al bloque como un punto, sin pedestal. El espesor H es el de la sección 3. Las fuerzas de desbalance Foz y Fox se reparten en proporción a la carga de cada bloque.</div>
+      <button type="button" class="btn-add" id="fmp_generar">Dibujar y verificar bloques</button>
       <div id="fmp_detalle" style="margin-top:.8rem"></div>
     </div>`;
 
@@ -39081,12 +38936,10 @@ function fmpInitPanel(el, state, recalc) {
       // Patas = apoyos con la traslacion vertical (Y) restringida; los que solo
       // restringen otras direcciones (guias laterales) se muestran sin marcar.
       patas.forEach((p, i) => { p.etq = i + 1; p.usar = !!p.restr[1]; });
-      st.est = k; st.modelo = m; st.patas = patas; st.props = []; st.sel = 0;
+      st.est = k; st.modelo = m; st.patas = patas; st.res = null;
+      st.bloques = [{ nudos: patas.filter(p => p.usar).map(p => p.id).join(' '), L: '', B: '', ex: '0', ez: '0' }];
       st.peso = fmpPesoEstructura(m, state.gammac || 2.4);
       if (!patas.some(p => p.usar)) { pintarModelo(); msg('Esta estructura no tiene apoyos que restrinjan la traslación vertical (Y).', true); return; }
-      const ped = patas.find(p => p.ped);
-      $('fmp_pedX').value = ped && patas.every(p => p.ped && p.ped.b === ped.ped.b) ? ped.ped.b : '';
-      $('fmp_pedZ').value = ped && patas.every(p => p.ped && p.ped.h === ped.ped.h) ? ped.ped.h : '';
       const usadas = patas.filter(p => p.usar);
       const xm = usadas.reduce((s, p) => s + p.x, 0) / usadas.length, zm = usadas.reduce((s, p) => s + p.z, 0) / usadas.length;
       $('fmp_xcg').value = +xm.toFixed(3); $('fmp_zcg').value = +zm.toFixed(3);
@@ -39094,7 +38947,8 @@ function fmpInitPanel(el, state, recalc) {
       $('fmp_hcg').value = st.peso.W ? +(st.peso.y - ySup).toFixed(2) : '';
       msg('');
       pintarModelo();
-      $('fmp_props').innerHTML = ''; $('fmp_detalle').innerHTML = '';
+      $('fmp_nb').value = 1; $('fmp_bloques').innerHTML = ''; pintarBloques();
+      $('fmp_detalle').innerHTML = '';
   }
 
   function pintarModelo() {
@@ -39111,7 +38965,6 @@ function fmpInitPanel(el, state, recalc) {
       <td class="num">${p.etq}</td><td class="num">${esc(p.id)}</td>
       <td class="num">${fmt3(p.x)}</td><td class="num">${fmt3(p.z)}</td><td class="num">${fmt3(p.y)}</td>
       <td>${p.restr.every(v => v) ? 'Empotrado' : p.restr[1] ? 'Apoyo ' + esc(p.restr.join('')) : 'Sin restricción vertical (' + esc(p.restr.join('')) + ')'}</td>
-      <td>${p.ped ? `${esc(p.ped.secc)} (${fmt2(p.ped.b)}×${fmt2(p.ped.h)} m, alto ${fmt2(p.ped.alto)} m)` : '—'}</td>
       <td class="num" data-p="${i}">—</td></tr>`).join('');
     $('fmp_modelo').innerHTML = `
       <table class="results">
@@ -39132,12 +38985,12 @@ function fmpInitPanel(el, state, recalc) {
       <div class="note">Área por sección, en este orden: la que usted escriba; el archivo .sec del zip (columna de área o dimensiones de su plantilla .leo: cajón a×b×t con radio interior, perfil I o dos canales sin filetes, sólido b×h); los catálogos de perfiles de la Mesa; y, solo si nada de lo anterior existe, «OC h×b×e» como cajón de esquinas rectas (supuesto). Puede escribir el área real de cualquier sección y el peso se recalcula.</div>
       <div class="xlsx-section" style="margin-top:.8rem">Apoyos identificados (patas)</div>
       <table class="results">
-        <tr><th>Usar</th><th>N°</th><th>ID RAM</th><th>X (m)</th><th>Z (m)</th><th>Y (m)</th><th>Restricción</th><th>Pedestal en el modelo</th><th>P (kN)</th></tr>
+        <tr><th>Usar</th><th>N°</th><th>ID RAM</th><th>X (m)</th><th>Z (m)</th><th>Y (m)</th><th>Restricción</th><th>P (kN)</th></tr>
         ${filas}
       </table>
       <div class="note">Apoyos = nudos de la estructura elegida con alguna restricción en RAM (NudosRestric 1 a 6 del .etz, en orden traslación X, Y, Z y giros X, Y, Z; «1» = restringido). Se marcan por defecto los que restringen la traslación vertical (Y); los demás (por ejemplo guías laterales) quedan sin marcar. Si las patas están a distintas cotas Y, cada bloque se apoya a la cota de sus patas. En RAM Elements el eje vertical es Y; la planta es X-Z. El .etz guarda geometría, apoyos y estados de carga, pero no las reacciones: las cargas por pata salen del reparto rígido o de la tabla de reacciones pegada.</div>`;
     const se = $('fmp_est'); if (se) se.addEventListener('change', () => elegirEstructura(+se.value));
-    $('fmp_modelo').querySelectorAll('input[data-pata]').forEach(c => c.addEventListener('change', () => { st.patas[+c.dataset.pata].usar = c.checked; actualizarP(); }));
+    $('fmp_modelo').querySelectorAll('input[data-pata]').forEach(c => c.addEventListener('change', () => { st.patas[+c.dataset.pata].usar = c.checked; actualizarP(); previa(); }));
     $('fmp_modelo').querySelectorAll('input[data-secc]').forEach(c => c.addEventListener('change', () => {
       const t = st.peso.tabla[+c.dataset.secc];
       const v = parseFloat(String(c.value).replace(',', '.'));
@@ -39193,76 +39046,135 @@ function fmpInitPanel(el, state, recalc) {
     if (c.P && c.P.some(v => v < 0)) msg('Hay patas con carga vertical negativa (levantamiento): revise la ubicación del CG o la tabla.', true);
   }
 
-  const par = id => { const t = String($(id).value).trim(); if (!t) return null; const v = t.split(/[\s;/]+/).map(s => parseFloat(s.replace(',', '.'))); return (v.length >= 2 && v.every(isFinite)) ? [Math.min(v[0], v[1]), Math.max(v[0], v[1])] : NaN; };
+  /* Tabla de bloques: una fila por bloque, conserva lo escrito al cambiar la cantidad. */
+  function pintarBloques() {
+    const n = Math.max(1, Math.min(50, parseInt($('fmp_nb').value, 10) || 1));
+    if (n === st.bloques.length && $('fmp_bloques').querySelector('input[data-b]')) return;
+    while (st.bloques.length < n) st.bloques.push({ nudos: '', L: '', B: '', ex: '0', ez: '0' });
+    st.bloques.length = n;
+    const cel = (k, c, ph) => `<td><input type="text" ${c === 'nudos' ? '' : 'inputmode="decimal" '}data-b="${k}" data-c="${c}" value="${esc(st.bloques[k][c])}" placeholder="${ph}"></td>`;
+    $('fmp_bloques').innerHTML = `<table class="results editable">
+      <tr><th>Bloque</th><th>Nudos (ID RAM)</th><th>Largo en X, horizontal en planta (m)</th><th>Largo en Z, vertical en planta (m)</th><th>Excentricidad ex (m)</th><th>Excentricidad ez (m)</th></tr>
+      ${st.bloques.map((b, k) => `<tr><td class="num">B${k + 1}</td>${cel(k, 'nudos', 'ej: 120 121')}${cel(k, 'L', 'm')}${cel(k, 'B', 'm')}${cel(k, 'ex', '0')}${cel(k, 'ez', '0')}</tr>`).join('')}
+    </table>`;
+    $('fmp_bloques').querySelectorAll('input[data-b]').forEach(x => x.addEventListener('input', () => { st.bloques[+x.dataset.b][x.dataset.c] = x.value; previa(); }));
+    previa();
+  }
+  $('fmp_nb').addEventListener('input', pintarBloques);
+  $('fmp_nb').addEventListener('change', pintarBloques);
+
+  /* Geometria de los bloques escritos. estricto: el primer dato faltante o
+     erroneo se devuelve como error; si no, los bloques incompletos se omiten
+     (vista previa mientras se escribe) y sus problemas quedan en notas. */
+  function geometria(estricto) {
+    const usadas = st.patas.filter(p => p.usar);
+    const dec = v => { const t = String(v).trim(); return t === '' ? 0 : parseFloat(t.replace(',', '.')); };
+    const grupos = [], rects = [], usados = new Map(), notas = [];
+    for (let k = 0; k < st.bloques.length; k++) {
+      const b = st.bloques[k], nom = 'B' + (k + 1);
+      const falla = t => { if (estricto) return t; notas.push(t); return null; };
+      const ids = String(b.nudos).split(/[\s,;]+/).filter(Boolean);
+      const idx = [];
+      let err = ids.length ? null : falla(`${nom}: indique los nudos que recibe.`);
+      if (err) return { error: err };
+      for (const id of ids) {
+        const i = usadas.findIndex(p => String(p.id) === id);
+        if (i < 0) {
+          err = falla(st.patas.some(p => String(p.id) === id) ? `${nom}: el nudo ${esc(id)} no está marcado como pata en la tabla de apoyos.` : `${nom}: el nudo ${esc(id)} no es un apoyo de la estructura elegida.`);
+          if (err) return { error: err }; continue;
+        }
+        if (usados.has(i) && usados.get(i) !== nom) { err = falla(`El nudo ${esc(id)} está en ${usados.get(i)} y en ${nom}; cada nudo va en un solo bloque.`); if (err) return { error: err }; continue; }
+        if (!idx.includes(i)) idx.push(i);
+        usados.set(i, nom);
+      }
+      const L = dec(b.L), B = dec(b.B), ex = dec(b.ex), ez = dec(b.ez);
+      let rect = null;
+      if (!idx.length) { grupos.push(idx); rects.push(null); continue; }
+      if (!(L > 0 && B > 0)) { err = falla(`${nom}: indique el largo en X y en Z (mayores que cero).`); if (err) return { error: err }; }
+      else if (!isFinite(ex) || !isFinite(ez)) { err = falla(`${nom}: la excentricidad debe ser un número (0 si no hay).`); if (err) return { error: err }; }
+      const xs = idx.map(i => usadas[i].x), zs = idx.map(i => usadas[i].z);
+      const x0 = (Math.min(...xs) + Math.max(...xs)) / 2, z0 = (Math.min(...zs) + Math.max(...zs)) / 2;
+      if (L > 0 && B > 0 && isFinite(ex) && isFinite(ez)) rect = fmpConCaja({ xc: x0 + ex, zc: z0 + ez, L, B, x0, z0, ex, ez });
+      grupos.push(idx); rects.push(rect);
+    }
+    // Avisos de geometria: no impiden el calculo
+    const avisos = rects.map(() => []);
+    const dentro = (p, r) => p.x > r.x1 - 1e-6 && p.x < r.x2 + 1e-6 && p.z > r.z1 - 1e-6 && p.z < r.z2 + 1e-6;
+    rects.forEach((r, k) => {
+      if (!r) return;
+      grupos[k].forEach(i => { if (!dentro(usadas[i], r)) avisos[k].push(`nudo ${usadas[i].id} fuera del bloque`); });
+      usadas.forEach((p, i) => { if (!grupos[k].includes(i) && usados.has(i) && dentro(p, r)) avisos[k].push(`cubre el nudo ${p.id} de ${usados.get(i)}`); });
+      rects.forEach((o, j) => { if (o && j !== k && fmpSeparacion(r, o) < -1e-6) avisos[k].push(`se traslapa con B${j + 1}`); });
+    });
+    const traslapes = [];
+    rects.forEach((r, k) => rects.forEach((o, j) => {
+      if (!r || !o || j <= k || fmpSeparacion(r, o) >= -1e-6) return;
+      const z = { x1: Math.max(r.x1, o.x1), x2: Math.min(r.x2, o.x2), z1: Math.max(r.z1, o.z1), z2: Math.min(r.z2, o.z2) };
+      traslapes.push(Object.assign(z, { a: k, b: j }));
+    }));
+    const sinBloque = usadas.filter((p, i) => !usados.has(i)).map(p => p.id);
+    const txt = [];
+    if (traslapes.length) txt.push('⚠ SUPERPOSICIÓN DE BLOQUES: ' + traslapes.map(t => `B${t.a + 1} con B${t.b + 1} (zona X ${fmt3(t.x1)} a ${fmt3(t.x2)}, Z ${fmt3(t.z1)} a ${fmt3(t.z2)} m)`).join('; ') + '. Reduzca dimensiones, cambie la excentricidad o una los bloques.');
+    rects.forEach((r, k) => { if (r && avisos[k].some(a => !a.startsWith('se traslapa'))) txt.push(`B${k + 1}: ${esc(avisos[k].filter(a => !a.startsWith('se traslapa')).join('; '))}.`); });
+    if (sinBloque.length) txt.push(`Patas marcadas sin bloque asignado (su carga no se considera): ${esc(sinBloque.join(', '))}.`);
+    return { usadas, grupos, rects, avisos, traslapes, sinBloque, notas, txt };
+  }
+
+  /* Planta en vivo mientras se escriben los bloques. */
+  function previa() {
+    if (!st.modelo) return;
+    st.res = null; $('fmp_detalle').innerHTML = '';
+    const g = geometria(false);
+    $('fmp_previa').innerHTML = fmpSvgPlanta(g, g.usadas) +
+      (g.txt.length ? `<div class="note" style="color:var(--bad);font-weight:600">${g.txt.join('<br>')}</div>` : '') +
+      (g.notas.length ? `<div class="note">Faltan datos: ${g.notas.join(' ')}</div>` : '');
+  }
 
   $('fmp_generar').addEventListener('click', () => {
     recalc();
     const c = cargas();
     if (c.error) { msg(c.error, true); return; }
     if (c.usadas.length < 1) { msg('Marque al menos una pata.', true); return; }
-    const pedX = num('fmp_pedX', NaN), pedZ = num('fmp_pedZ', NaN);
-    if (!(pedX > 0 && pedZ > 0)) { msg('Indique el lado del pedestal o placa en X y en Z (el modelo no trae un pedestal único para todas las patas).', true); return; }
-    const ex = par('fmp_espX'), ez = par('fmp_espZ');
-    if (Number.isNaN(ex) || Number.isNaN(ez)) { msg('Espacio disponible: escriba dos valores, mínimo y máximo.', true); return; }
-    const obst = [];
-    for (const l of $('fmp_obst').value.split(/\r?\n/)) {
-      if (!l.trim()) continue;
-      const v = l.trim().split(/[\s;]+/).map(s => parseFloat(s.replace(',', '.')));
-      if (v.length < 4 || !v.slice(0, 4).every(isFinite)) { msg('Zona prohibida mal escrita: «' + esc(l) + '». Use X1 Z1 X2 Z2.', true); return; }
-      obst.push({ x1: Math.min(v[0], v[2]), x2: Math.max(v[0], v[2]), z1: Math.min(v[1], v[3]), z2: Math.max(v[1], v[3]) });
-    }
     const hcg = num('fmp_hcg', NaN);
     if (!isFinite(hcg)) { msg('Indique hcg, la altura del CG de la masa sobre el bloque.', true); return; }
-    const esp = (ex || ez) ? { x1: ex ? ex[0] : -Infinity, x2: ex ? ex[1] : Infinity, z1: ez ? ez[0] : -Infinity, z2: ez ? ez[1] : Infinity } : null;
-    const op = { vuelo: num('fmp_vuelo', 0), sep: num('fmp_sep', 0), hcg, swap: $('fmp_swap').value === '1', esp, obst, pedL: () => pedX, pedB: () => pedZ };
-    msg('');
-    st.op = op; st.usadas = c.usadas; st.P = c.P; st.nota = c.nota;
-    st.props = fmpPropuestas(c.usadas, c.P, Object.assign({}, state), op);
-    st.sel = 0;
-    pintarPropuestas();
+    const g = geometria(true);
+    if (g.error) { msg(g.error, true); return; }
+    const { grupos, rects, avisos, traslapes } = g;
+    const op = { hcg, swap: $('fmp_swap').value === '1', Ptot: c.P.reduce((s, v) => s + v, 0) };
+    const base = Object.assign({}, state);
+    const ev = rects.map((r, k) => fmpEvaluarBloque(r, grupos[k], c.usadas, c.P, op, base));
+    st.usadas = c.usadas; st.nota = c.nota;
+    st.res = { grupos, rects, ev, avisos, traslapes, vol: rects.reduce((s, r) => s + r.L * r.B * base.H, 0) };
+    msg(g.txt.join('<br>'), g.txt.length > 0);
+    $('fmp_previa').innerHTML = fmpSvgPlanta(st.res, c.usadas);
+    pintarDetalle();
   });
 
-  function pintarPropuestas() {
-    if (!st.props.length) {
-      $('fmp_props').innerHTML = '<div class="note" style="color:var(--bad)">Ninguna agrupación cabe en el espacio disponible con la separación y el vuelo indicados.</div>';
-      $('fmp_detalle').innerHTML = ''; return;
-    }
-    const top = st.props.slice(0, 10);
-    $('fmp_props').innerHTML = `
-      <div class="xlsx-section">Propuestas (${st.props.length} agrupaciones factibles; se muestran las 10 mejores)</div>
-      <table class="results">
-        <tr><th>#</th><th>Agrupación de patas</th><th>Bloques</th><th>Dimensiones L×B (m)</th><th>Hormigón (m³)</th><th>Verificaciones</th><th></th></tr>
-        ${top.map((p, k) => `<tr${k === st.sel ? ' style="background:color-mix(in srgb, var(--accent) 8%, transparent)"' : ''}>
-          <td class="num">${k + 1}</td><td>${esc(fmpTextoGrupos(p.grupos, st.usadas))}</td><td class="num">${p.grupos.length}</td>
-          <td>${p.rects.map(r => fmt2(r.L) + '×' + fmt2(r.B)).join(' · ')}</td><td class="num">${fmt2(p.vol)}</td>
-          <td>${p.cumple ? chip(true) : `<span class="chip bad">${p.nFallas} NO CUMPLE</span>`}</td>
-          <td><button type="button" class="modo-btn" data-ver="${k}">Ver</button></td></tr>`).join('')}
-      </table>
-      <div class="note">Orden: primero las que cumplen todas las verificaciones de la planilla en todos sus bloques, luego menos verificaciones fallidas y menor volumen de hormigón. ${esc(st.nota)} Cada bloque se analiza como bloque rígido independiente con su parte de la masa y de las fuerzas del equipo; no se considera el acoplamiento entre bloques a través de la estructura.</div>`;
-    $('fmp_props').querySelectorAll('[data-ver]').forEach(b => b.addEventListener('click', () => { st.sel = +b.dataset.ver; pintarPropuestas(); }));
-    pintarDetalle();
-  }
-
   function pintarDetalle() {
-    const p = st.props[st.sel];
+    const p = st.res;
     const filas = p.ev.map((e, k) => {
       const r = e.r;
       const ys = p.grupos[k].map(i => st.usadas[i].y);
       const desnivel = Math.max(...ys) - Math.min(...ys) > 0.01 ? ` <span class="chip warn">patas a distinta cota Y (${fmt2(Math.min(...ys))} a ${fmt2(Math.max(...ys))} m)</span>` : '';
-      return `<tr><td class="num">${k + 1}</td><td>${esc(p.grupos[k].map(i => st.usadas[i].etq).join('-'))}${desnivel}</td>
+      const av = p.avisos[k].length ? ` <span class="chip warn">${esc(p.avisos[k].join('; '))}</span>` : '';
+      return `<tr><td class="num">B${k + 1}</td><td>${esc(p.grupos[k].map(i => st.usadas[i].id).join(', '))}${desnivel}${av}</td>
         <td>${fmt2(e.inp.L)}×${fmt2(e.inp.B)}×${fmt2(e.inp.H)}</td><td class="num">${fmt1(e.Pg)}</td><td class="num">${fmt2(e.inp.Meq)}</td>
         <td class="num">${fmt1(r.q)}</td><td class="num">${fmt2(r.MRmasa)}</td><td class="num">${fmt3(e.peorR)}</td><td class="num">${fmt2(e.vMax)}</td>
         <td>${e.fallas.length ? `<span class="chip bad" title="${esc(e.fallas.map(f => FMP_TXT_CHK[f]).join(', '))}">${esc(e.fallas.map(f => FMP_TXT_CHK[f]).join(', '))}</span>` : chip(true)}</td>
         <td><button type="button" class="modo-btn" data-cargar="${k}">Cargar en la planilla</button></td></tr>`;
     }).join('');
     $('fmp_detalle').innerHTML = `
-      <div class="xlsx-section">Propuesta ${st.sel + 1}: ${esc(fmpTextoGrupos(p.grupos, st.usadas))}</div>
-      ${fmpSvgPlanta(p, st.usadas, st.op)}
+      <div class="xlsx-section">Planta de bloques (${p.rects.length}; hormigón ${fmt2(p.vol)} m³)</div>
+      ${p.traslapes.length ? `<div class="note" style="color:var(--bad);font-weight:600">⚠ Superposición de bloques: ${p.traslapes.map(t => `B${t.a + 1} con B${t.b + 1} (${fmt2(t.x2 - t.x1)} × ${fmt2(t.z2 - t.z1)} m)`).join('; ')}. Zona marcada en rojo en la planta.</div>` : ''}
+      <table class="results" style="margin-top:.6rem">
+        <tr><th>Bloque</th><th>Centro de los nudos X ; Z (m)</th><th>Excentricidad ex ; ez (m)</th><th>Centro del bloque X ; Z (m)</th><th>Bordes X (m)</th><th>Bordes Z (m)</th></tr>
+        ${p.rects.map((r, k) => `<tr><td class="num">B${k + 1}</td><td class="num">${fmt3(r.x0)} ; ${fmt3(r.z0)}</td><td class="num">${fmt3(r.ex)} ; ${fmt3(r.ez)}</td><td class="num">${fmt3(r.xc)} ; ${fmt3(r.zc)}</td><td class="num">${fmt3(r.x1)} a ${fmt3(r.x2)}</td><td class="num">${fmt3(r.z1)} a ${fmt3(r.z2)}</td></tr>`).join('')}
+      </table>
       <table class="results" style="margin-top:.6rem">
         <tr><th>Bloque</th><th>Patas</th><th>L×B×H (m)</th><th>ΣP (kN)</th><th>Masa sobre el bloque (ton)</th><th>q (kPa)</th><th>Mf/M</th><th>r más cercano a 1</th><th>v máx. (mm/s)</th><th>Estado</th><th></th></tr>
         ${filas}
       </table>
-      <div class="note">«Cargar en la planilla» copia ese bloque a las secciones 1 y 3 (masa, fuerzas repartidas, excentricidad, altura del CG, L y B) y las secciones 5 a 12 y la impresión pasan a mostrar ese bloque. La velocidad v es pico, igual que en la planilla.</div>`;
+      <div class="note">${esc(st.nota)} Cada bloque se analiza como bloque rígido independiente con su parte de la masa y de las fuerzas del equipo; no se considera el acoplamiento entre bloques a través de la estructura. «Cargar en la planilla» copia ese bloque a las secciones 1 y 3 (masa, fuerzas repartidas, excentricidad, altura del CG, L y B) y las secciones 5 a 12 y la impresión pasan a mostrar ese bloque. La velocidad v es pico, igual que en la planilla.</div>`;
     $('fmp_detalle').querySelectorAll('[data-cargar]').forEach(b => b.addEventListener('click', () => {
       const e = p.ev[+b.dataset.cargar];
       const set = (id, v) => { const x = document.getElementById(id); if (x) x.value = +(+v).toFixed(3); };
@@ -39270,8 +39182,8 @@ function fmpInitPanel(el, state, recalc) {
       set('fed_exEq', e.inp.exEq); set('fed_eyEq', e.inp.eyEq); set('fed_heq', e.inp.heq);
       set('fed_L', e.inp.L); set('fed_B', e.inp.B);
       const d = document.getElementById('fed_descEquipo');
-      const base = String(d.value).replace(/ — bloque \d+ \(patas [^)]*\)$/, '');
-      d.value = `${base} — bloque ${+b.dataset.cargar + 1} (patas ${p.grupos[+b.dataset.cargar].map(i => st.usadas[i].etq).join('-')})`;
+      const base = String(d.value).replace(/ — bloque \d+ \((patas|nudos) [^)]*\)$/, '');
+      d.value = `${base} — bloque ${+b.dataset.cargar + 1} (nudos ${p.grupos[+b.dataset.cargar].map(i => st.usadas[i].id).join('-')})`;
       recalc();
       const dest = document.getElementById('fed_geometria');
       if (dest && dest.scrollIntoView) dest.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -39280,33 +39192,60 @@ function fmpInitPanel(el, state, recalc) {
 }
 
 /* Planta de una propuesta: espacio disponible, zonas prohibidas, bloques y patas (ejes RAM X-Z). */
-function fmpSvgPlanta(p, patas, op) {
+/* Planta de los bloques (ejes RAM X-Z) con cotas: largo en X bajo cada bloque,
+   largo en Z a su izquierda, centro del bloque (+), centro de sus nudos (◇) si
+   hay excentricidad, y cada nudo-columna con su ID y coordenadas. p.rects puede
+   traer null (bloque aun sin dimensiones); p.ev es opcional (antes de verificar).
+   Las patas marcadas que no estan en ningun bloque se dibujan en gris. */
+function fmpSvgPlanta(p, patas) {
+  const rects = p.rects.map((r, k) => r && Object.assign({ k }, r)).filter(Boolean);
+  const asign = new Set(p.grupos.flat());
   const xs = [], zs = [];
-  p.rects.forEach(r => { xs.push(r.x1, r.x2); zs.push(r.z1, r.z2); });
-  op.obst.forEach(o => { xs.push(o.x1, o.x2); zs.push(o.z1, o.z2); });
-  if (op.esp) { [op.esp.x1, op.esp.x2].forEach(v => isFinite(v) && xs.push(v)); [op.esp.z1, op.esp.z2].forEach(v => isFinite(v) && zs.push(v)); }
+  rects.forEach(r => { xs.push(r.x1, r.x2); zs.push(r.z1, r.z2); });
+  patas.forEach(pt => { xs.push(pt.x); zs.push(pt.z); });
+  if (!xs.length) return '';
   const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
-  const W = 440, m = 30, s = Math.min((W - 2 * m) / Math.max(x1 - x0, 0.1), 300 / Math.max(z1 - z0, 0.1));
-  const H = (z1 - z0) * s + 2 * m + 16;
-  const X = x => m + (x - x0) * s, Y = z => m + (z1 - z) * s;
-  const rect = (r, extra) => `<rect x="${X(r.x1)}" y="${Y(r.z2)}" width="${(r.x2 - r.x1) * s}" height="${(r.z2 - r.z1) * s}" ${extra}/>`;
+  const W = 640, mL = 60, mR = 90, mT = 30, mB = 70;
+  const s = Math.min((W - mL - mR) / Math.max(x1 - x0, 0.1), 420 / Math.max(z1 - z0, 0.1));
+  const H = (z1 - z0) * s + mT + mB;
+  const X = x => mL + (x - x0) * s, Y = z => mT + (z1 - z) * s;
+  const f = v => fmt2(v);
+  const txt = (x, y, t, col, anchor, fs, extra) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${fs || 10}" fill="${col}" font-family="IBM Plex Mono, monospace" text-anchor="${anchor || 'start'}" ${extra || ''}>${t}</text>`;
+  const ln = (xa, ya, xb, yb, col, w, dash) => `<line x1="${xa.toFixed(1)}" y1="${ya.toFixed(1)}" x2="${xb.toFixed(1)}" y2="${yb.toFixed(1)}" stroke="${col}" stroke-width="${w || 1}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
   let out = '';
-  if (op.esp) {
-    const e = { x1: isFinite(op.esp.x1) ? op.esp.x1 : x0 - 0.5, x2: isFinite(op.esp.x2) ? op.esp.x2 : x1 + 0.5, z1: isFinite(op.esp.z1) ? op.esp.z1 : z0 - 0.5, z2: isFinite(op.esp.z2) ? op.esp.z2 : z1 + 0.5 };
-    out += rect(e, 'fill="none" stroke="var(--ink-muted)" stroke-dasharray="6,4" stroke-width="1"');
-  }
-  op.obst.forEach(o => { out += rect(o, 'fill="var(--bad)" fill-opacity="0.12" stroke="var(--bad)" stroke-width="1"'); });
-  p.rects.forEach((r, k) => {
-    const ok = !p.ev[k].fallas.length;
-    out += rect(r, `fill="var(--surface-alt)" fill-opacity="0.5" stroke="${ok ? 'var(--good)' : 'var(--ink)'}" stroke-width="2"`);
-    out += `<text x="${X(r.xc)}" y="${Y(r.z2) - 5}" font-size="10" fill="var(--ink)" font-family="IBM Plex Mono, monospace" text-anchor="middle">B${k + 1} ${fmt2(r.L)}×${fmt2(r.B)}</text>`;
+  rects.forEach(r => {
+    const ev = p.ev && p.ev[r.k];
+    const col = ev ? (ev.fallas.length ? 'var(--ink)' : 'var(--good)') : 'var(--accent)';
+    out += `<rect x="${X(r.x1).toFixed(1)}" y="${Y(r.z2).toFixed(1)}" width="${((r.x2 - r.x1) * s).toFixed(1)}" height="${((r.z2 - r.z1) * s).toFixed(1)}" fill="var(--surface-alt)" fill-opacity="0.55" stroke="${col}" stroke-width="2"/>`;
+    out += txt(X(r.x1) + 4, Y(r.z2) + 12, `B${r.k + 1}`, col, 'start', 11, 'font-weight="700"');
+    // cota en X (bajo el bloque)
+    const yc = Y(r.z1) + 16;
+    out += ln(X(r.x1), Y(r.z1) + 3, X(r.x1), yc + 4, 'var(--ink-muted)') + ln(X(r.x2), Y(r.z1) + 3, X(r.x2), yc + 4, 'var(--ink-muted)') + ln(X(r.x1), yc, X(r.x2), yc, 'var(--ink)');
+    out += txt((X(r.x1) + X(r.x2)) / 2, yc + 12, `${f(r.L)} m`, 'var(--ink)', 'middle', 10);
+    // cota en Z: a la izquierda, o a la derecha si a la izquierda hay otro bloque cerca
+    const vecino = rects.some(o => o !== r && o.x1 < r.x1 && o.x2 > r.x1 - 30 / s && o.z1 < r.z2 && o.z2 > r.z1);
+    const sg = vecino ? 1 : -1, xb = vecino ? X(r.x2) : X(r.x1), xc = xb + sg * 16;
+    out += ln(xb + sg * 3, Y(r.z1), xc + sg * 4, Y(r.z1), 'var(--ink-muted)') + ln(xb + sg * 3, Y(r.z2), xc + sg * 4, Y(r.z2), 'var(--ink-muted)') + ln(xc, Y(r.z1), xc, Y(r.z2), 'var(--ink)');
+    const ym = (Y(r.z1) + Y(r.z2)) / 2, xt = xc + sg * 4;
+    out += txt(xt, ym, `${f(r.B)} m`, 'var(--ink)', 'middle', 10, `transform="rotate(-90 ${xt.toFixed(1)} ${ym.toFixed(1)})"`);
+    // centro del bloque y centro de los nudos
+    const c = 5;
+    out += `<path d="M${(X(r.xc) - c).toFixed(1)} ${Y(r.zc).toFixed(1)}h${2 * c}M${X(r.xc).toFixed(1)} ${(Y(r.zc) - c).toFixed(1)}v${2 * c}" stroke="var(--ink)" stroke-width="1.4"/>`;
+    out += txt(X(r.xc) + 6, Y(r.zc) - 5, `(${f(r.xc)}; ${f(r.zc)})`, 'var(--ink)', 'start', 8.5);
+    if (Math.abs(r.ex) > 1e-6 || Math.abs(r.ez) > 1e-6) {
+      out += `<path d="M${X(r.x0).toFixed(1)} ${(Y(r.z0) - 4).toFixed(1)}l4 4l-4 4l-4 -4z" fill="none" stroke="var(--ink-muted)" stroke-width="1"/>` + ln(X(r.x0), Y(r.z0), X(r.xc), Y(r.zc), 'var(--ink-muted)', 1, '3,2');
+      out += txt(X(r.x0) + 6, Y(r.z0) + 12, `e = (${f(r.ex)}; ${f(r.ez)})`, 'var(--ink-muted)', 'start', 8.5);
+    }
   });
-  patas.forEach(pt => {
-    out += `<circle cx="${X(pt.x)}" cy="${Y(pt.z)}" r="5" fill="var(--accent-warm)"/>`;
-    out += `<text x="${X(pt.x) + 7}" y="${Y(pt.z) + 12}" font-size="9.5" fill="var(--accent-warm)" font-family="IBM Plex Mono, monospace">${pt.etq}</text>`;
+  (p.traslapes || []).forEach(t => { out += `<rect x="${X(t.x1).toFixed(1)}" y="${Y(t.z2).toFixed(1)}" width="${((t.x2 - t.x1) * s).toFixed(1)}" height="${((t.z2 - t.z1) * s).toFixed(1)}" fill="var(--bad)" fill-opacity="0.4" stroke="var(--bad)" stroke-width="1.5"/>`; });
+  patas.forEach((pt, i) => {
+    const en = asign.has(i), col = en ? 'var(--accent-warm)' : 'var(--ink-muted)';
+    out += `<circle cx="${X(pt.x).toFixed(1)}" cy="${Y(pt.z).toFixed(1)}" r="4.5" fill="${en ? col : 'none'}" stroke="${col}" stroke-width="1.4"/>`;
+    out += txt(X(pt.x) + 6, Y(pt.z) + 11, `${esc(pt.id)} (${f(pt.x)}; ${f(pt.z)})`, col, 'start', 8.5);
   });
-  out += `<text x="${m}" y="${H - 6}" font-size="9" fill="var(--ink-muted)" font-family="IBM Plex Mono, monospace">Planta, ejes RAM: X → derecha, Z ↑ arriba</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" style="display:block; width:100%; max-width:${W}px; height:auto; margin:0 auto;" role="img" aria-label="Planta de la propuesta de fundaciones con patas y bloques">${out}</svg>`;
+  out += txt(8, H - 18, 'Planta, ejes RAM: X → derecha, Z ↑ arriba (m).', 'var(--ink-muted)', 'start', 8.5);
+  out += txt(8, H - 6, '● columna en bloque · ○ pata sin bloque · + centro del bloque · ◇ centro de los nudos', 'var(--ink-muted)', 'start', 8.5);
+  return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" style="display:block; width:100%; max-width:${W}px; height:auto; margin:0 auto;" role="img" aria-label="Planta de los bloques de fundación con cotas y los nudos de las columnas">${out}</svg>`;
 }
 
 function renderFundacionEquipoDinamico(container) {
