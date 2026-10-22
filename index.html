@@ -38025,8 +38025,6 @@ function fedDatosHtml(state, r) {
 
   return `
     <div class="xlsx-title-bar">DATOS GENERALES</div>
-    <div class="xlsx-desc-row">Celdas azules sobre fondo amarillo del Excel = ingreso del usuario en el panel interactivo. Las filas marcadas "(calculado)" son fórmulas que la propia hoja "Datos" del Excel resuelve. La fuerza horizontal estática (y su brazo) vive en la hoja "Estático" del Excel y se reproduce en la sección "2. Estático" de la hoja CÁLCULO, tal como lo hace el Excel — ver hoja CÁLCULO.</div>
-
     <div class="xlsx-section">A. Identificación del proyecto</div>
     <table class="xlsx-table"><tbody>
       ${row('Proyecto', esc(proyecto))}
@@ -38036,8 +38034,6 @@ function fedDatosHtml(state, r) {
       ${row('Elaborado por', '____________________')}
       ${row('Revisión / Fecha', '____________________')}
     </tbody></table>
-    ${nota('Mandante, Ubicación, Elaborado por y Revisión/Fecha no tienen equivalente en esta versión web — completar sobre la impresión o en la planilla Excel, hoja "Datos". Proyecto y Equipo/Tag se toman de los campos generales de la mesa de cálculo.')}
-
     <div class="xlsx-section">B. Datos del equipo dinámico</div>
     <table class="xlsx-table"><tbody>
       ${row('Descripción del equipo', esc(state.descEquipo || '—'))}
@@ -38053,7 +38049,7 @@ function fedDatosHtml(state, r) {
       ${row('Excentricidad del CG del equipo en dirección B, ey,eq [m]', xlsxNum(state.eyEq, 2))}
       ${row('Altura del CG del equipo s/ la base de fundación, heq [m]', xlsxNum(state.heq, 2))}
     </tbody></table>
-    ${nota('<b>Tipo de equipo:</b> Rotativo (harneros, motores, ventiladores, descortezadores): relación mínima habitual 3x. Alternativo/reciprocante (compresores/pistones): relación mínima habitual 5x.<br><b>Foz/Fox:</b> fuerza dinámica pico (0-pico), según ficha técnica del fabricante.<br><b>ex,eq/ey,eq:</b> 0 si el equipo está centrado en planta respecto al bloque.<br><b>Descripción del equipo:</b> dato informativo — ninguna fórmula del Excel lo referencia.')}
+    ${nota('<b>Tipo de equipo:</b> Rotativo (harneros, motores, ventiladores, descortezadores): relación mínima habitual 3x. Alternativo/reciprocante (compresores/pistones): relación mínima habitual 5x.<br><b>Foz/Fox:</b> fuerza dinámica pico (0-pico), según ficha técnica del fabricante.<br><b>ex,eq/ey,eq:</b> 0 si el equipo está centrado en planta respecto al bloque.')}
 
     <div class="xlsx-section">C. Propiedades dinámicas del suelo</div>
     <table class="xlsx-table"><tbody>
@@ -38070,9 +38066,9 @@ function fedDatosHtml(state, r) {
     <table class="xlsx-table"><tbody>
       ${row('Coeficiente sísmico horizontal de diseño, Ah [g]', xlsxNum(state.Ah, 2))}
     </tbody></table>
-    ${nota('Lista con valores típicos de referencia; editable si el estudio de sitio entrega otro valor. Definir según NCh433/DS61 y zona sísmica del proyecto.')}
+    ${nota('Definir según NCh433/DS61 y zona sísmica del proyecto.')}
 
-    <div class="xlsx-section">E. Criterios de verificación (editables)</div>
+    <div class="xlsx-section">E. Criterios de verificación</div>
     <table class="xlsx-table"><tbody>
       ${row('Margen mínimo de separación de frecuencias (±%)', xlsxNum(state.margen * 100, 0) + '%')}
       ${row('Velocidad de vibración admisible, vadm [mm/s, pico]', xlsxNum(state.vadm, 2))}
@@ -38142,7 +38138,7 @@ function fedTablaResumenHtml(r) {
   return `<div style="overflow-x:auto"><table class="xlsx-table"><tbody>
     <tr class="xlsx-hdr-de"><td class="xv-label">Ítem</td><td class="xv-num">Resultado</td><td class="xv-num">Estado</td><td class="xv-label">Fuente / Comentario</td></tr>
     ${fila('Presión de contacto sobre el suelo', xlsxNum(r.q, 1) + ' kPa', xlsxEstadoSpan(r.okPresion), 'Cálculo directo — q = Wtot/A')}
-    ${fila('Excentricidad CG combinado / centroide de la base', xlsxNum(r.exRel * 100, 1) + '% / ' + xlsxNum(r.eyRel * 100, 1) + '%', xlsxEstadoSpan(r.okExc), 'Cálculo directo — regla práctica de tolerancia (editable en Datos)')}
+    ${fila('Excentricidad CG combinado / centroide de la base', xlsxNum(r.exRel * 100, 1) + '% / ' + xlsxNum(r.eyRel * 100, 1) + '%', xlsxEstadoSpan(r.okExc), 'Cálculo directo — regla práctica de tolerancia')}
     ${fila('Relación de masa fundación/equipo, Mf/Meq', xlsxNum(r.MRmasa, 2), xlsxEstadoSpan(r.okMasa), "Cálculo directo — regla práctica (Arya/O'Neill/Pincus): ≥3x rotativo, ≥5x reciprocante")}
     ${fila('Razón de frecuencias — Vertical', xlsxNum(r.rVert, 3), xlsxEstadoSpan(r.okFreqVert), 'Cálculo directo — Richart, Hall & Woods (1970) / ACI 351.3R Cap. 5')}
     ${fila('Razón de frecuencias — Horizontal', xlsxNum(r.rHoriz, 3), xlsxEstadoSpan(r.okFreqHoriz), 'Cálculo directo — Richart, Hall & Woods (1970) / ACI 351.3R Cap. 5')}
@@ -38212,14 +38208,14 @@ const FED_CALC_SECTIONS = [
     { t: 'label', text: 'Excentricidad CG / centroide de la base' },
     { t: 'chk', label: 'Verificación de excentricidad (ver detalle en sección 1. Geometría)', estL: 'okExc', forceNA: true },
     { t: 'label', text: 'Deslizamiento y volcamiento bajo cargas estáticas' },
-    { t: 'desc', text: 'Un bloque de fundación simétrico sobre el suelo generalmente no tiene cargas horizontales de servicio relevantes; se incluye esta verificación por generalidad (p. ej. empuje de tuberías, tensado de correas, viento sobre estructuras adosadas). Si no aplica, dejar Fh,est = 0.' },
+    { t: 'desc', text: 'Un bloque de fundación simétrico sobre el suelo generalmente no tiene cargas horizontales de servicio relevantes; se incluye esta verificación por generalidad (p. ej. empuje de tuberías, tensado de correas, viento sobre estructuras adosadas).' },
     { t: 'var1', label: 'Fuerza horizontal estática de servicio, Fh,est [kN]', f: 'FhEst', d: 2 },
     { t: 'var1', label: 'Brazo de aplicación sobre la base, b [m]', f: 'bEst', d: 2 },
     { t: 'text', label: 'Factor de seguridad al deslizamiento, FS = μ·Wtot/Fh,est', f: 'FSdeslizEstTxt' },
     { t: 'var1', label: 'Momento resistente por peso propio, MR = Wtot·L/2 [kN·m]', f: 'MRest', d: 2 },
     { t: 'var1', label: 'Momento de volcamiento estático, Mv = Fh,est·b [kN·m]', f: 'MvEst', d: 2 },
     { t: 'text', label: 'Factor de seguridad al volcamiento, FS = MR/Mv', f: 'FSvolcEstTxt' },
-    { t: 'desc', text: 'Factores de seguridad mínimos requeridos (referencia, hoja Datos): estas dos filas NO llevan un veredicto CUMPLE/NO CUMPLE en la planilla Excel de origen (no hay comparación contra el mínimo en el Excel) — se muestra el valor de FS calculado, o "N/A" si Fh,est = 0, sin chip de estado, exactamente como en el xlsx.' },
+    { t: 'desc', text: 'Factores de seguridad estáticos informativos (sin veredicto); "N/A" cuando no hay fuerza horizontal estática de servicio (Fh,est = 0).' },
   ]},
 
   { num: '3', title: 'Análisis dinámico — método del semi-espacio elástico (Richart, Hall & Woods)', rows: [
@@ -38249,7 +38245,7 @@ const FED_CALC_SECTIONS = [
     { t: 'var1', label: 'Frecuencia de operación, fop [Hz]', f: 'fop', d: 2 },
     { t: 'var1', label: 'Margen mínimo de separación de frecuencias (±%)', f: 'margenPct', d: 0 },
   ], extraHtml: null, extraInResumen: true, tail: [
-    { t: 'desc', text: 'r = fop/fn debe quedar fuera del rango (1−margen, 1+margen) para evitar amplificación resonante. Para equipos críticos se recomienda ampliar el margen (30-50%) — ajustar en hoja Datos.' },
+    { t: 'desc', text: 'r = fop/fn debe quedar fuera del rango (1−margen, 1+margen) para evitar amplificación resonante. Para equipos críticos se recomienda ampliar el margen (30-50%).' },
     { t: 'label', text: 'Amplitud de vibración (modos vertical y horizontal)' },
   ], tailExtraHtml: null, tailExtraInResumen: true, tail2: [
     { t: 'desc', text: 'Modelo de un grado de libertad por modo (masa-resorte-amortiguador) con excitación armónica de amplitud constante Fo, según Richart, Hall & Woods (1970) / ACI 351.3R Cap. 5. No incluye el acoplamiento horizontal-balanceo; para equipos con excentricidades significativas o modos muy próximos, se recomienda un análisis dinámico acoplado (2 GDL) por un especialista.' },
@@ -38273,7 +38269,7 @@ const FED_CALC_SECTIONS = [
 
   { num: '5', title: 'Resumen de verificaciones', rows: [
   ], extraHtml: null, extraInResumen: true, tail: [
-    { t: 'desc', text: 'Este cuadro resume, a nivel de prediseño, la verificación de la fundación en bloque para el equipo dinámico ingresado. Las verificaciones de presión de contacto, excentricidad, relación de masa, frecuencias naturales y amplitud de vibración son cálculo directo por el método del semi-espacio elástico (Richart, Hall & Woods / ACI 351.3R). La verificación sísmica es preliminar y simplificada. Toda cifra debe ser confirmada por el ingeniero estructural/geotécnico responsable del proyecto, incluyendo el estudio geotécnico específico del sitio y los datos de vibración certificados por el fabricante del equipo, antes de su uso en ingeniería de detalle o construcción.' },
+    { t: 'desc', text: 'Este cuadro resume, a nivel de prediseño, la verificación de la fundación en bloque para el equipo dinámico. Las verificaciones de presión de contacto, excentricidad, relación de masa, frecuencias naturales y amplitud de vibración son cálculo directo por el método del semi-espacio elástico (Richart, Hall & Woods / ACI 351.3R). La verificación sísmica es preliminar y simplificada. Toda cifra debe ser confirmada por el ingeniero estructural/geotécnico responsable del proyecto, incluyendo el estudio geotécnico específico del sitio y los datos de vibración certificados por el fabricante del equipo, antes de su uso en ingeniería de detalle o construcción.' },
   ]},
 ];
 
@@ -38290,7 +38286,7 @@ function fedBuildCalculoHtml(sections, r, opts) {
   opts = opts || {};
   const resumen = !!opts.resumen;
   let html = `<div class="xlsx-title-bar">CÁLCULO</div>`;
-  if (opts.intro) html += `<div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">${opts.intro}${resumen ? ' (Resumen: solo verificaciones "Estado" — el detalle completo está en Imprimir completo.)' : ''}</div>`;
+  if (opts.intro) html += `<div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">${opts.intro}</div>`;
 
   sections.forEach(sec => {
     const rows = resumen ? sec.rows.filter(rr => rr.t === 'chk' || rr.t === 'desc') : sec.rows;
@@ -38326,7 +38322,7 @@ function fedCalcHtml(r, opts) {
   const resumen = !!(opts && opts.resumen);
   return fedBuildCalculoHtml(FED_CALC_SECTIONS, r, {
     resumen,
-    intro: 'Cálculo según las hojas "Geometría", "Estático", "Dinámico" y "Sísmico" de la planilla Excel. Rigideces, razones de masa y frecuencias naturales por el método del semi-espacio elástico de Richart, Hall & Woods (1970), adoptado por ACI 351.3R Cap. 5. Verificación sísmica PRELIMINAR simplificada (coeficiente sísmico), referencial a NCh433/DS61.',
+    intro: 'Rigideces, razones de masa y frecuencias naturales por el método del semi-espacio elástico de Richart, Hall & Woods (1970), adoptado por ACI 351.3R Cap. 5. Verificación sísmica PRELIMINAR simplificada (coeficiente sísmico), referencial a NCh433/DS61.',
   });
 }
 
