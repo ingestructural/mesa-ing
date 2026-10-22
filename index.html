@@ -38930,6 +38930,16 @@ function fmpRedisenoBloque(k, res, patas, P, op, base, libre) {
    los datos de suelo, criterios y H se toman de ella y todos los bloques se
    calculan a la vez con calcFundacionEquipoDinamico, sin tocar sus campos. */
 function fmpInitPanel(el, state, recalc) {
+  if (!document.getElementById('fmp_css')) {
+    const css = document.createElement('style'); css.id = 'fmp_css';
+    css.textContent = '.fmp-modo .fed-solo1{display:none!important}.fed-soloN{display:none}.fmp-modo .fed-soloN{display:block}@media print{.fed-soloN,#fmp_panel{display:none!important}}';
+    document.head.appendChild(css);
+  }
+  const raiz = el.parentElement;
+  /* Modo varias patas: con un modelo cargado se ocultan los datos y resultados
+     que solo valen para la planilla de un bloque (L, B, excentricidad y altura
+     del equipo, carga horizontal estatica y secciones 5 a 12). */
+  const modo = on => { raiz.classList.toggle('fmp-modo', !!on); };
   const st = { modelo: null, total: null, estructuras: [], est: 0, patas: [], peso: null, bloques: [], res: null, fuente: 'rigido', parsed: null };
   const $ = id => el.querySelector('#' + id);
   const num = (id, def) => { const v = parseFloat(String($(id).value).replace(',', '.')); return isNaN(v) ? def : v; };
@@ -38939,6 +38949,7 @@ function fmpInitPanel(el, state, recalc) {
     <div class="note">Cargue el .zip del modelo RAM Elements o el archivo .etz. La Mesa identifica los apoyos (patas) y sus coordenadas; usted define cuántos bloques, qué nudos recibe cada uno, sus dimensiones en planta y su excentricidad, y la planta se dibuja mientras escribe. Cada bloque se verifica con esta misma planilla. Si no usa un modelo, ignore esta sección.</div>
     <div class="field-grid" style="margin-top:.6rem">
       <div class="field" style="grid-column:1/-1"><label>Modelo RAM Elements (.zip o .etz)</label><input type="file" id="fmp_file" accept=".zip,.etz" style="width:100%;max-width:none;min-width:0;font-size:.85rem;box-sizing:border-box"></div>
+      <div class="field fed-soloN" style="grid-column:1/-1"><button type="button" class="modo-btn" id="fmp_salir">Quitar el modelo y volver a la planilla de un solo bloque</button></div>
     </div>
     <div id="fmp_msg" class="note" style="margin-top:.4rem"></div>
     <div id="fmp_cuerpo" hidden>
@@ -38977,6 +38988,9 @@ function fmpInitPanel(el, state, recalc) {
       <div id="fmp_detalle" style="margin-top:.8rem"></div>
     </div>`;
 
+  $('fmp_salir').addEventListener('click', () => {
+    st.modelo = null; st.total = null; st.res = null; $('fmp_file').value = ''; $('fmp_cuerpo').hidden = true; msg(''); modo(false); recalc();
+  });
   const msg = (t, mal) => { $('fmp_msg').innerHTML = t ? `<span style="color:${mal ? 'var(--bad)' : 'var(--ink-muted)'}">${t}</span>` : ''; };
 
   $('fmp_file').addEventListener('change', async ev => {
@@ -38989,10 +39003,11 @@ function fmpInitPanel(el, state, recalc) {
       if (!ests.length) throw new Error('El modelo no tiene nudos con restricciones (apoyos).');
       st.total = m; st.estructuras = ests;
       elegirEstructura(0);
+      modo(true);
       msg('');
       $('fmp_cuerpo').hidden = false;
     } catch (e) {
-      st.modelo = null; $('fmp_cuerpo').hidden = true;
+      st.modelo = null; $('fmp_cuerpo').hidden = true; modo(false);
       msg('No se pudo leer el modelo: ' + esc(e.message), true);
     }
   });
@@ -39422,6 +39437,7 @@ function renderFundacionEquipoDinamico(container) {
 
     <div class="panel">
       <h3>1 · Equipo dinámico</h3>
+      <div class="note fed-soloN" style="color:var(--accent);font-weight:600">Modo varias patas: datos comunes a todos los bloques de la sección 0.</div>
       <div class="field-grid">
         <div class="field"><label>Descripción del equipo</label><input type="text" id="fed_descEquipo" value="${esc(state.descEquipo)}" placeholder="Ej: Harnero vibratorio"></div>
         <div class="field"><label>Tipo de equipo (relación de masa mínima)</label>
@@ -39434,15 +39450,16 @@ function renderFundacionEquipoDinamico(container) {
         <div class="field"><label>N — velocidad de operación (rpm)</label><input type="text" inputmode="decimal" step="50" id="fed_N" value="${state.N}" list="dl_fed_N"><datalist id="dl_fed_N"><option value="720">Baja velocidad</option><option value="1200">Velocidad típica (valor de la planilla)</option><option value="1800">Velocidad media</option><option value="3000">Alta velocidad (motor 2 polos, 50 Hz)</option><option value="3600">Alta velocidad (motor 2 polos, 60 Hz)</option></datalist></div>
         <div class="field"><label>Foz — fuerza de desbalance vertical, 0-pico (kN)</label><input type="text" inputmode="decimal" step="1" id="fed_Foz" value="${state.Foz}"></div>
         <div class="field"><label>Fox — fuerza de desbalance horizontal, 0-pico (kN)</label><input type="text" inputmode="decimal" step="1" id="fed_Fox" value="${state.Fox}"></div>
-        <div class="field"><label>ex,eq — excentricidad CG equipo, dirección L (m)</label><input type="text" inputmode="decimal" step="0.05" id="fed_exEq" value="${state.exEq}"></div>
-        <div class="field"><label>ey,eq — excentricidad CG equipo, dirección B (m)</label><input type="text" inputmode="decimal" step="0.05" id="fed_eyEq" value="${state.eyEq}"></div>
-        <div class="field"><label>heq — altura del CG del equipo s/ la base (m)</label><input type="text" inputmode="decimal" step="0.1" id="fed_heq" value="${state.heq}"></div>
+        <div class="field fed-solo1"><label>ex,eq — excentricidad CG equipo, dirección L (m)</label><input type="text" inputmode="decimal" step="0.05" id="fed_exEq" value="${state.exEq}"></div>
+        <div class="field fed-solo1"><label>ey,eq — excentricidad CG equipo, dirección B (m)</label><input type="text" inputmode="decimal" step="0.05" id="fed_eyEq" value="${state.eyEq}"></div>
+        <div class="field fed-solo1"><label>heq — altura del CG del equipo s/ la base (m)</label><input type="text" inputmode="decimal" step="0.1" id="fed_heq" value="${state.heq}"></div>
       </div>
       <div class="disclosure">Foz/Fox son fuerzas dinámicas pico (0-pico) según ficha técnica del fabricante. ex,eq/ey,eq = 0 si el equipo está centrado en planta respecto al bloque. Los datos de vibración del equipo (fuerzas de desbalance, velocidades admisibles) deben confirmarse con el fabricante del equipo.</div>
     </div>
 
     <div class="panel">
       <h3>2 · Propiedades dinámicas del suelo</h3>
+      <div class="note fed-soloN" style="color:var(--accent);font-weight:600">Modo varias patas: datos comunes a todos los bloques de la sección 0.</div>
       <div class="field-grid">
         <div class="field"><label>G — módulo de corte dinámico del suelo (MPa)</label><input type="text" inputmode="decimal" step="5" id="fed_G" value="${state.G}" list="dl_fed_G"><datalist id="dl_fed_G">${FED_G_OPTS.map(o => `<option value="${o.g}">${o.et}</option>`).join('')}</datalist></div>
         <div class="field"><label>ν — razón de Poisson del suelo</label><input type="text" inputmode="decimal" step="0.05" id="fed_nu" value="${state.nu}" list="dl_fed_nu"><datalist id="dl_fed_nu"><option value="0.3">Suelo granular denso</option><option value="0.35">Suelo típico (valor de la planilla)</option><option value="0.4">Suelo cohesivo blando</option><option value="0.45">Suelo saturado / cerca de incompresible</option></datalist></div>
@@ -39456,18 +39473,20 @@ function renderFundacionEquipoDinamico(container) {
 
     <div class="panel">
       <h3>3 · Geometría del bloque y carga horizontal estática</h3>
+      <div class="note fed-soloN" style="color:var(--accent);font-weight:600">Modo varias patas: datos comunes a todos los bloques de la sección 0.</div>
       <div class="field-grid">
-        <div class="field"><label>L — largo del bloque en planta (m)</label><input type="text" inputmode="decimal" step="0.5" id="fed_L" value="${state.L}"></div>
-        <div class="field"><label>B — ancho del bloque en planta (m)</label><input type="text" inputmode="decimal" step="0.5" id="fed_B" value="${state.B}"></div>
+        <div class="field fed-solo1"><label>L — largo del bloque en planta (m)</label><input type="text" inputmode="decimal" step="0.5" id="fed_L" value="${state.L}"></div>
+        <div class="field fed-solo1"><label>B — ancho del bloque en planta (m)</label><input type="text" inputmode="decimal" step="0.5" id="fed_B" value="${state.B}"></div>
         <div class="field"><label>H — altura (espesor) del bloque (m)</label><input type="text" inputmode="decimal" step="0.1" id="fed_H" value="${state.H}"></div>
-        <div class="field"><label>Fh,est — fuerza horizontal estática de servicio (kN)</label><input type="text" inputmode="decimal" step="1" id="fed_FhEst" value="${state.FhEst}"></div>
-        <div class="field"><label>b — brazo de aplicación de Fh,est sobre la base (m)</label><input type="text" inputmode="decimal" step="0.1" id="fed_bEst" value="${state.bEst}"></div>
+        <div class="field fed-solo1"><label>Fh,est — fuerza horizontal estática de servicio (kN)</label><input type="text" inputmode="decimal" step="1" id="fed_FhEst" value="${state.FhEst}"></div>
+        <div class="field fed-solo1"><label>b — brazo de aplicación de Fh,est sobre la base (m)</label><input type="text" inputmode="decimal" step="0.1" id="fed_bEst" value="${state.bEst}"></div>
       </div>
       <div class="disclosure">L = dimensión en la dirección de análisis de balanceo (rocking); B = dimensión transversal. Fh,est: un bloque de fundación simétrico sobre el suelo generalmente no tiene cargas horizontales de servicio relevantes; se incluye esta verificación por generalidad (p. ej. empuje de tuberías, tensado de correas, viento sobre estructuras adosadas). Si no aplica, dejar Fh,est = 0.</div>
     </div>
 
     <div class="panel">
       <h3>4 · Sismo y criterios de verificación</h3>
+      <div class="note fed-soloN" style="color:var(--accent);font-weight:600">Modo varias patas: datos comunes a todos los bloques de la sección 0.</div>
       <div class="field-grid">
         <div class="field"><label>Ah — coeficiente sísmico horizontal de diseño (g)</label><input type="text" inputmode="decimal" step="0.05" id="fed_Ah" value="${state.Ah}" list="dl_fed_Ah"><datalist id="dl_fed_Ah">${FED_AH_OPTS.map(a => `<option value="${a}">Ah = ${a.toFixed(2)} g</option>`).join('')}</datalist></div>
         <div class="field"><label>Margen mínimo de separación de frecuencias (%)</label><input type="text" inputmode="decimal" step="5" id="fed_margen" value="${state.margen * 100}"></div>
@@ -39479,42 +39498,42 @@ function renderFundacionEquipoDinamico(container) {
       <div class="disclosure">Margen de frecuencias: regla práctica habitual — la razón r=fop/fn debe quedar fuera del rango (1−margen, 1+margen); 20% es el mínimo comúnmente aceptado, para equipos críticos se recomienda 30-50%. vadm: definir según manual del fabricante o carta de severidad de vibración aplicable (p. ej. ISO 10816). Ah: definir según NCh433/DS61 y zona sísmica del proyecto — esta verificación sísmica es PRELIMINAR simplificada (método estático equivalente), no reemplaza el diseño normativo detallado.</div>
     </div>
 
-    <div class="panel">
+    <div class="panel fed-solo1">
       <h3>5 · Datos derivados del equipo (hoja Datos)</h3>
       <div id="fed_derivadosDatos"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel fed-solo1">
       <h3>6 · Geometría y masa del bloque de fundación</h3>
       <div id="fed_geometria"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel fed-solo1">
       <h3>7 · Esquema</h3>
       <div id="fed_esquema"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel fed-solo1">
       <h3>8 · Verificación estática</h3>
       <div id="fed_estatico"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel fed-solo1">
       <h3>9 · Análisis dinámico — rigideces, amortiguamiento y frecuencias naturales</h3>
       <div id="fed_dinamicoRigid"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel fed-solo1">
       <h3>10 · Análisis dinámico — razón de frecuencias y amplitud de vibración</h3>
       <div id="fed_dinamicoFrec"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel fed-solo1">
       <h3>11 · Sísmico — verificación preliminar</h3>
       <div id="fed_sismico"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel fed-solo1">
       <h3>12 · Resumen / estatus</h3>
       <div id="fed_resumen"></div>
       <div class="disclosure">Método del semi-espacio elástico de Richart, Hall &amp; Woods (1970), adoptado por ACI 351.3R Cap. 5, para las rigideces y frecuencias naturales del sistema suelo-fundación. Incluye verificaciones estáticas (presión de contacto, excentricidad, deslizamiento, volcamiento) y una verificación SÍSMICA PRELIMINAR simplificada (método estático equivalente con coeficiente sísmico), referencial a NCh433/DS61. El diseño sísmico final, el diseño estructural del refuerzo del bloque, y la verificación con un estudio geotécnico específico del sitio (módulo de corte dinámico, capacidad de soporte, nivel freático) deben ser desarrollados y validados por un profesional competente antes de la ingeniería para construcción. Los datos de vibración del equipo (fuerzas de desbalance, velocidades admisibles) deben confirmarse con el fabricante del equipo. Unidades: longitudes en metros; masas en toneladas; fuerzas y pesos en kN; momentos en kN·m; presiones de suelo en kPa; frecuencias en Hz; velocidad de vibración en mm/s; módulo de corte del suelo en MPa.</div>
