@@ -38928,7 +38928,8 @@ function fmpRedisenoBloque(k, res, patas, P, op, base, libre) {
 function fmpInitPanel(el, state, recalc) {
   if (!document.getElementById('fmp_css')) {
     const css = document.createElement('style'); css.id = 'fmp_css';
-    css.textContent = '.fmp-modo .fed-solo1{display:none!important}.fed-soloN{display:none}.fmp-modo .fed-soloN{display:block}@media print{.fed-soloN,#fmp_panel{display:none!important}}';
+    css.textContent = '.fmp-modo .fed-solo1{display:none!important}.fed-soloN{display:none}.fmp-modo .fed-soloN{display:block}@media print{.fed-soloN,#fmp_panel{display:none!important}}' +
+      '#fmp_detalle{overflow-x:auto}#fmp_detalle table.results{font-size:.7rem}#fmp_detalle td.fmp-lab{min-width:12rem}#fmp_detalle td.fmp-exig{white-space:nowrap}#fmp_detalle table.results th{font-size:.62rem;padding:.3rem .35rem}#fmp_detalle table.results td{padding:.28rem .35rem;line-height:1.3}#fmp_detalle table.results td.num{font-size:.7rem;white-space:nowrap}';
     document.head.appendChild(css);
   }
   const raiz = el.parentElement;
@@ -39253,11 +39254,11 @@ function fmpInitPanel(el, state, recalc) {
       const av = p.avisos[k].length ? ` <span class="chip warn">${esc(p.avisos[k].join('; '))}</span>` : '';
       return `<tr><td class="num">B${k + 1}</td><td>${esc(p.grupos[k].map(i => st.usadas[i].id).join(', '))}${desnivel}${av}</td>
         <td>${fmt2(e.inp.L)}×${fmt2(e.inp.B)}×${fmt2(e.inp.H)}</td>
-        <td>${fallasTxt(e)}</td><td style="font-size:.74rem;line-height:1.3">${propTxt(k)}</td></tr>`;
+        <td style="min-width:20rem">${fallasTxt(e)}</td><td style="line-height:1.3">${propTxt(k)}</td></tr>`;
     }).join('');
     // Resultados por bloque: una columna por bloque, una fila por magnitud
     const celda = (v, ok) => `<td class="num"${ok === false ? ' style="color:var(--bad);font-weight:700"' : ''}>${v}</td>`;
-    const fila = (lab, f, ok, exig) => `<tr><td>${lab}</td>${p.ev.map(e => celda(f(e), ok ? ok(e) : undefined)).join('')}<td style="font-size:.78rem;color:var(--ink-muted)">${exig || ''}</td></tr>`;
+    const fila = (lab, f, ok, exig) => `<tr><td class="fmp-lab">${lab}</td>${p.ev.map(e => celda(f(e), ok ? ok(e) : undefined)).join('')}<td class="fmp-exig" style="color:var(--ink-muted)">${exig || ''}</td></tr>`;
     const R = e => e.r;
     const tabla = `<table class="results" style="margin-top:.6rem">
         <tr><th>Resultado</th>${p.ev.map((e, k) => `<th>B${k + 1}</th>`).join('')}<th>Exigido</th></tr>
