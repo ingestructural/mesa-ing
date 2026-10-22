@@ -39264,6 +39264,7 @@ function fmpInitPanel(el, state, recalc) {
         ${fila('FS deslizamiento sísmico', e => fmt2(R(e).FSdeslizSis), e => R(e).okDeslizSis, `≥ ${fmt2(b0.FSdeslizMin)}`)}
         ${fila('FS volcamiento sísmico', e => fmt2(R(e).FSvolcSis), e => R(e).okVolcSis, `≥ ${fmt2(b0.FSvolcMin)}`)}
         <tr style="font-weight:700"><td>Estado del bloque</td>${p.ev.map(e => `<td>${e.fallas.length ? `<span class="chip bad">NO CUMPLE (${e.fallas.length})</span>` : chip(true)}</td>`).join('')}<td></td></tr>
+        <tr style="background:color-mix(in srgb, var(--accent) 7%, transparent)"><td><b>Rediseño propuesto</b><br><span style="font-size:.74rem;color:var(--ink-muted)">menor L × B que cumple todo</span></td>${p.ev.map((e, k) => `<td style="font-size:.74rem;line-height:1.3">${propTxt(k)}</td>`).join('')}<td></td></tr>
       </table>`;
     const Mf = p.ev.reduce((t, e) => t + e.r.Mf, 0), Meq = p.ev.reduce((t, e) => t + e.inp.Meq, 0);
     const MR = Meq > 0 ? Mf / Meq : NaN, MRmin = p.ev[0].r.MRmin;
