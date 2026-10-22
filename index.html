@@ -38692,6 +38692,29 @@ async function fmpLeerArchivo(file) {
 }
 
 /* ---------------- 2) Apoyos, pedestales, pesos y cargas por pata ---------------- */
+/* Estructuras independientes del modelo: grupos de nudos conectados por barras
+   (componentes conexas). Un modelo RAM puede traer varias estructuras sueltas;
+   cada una con sus propios apoyos. Devuelve submodelos con los mismos campos. */
+function fmpEstructuras(modelo) {
+  const idx = {}; modelo.nudos.forEach((n, i) => { idx[n.n] = i; });
+  const p = modelo.nudos.map((_, i) => i);
+  const raiz = i => { while (p[i] !== i) { p[i] = p[p[i]]; i = p[i]; } return i; };
+  for (const b of modelo.barras) {
+    const i = idx[b.n1], j = idx[b.n2];
+    if (i != null && j != null) p[raiz(i)] = raiz(j);
+  }
+  const g = new Map();
+  modelo.nudos.forEach((n, i) => { const r = raiz(i); if (!g.has(r)) g.set(r, []); g.get(r).push(n); });
+  modelo.areasManual = modelo.areasManual || {};
+  return [...g.values()].map(nudos => {
+    const set = new Set(nudos.map(n => n.n));
+    const barras = modelo.barras.filter(b => set.has(b.n1));
+    const ext = k => [Math.min(...nudos.map(n => n[k])), Math.max(...nudos.map(n => n[k]))];
+    return Object.assign({}, modelo, { nudos, barras, ext: { x: ext('x'), y: ext('y'), z: ext('z') } });
+  }).filter(e => e.nudos.some(n => n.restr.some(v => v)))
+    .sort((a, b) => a.ext.x[0] - b.ext.x[0] || a.ext.z[0] - b.ext.z[0]);
+}
+
 function fmpApoyos(modelo) {
   const porN = {}; modelo.nudos.forEach(n => { porN[n.n] = n; });
   const apoyos = modelo.nudos.filter(n => n.restr.some(v => v)).map(n => ({ ...n, ped: null }));
@@ -38979,7 +39002,7 @@ const FMP_TXT_CHK = {
    "Cargar en la planilla" escribe el bloque elegido en los campos fed_* y
    recalcula, de modo que las secciones 5 a 12 y la impresion muestran ese bloque. */
 function fmpInitPanel(el, state, recalc) {
-  const st = { modelo: null, patas: [], peso: null, props: [], sel: 0, fuente: 'rigido', parsed: null };
+  const st = { modelo: null, total: null, estructuras: [], est: 0, patas: [], peso: null, props: [], sel: 0, fuente: 'rigido', parsed: null };
   const $ = id => el.querySelector('#' + id);
   const num = (id, def) => { const v = parseFloat(String($(id).value).replace(',', '.')); return isNaN(v) ? def : v; };
 
@@ -39039,14 +39062,28 @@ function fmpInitPanel(el, state, recalc) {
     msg('Leyendo ' + esc(f.name) + '…');
     try {
       const m = await fmpLeerArchivo(f);
+      const ests = fmpEstructuras(m);
+      if (!ests.length) throw new Error('El modelo no tiene nudos con restricciones (apoyos).');
+      st.total = m; st.estructuras = ests;
+      elegirEstructura(0);
+      msg('');
+      $('fmp_cuerpo').hidden = false;
+    } catch (e) {
+      st.modelo = null; $('fmp_cuerpo').hidden = true;
+      msg('No se pudo leer el modelo: ' + esc(e.message), true);
+    }
+  });
+
+  /* Toma una de las estructuras independientes del modelo como la del equipo. */
+  function elegirEstructura(k) {
+      const m = st.estructuras[k];
       const patas = fmpApoyos(m);
-      if (!patas.length) throw new Error('El modelo no tiene nudos con restricciones (apoyos).');
       // Patas = apoyos con la traslacion vertical (Y) restringida; los que solo
       // restringen otras direcciones (guias laterales) se muestran sin marcar.
       patas.forEach((p, i) => { p.etq = i + 1; p.usar = !!p.restr[1]; });
-      if (!patas.some(p => p.usar)) throw new Error('Ningún apoyo del modelo restringe la traslación vertical (Y).');
-      st.modelo = m; st.patas = patas; st.props = []; st.sel = 0;
+      st.est = k; st.modelo = m; st.patas = patas; st.props = []; st.sel = 0;
       st.peso = fmpPesoEstructura(m, state.gammac || 2.4);
+      if (!patas.some(p => p.usar)) { pintarModelo(); msg('Esta estructura no tiene apoyos que restrinjan la traslación vertical (Y).', true); return; }
       const ped = patas.find(p => p.ped);
       $('fmp_pedX').value = ped && patas.every(p => p.ped && p.ped.b === ped.ped.b) ? ped.ped.b : '';
       $('fmp_pedZ').value = ped && patas.every(p => p.ped && p.ped.h === ped.ped.h) ? ped.ped.h : '';
@@ -39057,16 +39094,18 @@ function fmpInitPanel(el, state, recalc) {
       $('fmp_hcg').value = st.peso.W ? +(st.peso.y - ySup).toFixed(2) : '';
       msg('');
       pintarModelo();
-      $('fmp_cuerpo').hidden = false;
       $('fmp_props').innerHTML = ''; $('fmp_detalle').innerHTML = '';
-    } catch (e) {
-      st.modelo = null; $('fmp_cuerpo').hidden = true;
-      msg('No se pudo leer el modelo: ' + esc(e.message), true);
-    }
-  });
+  }
 
   function pintarModelo() {
-    const m = st.modelo, pe = st.peso;
+    const m = st.modelo, pe = st.peso, T = st.total;
+    const rango = (a, u) => a[0] === a[1] ? fmt2(a[0]) : `${fmt2(a[0])} a ${fmt2(a[1])}`;
+    const idsRestr = e => e.nudos.filter(n => n.restr.some(v => v));
+    const selEst = st.estructuras.length > 1 ? `
+      <div class="xlsx-section" style="margin-top:.8rem">Estructura del equipo</div>
+      <div class="field"><label>El modelo tiene ${st.estructuras.length} estructuras independientes con apoyos (no unidas por barras). Elija la del equipo:</label>
+      <select id="fmp_est">${st.estructuras.map((e, k) => `<option value="${k}"${k === st.est ? ' selected' : ''}>Estructura ${k + 1}: X ${rango(e.ext.x)}, Z ${rango(e.ext.z)}, Y ${rango(e.ext.y)} m — ${e.nudos.length} nudos, ${e.barras.length} barras, apoyos en nudos ${idsRestr(e).map(n => n.id).join(', ')}</option>`).join('')}</select></div>
+      <div class="note">Solo se listan los apoyos, el peso y las secciones de la estructura elegida.</div>` : '';
     const filas = st.patas.map((p, i) => `<tr>
       <td><input type="checkbox" data-pata="${i}"${p.usar ? ' checked' : ''}></td>
       <td class="num">${p.etq}</td><td class="num">${esc(p.id)}</td>
@@ -39078,10 +39117,10 @@ function fmpInitPanel(el, state, recalc) {
       <table class="results">
         <tr><td>Archivo</td><td>${esc(m.archivo)}</td></tr>
         <tr><td>Unidades del modelo</td><td>${esc(m.unidades)}</td></tr>
-        <tr><td>Nudos / barras</td><td class="num">${m.nudos.length} / ${m.barras.length}</td></tr>
+        <tr><td>Nudos / barras</td><td class="num">${T.nudos.length} / ${T.barras.length}${T !== m && st.estructuras.length > 1 ? ` (estructura elegida: ${m.nudos.length} / ${m.barras.length})` : ''}</td></tr>
         <tr><td>Estados de carga del modelo</td><td>${esc(m.estados.join(', ') || '—')}</td></tr>
-        <tr><td>Peso de las barras del modelo (acero 7,85 t/m³; macizas con γc)</td><td class="num" id="fmp_pesoTxt">${fmt2(pe.W)} kN${pe.sinArea.length ? ` <span class="chip warn">incompleto: ${pe.sinArea.length} sección(es) sin área</span>` : ''}</td></tr>
-      </table>
+        <tr><td>Peso de las barras de la estructura (acero 7,85 t/m³; macizas con γc)</td><td class="num" id="fmp_pesoTxt">${fmt2(pe.W)} kN${pe.sinArea.length ? ` <span class="chip warn">incompleto: ${pe.sinArea.length} sección(es) sin área</span>` : ''}</td></tr>
+      </table>${selEst}
       <div class="xlsx-section" style="margin-top:.8rem">Secciones de las barras</div>
       <table class="results editable">
         <tr><th>Sección</th><th>Largo total (m)</th><th>Área (cm²)</th><th>Origen del área</th><th>Peso (kN)</th></tr>
@@ -39096,7 +39135,8 @@ function fmpInitPanel(el, state, recalc) {
         <tr><th>Usar</th><th>N°</th><th>ID RAM</th><th>X (m)</th><th>Z (m)</th><th>Y (m)</th><th>Restricción</th><th>Pedestal en el modelo</th><th>P (kN)</th></tr>
         ${filas}
       </table>
-      <div class="note">Se marcan por defecto los apoyos que restringen la traslación vertical (Y); los demás (por ejemplo guías laterales) quedan sin marcar. Si las patas están a distintas cotas Y, cada bloque se apoya a la cota de sus patas. En RAM Elements el eje vertical es Y; la planta es X-Z. El .etz guarda geometría, apoyos y estados de carga, pero no las reacciones: las cargas por pata salen del reparto rígido o de la tabla de reacciones pegada.</div>`;
+      <div class="note">Apoyos = nudos de la estructura elegida con alguna restricción en RAM (NudosRestric 1 a 6 del .etz, en orden traslación X, Y, Z y giros X, Y, Z; «1» = restringido). Se marcan por defecto los que restringen la traslación vertical (Y); los demás (por ejemplo guías laterales) quedan sin marcar. Si las patas están a distintas cotas Y, cada bloque se apoya a la cota de sus patas. En RAM Elements el eje vertical es Y; la planta es X-Z. El .etz guarda geometría, apoyos y estados de carga, pero no las reacciones: las cargas por pata salen del reparto rígido o de la tabla de reacciones pegada.</div>`;
+    const se = $('fmp_est'); if (se) se.addEventListener('change', () => elegirEstructura(+se.value));
     $('fmp_modelo').querySelectorAll('input[data-pata]').forEach(c => c.addEventListener('change', () => { st.patas[+c.dataset.pata].usar = c.checked; actualizarP(); }));
     $('fmp_modelo').querySelectorAll('input[data-secc]').forEach(c => c.addEventListener('change', () => {
       const t = st.peso.tabla[+c.dataset.secc];
