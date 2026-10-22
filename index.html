@@ -2076,8 +2076,8 @@ const TOOLS = [
   { id:'sismo', cat:'Cargas', name:'Fuerzas Sísmicas NCh433.Of1996 Mod.2009 + DS61 — Método Estático', file:'Fuerzas_Sismicas_Metodo_Estatico_NCh433.xlsx',
     desc:'Coeficiente sísmico C, corte basal Qo y su distribución en altura, para estructuras de hasta 5 niveles.',
     tag:'NCh433 + DS61', calc:'sismo' },
-  { id:'combustible', cat:'Estudios contra el fuego', name:'Estudio de Carga Combustible', file:'Estudio_Carga_Combustible_OGUC_1.xlsx',
-    desc:'Determinación del tipo de resistencia al fuego exigido, hasta 4 sectores independientes.',
+  { id:'combustible', cat:'Estudios contra el fuego', name:'Carga combustible y clasificación del edificio', file:'Estudio_Carga_Combustible_OGUC_1.xlsx',
+    desc:'Carga combustible y densidad media y puntual (NCh 1916/1993), tipo de edificio según destino (OGUC 4.3.4, Tablas 1-3) y resistencias exigidas (4.3.3), hasta 10 sectores.',
     tag:'OGUC', calc:'combustible' },
   { id:'proteccion-fuego', cat:'Estudios contra el fuego', name:'Soluciones de Protección al Fuego (MINVU)', file:null,
     desc:'Consulta de soluciones tabuladas (sin ensayo de laboratorio) de resistencia al fuego para muros y pilares, según elemento, material y F-xx requerido — a partir del Listado Oficial de Comportamiento al Fuego MINVU-DITEC.',
@@ -21199,7 +21199,7 @@ function renderCombustible(container) {
 
   container.innerHTML = `
     <div class="calc-head">
-      <h1>Estudio de Carga Combustible</h1>
+      <h1>Carga combustible y clasificación del edificio</h1>
       <div class="sub">Carga combustible por sector (NCh 1916), densidad media y puntual máxima en 2×2 m (NCh 1993), tipo de edificación según el destino (OGUC 4.3.4, Tablas 1, 2 y 3) y resistencias exigidas por elemento (OGUC 4.3.3 y 4.3.5).</div>
     </div>
     <div class="panel">
@@ -42274,7 +42274,7 @@ function cbMemoriaHtml(state, r, meta) {
   const barrasPun = conPun.length ? memBarras(conPun.map(s => ({label: s.nSector + (s.nombre ? ' ' + s.nombre : ''), v: s.puntual.valor, color:'#eb6834'})), 'Densidad de carga combustible puntual máxima (MJ/m²)', [{v:3500,label:'3.500'},{v:6000,label:'6.000'},{v:10000,label:'10.000'},{v:16000,label:'16.000'}].filter(x => x.v <= Math.max(1, ...conPun.map(s => s.puntual.valor))*1.3)) : '';
   const sinFuente = [...new Set(act.flatMap(s => s.detalleMateriales.filter(m => m.nivel === 'sin fuente' && m.carga > 0).map(m => m.nombre)))];
   const html = `<div class="mem-inf"><style>${MEM_CSS}</style>
-    ${memPortada('MEMORIA DE CÁLCULO — ESTUDIO DE CARGA COMBUSTIBLE', 'Clasificación de la edificación y resistencia al fuego exigida (OGUC)', meta)}
+    ${memPortada('MEMORIA DE CÁLCULO — CARGA COMBUSTIBLE Y CLASIFICACIÓN DEL EDIFICIO', 'Clasificación de la edificación y resistencia al fuego exigida (OGUC)', meta)}
     <div class="salto"></div>
     <h1>ÍNDICE</h1>
     <p>1. Introducción<br>2. Descripción de la edificación<br>3. Marco regulatorio<br>4. Desarrollo teórico<br>&nbsp;&nbsp;&nbsp;4.1 Carga combustible<br>&nbsp;&nbsp;&nbsp;4.2 Densidad de carga combustible media y puntual máxima<br>&nbsp;&nbsp;&nbsp;4.3 Número de pisos<br>&nbsp;&nbsp;&nbsp;4.4 Clasificación de la edificación<br>&nbsp;&nbsp;&nbsp;4.5 Resistencia al fuego exigida<br>5. Resultados<br>6. Conclusiones</p>
@@ -44104,7 +44104,7 @@ const NORMAS_BIB = [
   {d:'ARQ',o:'CL',c:'OGUC — DS 47',t:'Ordenanza General de Urbanismo y Construcciones',e:'1992, texto actualizado',u:'Normas de edificación, habitabilidad, accesibilidad, incendio (Título 4), reglamentación térmica.',a:'Libre',L:[NB_BCN(8201),['MINVU','https://www.minvu.gob.cl/elementos-tecnicos/decretos/d-s-n47-1992-ordenanza-general-de-urbanismo-y-construccione/']]},
   {d:'ARQ',o:'CL',c:'Listado Oficial MINVU',t:'Listado Oficial de Comportamiento al Fuego de Elementos y Componentes de la Construcción',e:'Edición vigente',u:'Soluciones constructivas con resistencia al fuego ensayada (F-15 a F-180).',a:'Libre',L:[['MINVU DITEC','https://www.minvu.gob.cl/ditec/']]},
   {d:'ARQ',o:'CL',c:'NCh935/1',t:'Prevención de incendio en edificios — Ensayo de resistencia al fuego — Parte 1: Elementos de construcción en general',e:'Of.1997',u:'Curva de fuego estándar y criterios de ensayo.',a:'Libre (MINVU)',L:[NB_MINVU,NB_INN]},
-  {d:'ARQ',o:'CL',c:'NCh1916',t:'Prevención de incendios en edificios — Determinación de cargas combustibles',e:'1999',u:'Cálculo de carga combustible (planilla Estudio de Carga Combustible).',a:'Libre (MINVU)',L:[NB_MINVU,NB_INN]},
+  {d:'ARQ',o:'CL',c:'NCh1916',t:'Prevención de incendios en edificios — Determinación de cargas combustibles',e:'1999',u:'Cálculo de carga combustible (planilla Carga combustible y clasificación del edificio).',a:'Libre (MINVU)',L:[NB_MINVU,NB_INN]},
   {d:'ARQ',o:'CL',c:'NCh1993',t:'Prevención de incendios en edificios — Clasificación de los edificios según su carga combustible',e:'1999',u:'Densidad de carga combustible media y puntual.',a:'Libre (MINVU)',L:[NB_MINVU,NB_INN]},
   {d:'ARQ',o:'CL',c:'NCh3684/1-2',t:'Asimilación de soluciones constructivas ensayadas al fuego',e:'2022',u:'Extensión de resultados de ensayo (asimilación viga–pilar).',a:'Pago',L:[NB_INN]},
   {d:'ARQ',o:'CL',c:'NCh853',t:'Acondicionamiento térmico — Envolvente térmica de edificios — Cálculo de resistencias y transmitancias térmicas',e:'2021',u:'Transmitancia U de muros, techos y pisos.',a:'Libre (MINVU)',L:[NB_MINVU,NB_INN]},
