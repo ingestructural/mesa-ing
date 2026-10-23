@@ -2095,8 +2095,8 @@ const TOOLS = [
     desc:'Hasta 20 perfiles (IPE, HEA/HEB=IPB/HEM, UPN, H soldados, L, U, SHS/RHS/CHS, cañerías Sch 40, cajón, Tubest, C/CA o manual): masividad a 3 y 4 caras, asimilación de vigas a tablas de quema de pilares (NCh 3684) con espesores de pintura intumescente IDIEM (Stofire y Cerefire X200), y temperatura del acero sin protección con pérdida de fluencia ky,θ (EN 1993-1-2) en F-15 a F-120.',
     tag:'NCh3684 · NCh935/1 · EN 1993-1-2', calc:'asimilacionFuego' },
   { id:'estudio-fuego', cat:'Estudios contra el fuego', name:'Estudio de Resistencia al Fuego — Estructura de Acero', file:null,
-    desc:'Estudio encadenado para edificios de acero: densidad de carga combustible media y puntual (NCh 1916 / NCh 1993), tipo de edificio por las Tablas 1, 2 y 3 del Art. 4.3.4 OGUC, exigencia F por elemento según su función (Art. 4.3.3), masividad, temperatura del acero y temperatura crítica (EN 1993-1-2, clase 4 a 350 °C), espesor de pintura intumescente por tabla ensayada IDIEM y lista de chequeo para asimilación (Art. 4.3.2, NCh 3684/1-2:2022).',
-    tag:'OGUC 4.3.2-4.3.4 · NCh3684 · EN 1993-1-2', calc:'estudioFuego' },
+    desc:'Estudio encadenado para edificios de acero: densidad de carga combustible media y puntual por barrido de 2×2 m (NCh 1916 / NCh 1993), tipo de edificio por las Tablas 1, 2 y 3 del Art. 4.3.4 OGUC y condiciones del Art. 4.3.5, exigencia F calculada y adoptada por elemento (Art. 4.3.3; reducciones solo con excepción documentada), masividad, temperatura del acero y temperatura crítica (EN 1993-1-2, clase 4 a 350 °C), espesor de protección según la referencia que cubre al elemento (Listado ED17-2025 e informes de ensayo) y lista de chequeo para asimilación (Art. 4.3.2, NCh 3684/1-2:2022).',
+    tag:'OGUC 4.3.2-4.3.5 · NCh1916 · NCh1993 · NCh3684 · EN 1993-1-2', calc:'estudioFuego' },
   { id:'sismo-nch2369', cat:'Cargas', name:'Fuerzas Sísmicas NCh2369.Of2003 (Industrial)', file:'Fuerzas_Sismicas_Metodo_Estatico_NCh2369_1.xlsx',
     desc:'Coeficiente sísmico horizontal, corte basal, distribución en altura y acción sísmica vertical según el método estático de NCh2369.Of2003.',
     tag:'NCh2369.Of2003', calc:'sismoIndustrial' },
@@ -20803,11 +20803,10 @@ function renderSismo(container) {
 // ===================== ESTUDIO DE CARGA COMBUSTIBLE — OGUC =====================
 /* Estudio de carga combustible por sectores (versión 2026-10-22 rev. 2).
    - Carga combustible Cc = Σ mᵢ·Hᵢ y densidad media qm = Cc / S (NCh 1916).
-   - Densidad puntual máxima (NCh 1993): densidad en un área de 2 m × 2 m. Se calcula por ubicación: cada acopio
-     se asigna a una superficie de 2×2 m (etiqueta libre) o se declara «distribuido» de forma uniforme en el
-     sector; qp = máx(Σ cargas de la ubicación / 4 m² + Σ cargas distribuidas / S). Es invariante a dividir o
-     unir filas de inventario. Sin ubicación para todos los acopios (ni valor medido con procedencia) la
-     puntual queda «no determinada».
+   - Densidad puntual máxima (NCh 1993): densidad en un área de 2 m × 2 m, por barrido espacial de las huellas
+     en planta de los acopios (fuegoPuntual, compartida con el Estudio de Resistencia al Fuego) o por un valor
+     medido con procedencia. Las etiquetas de ubicación solo dan una estimación y la clasificación queda
+     provisoria hasta contar con huellas o medición.
    - Tipo a/b/c/d según el destino (OGUC 4.3.4): Tabla 1 (superficie), Tabla 2 (ocupantes) o Tabla 3
      (densidad media y puntual; se usa la mayor de ambas columnas). Tablas EF_T1/EF_T2/EF_T3, compartidas con
      el «Estudio de Resistencia al Fuego» (ver su encabezado para la fuente). Límites «hasta» inclusivos.
@@ -20922,38 +20921,90 @@ function cbPisos(s, media) {
     : `${N} piso(s) de altura ≤ 3,5 m`;
   return { valor, calc, excepcion, nFisicos: N, sumEsp, nEsp: esp.vals.length, detalle, errs };
 }
-// Densidad puntual máxima del sector (NCh 1993, 2 × 2 m).
-function cbPuntual(s, ms, media, S) {
-  const out = { zonas: [], dist: 0, calc: null, motivo: '', manual: null, manualErr: null, valor: null, origen: null };
-  const conCarga = ms.filter(m => m.carga > 0);
-  const sinUbic = conCarga.filter(m => !String(m.ubicacion || '').trim());
-  if (!conCarga.length) out.motivo = 'sin acopios con carga';
-  else if (sinUbic.length) out.motivo = 'acopio(s) sin ubicación 2×2 m: ' + sinUbic.map(m => 'n° ' + m.n).join(', ');
-  else if (!(S > 0)) out.motivo = 'superficie inválida';
-  else {
-    const z = {};
-    let cargaDist = 0;
-    conCarga.forEach(m => {
-      const u = String(m.ubicacion).trim();
-      if (u.toLowerCase() === CB_DIST) cargaDist += m.carga;
-      else z[u] = (z[u] || 0) + m.carga;
+/* ---- Densidad de carga combustible puntual máxima (NCh 1993: superficie de 2 m × 2 m) ----
+   Procedimiento común a «Carga combustible y clasificación del edificio» y al «Estudio de Resistencia al
+   Fuego — Estructura de Acero». Tres vías:
+   (a) Barrido espacial: cada acopio tiene su huella rectangular en planta «x; y; largo; ancho» (m) con la
+       carga repartida uniformemente en ella; los materiales «distribuido» se reparten en todo el sector.
+       Se busca la ventana de 2×2 m (lados paralelos a los ejes) de mayor carga. La carga dentro de la
+       ventana es bilineal por tramos en su posición (x0, y0), con quiebres en x0 ∈ {xi − 2, xi, xi + li − 2,
+       xi + li}; el máximo está en un vértice de esa grilla, por lo que el barrido es exacto y no depende de
+       cómo se dividan las filas ni de las etiquetas.
+   (b) Valor medido o estudio externo, con su procedencia (no menor que la densidad media).
+   (c) Agrupación por etiquetas: solo es una estimación (no verifica ventanas que crucen zonas ni impide
+       repartir un acopio en varias etiquetas); deja la clasificación provisoria. */
+const CB_LADO_PUNTUAL = 2;
+function fuegoHuella(txt) {
+  const t = String(txt == null ? '' : txt).trim();
+  if (!t) return null;
+  const v = t.split(';').map(cbNum);
+  if (v.length !== 4 || v.some(x => !isFinite(x))) return { err: 'la huella debe tener cuatro números «x; y; largo; ancho» en m' };
+  if (!(v[2] > 0 && v[3] > 0)) return { err: 'el largo y el ancho de la huella deben ser mayores que 0' };
+  return { x: v[0], y: v[1], lx: v[2], ly: v[3] };
+}
+// Máximo de la carga en una ventana de L×L sobre huellas [{x, y, lx, ly, carga, n}]; devuelve la ventana.
+function fuegoBarrido(hs, L) {
+  L = L || CB_LADO_PUNTUAL;
+  const r6 = v => Math.round(v*1e6)/1e6;
+  const bx = [...new Set(hs.flatMap(h => [h.x - L, h.x, h.x + h.lx - L, h.x + h.lx].map(r6)))];
+  const by = [...new Set(hs.flatMap(h => [h.y - L, h.y, h.y + h.ly - L, h.y + h.ly].map(r6)))];
+  const ov = (a, la, w) => Math.max(0, Math.min(a + la, w + L) - Math.max(a, w));
+  let best = { carga: 0, x: hs.length ? hs[0].x : 0, y: hs.length ? hs[0].y : 0 };
+  bx.forEach(x0 => {
+    const act = hs.map(h => ({ h, fx: ov(h.x, h.lx, x0) })).filter(o => o.fx > 0);
+    if (!act.length) return;
+    by.forEach(y0 => {
+      let c = 0;
+      act.forEach(o => { const fy = ov(o.h.y, o.h.ly, y0); if (fy > 0) c += o.h.carga*o.fx*fy/(o.h.lx*o.h.ly); });
+      if (c > best.carga + 1e-9) best = { carga: c, x: x0, y: y0 };
     });
-    out.dist = cargaDist / S;
+  });
+  best.aportes = hs.map(h => ({ n: h.n, carga: h.carga*ov(h.x, h.lx, best.x)*ov(h.y, h.ly, best.y)/(h.lx*h.ly) })).filter(a => a.carga > 1e-9);
+  return best;
+}
+// items: [{n, carga (MJ; null = inválida), ubicacion (etiqueta o «distribuido»), huella}]; S en m².
+function fuegoPuntual(items, S, manualRaw, manualFuente, media) {
+  const out = { zonas: [], dist: 0, calc: null, estimacion: null, ventana: null, motivo: '', manual: null, manualErr: null,
+    valor: null, origen: null, errs: [], sinHuella: [], avisos: [] };
+  const conCarga = items.filter(m => m.carga > 0);
+  const esDist = m => String(m.ubicacion || '').trim().toLowerCase() === CB_DIST;
+  const loc = conCarga.filter(m => !esDist(m));
+  loc.forEach(m => { m._h = fuegoHuella(m.huella); if (m._h && m._h.err) out.errs.push(`acopio n° ${m.n}: ${m._h.err}`); });
+  if (!(S > 0)) out.motivo = 'superficie del sector no válida';
+  else {
+    out.dist = conCarga.filter(esDist).reduce((a, m) => a + m.carga, 0) / S;
+    loc.forEach(m => { if (m._h && !m._h.err && m._h.lx*m._h.ly > S + 1e-9) out.errs.push(`acopio n° ${m.n}: la huella (${fmt1(m._h.lx*m._h.ly)} m²) supera la superficie del sector`); });
+    // Estimación por etiquetas (o por huella individual si no tiene etiqueta)
+    const z = {}; let sinUbic = [];
+    loc.forEach(m => { const u = String(m.ubicacion || '').trim() || (m._h && !m._h.err ? 'huella acopio ' + m.n : ''); if (!u) sinUbic.push(m.n); else z[u] = (z[u] || 0) + m.carga; });
     out.zonas = Object.keys(z).map(k => ({ zona: k, carga: z[k], dens: z[k] / CB_AREA_PUNTUAL + out.dist })).sort((a, b) => b.dens - a.dens);
-    if (out.zonas.length * CB_AREA_PUNTUAL > S) out.motivo = `${out.zonas.length} ubicaciones de 4 m² no caben en ${fmt1(S)} m²`;
-    else out.calc = out.zonas.length ? out.zonas[0].dens : out.dist;
+    if (!sinUbic.length) out.estimacion = out.zonas.length ? out.zonas[0].dens : out.dist;
+    out.sinHuella = loc.filter(m => !m._h || m._h.err).map(m => m.n);
+    if (!out.errs.length && !out.sinHuella.length) {
+      const hs = loc.map(m => Object.assign({ n: m.n, carga: m.carga }, m._h));
+      const b = fuegoBarrido(hs);
+      out.ventana = hs.length ? { x: b.x, y: b.y, carga: b.carga, aportes: b.aportes } : null;
+      out.calc = b.carga / CB_AREA_PUNTUAL + out.dist;
+    } else out.motivo = out.errs.length ? 'huellas inválidas' : `acopio(s) sin huella en planta: ${out.sinHuella.map(n => 'n° ' + n).join(', ')}`;
+    if (sinUbic.length && !out.motivo) out.motivo = 'acopio(s) sin ubicación: ' + sinUbic.map(n => 'n° ' + n).join(', ');
   }
-  const raw = s.puntualManual;
+  const raw = manualRaw;
   if (raw != null && String(raw).trim() !== '') {
     const v = cbNum(raw);
     if (!isFinite(v) || v < 0) out.manualErr = 'la densidad puntual medida debe ser un número ≥ 0';
     else if (media != null && v < media - 1e-9) out.manualErr = `la densidad puntual medida (${fmt1(v)}) no puede ser menor que la media (${fmt1(media)} MJ/m²)`;
-    else if (!String(s.puntualFuente || '').trim()) out.manualErr = 'falta indicar la procedencia de la densidad puntual medida';
+    else if (!String(manualFuente || '').trim()) out.manualErr = 'falta indicar la procedencia de la densidad puntual medida';
     else out.manual = v;
   }
-  if (out.manual != null) { out.valor = out.manual; out.origen = 'medida'; }
-  else if (!out.manualErr && out.calc != null) { out.valor = out.calc; out.origen = 'ubicaciones'; }
+  if (out.manual != null) {
+    if (out.calc != null && out.calc > out.manual + 1e-9) { out.valor = out.calc; out.origen = 'barrido'; out.avisos.push(`El barrido del inventario (${fmt1(out.calc)} MJ/m²) supera el valor medido (${fmt1(out.manual)} MJ/m²): se adopta el mayor.`); }
+    else { out.valor = out.manual; out.origen = 'medida'; }
+  } else if (!out.manualErr && out.calc != null) { out.valor = out.calc; out.origen = 'barrido'; }
   return out;
+}
+// Densidad puntual máxima del sector (NCh 1993, 2 × 2 m) para la calculadora de carga combustible.
+function cbPuntual(s, ms, media, S) {
+  return fuegoPuntual(ms.map(m => ({ n: m.n, carga: m.carga, ubicacion: m.ubicacion, huella: m.huella })), S, s.puntualManual, s.puntualFuente, media);
 }
 // Exigencias del Art. 4.3.3 para un tipo, con las condiciones de aplicación del Art. 4.3.5.
 const CB_COND_433 = [
@@ -21023,6 +21074,8 @@ function calcCombustible(inp) {
     if (tabla === 2 && !(Number.isInteger(O) && O > 0)) errs.push('la carga de ocupación (Tabla 2) debe ser un entero mayor que 0');
     const pun = cbPuntual(s, okMats ? ms : [], media, S);
     if (pun.manualErr) errs.push(pun.manualErr);
+    pun.errs.forEach(e => errs.push(e));
+    pun.avisos.forEach(a => avisos.push(a));
     const sinFuente = ms.filter(m => m.nivel === 'sin fuente' && m.carga > 0);
     if (sinFuente.length) avisos.push('Calor de combustión sin fuente documentada: ' + sinFuente.map(m => m.nombre).join('; ') + '.');
     ms.filter(m => m.alerta && m.carga > 0).forEach(m => avisos.push(m.nombre + ': ' + m.ref + '.'));
@@ -21032,9 +21085,11 @@ function calcCombustible(inp) {
       if (tabla === 3) {
         if (s.estudio === 'No') { tipo = 'a'; tipoMotivo = 'Destino de la Tabla 3 sin Estudio de Carga Combustible: tipo a (Art. 4.3.4).'; }
         else {
-          t3 = efLetraT3(EF_T3[s.destino], media, pun.valor, pis.valor);
+          t3 = efLetraT3(EF_T3[s.destino], media, pun.valor != null ? pun.valor : pun.estimacion, pis.valor);
           tipo = t3 && t3.letra;
-          if (pun.valor == null) { provisorio = true; tipoMotivo = 'Tabla 3 con densidad media solamente: densidad puntual no determinada, clasificación provisoria.'; }
+          if (pun.valor == null) { provisorio = true; tipoMotivo = pun.estimacion != null
+            ? `Tabla 3 con la densidad puntual estimada por agrupación de ubicaciones (${fmt1(pun.estimacion)} MJ/m²), que no verifica ventanas de 2×2 m que crucen zonas: clasificación provisoria.`
+            : 'Tabla 3 con densidad media solamente: densidad puntual no determinada, clasificación provisoria.'; }
           else tipoMotivo = `Tabla 3, ${t3.porPuntual ? 'gobierna la densidad puntual' : 'gobierna la densidad media'}.`;
         }
       } else if (tabla === 1) { tipo = efLetra(EF_T1[s.destino], S, 7, pis.valor); tipoMotivo = 'Tabla 1, superficie edificada del sector.'; }
@@ -21119,11 +21174,11 @@ function cbMaterialesTableHtml(r) {
   const rows = r.materiales.map(m => `<tr>
       <td style="text-align:center">${m.n}</td><td>${secName(m.sectorId)}</td><td>${esc(m.nombre || m.material || '—')}</td>
       <td class="xv-num">${xlsxNum(m.cantidadNum, 0) || esc(m.cantidad)}</td><td class="xv-num">${xlsxNum(m.pc, 2)}</td><td>${esc(m.base || '—')}</td>
-      <td class="xv-num">${m.carga != null ? xlsxNum(m.carga, 0) : 'inválido'}</td><td>${esc(String(m.ubicacion || '').trim() || '—')}</td>
+      <td class="xv-num">${m.carga != null ? xlsxNum(m.carga, 0) : 'inválido'}</td><td>${esc(String(m.ubicacion || '').trim() || '—')}</td><td>${esc(String(m.huella || '').trim() || '—')}</td>
       <td style="font-size:.7rem">${esc(m.nivel === 'sin fuente' ? 'Sin fuente documentada' : (m.fuente || '—'))}</td></tr>`).join('');
   return `<table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td>N°</td><td>Sector</td><td>Material</td><td class="xv-num">Cantidad (kg)</td><td class="xv-num">H (MJ/kg)</td><td>Base</td><td class="xv-num">Carga (MJ)</td><td>Ubicación 2×2 m</td><td>Fuente de H</td></tr>
-    ${rows || '<tr><td colspan="9" style="text-align:center;color:#888">Sin acopios</td></tr>'}</tbody></table>`;
+    <tr class="xlsx-hdr-de"><td>N°</td><td>Sector</td><td>Material</td><td class="xv-num">Cantidad (kg)</td><td class="xv-num">H (MJ/kg)</td><td>Base</td> <td class="xv-num">Carga (MJ)</td><td>Ubicación</td><td>Huella x; y; largo; ancho (m)</td><td>Fuente de H</td></tr>
+    ${rows || '<tr><td colspan="10" style="text-align:center;color:#888">Sin acopios</td></tr>'}</tbody></table>`;
 }
 function cbClasificacionTableHtml(r) {
   const act = r.sectores.filter(s => s.activo === 'Si');
@@ -21146,9 +21201,17 @@ function cbPuntualCalcHtml(r) {
   return act.map(s => {
     const p = s.puntual;
     const z = p.zonas.map(x => `<tr><td>${esc(x.zona)}</td><td class="xv-num">${xlsxNum(x.carga, 0)}</td><td class="xv-num">${xlsxNum(x.dens, 1)}</td></tr>`).join('');
-    return `<div class="xlsx-desc-row" style="padding:.2rem .3rem"><b>${s.nSector}</b> — ${p.calc != null ? 'qp por ubicaciones = ' + xlsxNum(p.calc, 1) + ' MJ/m²' : 'puntual no determinada por ubicaciones (' + esc(p.motivo) + ')'}${p.dist > 0 ? ' · aporte distribuido = ' + xlsxNum(p.dist, 1) + ' MJ/m²' : ''}${p.manual != null ? ' · valor medido adoptado = ' + xlsxNum(p.manual, 1) + ' MJ/m² (' + esc(s.puntualFuente) + ')' : ''}</div>
-      ${z ? `<table class="xlsx-table"><tbody><tr class="xlsx-hdr-de"><td>Ubicación 2×2 m</td><td class="xv-num">Carga en la ubicación (MJ)</td><td class="xv-num">Carga/4 m² + distribuida (MJ/m²)</td></tr>${z}</tbody></table>` : ''}`;
+    return `<div class="xlsx-desc-row" style="padding:.2rem .3rem"><b>${s.nSector}</b> — ${cbPuntualTxt(p)}${p.manual != null ? ' · valor medido = ' + xlsxNum(p.manual, 1) + ' MJ/m² (' + esc(s.puntualFuente) + ')' : ''}${p.avisos.length ? ' · ' + p.avisos.map(esc).join(' ') : ''}</div>
+      ${z ? `<table class="xlsx-table"><tbody><tr class="xlsx-hdr-de"><td>Agrupación por ubicación (estimación)</td><td class="xv-num">Carga en la ubicación (MJ)</td><td class="xv-num">Carga/4 m² + distribuida (MJ/m²)</td></tr>${z}</tbody></table>` : ''}`;
   }).join('');
+}
+// Texto del resultado de la densidad puntual (común a pantalla, Excel, PDF y memoria).
+function cbPuntualTxt(p) {
+  const d = p.dist > 0 ? ` (incluye ${fmt1(p.dist)} MJ/m² de carga distribuida)` : '';
+  if (p.calc != null) return p.ventana
+    ? `barrido 2×2 m: qp = ${fmt1(p.calc)} MJ/m²${d}, ventana con esquina en x = ${fmt1(p.ventana.x)} m, y = ${fmt1(p.ventana.y)} m (${fmt1(p.ventana.carga)} MJ en 4 m²)`
+    : `barrido 2×2 m: qp = ${fmt1(p.calc)} MJ/m²${d}`;
+  return `barrido 2×2 m no realizado (${p.motivo || 'sin datos'})` + (p.estimacion != null ? `; estimación por agrupación de ubicaciones = ${fmt1(p.estimacion)} MJ/m², no verificada` : '');
 }
 function cbResistenciaTableHtml(r) {
   const act = r.sectores.filter(s => s.activo === 'Si' && s.resistencias);
@@ -21233,7 +21296,7 @@ function renderCombustible(container) {
     </div>
     <div class="panel">
       <h3 class="lbl-left">B · INVENTARIO DE MATERIALES COMBUSTIBLES</h3>
-      <p class="note">Un acopio por fila, con su sector y su ubicación. Ubicación 2×2 m: misma etiqueta (ej.: «Rack 1») para todo lo que esté dentro de una misma superficie de 2×2 m; escriba «distribuido» si el material está repartido de forma uniforme en todo el sector. Dividir o unir filas con la misma ubicación no cambia el resultado. Si el material no está en el catálogo, elija «${CB_OTRO}» e indique su calor de combustión y la fuente.</p>
+      <p class="note">Un acopio por fila, con su sector y su ubicación. Densidad puntual (NCh 1993): indique la huella en planta de cada acopio como «x; y; largo; ancho» en metros (esquina y dimensiones, mismo origen para todo el sector); la planilla busca la ventana de 2×2 m más cargada, también entre acopios vecinos, y el resultado no cambia al dividir filas ni al renombrar ubicaciones. Escriba «distribuido» en Ubicación si el material está repartido de forma uniforme en todo el sector. La etiqueta de ubicación sin huella solo da una estimación y la clasificación queda provisoria. Si el material no está en el catálogo, elija «${CB_OTRO}» e indique su calor de combustión y la fuente.</p>
       <datalist id="dl_cb_ubic"><option value="distribuido"></option></datalist>
       <div id="cb_materialesTable"></div>
       <button class="btn-add" id="cb_addMaterial" type="button">+ Agregar acopio de material</button>
@@ -21242,7 +21305,7 @@ function renderCombustible(container) {
     </div>
     <div class="panel">
       <h3 class="lbl-left">C · DENSIDAD PUNTUAL MÁXIMA POR SECTOR (2×2 m)</h3>
-      <p class="note">Se calcula con las ubicaciones de la Sección B. Si dispone de un valor medido o de un estudio externo, ingréselo con su procedencia: tiene prioridad sobre el cálculo.</p>
+      <p class="note">Se calcula por barrido con las huellas de la Sección B. Si dispone de un valor medido o de un estudio externo, ingréselo con su procedencia; si el barrido del inventario resulta mayor, se adopta el barrido.</p>
       <div id="cb_puntualTable"></div>
     </div>
     <div class="panel">
@@ -21323,12 +21386,13 @@ function renderCombustible(container) {
         <td class="num">${otro ? `<input type="text" inputmode="decimal" class="cb-m-opc" data-i="${i}" value="${ea(m.pcOtro || '')}" placeholder="MJ/kg">` : hTxt}</td>
         <td><input type="text" inputmode="decimal" class="cb-m-cantidad" data-i="${i}" value="${ea(m.cantidad)}"></td>
         <td><input type="text" class="cb-m-ubic" data-i="${i}" value="${ea(m.ubicacion || '')}" list="dl_cb_ubic" placeholder="sin asignar"></td>
+        <td><input type="text" class="cb-m-huella" data-i="${i}" value="${ea(m.huella || '')}" placeholder="x; y; largo; ancho" style="min-width:120px"></td>
         <td><button type="button" class="btn-remove" data-i="${i}" ${state.materiales.length <= 1 ? 'disabled' : ''}>✕</button></td>
       </tr>`;
     }).join('');
     const box = document.getElementById('cb_materialesTable');
-    box.innerHTML = `<table class="results editable"><tr><th>Acopio</th><th>Sector</th><th>Material</th><th>Calor de combustión</th><th>Cant. (kg)</th><th>Ubicación 2×2 m</th><th></th></tr>${rows}</table>`;
-    const campo = { 'cb-m-sector':'sectorId', 'cb-m-material':'material', 'cb-m-cantidad':'cantidad', 'cb-m-ubic':'ubicacion',
+    box.innerHTML = `<table class="results editable"><tr><th>Acopio</th><th>Sector</th><th>Material</th><th>Calor de combustión</th><th>Cant. (kg)</th><th>Ubicación</th><th>Huella en planta (m)</th><th></th></tr>${rows}</table>`;
+    const campo = { 'cb-m-sector':'sectorId', 'cb-m-material':'material', 'cb-m-cantidad':'cantidad', 'cb-m-ubic':'ubicacion', 'cb-m-huella':'huella',
       'cb-m-onombre':'nombreOtro', 'cb-m-ofuente':'fuenteOtro', 'cb-m-obase':'baseOtro', 'cb-m-opc':'pcOtro' };
     box.querySelectorAll('input, select').forEach(el => {
       el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
@@ -21360,7 +21424,7 @@ function renderCombustible(container) {
         <td><input type="text" class="cb-p-fuente" data-i="${i}" placeholder="informe, medición, fecha" value="${ea(s.puntualFuente)}"></td>
       </tr>`).join('');
     const box = document.getElementById('cb_puntualTable');
-    box.innerHTML = `<table class="results editable"><tr><th>Sector</th><th>Cálculo por ubicaciones</th><th>Medida (MJ/m²)</th><th>Procedencia del valor medido</th></tr>${rows}</table>`;
+    box.innerHTML = `<table class="results editable"><tr><th>Sector</th><th>Barrido 2×2 m</th><th>Medida (MJ/m²)</th><th>Procedencia del valor medido</th></tr>${rows}</table>`;
     box.querySelectorAll('input').forEach(el => el.addEventListener('input', () => {
       const s = state.sectores[+el.dataset.i];
       if (el.classList.contains('cb-p-puntual')) s.puntualManual = el.value;
@@ -21377,9 +21441,7 @@ function renderCombustible(container) {
       if (s.activo !== 'Si') { cell.textContent = 'Sector inactivo'; return; }
       const p = s.puntual;
       if (s.tabla && s.tabla !== 3 && p.calc == null) { cell.textContent = `No se usa (destino de la Tabla ${s.tabla})`; return; }
-      cell.innerHTML = p.calc != null
-        ? `${fmt1(p.calc)} MJ/m² <span class="tag">${ea(p.zonas.length ? p.zonas[0].zona : 'distribuido')}</span>`
-        : `No determinada (${ea(p.motivo || '—')})`;
+      cell.textContent = cbPuntualTxt(p);
     });
 
     const act = r.sectores.filter(s => s.activo === 'Si');
@@ -42259,14 +42321,14 @@ function cbMemoriaHtml(state, r, meta) {
     <table class="inf-t"><tr><th>Sector</th><th>Nombre</th><th>Uso</th><th>Destino (Art. 4.3.4)</th><th>N° pisos</th><th>Alturas de piso (m)</th><th>Pisos para clasificación</th><th>Superficie (m²)</th><th>Carga de ocupación (pers.)</th></tr>
     ${act.map(s => `<tr><td>${s.nSector}</td><td class="l">${esc(s.nombre)}</td><td class="l">${esc(s.uso)}</td><td class="l">${esc(s.destino || '—')}</td><td>${esc(s.pisos)}</td><td>${esc(s.alturasEsp || '—')}</td><td>${s.pisosEfectivo != null ? s.pisosEfectivo : '—'}</td><td>${MEM_N(s.S,1)}</td><td>${esc(s.ocupacion)}</td></tr>`).join('')}</table>`;
   const tablaMat = act.map(s => !s.detalleMateriales.length ? '' : `${MEM_T('Inventario de materiales combustibles — ' + s.nSector + (s.nombre ? ' (' + esc(s.nombre) + ')' : ''))}
-    <table class="inf-t"><tr><th>N°</th><th>Material</th><th>Cantidad (kg)</th><th>Calor de combustión (MJ/kg)</th><th>Base</th><th>Carga combustible (MJ)</th><th>Ubicación 2×2 m</th><th>Fuente del calor de combustión</th></tr>
-    ${s.detalleMateriales.map(m => `<tr><td>${m.n}</td><td class="l">${esc(m.nombre || m.material)}</td><td>${MEM_N(m.cantidadNum,0)}</td><td>${MEM_N(m.pc,2)}</td><td>${esc(m.base || '—')}</td><td>${MEM_N(m.carga,0)}</td><td>${esc(String(m.ubicacion || '').trim() || 'sin asignar')}</td><td class="l">${esc(m.nivel === 'sin fuente' ? 'Sin fuente documentada' : m.fuente)}</td></tr>`).join('')}
+    <table class="inf-t"><tr><th>N°</th><th>Material</th><th>Cantidad (kg)</th><th>Calor de combustión (MJ/kg)</th><th>Base</th><th>Carga combustible (MJ)</th><th>Ubicación / huella (m)</th><th>Fuente del calor de combustión</th></tr>
+    ${s.detalleMateriales.map(m => `<tr><td>${m.n}</td><td class="l">${esc(m.nombre || m.material)}</td><td>${MEM_N(m.cantidadNum,0)}</td><td>${MEM_N(m.pc,2)}</td><td>${esc(m.base || '—')}</td><td>${MEM_N(m.carga,0)}</td><td>${esc(String(m.ubicacion || '').trim() || 'sin asignar')}${String(m.huella || '').trim() ? '<br>' + esc(m.huella) : ''}</td><td class="l">${esc(m.nivel === 'sin fuente' ? 'Sin fuente documentada' : m.fuente)}</td></tr>`).join('')}
     <tr><td></td><td class="l"><b>Total</b></td><td><b>${MEM_N(s.capacidadAlmacenamiento,0)}</b></td><td>—</td><td>—</td><td class="hl">${MEM_N(s.cargaTotal,0)}</td><td>—</td><td>—</td></tr></table>`).join('');
   const sinSector = r.materiales.filter(m => m.errs.includes('sin sector asignado'));
   const tablaDens = `${MEM_T('Carga combustible, densidades y clasificación por sector')}
     <table class="inf-t"><tr><th>Sector</th><th>Carga total (MJ)</th><th>Superficie (m²)</th><th>Densidad media (MJ/m²)</th><th>Densidad puntual máx. (MJ/m²)</th><th>Origen de la puntual</th><th>Tabla</th><th>Tipo del sector</th><th>Tipo adoptado</th></tr>
-    ${act.map(s => `<tr><td>${s.nSector}</td><td>${MEM_N(s.cargaTotal,0)}</td><td>${MEM_N(s.S,1)}</td><td>${MEM_N(s.densidadMedia,1)}</td><td>${s.puntual.valor != null ? MEM_N(s.puntual.valor,0) : 'no determinada'}</td><td class="l">${s.puntual.origen === 'medida' ? 'medida: ' + esc(s.puntualFuente) : s.puntual.origen === 'ubicaciones' ? 'ubicaciones 2×2 m' : esc(s.puntual.motivo || '—')}</td><td>${s.tabla ? s.tabla : '—'}</td><td>${s.tipoSector ? s.tipoSector.toUpperCase() : '—'}</td><td class="hl">${tipoTxt(s)}</td></tr>`).join('')}</table>`;
-  const tablaPun = act.filter(s => s.puntual.zonas.length).map(s => `${MEM_T('Densidad puntual por ubicación de 2×2 m — ' + s.nSector)}
+    ${act.map(s => `<tr><td>${s.nSector}</td><td>${MEM_N(s.cargaTotal,0)}</td><td>${MEM_N(s.S,1)}</td><td>${MEM_N(s.densidadMedia,1)}</td><td>${s.puntual.valor != null ? MEM_N(s.puntual.valor,0) : 'no determinada'}</td><td class="l">${s.puntual.origen === 'medida' ? 'medida: ' + esc(s.puntualFuente) : s.puntual.origen === 'barrido' ? 'barrido de ventanas de 2×2 m sobre las huellas de los acopios' : esc(cbPuntualTxt(s.puntual))}</td><td>${s.tabla ? s.tabla : '—'}</td><td>${s.tipoSector ? s.tipoSector.toUpperCase() : '—'}</td><td class="hl">${tipoTxt(s)}</td></tr>`).join('')}</table>`;
+  const tablaPun = act.filter(s => s.puntual.zonas.length || s.puntual.ventana).map(s => `<p>${s.nSector}: ${esc(cbPuntualTxt(s.puntual))}.</p>${MEM_T('Agrupación por ubicación (referencial; el valor adoptado proviene del barrido o de la medición) — ' + s.nSector)}
     <table class="inf-t"><tr><th>Ubicación</th><th>Carga en la ubicación (MJ)</th><th>Densidad (MJ/m²)</th></tr>
     ${s.puntual.zonas.map(z => `<tr><td class="l">${esc(z.zona)}</td><td>${MEM_N(z.carga,0)}</td><td>${MEM_N(z.dens,1)}</td></tr>`).join('')}</table>`).join('');
   const conTipo = act.filter(s => s.resistencias);
@@ -42311,9 +42373,9 @@ function cbMemoriaHtml(state, r, meta) {
     <p>donde mᵢ es la masa del material i (kg) y Hᵢ su calor de combustión (MJ/kg). Los calores de combustión se toman del Anexo (informativo) de NCh 1916, que no declara si corresponden al poder calorífico inferior o superior; el calor de combustión de un material se determina según NCh 1914/2. Cuando el anexo da un rango o dos entradas para un mismo material, se adopta el mayor. Cada valor se informa con su fuente.</p>
     <h2>4.2 Densidad de carga combustible media y puntual máxima</h2>
     <div class="eq">qm = Cc / S &nbsp;&nbsp;[MJ/m²]</div>
-    <p>donde S es la superficie del sector. La densidad puntual (NCh 1993) es la existente en un área de 2 m × 2 m; la máxima corresponde a la ubicación más desfavorable. Se suman las cargas de los acopios ubicados en una misma superficie de 2×2 m, más el aporte de los materiales distribuidos uniformemente en el sector:</p>
-    <div class="eq">qp,máx = máx<sub>j</sub> ( Σ<sub>i∈j</sub> mᵢ·Hᵢ / 4 m² ) + Σ<sub>dist</sub> mᵢ·Hᵢ / S &nbsp;&nbsp;[MJ/m²]</div>
-    <p>Si no se dispone de la ubicación de todos los acopios ni de un valor medido con procedencia documentada, la densidad puntual se declara no determinada. Equivalencias: 1 MJ/m² = 238,85 kcal/m²; 1 MJ = 0,053 kg de madera equivalente de 4.000 kcal/kg.</p>
+    <p>donde S es la superficie del sector. La densidad puntual (NCh 1993) es la existente en un área de 2 m × 2 m; la máxima corresponde a la posición más desfavorable de esa superficie. Cada acopio se representa por su huella rectangular en planta, con su carga repartida uniformemente, y se recorren las posiciones de una ventana de 2×2 m; la carga dentro de la ventana varía en forma bilineal por tramos con su posición, de modo que el máximo se obtiene en las posiciones en que un borde de la ventana coincide con un borde de huella. A esa carga se suma el aporte de los materiales distribuidos uniformemente en el sector:</p>
+    <div class="eq">qp,máx = máx<sub>(x₀, y₀)</sub> ( Σ<sub>i</sub> mᵢ·Hᵢ · A(huellaᵢ ∩ ventana) / A(huellaᵢ) / 4 m² ) + Σ<sub>dist</sub> mᵢ·Hᵢ / S &nbsp;&nbsp;[MJ/m²]</div>
+    <p>Si no se dispone de la huella de todos los acopios ni de un valor medido con procedencia documentada, la densidad puntual se declara no determinada; la agrupación por ubicaciones se informa solo como estimación y la clasificación queda provisoria. Equivalencias: 1 MJ/m² = 238,85 kcal/m²; 1 MJ = 0,053 kg de madera equivalente de 4.000 kcal/kg.</p>
     <h2>4.3 Número de pisos</h2>
     <p>Se entiende por piso la distancia entre el suelo y el punto más alto del cielo del mismo recinto, con un máximo de 3,5 m. Las alturas de los pisos que sobrepasan esa medida se suman aparte y se dividen por 3,5 m; la fracción resultante se considera un piso más. Se exceptúan las estructuras de un solo piso, cualquiera sea su altura, con densidad de carga combustible media inferior a 500 MJ/m² y sin altillos ni superficies intermedias, que se consideran de un piso (Art. 4.3.5 n°1).</p>
     <h2>4.4 Clasificación de la edificación</h2>
@@ -42447,56 +42509,102 @@ const EF_PROT = {
 // Compatibilidad con textos anteriores.
 const EF_PROD = Object.fromEntries(Object.keys(EF_PROT).map(k => [k, EF_PROT[k].nombre]));
 
-// Espesor requerido de un producto para un elemento ya calculado (e: F, F3, F4, Freq, tipo, caras, h, b, tw, f1, f2).
-// Devuelve {v, txt, u, nota, tabla} donde tabla describe lo consultado para la memoria.
+// Alcance documental de cada referencia de protección: elemento ensayado o inscrito y estado de la transcripción.
+// ensayo: 'pilar' | 'viga' | 'ambos' (Listado: elementos horizontales y verticales). La tabla solo se aplica
+// directamente a elementos de esa orientación; otra orientación exige asimilación documentada (OGUC 4.3.2).
+const EF_ALCANCE = {
+  cerefire: {ensayo: 'pilar', txt: 'Tabla de pilares ensayados según NCh 935/1 a 4 caras (informe IDIEM I.E. 300.465)', cotejo: false},
+  stofire: {ensayo: 'pilar', txt: 'Tabla de pilares ensayados según NCh 935/1 a 4 caras (informe IDIEM I.E. 305.751)', cotejo: false},
+  sikacrete: {ensayo: 'pilar', txt: 'Tabla «Columnas de acero» (Listado ED17-2025, Título IV Cap. IV; informe IDIEM N° 877.410)', cotejo: false},
+  promaspray: {ensayo: 'tabla', txt: 'Tablas «Columnas doble T», «Columnas huecas» y «Vigas bajo losa de hormigón» (Listado ED17-2025, Título IV Cap. IV; informe DICTUC N° 1.450.578)', cotejo: false},
+  igniver: {ensayo: 'pilar', txt: 'Listado ED17-2025, B.2.1 «Pilares protegidos con estucos»: pilar cajón 200 × 200 × 6 mm', cotejo: false},
+  b12fy: {ensayo: 'pilar', txt: 'Listado ED17-2025, B.1.2: elementos estructurales verticales', cotejo: false},
+  b12vm: {ensayo: 'pilar', txt: 'Listado ED17-2025, B.1.2: elementos estructurales verticales', cotejo: false},
+  b12ma: {ensayo: 'pilar', txt: 'Listado ED17-2025, B.1.2: elementos estructurales verticales', cotejo: false},
+  b13hf: {ensayo: 'ambos', txt: 'Listado ED17-2025, B.1.3: elementos estructurales horizontales y verticales', cotejo: true},
+  b13mc: {ensayo: 'ambos', txt: 'Listado ED17-2025, B.1.3: elementos estructurales horizontales y verticales', cotejo: true},
+  b13vp: {ensayo: 'ambos', txt: 'Listado ED17-2025, B.1.3: elementos estructurales horizontales y verticales', cotejo: true},
+  otro: {ensayo: 'cert', txt: 'Certificado de ensaye del producto (OGUC 4.3.2)', cotejo: false}
+};
+const EF_ORIENT = {pilar: 'Pilar (vertical)', viga: 'Viga (horizontal)'};
+const EF_EXPO = {interior: 'Interior', exterior: 'Exterior / intemperie', agresivo: 'Ambiente industrial o marino'};
+// Excepciones del Art. 4.3.5 que permiten reducir o suprimir la exigencia del Art. 4.3.3 de un elemento de acero.
+// func: funciones (columnas del 4.3.3) a las que se aplica; F: exigencia mínima que queda.
+const EF_EXC = {
+  n6: {txt: 'Art. 4.3.5 n°6, inc. 2° — estructura de techumbre: cielo falso con la resistencia exigida, adosado en forma continua y sin instalaciones entre ambos', func: [9], F: 0},
+  n9: {txt: 'Art. 4.3.5 n°9 — elemento protegido del fuego por otro interpuesto que tiene, a lo menos, la resistencia exigida al elemento protegido', func: [5, 7, 8], F: 0},
+  n13: {txt: 'Art. 4.3.5 n°13 — escalera que comunica hasta dos pisos dentro de una misma unidad', func: [7], F: 0},
+  n14: {txt: 'Art. 4.3.5 n°14 — vivienda aislada, pareada o continua de hasta 2 pisos y ≤ 140 m²: F-15 en elementos soportantes (muro divisorio según columna (4))', func: [5, 7, 8, 9], F: 15}
+};
+// Excepciones que permiten adoptar un tipo menos exigente que el resultante de las tablas del Art. 4.3.4.
+const EF_EXC_TIPO = {
+  n3: 'Art. 4.3.5 n°3 — sector de distinto destino separado en planta, clasificado por separado',
+  n15: 'Art. 4.3.5 n°15 — ampliación de vivienda: solo la superficie en exceso cumple el tipo más exigente'
+};
+const EF_TIPOS_PERFIL = [['I-H', 'I / H'], ['U', 'Canal U'], ['L', 'Ángulo L'], ['CHS', 'Tubo circular'], ['RHS', 'RHS/SHS o cajón'], ['TUB', 'Tubest'], ['C', 'Conformado en frío C/CA'], ['DECK', 'Placa colaborante']];
+
+// Espesor requerido de un producto para un elemento ya calculado (e: F3, F4, Freq, tipo, caras, orient, bajoLosa, h, b, tw, tf).
+// Devuelve {v, txt, u, nota, tabla, asimilado, por}; v = null si la referencia no cubre el elemento.
 function efEspesorProd(k, e) {
-  const P = EF_PROT[k], u = P && P.u;
-  const no = (txt, extra) => Object.assign({v: null, txt, u}, extra || {});
+  const P = EF_PROT[k], u = P && P.u, AL = EF_ALCANCE[k] || {};
+  const no = (txt, extra) => Object.assign({v: null, txt, u, asimilado: false}, extra || {});
   if (!P || !P.modo) return no('—');
   if (!(e.Freq > 0)) return no('Sin exigencia');
+  if (!e.orient) return no('Orientación del elemento no indicada');
+  if (!(e.F4 > 0)) return no('Masividad no determinada');
+  const asimTxt = 'viga asimilada a la condición de pilar ensayada (masividad a 4 caras); la asimilación no es automática y debe acreditarse (OGUC 4.3.2, NCh 3684)';
   if (P.modo === 'idiem') {
+    const asimilado = AL.ensayo === 'pilar' && e.orient !== 'pilar';
+    const por = asimilado ? asimTxt : 'pilar: masividad a 4 caras';
     const rf = 'F' + e.Freq;
     if (!['F15', 'F30', 'F60', 'F90'].includes(rf)) return no('Sin tabla para F-' + e.Freq);
     const r = afEspesor(k, rf, e.F4), rows = AF_TABLAS[k][rf];
     const iR = r.fila != null ? rows.findIndex(x => r.fila >= x[0] && r.fila <= x[1]) : -1;
-    return {v: r.v, txt: r.v != null ? r.v + ' µm' : (r.txt === 'Fuera del rango ensayado' ? 'Fuera del rango ensayado' : r.txt), u,
-      tabla: {modo: 'idiem', titulo: AF_TABLAS[k].nombre + ' para F-' + e.Freq, rows, iR, Fent: e.F4, fila: r.fila, col: e.Freq}};
+    return {v: r.v, txt: r.v != null ? r.v + ' µm' : (r.txt === 'Fuera del rango ensayado' ? 'Fuera del rango ensayado' : r.txt), u, asimilado, por,
+      tabla: {modo: 'idiem', titulo: AF_TABLAS[k].nombre + ' para F-' + e.Freq, rows, iR, Fent: e.F4, fila: r.fila, col: e.Freq, por}};
   }
   if (P.modo === 'mas') {
-    let t, Fent, por = '';
+    let t, Fent, por = '', asimilado = false;
     if (k === 'promaspray') {
-      if (e.tipo === 'I-H' && e.caras === '3') { t = P.tablas.viga; Fent = e.F3 != null ? e.F3 : e.F4; por = 'viga bajo losa: masividad a 3 caras'; }
-      else if (e.tipo === 'I-H') { t = P.tablas.dobleT; Fent = e.F4; por = 'sección doble T: masividad a 4 caras'; }
-      else if (['RHS', 'TUB', 'CHS'].includes(e.tipo)) { t = P.tablas.hueca; Fent = e.F4; por = 'sección hueca: masividad a 4 caras'; }
+      if (e.orient === 'viga' && !e.bajoLosa) return no('Indique si la viga está bajo losa de hormigón');
+      if (e.orient === 'viga' && e.bajoLosa === 'si' && e.caras === '3') {
+        if (e.tipo !== 'I-H') return no('Tabla de vigas bajo losa: solo secciones doble T');
+        if (!(e.F3 > 0)) return no('Masividad a 3 caras no determinada');
+        t = P.tablas.viga; Fent = e.F3; por = 'viga doble T bajo losa de hormigón: masividad a 3 caras';
+      } else if (e.tipo === 'I-H') { t = P.tablas.dobleT; Fent = e.F4; asimilado = e.orient !== 'pilar'; por = asimilado ? asimTxt : 'columna doble T: masividad a 4 caras'; }
+      else if (['RHS', 'TUB', 'CHS'].includes(e.tipo)) { t = P.tablas.hueca; Fent = e.F4; asimilado = e.orient !== 'pilar'; por = asimilado ? asimTxt : 'columna hueca: masividad a 4 caras'; }
       else return no('Sin tabla para este tipo de sección');
-    } else { t = P.tablas.col; Fent = e.F4; por = 'masividad a 4 caras'; }
+    } else { t = P.tablas.col; Fent = e.F4; asimilado = e.orient !== 'pilar'; por = asimilado ? asimTxt : 'columna: masividad a 4 caras'; }
     const jc = t.cols.findIndex(c => c >= e.Freq);
     if (jc < 0) return no('Sin tabla para F-' + e.Freq);
     const tab = {modo: 'mas', titulo: t.titulo, cols: t.cols, rows: t.rows, Fent, por, col: t.cols[jc], jc};
-    if (Fent == null) return no('—', {tabla: tab});
     const last = t.rows[t.rows.length - 1][0];
-    if (Fent > last + 1e-9) return no('Fuera del rango ensayado', {tabla: Object.assign(tab, {iR: -1})});
+    if (Fent > last + 1e-9) return no('Fuera del rango ensayado', {tabla: Object.assign(tab, {iR: -1}), asimilado, por});
     const iR = t.rows.findIndex(x => x[0] >= Fent - 1e-9);
     tab.iR = iR;
     const v = t.rows[iR][jc + 1];
-    if (v == null) return no('Sin valor para F-' + t.cols[jc] + ' con esa masividad', {tabla: tab});
-    return {v, txt: v + ' mm', u, tabla: tab, nota: P.nota};
+    if (v == null) return no('Sin valor para F-' + t.cols[jc] + ' con esa masividad', {tabla: tab, asimilado, por});
+    return {v, txt: v + ' mm', u, tabla: tab, nota: P.nota, asimilado, por};
   }
-  // modo 'esp'
-  if (P.soloVertical && !(e.f1 === 5 || e.f2 === 5)) return no('Solo elementos verticales (B.1.2)');
-  if (P.soloCajon200 && !(['RHS', 'TUB'].includes(e.tipo) && Math.abs(e.h - 200) < 1 && Math.abs(e.b - 200) < 1 && Math.abs(e.tw - 6) < 0.3))
-    return no('Solución aislada: solo pilar cajón 200×200×6 ensayado');
+  // modo 'esp' (soluciones del Listado: la resistencia depende del espesor del revestimiento)
+  if (P.soloVertical && e.orient !== 'pilar') return no('B.1.2: solo elementos estructurales verticales');
+  if (P.soloCajon200) {
+    if (e.orient !== 'pilar') return no('B.2.1: solución inscrita para pilares');
+    const t6 = x => Math.abs(x - 6) < 0.3;
+    if (!(['RHS', 'TUB'].includes(e.tipo) && Math.abs(e.h - 200) < 1 && Math.abs(e.b - 200) < 1 && t6(e.tw) && (e.tipo !== 'TUB' || t6(e.tf))))
+      return no('Solución aislada: solo pilar cajón 200×200×6 ensayado');
+  }
   if (e.F4 > 390) return no('Masividad > 390 m⁻¹');
   const iR = P.esp.findIndex(x => x[1] >= e.Freq);
   const tab = {modo: 'esp', titulo: P.titulo, esp: P.esp, iR, col: e.Freq};
   if (iR < 0) return no('El Listado no alcanza F-' + e.Freq, {tabla: tab});
-  return {v: P.esp[iR][0], txt: P.esp[iR][0] + ' mm' + (P.esp[iR][0] === 60 && k.startsWith('b13') ? ' o más' : ''), u, tabla: tab};
+  return {v: P.esp[iR][0], txt: P.esp[iR][0] + ' mm' + (P.esp[iR][0] === 60 && k.startsWith('b13') ? ' o más' : ''), u, tabla: tab, asimilado: false, por: AL.txt};
 }
 
-// Mejora (solo vista web): productos que cubren la exigencia del elemento dentro de su rango ensayado.
+// Mejora (solo vista web): productos que cubren la exigencia del elemento dentro de su alcance, sin asimilación.
 function efAlternativas(e) {
   return Object.keys(EF_PROT).filter(k => EF_PROT[k].modo && k !== e.prot)
-    .map(k => Object.assign({k}, efEspesorProd(k, e))).filter(a => a.v != null);
+    .map(k => Object.assign({k}, efEspesorProd(k, e))).filter(a => a.v != null && !a.asimilado);
 }
 function efProtOpts() {
   const g = (lab, ks) => `<optgroup label="${lab}">${ks.map(k => `<option value="${k}">${esc(EF_PROT[k].nombre)}</option>`).join('')}</optgroup>`;
@@ -42516,7 +42624,7 @@ const EF_CHK = [
   ['vig', 'El informe o la inscripción en el Listado Oficial está vigente a la fecha.', 'Listado ED17-2025 (vigencia de inscripciones)'],
   ['nor', 'Curva de calentamiento y criterios de falla del ensayo equivalentes a NCh 935/1 (ensayo extranjero: NCh 3684/2).', 'Listado ED17-2025 punto 7'],
   ['sis', 'Mismo producto y sistema que el ensayado (imprimante, intumescente, sello, preparación de superficie).', 'Criterio de comparación'],
-  ['sec', 'Tipo de sección y orientación comparables (perfil abierto o cerrado; pilar o viga asimilada a pilar con masividad a 4 caras).', 'Criterio de comparación'],
+  ['sec', 'Tipo de sección y orientación comparables (perfil abierto o cerrado; pilar o viga). Una viga entra a una tabla de pilares solo con asimilación acreditada.', 'Criterio de comparación'],
   ['tem', 'La temperatura de falla del ensayo no supera la temperatura crítica del elemento real (clase 4: 350 °C).', 'EN 1993-1-2 §4.2.3.6 / §4.2.4'],
   ['amb', 'Condición de exposición cubierta por el ensayo (interior, exterior, ambiente marino o industrial).', 'Criterio de comparación'],
   ['pro', 'Informe firmado por profesional especialista, con la documentación de respaldo adjunta.', 'OGUC 4.3.2 · Listado punto 7']
@@ -42542,194 +42650,467 @@ function efMasExigente(letras) {
   return v.reduce((a, b) => EF_RANK[b] < EF_RANK[a] ? b : a);
 }
 // EN 1993-1-2 ec. 4.22: θa,cr = 39,19·ln[1/(0,9674·μ0^3,833) − 1] + 482, con μ0 ≥ 0,013.
+// μ0 > 1 significa Efi,d > Rfi,d,0: el elemento no resiste la combinación de incendio ni siquiera en t = 0.
 function efThetaCr(mu) {
+  if (!(mu > 0) || mu > 1) return null;
   const m = Math.max(0.013, mu);
   const arg = 1/(0.9674*Math.pow(m, 3.833)) - 1;
   return arg > 0 ? 39.19*Math.log(arg) + 482 : null;
 }
 // Clasificación simplificada de la sección para incendio: ε = 0,85·√(235/fy) (EN 1993-1-2 §4.2.2);
-// límites de clase 3 de EN 1993-1-1 Tabla 5.2. Devuelve {clase4, txt}; null = no evaluada.
+// límites de clase 3 de EN 1993-1-1 Tabla 5.2. Devuelve {clase4, txt, partes}; null = no evaluada.
 function efClase(it, solic) {
   const fy = it.Fy*0.0980665, e = 0.85*Math.sqrt(235/fy), comp = solic !== 'flexion';
   const {tipo, h, b, tw, tf} = it, r = it.r || 0;
   if (!(fy > 0) || !(h > 0)) return null;
-  if (tipo === 'I-H') {
-    const cw = (h - 2*tf - 2*r)/tw, cf = (b - tw - 2*r)/2/tf, lw = comp ? 42*e : 124*e, lf = 14*e;
-    const c4 = cw > lw || cf > lf;
-    return {clase4: c4, eps: e, fy, txt: `alma c/t = ${fmt1(cw)} (lím. ${fmt1(lw)}); ala c/t = ${fmt1(cf)} (lím. ${fmt1(lf)})`,
-      partes: [{p: 'Alma', expr: `c/t = (h − 2tf − 2r)/tw = (${MEM_N(h,1)} − 2·${MEM_N(tf,1)} − 2·${MEM_N(r,1)}) / ${MEM_N(tw,1)}`, ct: cw, lim: lw, limExpr: (comp ? '42' : '124') + '·ε'},
-               {p: 'Ala', expr: `c/t = (b − tw − 2r)/(2·tf) = (${MEM_N(b,1)} − ${MEM_N(tw,1)} − 2·${MEM_N(r,1)}) / (2·${MEM_N(tf,1)})`, ct: cf, lim: lf, limExpr: '14·ε'}]};
+  const res = partes => ({clase4: partes.some(q => q.ct > q.lim), eps: e, fy, partes,
+    txt: partes.map(q => `${q.p.toLowerCase()} c/t = ${fmt1(q.ct)} (lím. ${fmt1(q.lim)})`).join('; ')});
+  const lw = comp ? 42*e : 124*e, lwE = (comp ? '42' : '124') + '·ε';
+  if (tipo === 'I-H') return res([
+    {p: 'Alma', expr: `c/t = (h − 2tf − 2r)/tw = (${MEM_N(h,1)} − 2·${MEM_N(tf,1)} − 2·${MEM_N(r,1)}) / ${MEM_N(tw,1)}`, ct: (h - 2*tf - 2*r)/tw, lim: lw, limExpr: lwE},
+    {p: 'Ala', expr: `c/t = (b − tw − 2r)/(2·tf) = (${MEM_N(b,1)} − ${MEM_N(tw,1)} − 2·${MEM_N(r,1)}) / (2·${MEM_N(tf,1)})`, ct: (b - tw - 2*r)/2/tf, lim: 14*e, limExpr: '14·ε'}]);
+  // Canal: alma como parte interna; ala como voladizo medido desde el radio (EN 1993-1-1 Tabla 5.2, hojas 1 y 2).
+  if (tipo === 'U') return res([
+    {p: 'Alma', expr: `c/t = (h − 2tf − 2r)/tw = (${MEM_N(h,1)} − 2·${MEM_N(tf,1)} − 2·${MEM_N(r,1)}) / ${MEM_N(tw,1)}`, ct: (h - 2*tf - 2*r)/tw, lim: lw, limExpr: lwE},
+    {p: 'Ala', expr: `c/t = (b − tw − r)/tf = (${MEM_N(b,1)} − ${MEM_N(tw,1)} − ${MEM_N(r,1)}) / ${MEM_N(tf,1)}`, ct: (b - tw - r)/tf, lim: 14*e, limExpr: '14·ε'}]);
+  if (tipo === 'RHS') {
+    const t = tw;
+    return res([
+      {p: 'Pared lado h', expr: `c/t = (h − 3t)/t = (${MEM_N(h,1)} − 3·${MEM_N(t,1)}) / ${MEM_N(t,1)}`, ct: (h - 3*t)/t, lim: lw, limExpr: lwE},
+      {p: 'Pared lado b', expr: `c/t = (b − 3t)/t = (${MEM_N(b,1)} − 3·${MEM_N(t,1)}) / ${MEM_N(t,1)}`, ct: (b - 3*t)/t, lim: 42*e, limExpr: '42·ε'}]);
   }
-  if (tipo === 'RHS' || tipo === 'TUB') {
-    const t = tw, ch = (h - 3*t)/t, cb = (b - 3*t)/t, lh = comp ? 42*e : 124*e, lb = 42*e;
-    const c4 = ch > lh || cb > lb;
-    return {clase4: c4, eps: e, fy, txt: `c/t lado h = ${fmt1(ch)} (lím. ${fmt1(lh)}); lado b = ${fmt1(cb)} (lím. ${fmt1(lb)})`,
-      partes: [{p: 'Pared lado h', expr: `c/t = (h − 3t)/t = (${MEM_N(h,1)} − 3·${MEM_N(t,1)}) / ${MEM_N(t,1)}`, ct: ch, lim: lh, limExpr: (comp ? '42' : '124') + '·ε'},
-               {p: 'Pared lado b', expr: `c/t = (b − 3t)/t = (${MEM_N(b,1)} − 3·${MEM_N(t,1)}) / ${MEM_N(t,1)}`, ct: cb, lim: lb, limExpr: '42·ε'}]};
+  // Tubest: cajón formado por un perfil omega (espesor eo = tw) y un perfil sigma (espesor es = tf). El catálogo no
+  // asigna cada espesor a una cara, por lo que cada pared se evalúa con ambos espesores y gobierna el menor.
+  if (tipo === 'TUB') {
+    const tm = Math.min(tw, tf > 0 ? tf : tw), tx = `mín(eo, es) = ${MEM_N(tm,1)}`;
+    const o = res([
+      {p: 'Pared lado h', expr: `c/t = (h − 3t)/t con t = ${tx}: (${MEM_N(h,1)} − 3·${MEM_N(tm,1)}) / ${MEM_N(tm,1)}`, ct: (h - 3*tm)/tm, lim: lw, limExpr: lwE},
+      {p: 'Pared lado b', expr: `c/t = (b − 3t)/t con t = ${tx}: (${MEM_N(b,1)} − 3·${MEM_N(tm,1)}) / ${MEM_N(tm,1)}`, ct: (b - 3*tm)/tm, lim: 42*e, limExpr: '42·ε'}]);
+    o.nota = `Tubest: espesores omega eo = ${MEM_N(tw,1)} mm y sigma es = ${MEM_N(tf,1)} mm; el catálogo no indica qué caras forma cada perfil, por lo que cada pared se clasifica con el menor espesor.`;
+    return o;
   }
-  if (tipo === 'CHS') {
-    const dt = h/tw, l = 90*e*e;
-    return {clase4: dt > l, eps: e, fy, txt: `d/t = ${fmt1(dt)} (lím. ${fmt1(l)})`,
-      partes: [{p: 'Pared', expr: `d/t = ${MEM_N(h,1)} / ${MEM_N(tw,2)}`, ct: dt, lim: l, limExpr: '90·ε²'}]};
-  }
+  if (tipo === 'CHS') return res([{p: 'Pared', expr: `d/t = ${MEM_N(h,1)} / ${MEM_N(tw,2)}`, ct: h/tw, lim: 90*e*e, limExpr: '90·ε²'}]);
+  // Ángulo en compresión (EN 1993-1-1 Tabla 5.2, hoja 3): h/t ≤ 15ε y (b + h)/(2t) ≤ 11,5ε.
+  if (tipo === 'L' && comp) return res([
+    {p: 'Ala mayor', expr: `h/t = ${MEM_N(Math.max(h, b),1)} / ${MEM_N(tw,1)}`, ct: Math.max(h, b)/tw, lim: 15*e, limExpr: '15·ε'},
+    {p: 'Conjunto', expr: `(b + h)/(2t) = (${MEM_N(b,1)} + ${MEM_N(h,1)}) / (2·${MEM_N(tw,1)})`, ct: (b + h)/2/tw, lim: 11.5*e, limExpr: '11,5·ε'}]);
   if (tipo === 'C') return {clase4: true, eps: e, fy, txt: 'perfil conformado en frío: se trata como clase 4 (EN 1993-1-2 §4.2.3.6 y Anexo E)', partes: []};
   return null;
 }
+// Validación geométrica de la sección (mm, cm²). Devuelve la lista de errores.
+function efGeomErrs(it) {
+  const E = [], {tipo, h, b, tw, tf, r, A} = it;
+  const pos = (v, n) => { if (!(isFinite(v) && v > 0)) E.push(`${n} debe ser un número mayor que 0`); };
+  if (!EF_TIPOS_PERFIL.some(t => t[0] === tipo)) { E.push('tipo de perfil no válido'); return E; }
+  pos(h, 'h'); pos(tw, tipo === 'CHS' || tipo === 'RHS' || tipo === 'L' || tipo === 'C' ? 't (tw)' : 'tw'); pos(A, 'A');
+  if (tipo === 'DECK') return E;
+  if (tipo !== 'CHS') pos(b, 'b');
+  if (['I-H', 'U', 'TUB'].includes(tipo)) pos(tf, tipo === 'TUB' ? 'es (tf)' : 'tf');
+  if (r != null && !(isFinite(r) && r >= 0)) E.push('r debe ser un número ≥ 0');
+  if (E.length) return E;
+  const box = h*(tipo === 'CHS' ? h : b)/100;
+  if (A > box + 1e-9) E.push(`A = ${fmt1(A)} cm² supera el área del rectángulo envolvente (${fmt1(box)} cm²)`);
+  if (tipo === 'I-H' || tipo === 'U') {
+    if (2*tf >= h) E.push('2·tf debe ser menor que h');
+    if (tw >= b) E.push('tw debe ser menor que b');
+    if (tipo === 'I-H' && tw + 2*(r || 0) >= b) E.push('tw + 2r debe ser menor que b');
+    const Ap = (2*b*tf + (h - 2*tf)*tw)/100, Af = (tipo === 'I-H' ? 4 : 2)*(1 - Math.PI/4)*(r || 0)*(r || 0)/100;
+    if (A < 0.9*Ap || A > 1.1*(Ap + Af) + 0.5) E.push(`A = ${fmt1(A)} cm² no es coherente con h, b, tw, tf y r (placas + radios ≈ ${fmt1(Ap + Af)} cm²)`);
+  }
+  if (tipo === 'RHS' || tipo === 'TUB') {
+    const t = tipo === 'TUB' ? Math.max(tw, tf) : tw;
+    if (2*t >= Math.min(h, b)) E.push('el espesor de pared es incompatible con h y b');
+    if (tipo === 'RHS') { const Ab = (h*b - (h - 2*tw)*(b - 2*tw))/100; if (A < 0.75*Ab) E.push(`A = ${fmt1(A)} cm² no es coherente con un tubo de ${fmt1(h)}×${fmt1(b)}×${fmt1(tw)} mm (≈ ${fmt1(Ab)} cm²)`); }
+  }
+  if (tipo === 'CHS') { if (2*tw >= h) E.push('2·t debe ser menor que D'); const Ac = Math.PI*(h - tw)*tw/100; if (A > 1.05*Ac + 0.1 || A < 0.9*Ac) E.push(`A = ${fmt1(A)} cm² no es coherente con un tubo de ${fmt1(h)}×${fmt1(tw)} mm (≈ ${fmt1(Ac)} cm²)`); }
+  if (tipo === 'L') { if (tw >= Math.min(h, b)) E.push('t debe ser menor que los lados del ángulo'); const Al = tw*(h + b - tw)/100; if (A > 1.12*Al + 0.2 || A < 0.9*Al) E.push(`A = ${fmt1(A)} cm² no es coherente con un ángulo de ${fmt1(h)}×${fmt1(b)}×${fmt1(tw)} mm (≈ ${fmt1(Al)} cm²)`); }
+  if (tipo === 'C' && 2*tw >= Math.min(h, b)) E.push('el espesor es incompatible con h y b');
+  return E;
+}
+const efVacio = v => v == null || String(v).trim() === '';
+// Número de un dato opcional: {v} (null si vacío) o {err}.
+function efDato(raw, nombre, cond, condTxt) {
+  if (efVacio(raw)) return {v: null};
+  const v = cbNum(raw);
+  if (!isFinite(v)) return {v: null, err: `${nombre}: «${String(raw).trim()}» no es un número`};
+  if (cond && !cond(v)) return {v: null, err: `${nombre} ${condTxt}`};
+  return {v};
+}
 
+/* Cálculo del estudio. Las entradas son textos tal como se escriben en la planilla (no se convierten en 0);
+   el resultado distingue datos inválidos (bloquean), datos faltantes (pendientes) y resultados. */
 function calcEstudioFuego(inp) {
-  const out = {avisos: [], avisosP: []};
+  const out = {avisos: [], avisosP: [], pend: [], errs: []};
   const aviso = (web, imp) => { out.avisos.push(web); out.avisosP.push(imp || web); };
-  // (1) Carga combustible
-  const A = inp.area > 0 ? inp.area : 0;
-  const mats = inp.materiales.map(m => Object.assign({}, m, {carga: (m.masa > 0 && m.hc > 0) ? m.masa*m.hc : 0}));
-  const cargaTotal = mats.reduce((s, m) => s + m.carga, 0);
-  const media = A > 0 ? cargaTotal/A : null;
-  const zonas = {};
-  mats.forEach(m => { if (m.zona && m.carga > 0) zonas[m.zona] = (zonas[m.zona] || 0) + m.carga; });
-  const zonasArr = Object.keys(zonas).map(z => ({zona: z, carga: zonas[z], dcc: zonas[z]/4})).sort((a, b) => b.dcc - a.dcc);
-  const puntual = inp.puntualManual > 0 ? inp.puntualManual : (zonasArr.length ? zonasArr[0].dcc : null);
-  const sinFuente = mats.filter(m => m.carga > 0 && !m.fuente).length;
-  if (sinFuente) aviso(`${sinFuente} material(es) sin fuente del poder calorífico: indíquela (NCh 1916, ensayo NCh 1914/2 o ficha del fabricante).`,
-    `${sinFuente} material(es) sin fuente declarada del poder calorífico; el valor usado carece de respaldo documental.`);
-  if (puntual == null) aviso('Densidad puntual máxima no determinada: asigne los acopios a superficies de 2×2 m (columna "Zona 2×2") o ingrésela.',
-    'Densidad de carga combustible puntual máxima no determinada.');
-  Object.assign(out, {mats, cargaTotal, media, zonasArr, puntual, area: A});
+  const pend = (ambito, txt, bloquea) => out.pend.push({ambito, txt, bloquea: bloquea !== false});
+  const err = (ambito, txt) => { out.errs.push({ambito, txt}); pend(ambito, 'Dato inválido: ' + txt); };
 
-  // (2) Pisos y tipo de edificio
-  let pisos = Math.max(1, Math.round(inp.pisosReales || 1));
-  const pisosAltura = inp.altura > 0 ? Math.ceil(inp.altura/3.5 - 1e-9) : 0;
-  let excepcion = false;
-  if (pisos === 1 && inp.altillos !== 'si' && media != null && media < 500) excepcion = true;
-  const pisosEq = excepcion ? 1 : Math.max(pisos, pisosAltura);
-  const t1 = inp.t1 ? efLetra(EF_T1[inp.t1], inp.superficie, 7, pisosEq) : null;
-  const t2 = inp.t2 ? efLetra(EF_T2[inp.t2], inp.ocupantes, 6, pisosEq) : null;
-  const t3 = inp.t3 ? efLetraT3(EF_T3[inp.t3], media, puntual, pisosEq) : null;
+  // (1) Carga combustible (NCh 1916) y densidad puntual (NCh 1993, procedimiento común fuegoPuntual)
+  const dA = efDato(inp.area, 'Superficie del sector', v => v > 0, 'debe ser mayor que 0');
+  if (dA.err) err('Carga combustible', dA.err);
+  const A = dA.v;
+  const mats = (inp.materiales || []).map((m, i) => {
+    const r = Object.assign({}, m, {n: i + 1, errs: [], falta: []});
+    const dm = efDato(m.masa, 'masa', v => v >= 0, 'no puede ser negativa'), dh = efDato(m.hc, 'poder calorífico', v => v >= 0, 'no puede ser negativo');
+    [dm, dh].forEach(d => { if (d.err) r.errs.push(d.err); });
+    r.masaNum = dm.v; r.hcNum = dh.v;
+    if (dm.v == null && !dm.err) r.falta.push('masa');
+    if (dh.v == null && !dh.err) r.falta.push('poder calorífico');
+    r.carga = (dm.v != null && dh.v != null) ? dm.v*dh.v : null;
+    if (r.carga > 0 && !String(m.fuente || '').trim()) r.falta.push('fuente del poder calorífico');
+    r.ubicacion = m.zona; r.huella = m.huella;
+    return r;
+  });
+  mats.forEach(m => {
+    m.errs.forEach(e => err('Carga combustible', `material n° ${m.n}: ${e}`));
+    if (m.falta.length) pend('Carga combustible', `Material n° ${m.n}${m.desc ? ' («' + m.desc + '»)' : ''}: falta ${m.falta.join(', ')}.`);
+  });
+  if (!mats.length) pend('Carga combustible', 'No hay materiales en el inventario.');
+  if (A == null && !dA.err) pend('Carga combustible', 'Falta la superficie del sector para la densidad media.');
+  const matsOk = mats.length > 0 && mats.every(m => !m.errs.length && m.carga != null);
+  const cargaTotal = matsOk ? mats.reduce((s, m) => s + m.carga, 0) : null;
+  const cargaParcial = mats.reduce((s, m) => s + (m.carga > 0 ? m.carga : 0), 0);
+  const media = (cargaTotal != null && A > 0) ? cargaTotal/A : null;
+  const pun = fuegoPuntual(mats.map(m => ({n: m.n, carga: m.carga, ubicacion: m.zona, huella: m.huella})), A, inp.puntualManual, inp.puntualFuente, media);
+  if (pun.manualErr) err('Densidad puntual', pun.manualErr);
+  pun.errs.forEach(e => err('Densidad puntual', e));
+  pun.avisos.forEach(a => aviso(a));
+  // Sin inventario completo la puntual por barrido es parcial y no se adopta (sí la medida con procedencia)
+  if (!matsOk && pun.origen === 'barrido') { pun.valor = null; pun.origen = null; }
+  const puntual = pun.valor;
+  if (puntual == null && !pun.manualErr) pend('Densidad puntual', 'Densidad puntual máxima no determinada: ' + (matsOk ? cbPuntualTxt(pun) : 'el inventario está incompleto') + '. Indique la huella en planta de cada acopio o una densidad puntual medida con su procedencia.');
+  Object.assign(out, {mats, cargaTotal, cargaParcial, media, pun, puntual, area: A, zonasArr: pun.zonas});
+
+  // (2) Pisos (OGUC 4.3.5 n°1, función común cbPisos) y tipo de edificio (4.3.4)
+  const pis = cbPisos({pisos: inp.pisosReales, alturasEsp: inp.altura, altillos: inp.altillos === 'si' ? 'Si' : 'No'}, media);
+  pis.errs.forEach(e => err('Clasificación', e));
+  const pisosEq = pis.valor;
+  if (pisosEq != null && pis.nFisicos === 1 && media == null && inp.altillos !== 'si') pend('Clasificación', 'La excepción de un piso (4.3.5 n°1) no puede evaluarse sin la densidad media.', false);
+  const dSup = efDato(inp.superficie, 'Superficie edificada', v => v > 0, 'debe ser mayor que 0');
+  const dOc = efDato(inp.ocupantes, 'Máximo de ocupantes', v => Number.isInteger(v) && v > 0, 'debe ser un entero mayor que 0');
+  if (inp.t1 && dSup.err) err('Clasificación', dSup.err);
+  if (inp.t2 && dOc.err) err('Clasificación', dOc.err);
+  if (inp.t1 && dSup.v == null && !dSup.err) pend('Clasificación', 'Tabla 1: falta la superficie edificada.');
+  if (inp.t2 && dOc.v == null && !dOc.err) pend('Clasificación', 'Tabla 2: falta el máximo de ocupantes.');
+  const t1 = inp.t1 && pisosEq && dSup.v != null ? efLetra(EF_T1[inp.t1], dSup.v, 7, pisosEq) : null;
+  const t2 = inp.t2 && pisosEq && dOc.v != null ? efLetra(EF_T2[inp.t2], dOc.v, 6, pisosEq) : null;
+  const pT3 = puntual != null ? puntual : (matsOk ? pun.estimacion : null);
+  const t3 = inp.t3 && pisosEq && media != null ? efLetraT3(EF_T3[inp.t3], media, pT3, pisosEq) : null;
+  if (inp.t3 && media == null) pend('Clasificación', 'Tabla 3: falta la densidad de carga combustible media (inventario completo y superficie).');
   const tipoCalc = efMasExigente([t1, t2, t3 && t3.letra]);
-  const tipo = inp.tipoManual || tipoCalc;
-  if (!tipoCalc && !inp.tipoManual) aviso('No se pudo determinar el tipo de edificio: elija al menos una tabla del Art. 4.3.4 con sus datos.',
-    'Tipo de edificio no determinado: no se evaluó ninguna tabla del Art. 4.3.4.');
-  if (inp.tipoManual && tipoCalc && inp.tipoManual !== tipoCalc) aviso(`Tipo adoptado manualmente (${inp.tipoManual}) distinto del calculado (${tipoCalc}): justifíquelo en el informe.`,
-    `El tipo adoptado (${inp.tipoManual}) difiere del resultante de las tablas (${tipoCalc}) por decisión del proyectista.`);
-  if (inp.t3 && puntual == null) aviso('Tabla 3 evaluada solo con la densidad media: resultado provisorio hasta determinar la puntual máxima.',
-    'Tabla 3 evaluada solo con la densidad media: la clasificación es provisoria mientras no se determine la densidad puntual máxima.');
-  Object.assign(out, {pisosEq, pisosAltura, excepcion, t1, t2, t3, tipoCalc, tipo});
+  const tipoProv = !!(t3 && puntual == null);
+  if (!inp.t1 && !inp.t2 && !inp.t3) pend('Clasificación', 'No se eligió ninguna tabla del Art. 4.3.4 para el destino.');
+  if (tipoProv) pend('Clasificación', `Clasificación provisoria: la Tabla 3 se evaluó ${pT3 != null ? 'con una densidad puntual estimada por agrupación (' + fmt1(pT3) + ' MJ/m²), no verificada' : 'solo con la densidad media'}.`);
+  // Tipo calculado y tipo adoptado se conservan por separado; una reducción exige excepción documentada.
+  const tM = inp.tipoManual || '';
+  let tipo = tipoCalc, tipoRed = null;
+  if (tM) {
+    if (!tipoCalc) { tipo = tM; pend('Clasificación', `Tipo ${tM} adoptado sin un tipo calculado que lo respalde.`); }
+    else if (EF_RANK[tM] <= EF_RANK[tipoCalc]) tipo = tM;
+    else {
+      const just = EF_EXC_TIPO[inp.tipoExc] && String(inp.tipoResp || '').trim();
+      tipoRed = just ? 'justificada' : 'no justificada';
+      if (just) { tipo = tM; aviso(`Tipo ${tM} adoptado, menos exigente que el calculado (${tipoCalc}), según ${EF_EXC_TIPO[inp.tipoExc]}.`); }
+      else pend('Clasificación', `El tipo ${tM} es menos exigente que el calculado (${tipoCalc}) y no tiene una excepción del Art. 4.3.5 con respaldo documental: las exigencias se evalúan con el tipo ${tipoCalc}.`);
+    }
+  }
+  const resist = cbResistencias(tipo, pisosEq);
+  Object.assign(out, {pisos: pis, pisosEq, excepcion: !!pis.excepcion, t1, t2, t3, pT3, tipoCalc, tipoManual: tM, tipo, tipoRed, tipoProv, resist,
+    tipoExcTxt: tipoRed === 'justificada' ? EF_EXC_TIPO[inp.tipoExc] : '', tipoResp: String(inp.tipoResp || '').trim()});
 
   // (3)-(5) Elementos
-  const pTerm = {dt:5, alfa:25, phi:1, ef:1, em:0.7, caVar:true, ca:600, rho:7850};
-  out.elems = inp.elementos.map(it => {
-    const r = Object.assign({}, it);
-    const fr = [it.f1, it.f2].filter(f => f >= 1 && f <= 9);
-    const reqs = tipo ? fr.map(f => EF_T433[tipo][f - 1]) : [];
-    r.Freq = it.Fmanual > 0 ? it.Fmanual : (reqs.some(v => v != null) ? Math.max(...reqs.filter(v => v != null)) : (fr.length && tipo ? 0 : null));
-    const m = afMasividades(it);
-    r.F3 = m.F3; r.F4 = m.F4;
-    r.F = it.caras === '3' ? (m.F3 != null ? m.F3 : m.F4) : m.F4;
-    const Fbox = it.A > 0 ? (it.caras === '3' ? 10*(2*it.h + it.b)/it.A : 10*2*(it.h + it.b)/it.A) : null;
-    r.ksh = ((it.tipo === 'I-H' || it.tipo === 'U') && Fbox && r.F) ? Math.min(1, 0.9*Fbox/r.F) : 1;
-    r.curva = r.F > 0 ? afCurva(r.F, Object.assign({}, pTerm, {ksh: r.ksh})) : null;
-    r.cls = efClase(it, it.solic);
+  const pTerm = {dt: 5, alfa: 25, phi: 1, ef: 1, em: 0.7, caVar: true, ca: 600, rho: 7850};
+  out.elems = (inp.elementos || []).map((it, i) => {
+    const nom = String(it.nombre || '').trim() || 'Elemento ' + (i + 1);
+    const g = {};
+    const geomErr = [], E = [], P = [];
+    ['h', 'b', 'tw', 'tf', 'r', 'A'].forEach(k => { const d = efDato(it[k], k); g[k] = d.v; if (d.err) geomErr.push(d.err); });
+    if (g.r == null && !geomErr.length) g.r = 0;
+    const r = Object.assign({}, it, g, {nombre: nom, n: i + 1});
+    if (!geomErr.length) efGeomErrs(r).forEach(e => geomErr.push(e));
+    r.geomOk = !geomErr.length;
+    geomErr.forEach(e => E.push('geometría: ' + e));
+    const dFy = efDato(it.Fy, 'Fy', v => v > 0, 'debe ser mayor que 0'); r.Fy = dFy.v;
+    if (dFy.err) E.push(dFy.err); else if (r.Fy == null) P.push('Fy');
+    const dMu = efDato(it.mu, 'μ0', v => v > 0, 'debe ser mayor que 0'); r.mu = dMu.v;
+    if (dMu.err) E.push(dMu.err);
+    const dFm = efDato(it.Fmanual, 'F manual', v => v >= 0 && Number.isInteger(v), 'debe ser un entero ≥ 0 (minutos)'); r.Fmanual = dFm.v;
+    if (dFm.err) E.push(dFm.err);
+    const dEp = efDato(it.espProp, 'espesor propuesto', v => v >= 0, 'no puede ser negativo'); r.espProp = dEp.v;
+    if (dEp.err) E.push(dEp.err);
+    const dEc = efDato(it.espCert, 'espesor del certificado', v => v > 0, 'debe ser mayor que 0'); r.espCert = dEc.v;
+    if (dEc.err && it.prot === 'otro') E.push(dEc.err);
+    r.orient = EF_ORIENT[it.orient] ? it.orient : '';
+    r.bajoLosa = it.bajoLosa === 'si' || it.bajoLosa === 'no' ? it.bajoLosa : '';
+    r.expo = EF_EXPO[it.expo] ? it.expo : '';
+    if (!r.orient) P.push('orientación (pilar o viga)');
+    if (r.orient === 'viga' && !r.bajoLosa) P.push('condición bajo losa');
+    if (it.caras === '3' && r.orient === 'viga' && r.bajoLosa === 'no') P.push('justificación de la exposición a 3 caras (la viga no está bajo losa)');
+
+    // Exigencia: calculada (4.3.3 + 4.3.5) y adoptada, por separado
+    const fr = [it.f1, it.f2].map(Number).filter(f => f >= 1 && f <= 9);
+    r.funcs = fr;
+    r.reqFunc = fr.map(f => ({f, req: resist ? resist[f - 1] : null}));
+    r.FreqCalc = resist && fr.length ? Math.max(...r.reqFunc.map(x => (x.req.min == null || x.req.noExigible) ? 0 : x.req.min)) : null;
+    if (!fr.length) P.push('función según el Art. 4.3.3');
+    const X = EF_EXC[it.exc], resp = String(it.excResp || '').trim();
+    r.exc = X ? it.exc : ''; r.excTxt = X ? X.txt : ''; r.excResp = resp;
+    if (X && fr.length && !fr.every(f => X.func.includes(f))) E.push(`la excepción ${X.txt.split(' — ')[0]} no se aplica a la función asignada`);
+    let Fad = r.FreqCalc, red = null;
+    const Fm = r.Fmanual;
+    if (r.FreqCalc == null) { if (Fm != null) { Fad = Fm; P.push('tipo de edificio calculado que respalde la exigencia manual'); } }
+    else {
+      const Fobj = Fm != null ? Fm : (X ? X.F : null);
+      if (Fobj != null && Fobj >= r.FreqCalc) Fad = Fobj;
+      else if (Fobj != null) {
+        if (X && resp && Fobj >= X.F) { Fad = Fobj; red = 'justificada'; }
+        else { red = 'no justificada'; P.push(X ? (resp ? `exigencia ${Fobj ? 'F-' + Fobj : 'nula'} menor que el mínimo de la excepción (F-${X.F})` : 'respaldo documental de la excepción ' + X.txt.split(' — ')[0]) : `excepción del Art. 4.3.5 que justifique reducir F-${r.FreqCalc} a ${Fobj ? 'F-' + Fobj : 'sin exigencia'}`); }
+      }
+    }
+    r.Freq = Fad; r.reduccion = red;
+
+    // Térmico (EN 1993-1-2)
+    if (r.geomOk) {
+      const m = afMasividades(r);
+      r.F3 = m.F3; r.F4 = m.F4;
+      r.F = it.caras === '3' ? (m.F3 != null ? m.F3 : m.F4) : m.F4;
+      r.Fbox = r.A > 0 ? (it.caras === '3' ? 10*(2*r.h + r.b)/r.A : 10*2*(r.h + (r.tipo === 'CHS' ? r.h : r.b))/r.A) : null;
+      // ec. 4.26a (secciones I, curva normalizada): ksh = 0,9·[Am/V]b/[Am/V]; 4.26b (demás casos): [Am/V]b/[Am/V].
+      r.kshEc = r.tipo === 'I-H' ? '4.26a' : (['U', 'L'].includes(r.tipo) ? '4.26b' : 'convexa');
+      r.ksh = r.kshEc === '4.26a' ? Math.min(1, 0.9*r.Fbox/r.F) : (r.kshEc === '4.26b' ? Math.min(1, r.Fbox/r.F) : 1);
+      r.curva = r.F > 0 ? afCurva(r.F, Object.assign({}, pTerm, {ksh: r.ksh})) : null;
+      r.cls = r.Fy > 0 ? efClase(r, it.solic) : null;
+    } else { r.F3 = r.F4 = r.F = r.ksh = null; r.curva = null; r.cls = null; }
     r.clase4 = !!(r.cls && r.cls.clase4);
-    r.thcr = r.clase4 ? 350 : (it.mu > 0 ? efThetaCr(it.mu) : null);
-    r.tcr = (r.curva && r.thcr != null) ? afTiempoCrit(r.curva.serie, r.thcr) : null;
     r.sobre390 = r.F4 > 390;
+    r.metodoCr = r.mu > 1 ? 'mu_mayor_1' : (r.clase4 ? 'clase4' : (it.inest === 'si' ? 'inestabilidad' : (r.mu == null ? 'sin_mu' : 'ec422')));
+    r.thcr = r.metodoCr === 'clase4' ? 350 : (r.metodoCr === 'ec422' ? efThetaCr(r.mu) : null);
+    r.tcr = (r.curva && r.thcr != null) ? afTiempoCrit(r.curva.serie, r.thcr) : null;
+    if (r.geomOk && r.Fy > 0 && !r.cls) P.push('clase de la sección (EN 1993-1-1 Tabla 5.2)');
+    if (r.metodoCr === 'sin_mu') P.push('μ0 (grado de utilización en incendio)');
+    if (r.metodoCr === 'inestabilidad') P.push('verificación de la resistencia en caliente por EN 1993-1-2 §4.2.3 (gobierna la inestabilidad)');
     r.av = []; r.avP = [];
     const av = (web, imp) => { r.av.push(web); r.avP.push(imp || web); };
     if (r.sobre390) av('Masividad a 4 caras > 390 m⁻¹ (Listado Oficial ED17-2025, punto 3).', 'Masividad a 4 caras superior a 390 m⁻¹, límite del Listado Oficial ED17-2025 (punto 3).');
-    if (it.inest === 'si' && !r.clase4) av('Gobierna inestabilidad: §4.2.4 no aplica; verificar resistencia en caliente por §4.2.3 (planilla Asimilación Viga–Pilar).',
-      'Gobierna la inestabilidad: el método de temperatura crítica (§4.2.4) no es aplicable y la resistencia en caliente debe verificarse por EN 1993-1-2 §4.2.3.');
-    if (!r.cls) av('Clase de sección no evaluada para este tipo de perfil: clasificar según EN 1993-1-1 Tabla 5.2.', 'Clase de sección no evaluada para este tipo de perfil (EN 1993-1-1 Tabla 5.2).');
-    if (!(it.mu > 0) && !r.clase4) av('Falta μ0 (grado de utilización en incendio, EN 1993-1-2 §4.2.4(3)).', 'Grado de utilización μ0 no informado: la temperatura crítica no está determinada.');
+    if (r.mu != null && r.mu < 0.013 && r.metodoCr === 'ec422') av('μ0 < 0,013: se usa 0,013 (EN 1993-1-2 §4.2.4).', 'μ0 inferior a 0,013: se adopta 0,013 (EN 1993-1-2 §4.2.4).');
+    if (r.cls && r.cls.nota) av(r.cls.nota, r.cls.nota);
+    if (r.reduccion === 'justificada') av(`Exigencia reducida de F-${r.FreqCalc} a ${r.Freq ? 'F-' + r.Freq : 'sin exigencia'} por ${r.excTxt}. Respaldo: ${r.excResp}.`);
+    if (r.expo && r.expo !== 'interior' && it.prot !== 'ninguna') av(`Exposición ${EF_EXPO[r.expo].toLowerCase()}: el ensayo de referencia debe cubrirla.`, `Exposición ${EF_EXPO[r.expo].toLowerCase()}: la cobertura de esta condición por el ensayo de referencia debe acreditarse.`);
+
     // Protección
-    r.espReq = null; r.espTxt = '—'; r.espU = (EF_PROT[it.prot] && EF_PROT[it.prot].u) || '';
-    const P = EF_PROT[it.prot];
-    if (P && P.modo) {
-      r.espInfo = efEspesorProd(it.prot, r);
-      r.espReq = r.espInfo.v; r.espTxt = r.espInfo.txt;
-      if (P.modo !== 'esp') av('Tabla de ensayo: confirmar que su criterio de falla sea compatible con θcr del elemento.', 'La compatibilidad entre el criterio de falla del ensayo de referencia y la θcr del elemento debe acreditarse con el informe de ensayo.');
-      if (P.nota) av(P.nota, P.nota);
-    } else if (it.prot === 'otro') { r.espReq = it.espCert > 0 ? it.espCert : null; r.espTxt = r.espReq ? r.espReq + ' ' + r.espU + ' (certificado)' : 'Ingrese espesor del certificado'; }
-    r.alternativas = (r.Freq > 0) ? efAlternativas(r) : [];
-    // Estado
-    if (r.Freq == null) r.estado = ['warn', tipo ? 'Sin función OGUC' : 'Sin tipo de edificio'];
-    else if (r.Freq === 0) r.estado = ['ok', 'Sin exigencia F'];
+    r.espReq = null; r.espTxt = '—'; r.espU = (EF_PROT[it.prot] && EF_PROT[it.prot].u) || ''; r.espInfo = null;
+    const PP = EF_PROT[it.prot], AL = EF_ALCANCE[it.prot];
+    r.alcance = AL ? AL.txt : '';
+    r.cob = ['si', 'no', 'pend'].includes(it.cob) ? it.cob : 'pend';
+    r.refDoc = String(it.refDoc || '').trim();
+    if (it.prot !== 'ninguna' && r.Freq > 0 && r.geomOk) {
+      if (PP && PP.modo) { r.espInfo = efEspesorProd(it.prot, r); r.espReq = r.espInfo.v; r.espTxt = r.espInfo.txt; if (PP.nota) av(PP.nota, PP.nota); }
+      else if (it.prot === 'otro') { r.espReq = r.espCert; r.espTxt = r.espReq ? r.espReq + ' ' + r.espU + ' (certificado)' : 'Espesor del certificado no informado'; if (r.espCert == null && !dEc.err) P.push('espesor del certificado'); }
+      if (r.espProp == null && !dEp.err) P.push('espesor propuesto');
+      if (r.espInfo && r.espInfo.asimilado && r.cob !== 'si') P.push('asimilación documentada de la viga a la condición de pilar ensayada (no automática)');
+      if (r.espInfo && PP.modo !== 'esp' && r.thcr == null) P.push('θcr del elemento para comparar con el criterio de falla del ensayo');
+      if (!r.expo) P.push('condición de exposición');
+      if (r.cob !== 'si') P.push('confirmación de cobertura documental del elemento (sección, orientación, exposición y sistema ensayado' + (AL && !AL.cotejo ? '; tabla cotejada con el documento original' : '') + ')');
+      if (!r.refDoc) P.push('referencia documental del elemento (informe, tabla o inscripción)');
+      if (AL && !AL.cotejo && r.cob !== 'si') P.push('cotejo de la tabla transcrita con el documento original');
+    }
+    r.alternativas = (r.Freq > 0 && r.geomOk) ? efAlternativas(r) : [];
+    r.tablaSuf = r.espReq != null && r.espProp != null && r.espProp >= r.espReq;
+
+    // Estado: CUMPLE solo con verificación completa; NO VERIFICADO mientras falten antecedentes.
+    const globBloq = [];
+    if (r.Freq != null && r.Freq > 0 || r.FreqCalc > 0) {
+      if (!tipo) globBloq.push('tipo de edificio');
+      else if (tipoProv) globBloq.push('clasificación definitiva (densidad puntual)');
+      if (tipoRed === 'no justificada') globBloq.push('justificación del tipo adoptado');
+    }
+    r.errs = E; r.falta = P.concat(globBloq);
+    if (E.length) r.estado = ['bad', 'NO CUMPLE — datos inválidos: ' + E.join('; ')];
+    else if (r.Freq == null) { if (!tipo && fr.length) r.falta.unshift('tipo de edificio'); r.estado = ['warn', 'NO VERIFICADO — exigencia no determinada' + (r.falta.length ? ': falta ' + r.falta.join('; ') : '')]; }
+    else if (r.metodoCr === 'mu_mayor_1') r.estado = ['bad', `NO CUMPLE — μ0 = ${fmt2(r.mu)} > 1: la resistencia inicial no cubre la combinación de incendio (Efi,d > Rfi,d,0)`];
+    else if (r.Freq === 0) r.estado = r.falta.length ? ['warn', 'NO VERIFICADO — falta ' + r.falta.join('; ')] : ['ok', 'CUMPLE — sin exigencia de resistencia al fuego' + (r.reduccion ? ' (' + r.excTxt.split(' — ')[0] + ')' : '')];
     else if (it.prot === 'ninguna') {
-      if (it.inest === 'si' && !r.clase4) r.estado = ['warn', 'Verificar por §4.2.3'];
-      else if (r.tcr == null) r.estado = ['warn', 'Faltan datos (μ0)'];
-      else r.estado = r.tcr >= r.Freq ? ['warn', `t = ${fmt1(r.tcr)} min ≥ F-${r.Freq}: cumple por cálculo (no es ensayo)`] : ['bad', `t = ${fmt1(r.tcr)} min < F-${r.Freq}: requiere protección`];
-    } else if (r.espReq == null) r.estado = ['bad', r.espTxt];
-    else r.estado = it.espProp >= r.espReq ? ['ok', `Espesor suficiente (${it.espProp} ≥ ${r.espReq} ${r.espU})`] : ['bad', `Espesor insuficiente (${it.espProp || 0} < ${r.espReq} ${r.espU})`];
+      if (r.tcr != null && r.tcr < r.Freq) r.estado = ['bad', `NO CUMPLE — sin protección: t = ${fmt1(r.tcr)} min < F-${r.Freq}; requiere protección`];
+      else if (r.curva && r.thcr != null && !r.falta.length) r.estado = ['warn', `NO VERIFICADO — sin protección: ${r.tcr != null ? 't = ' + fmt1(r.tcr) + ' min' : 'θcr no se alcanza en 150 min'} ≥ F-${r.Freq} por cálculo; no acredita resistencia al fuego (OGUC 4.3.2)`];
+      else r.estado = ['warn', 'NO VERIFICADO — falta ' + r.falta.join('; ')];
+    } else if (r.cob === 'no') r.estado = ['bad', 'NO CUMPLE — la referencia documental no cubre el elemento'];
+    else if (r.espReq == null && (it.prot !== 'otro' || r.espCert != null)) r.estado = ['bad', 'NO CUMPLE — sin espesor de referencia aplicable: ' + r.espTxt];
+    else if (r.espReq != null && r.espProp != null && r.espProp < r.espReq) r.estado = ['bad', `NO CUMPLE — espesor insuficiente (${r.espProp} < ${r.espReq} ${r.espU})`];
+    else if (r.falta.length) r.estado = ['warn', (r.tablaSuf ? `NO VERIFICADO — espesor tabulado suficiente (${r.espProp} ≥ ${r.espReq} ${r.espU}); falta ` : 'NO VERIFICADO — falta ') + r.falta.join('; ')];
+    else r.estado = ['ok', `CUMPLE — verificación completa (${r.espProp} ≥ ${r.espReq} ${r.espU}; ${r.refDoc})`];
+    r.estadoCorto = r.estado[1].split(' — ')[0];
     return r;
   });
+  out.elems.forEach(e => { if (e.estado[0] !== 'ok') pend('Elemento ' + e.n + ' · ' + e.nombre, e.estado[1].replace(/^[^—]+— /, ''), true); });
+  if (!out.elems.length) pend('Elementos', 'No hay elementos de acero en el estudio.');
 
-  // (6) Asimilación
-  const chk = EF_CHK.map(c => Object.assign({id: c[0], txt: c[1], ref: c[2]}, inp.chk[c[0]] || {v: 'pend', obs: ''}));
+  // (6) Asimilación: se requiere cuando la protección no es una solución del Listado aplicada directamente.
+  const chk = EF_CHK.map(c => Object.assign({id: c[0], txt: c[1], ref: c[2]}, (inp.chk || {})[c[0]] || {v: 'pend', obs: ''}));
   const protegidos = out.elems.filter(e => e.prot !== 'ninguna' && e.Freq > 0);
+  const requiere = out.elems.filter(e => e.prot !== 'ninguna' && e.Freq !== 0 && (!(EF_PROT[e.prot] && EF_PROT[e.prot].listado) || (e.espInfo && e.espInfo.asimilado)));
   const auto = [];
   if (protegidos.length) {
     const fuera = protegidos.filter(e => e.espReq == null), cortos = protegidos.filter(e => e.espReq != null && !(e.espProp >= e.espReq));
-    auto.push({txt: 'Elementos protegidos cubiertos por la tabla ensayada o del Listado (sin extrapolar).', v: fuera.length ? 'no' : 'si', obs: fuera.length ? 'Fuera de rango: ' + fuera.map(e => e.nombre).join(', ') : 'Verificado elemento por elemento'});
-    auto.push({txt: 'Espesor propuesto mayor o igual al de la tabla para la masividad y la exigencia F.', v: cortos.length || fuera.length ? 'no' : 'si', obs: cortos.length ? 'Insuficiente: ' + cortos.map(e => e.nombre).join(', ') : (fuera.length ? 'Sin espesor de tabla: ' + fuera.map(e => e.nombre).join(', ') : 'Verificado elemento por elemento')});
+    const sinCob = protegidos.filter(e => e.cob !== 'si' || !e.refDoc);
+    auto.push({txt: 'Elementos protegidos cubiertos por la tabla ensayada o del Listado (sin extrapolar).', v: fuera.length ? 'no' : 'si', obs: fuera.length ? 'Sin espesor de referencia: ' + fuera.map(e => e.nombre).join(', ') : 'Verificado elemento por elemento'});
+    auto.push({txt: 'Espesor propuesto mayor o igual al de la tabla para la masividad y la exigencia F.', v: cortos.length || fuera.length ? 'no' : 'si', obs: cortos.length ? 'Insuficiente o no informado: ' + cortos.map(e => e.nombre).join(', ') : (fuera.length ? 'Sin espesor de referencia: ' + fuera.map(e => e.nombre).join(', ') : 'Verificado elemento por elemento')});
+    auto.push({txt: 'Cada elemento protegido tiene referencia documental y cobertura confirmada (sección, orientación, exposición y sistema).', v: sinCob.length ? 'pend' : 'si', obs: sinCob.length ? 'Sin cobertura confirmada: ' + sinCob.map(e => e.nombre).join(', ') : 'Confirmado elemento por elemento'});
   }
-  const todos = chk.concat(auto);
-  const nNo = todos.filter(c => c.v === 'no').length, nPend = todos.filter(c => c.v === 'pend').length;
-  out.chk = chk; out.chkAuto = auto;
-  out.asim = nNo ? ['bad', `No asimilable con estos antecedentes (${nNo} criterio(s) no cumplido(s)): corresponde ensayo o cambio de solución.`]
-    : nPend ? ['warn', `Pendiente: ${nPend} criterio(s) sin antecedente. No emitir conclusión hasta completarlos.`]
-    : ['ok', 'Antecedentes completos para que un profesional especialista emita el informe de asimilación (OGUC 4.3.2).'];
-  out.metodo = inp.origenEnsayo === 'ext' ? 'NCh 3684/2:2022 — comparación directa con ensayos extranjeros (elementos en general).'
+  out.chk = chk; out.chkAuto = auto; out.requiereAsim = requiere.length > 0;
+  out.metodo = !requiere.length ? 'No se requiere asimilación: soluciones del Listado Oficial aplicadas dentro de su alcance.'
+    : inp.origenEnsayo === 'ext' ? 'NCh 3684/2:2022 — comparación directa con ensayos extranjeros (elementos en general).'
     : inp.origenEnsayo === 'nac' ? 'Ensayo nacional: si la tabla certificada cubre el perfil, se aplica directamente. NCh 3684/1:2022 cubre la comparación directa de soluciones de acero o madera con placas de revestimiento.'
-    : 'Defina el origen del ensayo de referencia.';
+    : 'Origen del ensayo de referencia no definido.';
+  const bloq = [];
+  if (!tipo) bloq.push('tipo de edificio');
+  if (tipoProv) bloq.push('clasificación definitiva (densidad puntual máxima)');
+  if (tipoRed === 'no justificada') bloq.push('justificación del tipo adoptado');
+  if (requiere.length) {
+    if (!inp.origenEnsayo) { bloq.push('origen del ensayo de referencia'); pend('Asimilación', 'Falta definir el origen del ensayo de referencia.'); }
+    const nP = chk.filter(c => c.v === 'pend').length;
+    if (nP) bloq.push(`${nP} criterio(s) de la lista de chequeo`);
+    if (nP) pend('Asimilación', `${nP} criterio(s) de la lista de chequeo sin antecedente.`);
+    const elPend = requiere.filter(e => e.estado[0] !== 'ok');
+    if (elPend.length) bloq.push('cobertura de ' + elPend.map(e => e.nombre).join(', '));
+  }
+  const nNo = chk.filter(c => c.v === 'no').length + auto.filter(c => c.v === 'no').length;
+  out.asim = !requiere.length ? ['ok', out.metodo]
+    : nNo ? ['bad', `No asimilable con estos antecedentes (${nNo} criterio(s) no cumplido(s)): corresponde ensayo o cambio de solución.`]
+    : bloq.length ? ['warn', `Pendiente: falta ${bloq.join('; ')}. No emitir conclusión hasta completarlos.`]
+    : ['ok', 'Antecedentes completos para que un profesional especialista emita el informe de asimilación (OGUC 4.3.2).'];
+  const nBad = out.elems.filter(e => e.estado[0] === 'bad').length, nOk = out.elems.filter(e => e.estado[0] === 'ok').length;
+  out.global = out.errs.length ? ['bad', 'NO CUMPLE — hay datos inválidos']
+    : nBad ? ['bad', `NO CUMPLE — ${nBad} elemento(s) no cumplen`]
+    : (out.elems.length && nOk === out.elems.length && out.asim[0] === 'ok' && !out.pend.some(p => p.bloquea)) ? ['ok', 'CUMPLE — verificación completa de todos los elementos']
+    : ['warn', `NO VERIFICADO — ${out.pend.filter(p => p.bloquea).length} pendiente(s)`];
   return out;
 }
 
+// Resultado completo en un objeto plano (paquete de revisión: misma fuente que pantalla, Excel y PDF).
+function efResultadoJson(inp, r) {
+  const n = v => (v == null || !isFinite(v)) ? null : Math.round(v*1000)/1000;
+  return {
+    carga: {superficie: n(r.area), cargaTotal: n(r.cargaTotal), densidadMedia: n(r.media), densidadPuntual: n(r.puntual), origenPuntual: r.pun.origen,
+      barrido: n(r.pun.calc), estimacionAgrupacion: n(r.pun.estimacion), ventana: r.pun.ventana ? {x: n(r.pun.ventana.x), y: n(r.pun.ventana.y), carga: n(r.pun.ventana.carga)} : null,
+      inventario: r.mats.map(m => ({n: m.n, material: m.desc, masa: n(m.masaNum), poderCalorifico: n(m.hcNum), fuente: m.fuente || '', ubicacion: m.zona || '', huella: m.huella || '', carga: n(m.carga), falta: m.falta, errores: m.errs}))},
+    clasificacion: {pisos: r.pisosEq, detallePisos: r.pisos.detalle || null, tabla1: r.t1, tabla2: r.t2, tabla3: r.t3 ? r.t3.letra : null, puntualTabla3: n(r.pT3),
+      tipoCalculado: r.tipoCalc, tipoIngresado: r.tipoManual || null, tipoAdoptado: r.tipo, reduccionTipo: r.tipoRed, provisoria: r.tipoProv},
+    elementos: r.elems.map(e => ({n: e.n, nombre: e.nombre, perfil: e.perfil, tipo: e.tipo, orientacion: e.orient || null, bajoLosa: e.bajoLosa || null, exposicion: e.expo || null, caras: e.caras,
+      geometria: {h: n(e.h), b: n(e.b), tw: n(e.tw), tf: n(e.tf), r: n(e.r), A: n(e.A), valida: e.geomOk},
+      funciones: e.funcs, exigencia: {calculada: e.FreqCalc, adoptada: e.Freq, reduccion: e.reduccion, excepcion: e.excTxt || null, respaldo: e.excResp || null},
+      masividad: {usada: n(e.F), tresCaras: n(e.F3), cuatroCaras: n(e.F4), ksh: n(e.ksh), ecuacionKsh: e.kshEc || null},
+      utilizacion: {Fy: n(e.Fy), mu0: n(e.mu), metodo: e.metodoCr, clase4: e.cls ? e.clase4 : null, thetaCr: n(e.thcr), tCritSinProteccion: n(e.tcr)},
+      proteccion: {producto: EF_PROD[e.prot], alcance: e.alcance || null, tabla: e.espInfo && e.espInfo.tabla ? e.espInfo.tabla.titulo : null, criterio: e.espInfo ? e.espInfo.por || null : null,
+        asimilado: !!(e.espInfo && e.espInfo.asimilado), espesorRequerido: n(e.espReq), espesorPropuesto: n(e.espProp), unidad: e.espU, tabuladoSuficiente: e.tablaSuf, cobertura: e.cob, referencia: e.refDoc || null},
+      estado: e.estado[1], pendientes: e.falta, errores: e.errs})),
+    asimilacion: {requerida: r.requiereAsim, metodo: r.metodo, resultado: r.asim[1], lista: r.chk.map(c => ({criterio: c.txt, estado: c.v, obs: c.obs})), calculados: r.chkAuto},
+    resultadoGlobal: r.global[1],
+    pendientes: r.pend.map(p => ({ambito: p.ambito, detalle: p.txt, bloquea: p.bloquea})),
+    errores: r.errs
+  };
+}
+
+/* ---------------- Hojas imprimibles (Datos / Cálculo) ----------------
+   Todas las tablas usan class="xlsx-table" para que el Excel y el PDF lean las mismas filas que la pantalla. */
+const efXn = (v, d) => (v == null || !isFinite(v)) ? '—' : xlsxNum(v, d);
+const efXrow = (l, v) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${v}</td></tr>`;
+const efXtab = (head, rows) => `<table class="xlsx-table"><tbody><tr class="xlsx-hdr-de">${head.map(h => `<td>${h}</td>`).join('')}</tr>${rows.join('')}</tbody></table>`;
+function efFuncTxt(f) { return f >= 1 && f <= 9 ? EF_FUNC[f - 1] : '—'; }
 function estudioFuegoDatosHtml(inp, r) {
-  const row = (l, v) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${v}</td></tr>`;
   const proyecto = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.proyecto) ? esc(PROYECTO_META.proyecto) : '____________________';
+  const v = x => efVacio(x) ? '—' : esc(String(x).trim());
+  const lab = {si: 'Cumple', no: 'No cumple', pend: 'Sin antecedente', na: 'No aplica'};
   return `
     <div class="xlsx-title-bar">ESTUDIO DE RESISTENCIA AL FUEGO — DATOS DE ENTRADA</div>
     <div class="xlsx-section">A. Identificación</div>
-    <table class="xlsx-table"><tbody>${row('Proyecto', proyecto)}${row('Sector analizado', esc(inp.sector || '—'))}</tbody></table>
-    <div class="xlsx-section">1. Edificio y carga combustible</div>
+    <table class="xlsx-table"><tbody>${efXrow('Proyecto', proyecto)}${efXrow('Sector analizado', esc(inp.sector || '—'))}</tbody></table>
+    <div class="xlsx-section">1. Sector y carga combustible</div>
     <table class="xlsx-table"><tbody>
-      ${row('Superficie del sector para DCC media [m²]', xlsxNum(inp.area, 1))}
-      ${row('N° de pisos reales / altura interior [m]', `${inp.pisosReales} / ${inp.altura > 0 ? xlsxNum(inp.altura, 2) : '—'}`)}
-      ${row('Tabla 1 (destino / superficie edificada m²)', inp.t1 ? esc(inp.t1) + ' / ' + xlsxNum(inp.superficie, 0) : 'No aplica')}
-      ${row('Tabla 2 (destino / ocupantes)', inp.t2 ? esc(inp.t2) + ' / ' + xlsxNum(inp.ocupantes, 0) : 'No aplica')}
-      ${row('Tabla 3 (destino por carga combustible)', inp.t3 ? esc(inp.t3) : 'No aplica')}
-    </tbody></table>`;
-}
-function estudioFuegoCalcHtml(inp, r, resumen) {
-  const th = 'style="text-align:center;font-weight:700;padding:.25rem .3rem;border:1px solid #999;background:#349DD3;color:#fff"';
-  const td = 'style="padding:.2rem .3rem;border:1px solid #999"';
-  const tdn = 'style="padding:.2rem .3rem;border:1px solid #999;text-align:right"';
-  const n = (v, d) => (v == null || !isFinite(v)) ? '—' : xlsxNum(v, d);
-  let h = `<div class="xlsx-section">2. Clasificación OGUC Art. 4.3.4</div>
-    <table class="xlsx-table"><tbody>
-      <tr><td class="xv-label">Carga combustible total [MJ]</td><td class="xv-input" colspan="3">${n(r.cargaTotal, 0)}</td></tr>
-      <tr><td class="xv-label">Densidad media [MJ/m²] / puntual máxima [MJ/m²]</td><td class="xv-input" colspan="3">${n(r.media, 0)} / ${n(r.puntual, 0)}</td></tr>
-      <tr><td class="xv-label">Pisos para clasificación</td><td class="xv-input" colspan="3">${r.pisosEq}${r.excepcion ? ' (excepción: 1 piso, DCC media < 500 MJ/m², sin altillos)' : ''}</td></tr>
-      <tr><td class="xv-label">Tipo por Tabla 1 / 2 / 3</td><td class="xv-input" colspan="3">${r.t1 || '—'} / ${r.t2 || '—'} / ${r.t3 ? r.t3.letra : '—'}</td></tr>
-      <tr><td class="xv-label"><b>Tipo adoptado (el más exigente)</b></td><td class="xv-input" colspan="3"><b>${r.tipo || '—'}</b></td></tr>
+      ${efXrow('Superficie del sector para DCC media [m²]', v(inp.area))}
+      ${efXrow('Densidad puntual medida [MJ/m²] / procedencia', v(inp.puntualManual) + ' / ' + v(inp.puntualFuente))}
     </tbody></table>
-    <div class="xlsx-section">3. Exigencia, masividad, temperatura crítica y protección por elemento</div>
-    <table style="border-collapse:collapse;width:100%;font-size:.78rem"><thead><tr>
-      <th ${th}>Elemento</th><th ${th}>Perfil</th><th ${th}>F exigida</th><th ${th}>Am/V (m⁻¹)</th><th ${th}>ksh</th><th ${th}>Clase 4</th><th ${th}>θcr (°C)</th><th ${th}>t sin prot. (min)</th><th ${th}>Protección</th><th ${th}>Esp. req.</th><th ${th}>Esp. prop.</th><th ${th}>Estado</th></tr></thead><tbody>`;
-  r.elems.forEach(e => {
-    h += `<tr><td ${td}>${esc(e.nombre)}</td><td ${td}>${esc(e.perfil)}</td><td ${tdn}>${e.Freq ? 'F-' + e.Freq : (e.Freq === 0 ? '—' : '?')}</td><td ${tdn}>${n(e.F, 0)}</td><td ${tdn}>${n(e.ksh, 2)}</td><td ${td}>${e.cls ? (e.clase4 ? 'Sí' : 'No') : 'n/e'}</td><td ${tdn}>${n(e.thcr, 0)}</td><td ${tdn}>${n(e.tcr, 1)}</td><td ${td}>${esc(EF_PROD[e.prot])}</td><td ${tdn}>${esc(e.espTxt)}</td><td ${tdn}>${e.prot === 'ninguna' ? '—' : n(e.espProp, 0) + ' ' + e.espU}</td><td ${td}>${esc(efTxtImp(e.estado[1]))}</td></tr>`;
-  });
-  h += `</tbody></table>`;
+    <div class="xlsx-section">1.1 Inventario de materiales combustibles</div>
+    ${efXtab(['N°', 'Material / acopio', 'Masa (kg)', 'Poder calorífico (MJ/kg)', 'Fuente', 'Ubicación', 'Huella x; y; largo; ancho (m)'],
+      r.mats.map(m => `<tr><td>${m.n}</td><td>${v(m.desc)}</td><td class="xv-input">${v(m.masa)}</td><td class="xv-input">${v(m.hc)}</td><td>${v(m.fuente)}</td><td>${v(m.zona)}</td><td>${v(m.huella)}</td></tr>`))}
+    <div class="xlsx-section">2. Edificio (OGUC Art. 4.3.4 y 4.3.5)</div>
+    <table class="xlsx-table"><tbody>
+      ${efXrow('N° de pisos', v(inp.pisosReales))}
+      ${efXrow('Alturas de piso [m]', v(inp.altura))}
+      ${efXrow('Altillos o superficies intermedias', inp.altillos === 'si' ? 'Sí' : 'No')}
+      ${efXrow('Tabla 1 (destino / superficie edificada m²)', inp.t1 ? esc(inp.t1) + ' / ' + v(inp.superficie) : 'No aplica')}
+      ${efXrow('Tabla 2 (destino / ocupantes)', inp.t2 ? esc(inp.t2) + ' / ' + v(inp.ocupantes) : 'No aplica')}
+      ${efXrow('Tabla 3 (destino por carga combustible)', inp.t3 ? esc(inp.t3) : 'No aplica')}
+      ${efXrow('Tipo ingresado por el proyectista', inp.tipoManual ? esc(inp.tipoManual) + (inp.tipoExc ? ' — ' + esc(EF_EXC_TIPO[inp.tipoExc] || '') : '') + (String(inp.tipoResp || '').trim() ? ' — respaldo: ' + esc(inp.tipoResp) : '') : '—')}
+    </tbody></table>
+    <div class="xlsx-section">3. Elementos de acero</div>
+    ${efXtab(['N°', 'Elemento', 'Función principal', 'Función adicional', 'F manual', 'Excepción 4.3.5 / respaldo', 'Perfil', 'Tipo', 'h', 'b', 'tw', 'tf', 'r', 'A (cm²)', 'Orientación', 'Bajo losa', 'Caras', 'Exposición', 'Solicitación', 'Fy (kg/cm²)', 'μ0', 'Inestab.', 'Protección', 'Esp. cert.', 'Esp. propuesto', 'Cobertura', 'Referencia documental'],
+      (inp.elementos || []).map((it, i) => `<tr><td>${i + 1}</td><td>${v(it.nombre)}</td><td>${esc(efFuncTxt(+it.f1))}</td><td>${esc(efFuncTxt(+it.f2))}</td><td>${v(it.Fmanual)}</td>
+        <td>${EF_EXC[it.exc] ? esc(EF_EXC[it.exc].txt.split(' — ')[0]) + ' / ' + v(it.excResp) : '—'}</td><td>${v(it.perfil)}</td><td>${esc(it.tipo)}</td>
+        <td>${v(it.h)}</td><td>${v(it.b)}</td><td>${v(it.tw)}</td><td>${v(it.tf)}</td><td>${v(it.r)}</td><td>${v(it.A)}</td>
+        <td>${EF_ORIENT[it.orient] || '—'}</td><td>${it.bajoLosa === 'si' ? 'Sí' : (it.bajoLosa === 'no' ? 'No' : '—')}</td><td>${esc(it.caras)}</td><td>${EF_EXPO[it.expo] || '—'}</td><td>${esc(it.solic)}</td>
+        <td>${v(it.Fy)}</td><td>${v(it.mu)}</td><td>${it.inest === 'si' ? 'Sí' : 'No'}</td><td>${esc(EF_PROD[it.prot] || '—')}</td><td>${v(it.espCert)}</td><td>${v(it.espProp)}</td>
+        <td>${lab[it.cob] || 'Sin antecedente'}</td><td>${v(it.refDoc)}</td></tr>`))}
+    <div class="xlsx-section">4. Asimilación — antecedentes ingresados</div>
+    <table class="xlsx-table"><tbody>${efXrow('Origen del ensayo de referencia', inp.origenEnsayo === 'nac' ? 'Nacional (NCh 935/1)' : (inp.origenEnsayo === 'ext' ? 'Extranjero' : '—'))}</tbody></table>
+    ${efXtab(['Criterio', 'Referencia', 'Estado', 'Observación'], r.chk.map(c => `<tr><td>${esc(c.txt)}</td><td>${esc(c.ref)}</td><td class="xv-input">${lab[c.v] || c.v}</td><td>${esc(c.obs || '')}</td></tr>`))}`;
+}
+// Texto del estado para la hoja de cálculo (mvsEstados reconoce CUMPLE / NO CUMPLE / NO VERIFICADO).
+function efEstadoX(e) { return esc(e.estado[1]); }
+function estudioFuegoCalcHtml(inp, r, resumen) {
+  const p = r.pun;
+  let h = `<div class="xlsx-title-bar">CÁLCULO</div>
+    <div class="xlsx-section">5. Carga combustible y densidad puntual (NCh 1916 · NCh 1993)</div>
+    <table class="xlsx-table"><tbody>
+      ${efXrow('Carga combustible total ΣQi [MJ]', r.cargaTotal != null ? efXn(r.cargaTotal, 0) : 'No determinada (inventario incompleto; suma parcial ' + efXn(r.cargaParcial, 0) + ' MJ)')}
+      ${efXrow('Densidad de carga combustible media qm [MJ/m²]', efXn(r.media, 0))}
+      ${efXrow('Densidad puntual máxima qp [MJ/m²]', r.puntual != null ? efXn(r.puntual, 0) + (p.origen === 'medida' ? ' (medida: ' + esc(inp.puntualFuente) + ')' : ' (barrido 2×2 m)') : 'No determinada')}
+      ${efXrow('Barrido 2×2 m', esc(cbPuntualTxt(p)))}
+    </tbody></table>
+    ${efXtab(['N°', 'Material', 'Masa (kg)', 'H (MJ/kg)', 'Qi (MJ)', 'Ubicación', 'Huella (m)', 'Aporte a la ventana crítica (MJ)', 'Observación'],
+      r.mats.map(m => { const ap = p.ventana && p.ventana.aportes.find(a => a.n === m.n);
+        return `<tr><td>${m.n}</td><td>${esc(m.desc || '—')}</td><td>${efXn(m.masaNum, 1)}</td><td>${efXn(m.hcNum, 2)}</td><td>${efXn(m.carga, 0)}</td><td>${esc(m.zona || '—')}</td><td>${esc(m.huella || '—')}</td><td>${ap ? efXn(ap.carga, 0) : '—'}</td><td>${esc(m.errs.concat(m.falta.length ? ['falta ' + m.falta.join(', ')] : []).join('; ') || '—')}</td></tr>`; }))}
+    <div class="xlsx-section">6. Clasificación OGUC Art. 4.3.4 y 4.3.5</div>
+    <table class="xlsx-table"><tbody>
+      ${efXrow('Pisos para clasificación (4.3.5 n°1)', r.pisosEq != null ? r.pisosEq + ' — ' + esc(r.pisos.detalle || '') : 'No determinado')}
+      ${efXrow('Tipo por Tabla 1 / 2 / 3', `${r.t1 || '—'} / ${r.t2 || '—'} / ${r.t3 ? r.t3.letra + (r.tipoProv ? ' (provisorio)' : '') : '—'}`)}
+      ${efXrow('Tipo calculado (el más exigente)', r.tipoCalc || '—')}
+      ${efXrow('Tipo adoptado para las exigencias', (r.tipo || '—') + (r.tipoRed === 'justificada' ? ' — reducción por ' + esc(r.tipoExcTxt) + '; respaldo: ' + esc(r.tipoResp) : (r.tipoRed === 'no justificada' ? ' — el tipo ingresado (' + r.tipoManual + ') no se adopta: reducción sin excepción documentada' : '')) + (r.tipoProv ? ' (provisorio)' : ''))}
+    </tbody></table>
+    <div class="xlsx-section">7. Exigencia por elemento (OGUC 4.3.3 y 4.3.5)</div>
+    ${efXtab(['N°', 'Elemento', 'Funciones', 'F calculada', 'F adoptada', 'Reducción', 'Excepción / respaldo'],
+      r.elems.map(e => `<tr><td>${e.n}</td><td>${esc(e.nombre)}</td><td>${esc(e.funcs.map(efFuncTxt).join(' + ') || '—')}</td><td>${e.FreqCalc != null ? (e.FreqCalc ? 'F-' + e.FreqCalc : 'Sin exigencia') : '—'}</td>
+        <td>${e.Freq != null ? (e.Freq ? 'F-' + e.Freq : 'Sin exigencia') : '—'}</td><td>${e.reduccion || '—'}</td><td>${e.excTxt ? esc(e.excTxt.split(' — ')[0]) + ' / ' + esc(e.excResp || 'sin respaldo') : '—'}</td></tr>`))}`;
+  if (!resumen) h += `
+    <div class="xlsx-section">8. Geometría, masividad y clase de la sección (EN 1993-1-2)</div>
+    ${efXtab(['N°', 'Elemento', 'Perfil', 'Tipo', 'h / b / tw / tf / r (mm)', 'A (cm²)', 'Geometría', 'Caras', 'Am/V usado (m⁻¹)', 'Am/V 4 caras (m⁻¹)', 'ksh (ecuación)', 'Clase'],
+      r.elems.map(e => `<tr><td>${e.n}</td><td>${esc(e.nombre)}</td><td>${esc(e.perfil)}</td><td>${esc(e.tipo)}</td><td>${[e.h, e.b, e.tw, e.tf, e.r].map(x => efXn(x, 1)).join(' / ')}</td><td>${efXn(e.A, 2)}</td>
+        <td>${e.geomOk ? 'Válida' : 'Inválida'}</td><td>${esc(e.caras)}</td><td>${efXn(e.F, 1)}</td><td>${efXn(e.F4, 1)}</td><td>${e.ksh != null ? efXn(e.ksh, 3) + ' (' + (e.kshEc === 'convexa' ? 'convexa' : 'ec. ' + e.kshEc) + ')' : '—'}</td>
+        <td>${e.cls ? (e.clase4 ? 'Clase 4' : 'Clase 1-3') + ' — ' + esc(e.cls.txt) : 'No evaluada'}</td></tr>`))}
+    <div class="xlsx-section">9. Utilización y temperatura crítica (EN 1993-1-2 §4.2.3–§4.2.5)</div>
+    ${efXtab(['N°', 'Elemento', 'Fy (kg/cm²)', 'μ0', 'Método', 'θcr (°C)', 't a θcr sin protección (min)'],
+      r.elems.map(e => `<tr><td>${e.n}</td><td>${esc(e.nombre)}</td><td>${efXn(e.Fy, 0)}</td><td>${efXn(e.mu, 3)}</td>
+        <td>${({clase4: 'Clase 4: θcr = 350 °C (§4.2.3.6)', inestabilidad: 'Gobierna inestabilidad: §4.2.4 no aplicable; verificar por §4.2.3', sin_mu: 'μ0 no informado', mu_mayor_1: 'μ0 > 1: insuficiencia inicial', ec422: 'Ec. 4.22 (§4.2.4)'})[e.metodoCr]}</td>
+        <td>${efXn(e.thcr, 0)}</td><td>${e.tcr != null ? efXn(e.tcr, 1) : (e.curva && e.thcr != null ? '> 150' : '—')}</td></tr>`))}`;
+  h += `
+    <div class="xlsx-section">10. Protección y referencia documental</div>
+    ${efXtab(['N°', 'Elemento', 'Protección', 'Alcance de la referencia', 'Tabla y criterio', 'Esp. requerido', 'Esp. propuesto', 'Espesor tabulado', 'Cobertura', 'Referencia documental'],
+      r.elems.map(e => `<tr><td>${e.n}</td><td>${esc(e.nombre)}</td><td>${esc(EF_PROD[e.prot] || '—')}</td><td>${esc(e.alcance || '—')}</td>
+        <td>${e.espInfo ? esc((e.espInfo.tabla ? e.espInfo.tabla.titulo : '') + (e.espInfo.por ? ' — ' + e.espInfo.por : '')) : '—'}</td><td>${e.prot === 'ninguna' ? '—' : esc(e.espTxt)}</td>
+        <td>${e.prot === 'ninguna' ? '—' : efXn(e.espProp, 0) + ' ' + e.espU}</td><td>${e.prot === 'ninguna' ? '—' : (e.tablaSuf ? 'Suficiente' : (e.espReq != null ? 'Insuficiente o no informado' : 'Sin valor aplicable'))}</td>
+        <td>${({si: 'Confirmada', no: 'No cubre', pend: 'Sin antecedente'})[e.cob]}</td><td>${esc(e.refDoc || '—')}</td></tr>`))}
+    <div class="xlsx-section">11. Resultado por elemento</div>
+    ${efXtab(['N°', 'Elemento', 'Perfil', 'F adoptada', 'Estado'], r.elems.map(e => `<tr><td>${e.n}</td><td>${esc(e.nombre)}</td><td>${esc(e.perfil)}</td><td>${e.Freq ? 'F-' + e.Freq : (e.Freq === 0 ? 'Sin exigencia' : '—')}</td><td>${efEstadoX(e)}</td></tr>`))}`;
   if (!resumen) {
-    h += `<div class="xlsx-section">4. Lista de chequeo de asimilación</div>
-      <table style="border-collapse:collapse;width:100%;font-size:.78rem"><thead><tr><th ${th}>Criterio</th><th ${th}>Referencia</th><th ${th}>Estado</th><th ${th}>Observación</th></tr></thead><tbody>`;
     const lab = {si: 'Cumple', no: 'No cumple', pend: 'Sin antecedente', na: 'No aplica'};
-    r.chk.concat(r.chkAuto.map(c => Object.assign({ref: 'Cálculo de esta planilla'}, c))).forEach(c => {
-      h += `<tr><td ${td}>${esc(c.txt)}</td><td ${td}>${esc(c.ref)}</td><td ${td}>${lab[c.v] || c.v}</td><td ${td}>${esc(c.obs || '')}</td></tr>`;
-    });
-    h += `</tbody></table>`;
+    h += `<div class="xlsx-section">12. Lista de chequeo de asimilación</div>
+      ${efXtab(['Criterio', 'Referencia', 'Estado', 'Observación'], r.chk.concat(r.chkAuto.map(c => Object.assign({ref: 'Cálculo de esta planilla'}, c))).map(c => `<tr><td>${esc(c.txt)}</td><td>${esc(c.ref)}</td><td>${lab[c.v] || c.v}</td><td>${esc(c.obs || '')}</td></tr>`))}`;
   }
-  h += `<div class="xlsx-section">Conclusión de asimilación</div><table class="xlsx-table"><tbody>
-    <tr><td class="xv-label">Método</td><td class="xv-input" colspan="3">${esc(efTxtImp(r.metodo))}</td></tr>
-    <tr><td class="xv-label">Resultado</td><td class="xv-input" colspan="3">${esc(efTxtImp(r.asim[1]))}</td></tr></tbody></table>`;
+  h += `<div class="xlsx-section">${resumen ? '12' : '13'}. Conclusión y pendientes</div><table class="xlsx-table"><tbody>
+    ${efXrow('Método de acreditación', esc(efTxtImp(r.metodo)))}
+    ${efXrow('Asimilación', esc(efTxtImp(r.asim[1])))}
+    ${efXrow('Resultado global', esc(r.global[1]))}
+    </tbody></table>
+    ${r.pend.length ? efXtab(['Ámbito', 'Pendiente', 'Bloquea la conclusión'], r.pend.map(q => `<tr><td>${esc(q.ambito)}</td><td>${esc(q.txt)}</td><td>${q.bloquea ? 'Sí' : 'No'}</td></tr>`)) : ''}`;
   if (r.avisosP.length) h += `<div class="xlsx-desc-row" style="padding:.3rem">${r.avisosP.map(esc).join('<br>')}</div>`;
   const avE = r.elems.filter(e => e.avP.length);
   if (avE.length) h += `<div class="xlsx-desc-row" style="padding:.3rem">${avE.map(e => '<b>' + esc(e.nombre) + ':</b> ' + e.avP.map(esc).join(' ')).join('<br>')}</div>`;
@@ -42859,24 +43240,25 @@ function efMemoriaHtml(inp, r, meta) {
   const colEl = r.elems.map((e, i) => PAL[i % PAL.length]);
 
   // ---- 1. Carga combustible
-  const mats = r.mats.filter(m => m.desc || m.carga > 0);
+  const mats = r.mats;
+  const ap = m => r.pun.ventana && r.pun.ventana.aportes.find(a => a.n === m.n);
   const tablaMat = mats.length ? `${MEM_T('Inventario de materiales combustibles y carga combustible')}
-    <table class="inf-t"><tr><th>N°</th><th>Material / acopio</th><th>Masa mi (kg)</th><th>Poder calorífico Hi (MJ/kg)</th><th>Fuente de Hi</th><th>Zona 2×2</th><th>Qi = mi·Hi (MJ)</th></tr>
-    ${mats.map((m, i) => `<tr><td>${i + 1}</td><td class="l">${esc(m.desc || '—')}</td><td>${N(m.masa, 1)}</td><td>${N(m.hc, 2)}</td><td class="l">${esc(m.fuente || 'Sin fuente declarada')}</td><td>${esc(m.zona || '—')}</td><td>${N(m.carga, 0)}</td></tr>`).join('')}
-    <tr><td colspan="6" class="l"><b>Carga combustible total ΣQi</b></td><td class="hl">${N(r.cargaTotal, 0)}</td></tr></table>` : '<p>No se registraron materiales combustibles.</p>';
-  const tablaZonas = r.zonasArr.length ? `${MEM_T('Densidad de carga combustible por superficie de 2 × 2 m')}
-    <table class="inf-t"><tr><th>Zona</th><th>Carga de la zona (MJ)</th><th>Superficie (m²)</th><th>Densidad (MJ/m²)</th></tr>
-    ${r.zonasArr.map((z, i) => `<tr><td>${esc(z.zona)}</td><td>${N(z.carga, 0)}</td><td>4,0</td><td class="${i === 0 ? 'hl' : ''}">${N(z.dcc, 0)}</td></tr>`).join('')}</table>` : '';
-  const grafZonas = r.zonasArr.length ? `${memBarras(r.zonasArr.slice(0, 20).map(z => ({label: z.zona, v: z.dcc, color: '#2a78d6'})), 'Densidad de carga combustible (MJ/m²)', r.media != null ? [{v: r.media, label: 'media ' + N(r.media, 0)}] : [])}${MEM_F('Densidad de carga combustible por zona de 2 × 2 m y densidad media del sector (línea de referencia)')}` : '';
+    <table class="inf-t"><tr><th>N°</th><th>Material / acopio</th><th>Masa mi (kg)</th><th>Poder calorífico Hi (MJ/kg)</th><th>Fuente de Hi</th><th>Ubicación / huella x; y; largo; ancho (m)</th><th>Qi = mi·Hi (MJ)</th><th>Aporte a la ventana crítica (MJ)</th></tr>
+    ${mats.map(m => `<tr><td>${m.n}</td><td class="l">${esc(m.desc || '—')}</td><td>${N(m.masaNum, 1)}</td><td>${N(m.hcNum, 2)}</td><td class="l">${esc(m.fuente || 'Sin fuente declarada')}</td><td>${esc(m.zona || '—')}${m.huella ? '<br>' + esc(m.huella) : ''}</td><td>${m.errs.length ? 'dato inválido' : N(m.carga, 0)}</td><td>${ap(m) ? N(ap(m).carga, 0) : '—'}</td></tr>`).join('')}
+    <tr><td colspan="6" class="l"><b>Carga combustible total ΣQi</b></td><td class="hl">${r.cargaTotal != null ? N(r.cargaTotal, 0) : 'no determinada'}</td><td></td></tr></table>` : '<p>No se registraron materiales combustibles.</p>';
+  const tablaZonas = r.zonasArr.length && r.pun.origen !== 'barrido' ? `${MEM_T('Agrupación por ubicación — estimación no verificada (no considera ventanas que crucen ubicaciones)')}
+    <table class="inf-t"><tr><th>Ubicación</th><th>Carga (MJ)</th><th>Superficie (m²)</th><th>Densidad estimada (MJ/m²)</th></tr>
+    ${r.zonasArr.map((z, i) => `<tr><td>${esc(z.zona)}</td><td>${N(z.carga, 0)}</td><td>4,0</td><td class="${i === 0 ? 'hl' : ''}">${N(z.dens, 0)}</td></tr>`).join('')}</table>` : '';
+  const grafZonas = '';
 
   // ---- 2. Pisos y tablas 4.3.4
-  const H = inp.altura;
-  const pisosTxt = r.excepcion
-    ? `<p>El edificio tiene un piso, no tiene altillos ni superficies intermedias y su densidad de carga combustible media es ${N(r.media, 0)} MJ/m² &lt; 500 MJ/m². Se aplica la excepción del Art. 4.3.4 y se considera de <b>1 piso</b>, cualquiera sea su altura.</p>`
-    : `<p>Pisos reales: ${inp.pisosReales}.${H > 0 ? ` Por altura: la altura interior se divide por 3,5 m y la fracción se cuenta como un piso adicional.` : ''}</p>
-       ${H > 0 ? `<div class="eq">n = ⌈H / 3,5⌉ = ⌈${N(H, 2)} / 3,5⌉ = ⌈${N(H/3.5, 2)}⌉ = ${r.pisosAltura}</div>` : ''}
-       <div class="eq">n para clasificación = máx(${inp.pisosReales}${H > 0 ? '; ' + r.pisosAltura : ''}) = <b>${r.pisosEq}</b></div>
-       ${inp.pisosReales === 1 && !r.excepcion ? `<p>No procede la excepción de un piso: ${inp.altillos === 'si' ? 'el edificio tiene altillos o superficies intermedias' : (r.media == null ? 'la densidad media no está determinada' : 'la densidad media (' + N(r.media, 0) + ' MJ/m²) no es inferior a 500 MJ/m²')}.</p>` : ''}`;
+  const H = String(inp.altura || '').trim();
+  const pisosTxt = r.pisosEq == null ? `<p>El número de pisos no está determinado: ${esc(r.pisos.errs.join('; '))}.</p>`
+    : r.excepcion
+    ? `<p>El edificio tiene un piso, no tiene altillos ni superficies intermedias y su densidad de carga combustible media es ${N(r.media, 0)} MJ/m² &lt; 500 MJ/m². Se aplica la excepción del Art. 4.3.5 n°1 y se considera de <b>1 piso</b>, cualquiera sea su altura.</p>`
+    : `<p>Art. 4.3.5 n°1: se entiende por piso la distancia entre el suelo y el punto más alto del cielo del mismo recinto, con un máximo de 3,5 m; las alturas de los pisos que sobrepasan esa medida se suman aparte y se dividen por 3,5 m, y la fracción se considera un piso más.${H ? ' Alturas de piso informadas: ' + esc(H) + ' m.' : ''}</p>
+       <div class="eq">n = ${esc(r.pisos.detalle)} → <b>${r.pisosEq}</b></div>
+       ${r.pisos.nFisicos === 1 ? `<p>No procede la excepción de un piso: ${inp.altillos === 'si' ? 'el edificio tiene altillos o superficies intermedias' : (r.media == null ? 'la densidad media no está determinada' : 'la densidad media (' + N(r.media, 0) + ' MJ/m²) no es inferior a 500 MJ/m²')}.</p>` : ''}`;
   const rangoTxt = x => x[1] == null ? 'Sobre ' + N(x[0], 0) : (x[0] === 0 ? 'Hasta ' + N(x[1], 0) : 'Sobre ' + N(x[0], 0) + ' y hasta ' + N(x[1], 0));
   const tablaLookup = (titulo, rows, nCols, ult, rango, iSel, pisos, unidad) => {
     const col = Math.min(pisos, nCols) - 1;
@@ -42886,29 +43268,31 @@ function efMemoriaHtml(inp, r, meta) {
   };
   const selT = (rows, val) => rows.findIndex(x => (val > x[0] && (x[1] == null || val <= x[1])) || (val === 0 && x[0] === 0));
   let t434 = '';
-  if (inp.t1) t434 += `<h2>5.2 Tabla 1 — destino «${esc(inp.t1)}», superficie edificada ${N(inp.superficie, 0)} m²</h2>
-    ${tablaLookup('OGUC Art. 4.3.4, Tabla 1, fila del destino (superficie edificada en m²; columnas: número de pisos)', EF_T1[inp.t1], 7, 'o más', x => rangoTxt(x), selT(EF_T1[inp.t1], inp.superficie), r.pisosEq, 'Superficie (m²)')}
-    <p>Con ${N(inp.superficie, 0)} m² y ${r.pisosEq} piso(s) resulta tipo <b>${r.t1 || '—'}</b>.</p>`;
-  if (inp.t2) t434 += `<h2>5.${inp.t1 ? 3 : 2} Tabla 2 — destino «${esc(inp.t2)}», ${N(inp.ocupantes, 0)} ocupantes</h2>
-    ${tablaLookup('OGUC Art. 4.3.4, Tabla 2, fila del destino (máximo de ocupantes; columnas: número de pisos)', EF_T2[inp.t2], 6, 'o más', x => rangoTxt(x), selT(EF_T2[inp.t2], inp.ocupantes), r.pisosEq, 'Ocupantes')}
-    <p>Con ${N(inp.ocupantes, 0)} ocupantes y ${r.pisosEq} piso(s) resulta tipo <b>${r.t2 || '—'}</b>.</p>`;
+  const supN = cbNum(inp.superficie), ocN = cbNum(inp.ocupantes);
+  if (inp.t1) t434 += `<h2>5.2 Tabla 1 — destino «${esc(inp.t1)}», superficie edificada ${N(supN, 0)} m²</h2>
+    ${tablaLookup('OGUC Art. 4.3.4, Tabla 1, fila del destino (superficie edificada en m²; columnas: número de pisos)', EF_T1[inp.t1], 7, 'o más', x => rangoTxt(x), selT(EF_T1[inp.t1], supN), r.pisosEq || 1, 'Superficie (m²)')}
+    <p>Con ${N(supN, 0)} m² y ${r.pisosEq} piso(s) resulta tipo <b>${r.t1 || '—'}</b>.</p>`;
+  if (inp.t2) t434 += `<h2>5.${inp.t1 ? 3 : 2} Tabla 2 — destino «${esc(inp.t2)}», ${N(ocN, 0)} ocupantes</h2>
+    ${tablaLookup('OGUC Art. 4.3.4, Tabla 2, fila del destino (máximo de ocupantes; columnas: número de pisos)', EF_T2[inp.t2], 6, 'o más', x => rangoTxt(x), selT(EF_T2[inp.t2], ocN), r.pisosEq || 1, 'Ocupantes')}
+    <p>Con ${N(ocN, 0)} ocupantes y ${r.pisosEq} piso(s) resulta tipo <b>${r.t2 || '—'}</b>.</p>`;
   if (inp.t3) {
     const rows = EF_T3[inp.t3];
     const lim = (x, i, k) => x[k] == null ? 'sobre ' + N(rows[i - 1][k], 0) : 'hasta ' + N(x[k], 0);
     t434 += `<h2>5.${1 + (inp.t1 ? 1 : 0) + (inp.t2 ? 1 : 0) + 1} Tabla 3 — destino «${esc(inp.t3)}»</h2>
       <p>La Tabla 3 se ingresa con la densidad de carga combustible media (NCh 1916) y con la puntual máxima (NCh 1993); cuando ambas conducen a filas distintas, rige la de mayor densidad.</p>
-      ${tablaLookup('OGUC Art. 4.3.4, Tabla 3, fila del destino (densidades en MJ/m²; columnas: número de pisos)', rows, 5, 'o más', (x, i) => 'Media ' + lim(x, i, 0) + ' / puntual ' + lim(x, i, 1), r.t3 ? Math.max(r.t3.iM, r.t3.iP) : -1, r.pisosEq, 'Densidad media / puntual')}
-      <p>Densidad media ${N(r.media, 0)} MJ/m² → fila ${r.t3 && r.t3.iM >= 0 ? r.t3.iM + 1 : '—'}; densidad puntual máxima ${N(r.puntual, 0)} MJ/m² → fila ${r.t3 && r.t3.iP >= 0 ? r.t3.iP + 1 : '—'}. Rige la fila ${r.t3 ? Math.max(r.t3.iM, r.t3.iP) + 1 : '—'}${r.t3 && r.t3.porPuntual ? ', determinada por la densidad puntual' : ''}, con lo que resulta tipo <b>${r.t3 ? r.t3.letra : '—'}</b>.</p>`;
+      ${tablaLookup('OGUC Art. 4.3.4, Tabla 3, fila del destino (densidades en MJ/m²; columnas: número de pisos)', rows, 5, 'o más', (x, i) => 'Media ' + lim(x, i, 0) + ' / puntual ' + lim(x, i, 1), r.t3 ? Math.max(r.t3.iM, r.t3.iP) : -1, r.pisosEq || 1, 'Densidad media / puntual')}
+      <p>Densidad media ${N(r.media, 0)} MJ/m² → fila ${r.t3 && r.t3.iM >= 0 ? r.t3.iM + 1 : '—'}; densidad puntual máxima ${r.puntual != null ? N(r.puntual, 0) + ' MJ/m²' : (r.pT3 != null ? N(r.pT3, 0) + ' MJ/m² (estimación no verificada)' : 'no determinada')} → fila ${r.t3 && r.t3.iP >= 0 ? r.t3.iP + 1 : '—'}. Rige la fila ${r.t3 ? Math.max(r.t3.iM, r.t3.iP) + 1 : '—'}${r.t3 && r.t3.porPuntual ? ', determinada por la densidad puntual' : ''}, con lo que resulta tipo <b>${r.t3 ? r.t3.letra : '—'}</b>${r.tipoProv ? ', de carácter <b>provisorio</b> mientras no se determine la densidad puntual máxima' : ''}.</p>`;
   }
   const letras = [['Tabla 1', r.t1], ['Tabla 2', r.t2], ['Tabla 3', r.t3 && r.t3.letra]].filter(x => x[1]);
 
   // ---- 3. Exigencia por elemento
   const tablaExig = `${MEM_T('Resistencia al fuego exigida por función del elemento (OGUC Art. 4.3.3, tipo ' + (r.tipo || '—') + ')')}
-    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Función principal</th><th>Exigencia</th><th>Función adicional</th><th>Exigencia</th><th>Exigencia adoptada</th></tr>
+    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Función principal</th><th>Exigencia</th><th>Función adicional</th><th>Exigencia</th><th>Exigencia calculada</th><th>Exigencia adoptada</th></tr>
     ${r.elems.map((e, i) => {
-      const fx = f => f >= 1 && f <= 9 ? [EF_FUNC[f - 1], r.tipo && EF_T433[r.tipo][f - 1] ? 'F-' + EF_T433[r.tipo][f - 1] : '—'] : ['—', '—'];
-      const a = fx(e.f1), b = fx(e.f2);
-      return `<tr><td>${i + 1}</td><td class="l">${esc(e.nombre)}</td><td class="l">${esc(a[0])}</td><td>${a[1]}</td><td class="l">${esc(b[0])}</td><td>${b[1]}</td><td class="hl">${e.Fmanual > 0 ? 'F-' + e.Fmanual + ' (fijada por el proyectista)' : fReq(e)}</td></tr>`;
+      const fx = f => f >= 1 && f <= 9 ? [EF_FUNC[f - 1], r.resist ? r.resist[f - 1].txt : '—'] : ['—', '—'];
+      const a = fx(+e.f1), b = fx(+e.f2);
+      const ad = e.reduccion === 'justificada' ? `${fReq(e)} (${esc(e.excTxt.split(' — ')[0])}; respaldo: ${esc(e.excResp)})` : (e.reduccion === 'no justificada' ? fReq(e) + ' (la reducción propuesta no tiene excepción documentada)' : (e.Fmanual != null && e.Freq !== e.FreqCalc ? fReq(e) + ' (fijada por el proyectista)' : fReq(e)));
+      return `<tr><td>${i + 1}</td><td class="l">${esc(e.nombre)}</td><td class="l">${esc(a[0])}</td><td>${a[1]}</td><td class="l">${esc(b[0])}</td><td>${b[1]}</td><td>${e.FreqCalc != null ? (e.FreqCalc ? 'F-' + e.FreqCalc : 'Sin exigencia') : 'No determinada'}</td><td class="hl">${ad}</td></tr>`;
     }).join('')}</table>`;
 
   // ---- 4. Térmico
@@ -42919,28 +43303,34 @@ function efMemoriaHtml(inp, r, meta) {
 
   const MIN_TRAZA = [0, 1, 2, 5, 10, 15, 20, 30, 45, 60, 90, 120];
   const fichas = r.elems.map((e, i) => {
+    if (!e.geomOk) return `<div class="salto"></div><h1>6.${i + 1} ${esc(e.nombre)} — ${esc(e.perfil)}</h1>
+      <p>La geometría ingresada no es válida (${esc(e.errs.filter(x => /^geometría/.test(x)).map(x => x.replace(/^geometría: /, '')).join('; '))}); no se calculan la masividad, la temperatura del acero ni la protección de este elemento.</p>
+      <h2>Resultado del elemento</h2><p><b>${esc(e.estado[1])}</b>.</p>`;
     const per = efPerimetroTxt(e);
     const sv = (typeof afSvgSeccion === 'function' && ['I-H', 'U', 'RHS', 'TUB', 'CHS', 'L'].includes(e.tipo)) ? afSvgSeccion({tipo: e.tipo === 'TUB' ? 'RHS' : e.tipo, h: e.h, b: e.b, tw: e.tw, tf: e.tf, rol: e.caras === '3' ? 'viga' : 'pilar', perfil: e.perfil}) : '';
-    const Fb = e.A > 0 ? (e.caras === '3' ? 10*(2*e.h + e.b)/e.A : 10*2*(e.h + e.b)/e.A) : null;
-    const kshTxt = (e.tipo === 'I-H' || e.tipo === 'U') && Fb
-      ? `<p>Factor de corrección por efecto sombra (EN 1993-1-2 ec. 4.26a, secciones I): [Am/V]b es la masividad del cajón que envuelve la sección.</p>
+    const Fb = e.Fbox;
+    const kshTxt = (e.kshEc === '4.26a' || e.kshEc === '4.26b') && Fb
+      ? `<p>Factor de corrección por efecto sombra (EN 1993-1-2 §4.2.5.1(2)): ${e.kshEc === '4.26a' ? 'ec. 4.26a, aplicable a secciones I expuestas a la curva normalizada' : 'ec. 4.26b, aplicable a las secciones que no son I (canal, ángulo)'}; [Am/V]b es la masividad del cajón que envuelve la sección.</p>
          <div class="eq">[Am/V]b = 10·${e.caras === '3' ? '(2h + b)' : '2·(h + b)'} / A = 10·${e.caras === '3' ? '(2·' + N(e.h, 1) + ' + ' + N(e.b, 1) + ')' : '2·(' + N(e.h, 1) + ' + ' + N(e.b, 1) + ')'} / ${N(e.A, 2)} = ${N(Fb, 1)} m⁻¹</div>
-         <div class="eq">ksh = 0,9·[Am/V]b / [Am/V] = 0,9·${N(Fb, 1)} / ${N(e.F, 1)} = <b>${N(e.ksh, 3)}</b></div>`
-      : `<p>Sección convexa (tubo, cajón, ángulo o pared delgada): ksh = <b>1,0</b> (EN 1993-1-2 §4.2.5.1(2)).</p>`;
+         <div class="eq">ksh = ${e.kshEc === '4.26a' ? '0,9·' : ''}[Am/V]b / [Am/V] = ${e.kshEc === '4.26a' ? '0,9·' : ''}${N(Fb, 1)} / ${N(e.F, 1)} = <b>${N(e.ksh, 3)}</b>${e.ksh >= 1 - 1e-9 ? ' (se limita a 1,0)' : ''}</div>`
+      : `<p>Sección convexa (tubo, cajón o pared delgada): ksh = <b>1,0</b> (EN 1993-1-2 §4.2.5.1(2)).</p>`;
     const cls = e.cls;
     const clsTxt = cls ? `<p>Clasificación de la sección en situación de incendio (EN 1993-1-2 §4.2.2: ε reducido por el cociente de rigideces y resistencias a temperatura elevada; límites de EN 1993-1-1 Tabla 5.2, solicitación: ${SOLIC[e.solic] || e.solic}${e.solic === 'flexocomp' ? '; para el alma se adopta, del lado de la seguridad, el límite de compresión pura' : ''}):</p>
         <div class="eq">fy = ${N(e.Fy, 0)} kg/cm² = ${N(cls.fy, 1)} MPa &nbsp;&nbsp; ε = 0,85·√(235 / fy) = 0,85·√(235 / ${N(cls.fy, 1)}) = ${N(cls.eps, 3)}</div>
         ${cls.partes.length ? `<table class="inf-t"><tr><th>Parte</th><th>Esbeltez</th><th>Valor</th><th>Límite clase 3</th><th>Resultado</th></tr>
         ${cls.partes.map(q => `<tr><td class="l">${q.p}</td><td class="l">${q.expr}</td><td>${N(q.ct, 1)}</td><td>${q.limExpr} = ${N(q.lim, 1)}</td><td class="${q.ct > q.lim ? 'bad' : 'ok'}">${q.ct > q.lim ? 'Clase 4' : 'Clase 1-3'}</td></tr>`).join('')}</table>` : `<p>${esc(cls.txt)}.</p>`}
-        <p>La sección resulta <b>${e.clase4 ? 'clase 4' : 'clase 1, 2 o 3'}</b>.</p>` : '<p>La clase de la sección no se evaluó para este tipo de perfil.</p>';
+        ${cls.nota ? `<p>${esc(cls.nota)}</p>` : ''}
+        <p>La sección resulta <b>${e.clase4 ? 'clase 4' : 'clase 1, 2 o 3'}</b>.</p>` : '<p>La clase de la sección no se evaluó para este tipo de perfil y solicitación; debe clasificarse según EN 1993-1-1 Tabla 5.2.</p>';
     let crTxt;
     if (e.clase4) crTxt = `<p>Para secciones clase 4, EN 1993-1-2 §4.2.3.6 limita la temperatura del acero a <b>θcr = 350 °C</b> en todo instante, con independencia del grado de utilización.</p>`;
+    else if (e.metodoCr === 'inestabilidad') crTxt = `<p>Se informó que gobierna la inestabilidad del elemento (pandeo o volcamiento). El método de la temperatura crítica de EN 1993-1-2 §4.2.4 no es aplicable en ese caso, por lo que no se determina θcr: la resistencia en caliente debe verificarse según §4.2.3.</p>`;
+    else if (e.metodoCr === 'mu_mayor_1') crTxt = `<p>El grado de utilización informado es μ0 = ${N(e.mu, 3)} &gt; 1, es decir, Efi,d &gt; Rfi,d,0: el elemento no resiste la combinación de incendio ni siquiera al inicio de la exposición. La ecuación 4.22 no tiene solución y el elemento debe redimensionarse.</p>`;
     else if (e.mu > 0) {
       const m = Math.max(0.013, e.mu);
       crTxt = `<p>Método de la temperatura crítica (EN 1993-1-2 §4.2.4), con el grado de utilización μ0 = Efi,d / Rfi,d,0 = ${N(e.mu, 3)}${e.mu < 0.013 ? ' (se adopta el mínimo 0,013)' : ''}:</p>
         <div class="eq">θa,cr = 39,19·ln[1 / (0,9674·μ0^3,833) − 1] + 482</div>
         <div class="eq">θa,cr = 39,19·ln[1 / (0,9674·${N(m, 3)}^3,833) − 1] + 482 = <b>${N(e.thcr, 0)} °C</b></div>
-        ${e.inest === 'si' ? '<p>Se informó que gobierna la inestabilidad del elemento: la ecuación 4.22 no es aplicable (§4.2.4(1)) y la resistencia en caliente debe verificarse por §4.2.3; el valor anterior es solo referencial.</p>' : ''}`;
+`;
     } else crTxt = '<p>El grado de utilización μ0 no fue informado; la temperatura crítica no está determinada.</p>';
     const traza = e.curva ? efTraza(e.F, e.ksh, pT, MIN_TRAZA) : [];
     const tablaTraza = traza.length ? `${MEM_T('Cálculo incremental de la temperatura del acero sin protección — ' + esc(e.nombre) + ' (valores al inicio del paso Δt = 5 s)')}
@@ -42962,12 +43352,14 @@ function efMemoriaHtml(inp, r, meta) {
     let protTxt = '';
     const PP = EF_PROT[e.prot], inf = e.espInfo, tb = inf && inf.tabla;
     const hl = c => c ? ' class="hl"' : '';
-    const cierre = () => `<p>${e.espReq != null ? `Espesor requerido: <b>${e.espReq} ${e.espU}</b>; espesor propuesto: <b>${e.espProp || 0} ${e.espU}</b> → ${e.espProp >= e.espReq ? 'suficiente' : 'insuficiente'}.` : `Resultado: ${esc(efTxtImp(e.espTxt))}; el elemento no queda cubierto por la solución de referencia.`}</p>`;
+    const cierre = () => `<p>Alcance de la referencia: ${esc(e.alcance || '—')}.${inf && inf.por ? ' Criterio aplicado: ' + esc(inf.por) + '.' : ''} Orientación: ${esc(EF_ORIENT[e.orient] || 'no indicada')}${e.orient === 'viga' ? '; bajo losa: ' + (e.bajoLosa === 'si' ? 'sí' : (e.bajoLosa === 'no' ? 'no' : 'no indicado')) : ''}; exposición: ${esc(EF_EXPO[e.expo] || 'no indicada')}.</p>
+      <p>${e.espReq != null ? `Espesor requerido por la tabla: <b>${e.espReq} ${e.espU}</b>; espesor propuesto: <b>${e.espProp != null ? e.espProp + ' ' + e.espU : 'no informado'}</b> → espesor tabulado ${e.tablaSuf ? 'suficiente' : 'insuficiente o no informado'}.` : `Resultado: ${esc(efTxtImp(e.espTxt))}; el elemento no queda cubierto por la solución de referencia.`}
+      Cobertura documental: ${e.cob === 'si' ? 'confirmada' : (e.cob === 'no' ? 'la referencia no cubre el elemento' : 'sin antecedente')}${e.refDoc ? ' (' + esc(e.refDoc) + ')' : ''}. Un espesor tabulado suficiente no constituye por sí solo una verificación completa: esta requiere, además, la cobertura documental del elemento y los antecedentes de la sección 7.</p>`;
     if (PP && PP.modo === 'idiem') {
       const rows = tb ? tb.rows : [], iR = tb ? tb.iR : -1;
       const ext = iR >= 0 ? rows.slice(Math.max(0, iR - 2), iR + 3) : rows;
       protTxt = `<h2>Protección: ${esc(PP.nombre)}</h2>
-        <p>Fuente: ${esc(PP.fuente)}. El espesor de pintura intumescente se obtiene de la tabla del informe de ensayo, sin cálculo térmico del acero protegido: el comportamiento de la pintura solo está respaldado por el ensayo. Se ingresa con la masividad a 4 caras, F4 = ${N(e.F4, 1)} m⁻¹, redondeada a la decena superior (fila ${tb && tb.fila != null ? tb.fila : '—'} m⁻¹), sin extrapolar fuera del rango ensayado.${e.caras === '3' ? ' Para un elemento expuesto por 3 caras se emplea igualmente la masividad a 4 caras, lo que asimila la viga a la condición de pilar ensayada y es conservador.' : ''}</p>
+        <p>Fuente: ${esc(PP.fuente)}. El espesor de pintura intumescente se obtiene de la tabla del informe de ensayo, sin cálculo térmico del acero protegido: el comportamiento de la pintura solo está respaldado por el ensayo. Se ingresa con la masividad a 4 caras, F4 = ${N(e.F4, 1)} m⁻¹, redondeada a la decena superior (fila ${tb && tb.fila != null ? tb.fila : '—'} m⁻¹), sin extrapolar fuera del rango ensayado.${e.orient !== 'pilar' ? ' La tabla corresponde a pilares ensayados; su uso para una viga, aun con la masividad a 4 caras, es una asimilación que no se acepta en forma automática y debe acreditarse según OGUC 4.3.2 y NCh 3684.' : ''}</p>
         ${rows.length ? `${MEM_T('Extracto de la tabla ' + esc(tb.titulo) + ' (masividad en m⁻¹, espesor seco en µm)')}
         <table class="inf-t"><tr><th>Masividad desde</th><th>Masividad hasta</th><th>Espesor (µm)</th></tr>
         ${ext.map(x => `<tr><td${hl(x === rows[iR])}>${x[0]}</td><td${hl(x === rows[iR])}>${x[1]}</td><td${hl(x === rows[iR])}>${x[2]}</td></tr>`).join('')}
@@ -42992,7 +43384,7 @@ function efMemoriaHtml(inp, r, meta) {
         <tr><th>Resistencia</th>${tb.esp.map((x, j) => `<td${hl(j === tb.iR)}>F-${x[1]}</td>`).join('')}</tr></table>` : ''}
         ${cierre()}`;
     } else if (e.prot === 'otro') {
-      protTxt = `<h2>Protección: producto con certificado propio</h2><p>Espesor según certificado: ${e.espCert > 0 ? e.espCert + ' ' + e.espU : 'no informado'}; espesor propuesto: ${e.espProp > 0 ? e.espProp + ' ' + e.espU : 'no informado'}.</p>`;
+      protTxt = `<h2>Protección: producto con certificado propio</h2><p>Espesor según certificado: ${e.espCert > 0 ? e.espCert + ' ' + e.espU : 'no informado'}; espesor propuesto: ${e.espProp != null ? e.espProp + ' ' + e.espU : 'no informado'}.</p>${cierre()}`;
     } else protTxt = `<h2>Protección</h2><p>Elemento sin protección.</p>`;
     return `<div class="salto"></div><h1>6.${i + 1} ${esc(e.nombre)} — ${esc(e.perfil)}</h1>
       <table class="ficha-g"><tr><td style="width:36%">${sv}</td><td>
@@ -43007,7 +43399,7 @@ function efMemoriaHtml(inp, r, meta) {
       <h2>Temperatura crítica</h2>${crTxt}
       <h2>Evolución de la temperatura del acero sin protección</h2>${ejTxt}${tablaTraza}${graf}${tcrTxt}
       ${protTxt}
-      <h2>Resultado del elemento</h2><p><b>${esc(efTxtImp(e.estado[1]))}</b>.${e.avP.length ? ' ' + e.avP.map(esc).join(' ') : ''}</p>`;
+      <h2>Resultado del elemento</h2><p><b>${esc(e.estado[1])}</b>.${e.avP.length ? ' ' + e.avP.map(esc).join(' ') : ''}</p>`;
   }).join('');
 
   // ---- 7. Asimilación
@@ -43020,7 +43412,7 @@ function efMemoriaHtml(inp, r, meta) {
   // ---- Conclusiones
   const tablaRes = `${MEM_T('Resumen de resultados por elemento')}
     <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Perfil</th><th>Exigencia</th><th>Am/V (m⁻¹)</th><th>ksh</th><th>Clase</th><th>θcr (°C)</th><th>θa a la exigencia (°C)</th><th>t a θcr sin prot. (min)</th><th>Protección</th><th>Esp. req. / prop.</th><th>Resultado</th></tr>
-    ${r.elems.map((e, i) => `<tr><td>${i + 1}</td><td class="l">${esc(e.nombre)}</td><td>${esc(e.perfil)}</td><td>${fReq(e)}</td><td>${N(e.F, 1)}</td><td>${N(e.ksh, 2)}</td><td>${e.cls ? (e.clase4 ? '4' : '1-3') : 'n/e'}</td><td>${N(e.thcr, 0)}</td><td>${e.curva && e.Freq > 0 && e.curva.hitos[e.Freq] != null ? N(e.curva.hitos[e.Freq], 0) : '—'}</td><td>${e.tcr != null ? N(e.tcr, 1) : (e.curva && e.thcr != null ? '> 150' : '—')}</td><td class="l">${esc(EF_PROD[e.prot])}</td><td>${e.prot === 'ninguna' ? '—' : (e.espReq != null ? e.espReq : '—') + ' / ' + (e.espProp || 0) + ' ' + e.espU}</td><td class="${e.estado[0] === 'ok' ? 'ok' : (e.estado[0] === 'bad' ? 'bad' : '')} l">${esc(efTxtImp(e.estado[1]))}</td></tr>`).join('')}</table>`;
+    ${r.elems.map((e, i) => `<tr><td>${i + 1}</td><td class="l">${esc(e.nombre)}</td><td>${esc(e.perfil)}</td><td>${fReq(e)}</td><td>${N(e.F, 1)}</td><td>${N(e.ksh, 2)}</td><td>${e.cls ? (e.clase4 ? '4' : '1-3') : 'n/e'}</td><td>${N(e.thcr, 0)}</td><td>${e.curva && e.Freq > 0 && e.curva.hitos[e.Freq] != null ? N(e.curva.hitos[e.Freq], 0) : '—'}</td><td>${e.tcr != null ? N(e.tcr, 1) : (e.curva && e.thcr != null ? '> 150' : '—')}</td><td class="l">${esc(EF_PROD[e.prot])}</td><td>${e.prot === 'ninguna' ? '—' : (e.espReq != null ? e.espReq : '—') + ' / ' + (e.espProp != null ? e.espProp : '—') + ' ' + e.espU}</td><td class="${e.estado[0] === 'ok' ? 'ok' : (e.estado[0] === 'bad' ? 'bad' : '')} l">${esc(efTxtImp(e.estado[1]))}</td></tr>`).join('')}</table>`;
   const nBad = r.elems.filter(e => e.estado[0] === 'bad').length;
   const obsGlob = r.avisosP.length ? `<p>Observaciones a los datos de entrada:</p><ul>${r.avisosP.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : '';
 
@@ -43040,8 +43432,8 @@ function efMemoriaHtml(inp, r, meta) {
     ${MEM_T('Datos generales del sector analizado')}
     <table class="inf-t">
       <tr><td class="l" style="width:45%">Sector analizado</td><td class="l">${esc(inp.sector || '—')}</td></tr>
-      <tr><td class="l">Superficie considerada para la densidad media</td><td class="l">${N(inp.area, 1)} m²</td></tr>
-      <tr><td class="l">Pisos reales / altura interior máxima</td><td class="l">${inp.pisosReales} / ${H > 0 ? N(H, 2) + ' m' : 'no informada'}</td></tr>
+      <tr><td class="l">Superficie considerada para la densidad media</td><td class="l">${r.area != null ? N(r.area, 1) + ' m²' : 'no informada'}</td></tr>
+      <tr><td class="l">N° de pisos / alturas de piso informadas</td><td class="l">${esc(String(inp.pisosReales || '—'))} / ${H ? esc(H) + ' m' : 'no informadas (pisos de hasta 3,5 m)'}</td></tr>
       <tr><td class="l">Altillos o superficies intermedias</td><td class="l">${inp.altillos === 'si' ? 'Sí' : 'No'}</td></tr>
       <tr><td class="l">Destino según Tabla 1 / 2 / 3 del Art. 4.3.4</td><td class="l">${esc(inp.t1 || 'No aplica')} / ${esc(inp.t2 || 'No aplica')} / ${esc(inp.t3 || 'No aplica')}</td></tr>
       <tr><td class="l">Elementos de acero analizados</td><td class="l">${r.elems.length}</td></tr>
@@ -43061,7 +43453,7 @@ function efMemoriaHtml(inp, r, meta) {
       <li>EN 1993-1-2 — Proyecto de estructuras de acero frente al fuego: propiedades del acero (§3.2, §3.4), clasificación de secciones (§4.2.2), clase 4 (§4.2.3.6), temperatura crítica (§4.2.4, ec. 4.22) y calentamiento del acero sin protección (§4.2.5.1).</li>
       <li>EN 1993-1-1 Tabla 5.2 — Límites de esbeltez de las partes comprimidas.</li>
     </ul>
-    <p>Las tablas del Art. 4.3.3 y 4.3.4 se aplican en la versión transcrita por la Biblioteca Nacional (BIM); deben cotejarse con el texto oficial vigente de la OGUC.</p>
+    <p>Las tablas de los Art. 4.3.3 y 4.3.4 y las condiciones del Art. 4.3.5 se aplican según el texto de la OGUC (Título 4, Capítulo 3; Tabla 3 según D.S. 87, D.O. 09.09.04), con las mismas tablas y funciones que la planilla «Carga combustible y clasificación del edificio».</p>
 
     <div class="salto"></div>
     <h1>4. CARGA COMBUSTIBLE</h1>
@@ -43069,10 +43461,10 @@ function efMemoriaHtml(inp, r, meta) {
     <div class="eq">Qi = mi · Hi &nbsp;[MJ] &nbsp;&nbsp;&nbsp;&nbsp; qm = Σ Qi / A &nbsp;[MJ/m²]</div>
     ${tablaMat}
     <div class="eq">qm = ${N(r.cargaTotal, 0)} MJ / ${N(r.area, 1)} m² = <b>${N(r.media, 0)} MJ/m²</b></div>
-    <p>La densidad de carga combustible puntual máxima (NCh 1993) representa la concentración local de combustible. En este estudio se determina agrupando los acopios en superficies de 2 × 2 m (4 m²) y tomando la de mayor densidad:</p>
-    <div class="eq">qp = Σ Qi (zona) / 4 m²</div>
-    ${tablaZonas}${grafZonas}
-    <p>Densidad puntual máxima: <b>${N(r.puntual, 0)} MJ/m²</b>${inp.puntualManual > 0 ? ' (valor determinado por el proyectista fuera de este cálculo)' : (r.zonasArr.length ? ', en la zona ' + esc(r.zonasArr[0].zona) : '')}.</p>
+    <p>La densidad de carga combustible puntual máxima (NCh 1993) es la existente en una superficie de 2 m × 2 m en la posición más desfavorable. Cada acopio se representa por su huella rectangular en planta, con su carga repartida uniformemente, y se recorren las posiciones de una ventana de 2 × 2 m; la carga dentro de la ventana varía en forma bilineal por tramos con su posición, por lo que el máximo se obtiene en las posiciones en que un borde de la ventana coincide con un borde de huella. Se suma el aporte de los materiales distribuidos en todo el sector:</p>
+    <div class="eq">qp,máx = máx<sub>(x₀, y₀)</sub> Σ Qi · A(huellaᵢ ∩ ventana) / A(huellaᵢ) / 4 m² + Σ Qdist / A</div>
+    ${tablaZonas}
+    <p>Densidad puntual máxima: <b>${r.puntual != null ? N(r.puntual, 0) + ' MJ/m²' : 'no determinada'}</b>${r.pun.origen === 'medida' ? ' (valor medido: ' + esc(inp.puntualFuente) + ')' : ''}. ${esc(cbPuntualTxt(r.pun))}.${r.puntual == null ? ' Sin la huella de todos los acopios ni una medición con procedencia, la clasificación por la Tabla 3 es provisoria.' : ''}</p>
 
     <div class="salto"></div>
     <h1>5. CLASIFICACIÓN DEL EDIFICIO (OGUC ART. 4.3.4)</h1>
@@ -43081,9 +43473,9 @@ function efMemoriaHtml(inp, r, meta) {
     ${pisosTxt}
     ${t434}
     <h2>Tipo adoptado</h2>
-    <p>${letras.length ? 'Tipos resultantes: ' + letras.map(x => x[0] + ' → ' + x[1]).join('; ') + '. ' : ''}${inp.tipoManual ? `El proyectista adopta el tipo <b>${inp.tipoManual}</b>${r.tipoCalc && inp.tipoManual !== r.tipoCalc ? ', distinto del resultante de las tablas (' + r.tipoCalc + ')' : ''}.` : `Se adopta el más exigente: <b>tipo ${r.tipo || '—'}</b>.`}</p>
+    <p>${letras.length ? 'Tipos resultantes: ' + letras.map(x => x[0] + ' → ' + x[1]).join('; ') + '. ' : ''}Tipo calculado (el más exigente): <b>${r.tipoCalc || '—'}</b>. ${r.tipoRed === 'justificada' ? `Se adopta el tipo <b>${r.tipo}</b>, menos exigente, en virtud de ${esc(r.tipoExcTxt)}; respaldo: ${esc(r.tipoResp)}.` : r.tipoRed === 'no justificada' ? `El tipo ${r.tipoManual} propuesto es menos exigente que el calculado y no cuenta con una excepción del Art. 4.3.5 documentada; las exigencias se determinan con el <b>tipo ${r.tipo}</b>.` : `Tipo adoptado: <b>${r.tipo || '—'}</b>${r.tipoManual && r.tipoManual !== r.tipoCalc ? ' (fijado por el proyectista, más exigente que el calculado)' : ''}.`}${r.tipoProv ? ' La clasificación es provisoria.' : ''}</p>
     ${r.tipo ? `${MEM_T('Resistencia al fuego exigida por elemento para el tipo ' + r.tipo + ' (OGUC Art. 4.3.3)')}
-    <table class="inf-t"><tr><th>Elemento de construcción</th><th>Tipo ${r.tipo}</th></tr>${EF_FUNC.map((f, i) => `<tr><td class="l">${esc(f)}</td><td>${EF_T433[r.tipo][i] ? 'F-' + EF_T433[r.tipo][i] : '—'}</td></tr>`).join('')}</table>` : ''}
+    <table class="inf-t"><tr><th>Elemento de construcción</th><th>Tipo ${r.tipo}</th><th>Condición de aplicación (Art. 4.3.5)</th></tr>${r.resist.map(x => `<tr><td class="l">${esc(x.elemento)}</td><td>${esc(x.txt)}</td><td class="l">${esc(x.cond)}</td></tr>`).join('')}</table>` : ''}
 
     <div class="salto"></div>
     <h1>6. EXIGENCIA, COMPORTAMIENTO TÉRMICO Y PROTECCIÓN DE LOS ELEMENTOS</h1>
@@ -43127,9 +43519,10 @@ function efMemoriaHtml(inp, r, meta) {
 
     <div class="salto"></div>
     <h1>8. CONCLUSIONES</h1>
-    <p>El sector se clasifica como edificio <b>tipo ${r.tipo || '—'}</b> según el Art. 4.3.4, con una densidad de carga combustible media de ${N(r.media, 0)} MJ/m² y una puntual máxima de ${N(r.puntual, 0)} MJ/m².</p>
+    <p>El sector se clasifica como edificio <b>tipo ${r.tipo || '—'}${r.tipoProv ? ' (provisorio)' : ''}</b> según el Art. 4.3.4, con una densidad de carga combustible media de ${r.media != null ? N(r.media, 0) + ' MJ/m²' : 'no determinada'} y una puntual máxima ${r.puntual != null ? 'de ' + N(r.puntual, 0) + ' MJ/m²' : 'no determinada'}.</p>
     ${tablaRes}
-    <p>${nBad ? `${nBad} elemento(s) no satisfacen la exigencia con la solución propuesta.` : 'Ningún elemento presenta incumplimiento con los datos ingresados.'} En los elementos sin protección, un tiempo calculado mayor o igual a la exigencia es solo un resultado de cálculo: no acredita resistencia al fuego ante la DOM, porque la acreditación se rige por el Art. 4.3.2.</p>
+    <p><b>Resultado global: ${esc(r.global[1])}.</b> ${nBad ? `${nBad} elemento(s) no satisfacen la exigencia con la solución propuesta.` : ''} Un elemento solo se declara conforme con verificación completa: exigencia determinada, espesor tabulado suficiente dentro del alcance de la referencia y cobertura documental confirmada. En los elementos sin protección, un tiempo calculado mayor o igual a la exigencia es solo un resultado de cálculo: no acredita resistencia al fuego ante la DOM, porque la acreditación se rige por el Art. 4.3.2.</p>
+    ${r.pend.length ? `${MEM_T('Antecedentes pendientes')}<table class="inf-t"><tr><th>Ámbito</th><th>Pendiente</th><th>Impide concluir</th></tr>${r.pend.map(q => `<tr><td class="l">${esc(q.ambito)}</td><td class="l">${esc(q.txt)}</td><td>${q.bloquea ? 'Sí' : 'No'}</td></tr>`).join('')}</table>` : ''}
     ${obsGlob}
 
     <h1>9. LIMITACIONES</h1>
@@ -43137,7 +43530,7 @@ function efMemoriaHtml(inp, r, meta) {
       <li>La temperatura del acero sin protección se calcula con la curva normalizada y el método simplificado de EN 1993-1-2; no considera fuegos naturales ni efectos de la continuidad estructural.</li>
       <li>El método de la temperatura crítica (§4.2.4) no es aplicable cuando gobierna la inestabilidad (pandeo, volcamiento); en ese caso la verificación corresponde a §4.2.3.</li>
       <li>El espesor de protección proviene exclusivamente de las tablas citadas (Listado Oficial ED17-2025 o informes de ensayo). Su validez depende de que el producto, el sistema aplicado, el tipo de sección y el criterio de falla del ensayo correspondan a la solución real.</li>
-      <li>Las tablas del Art. 4.3.3 y 4.3.4 provienen de una transcripción secundaria y deben cotejarse con el texto oficial.</li>
+      <li>Las tablas de protección (informes IDIEM y DICTUC, Listado Oficial) están transcritas en la planilla; su aplicación requiere cotejarlas con el documento original y confirmar que cubren cada elemento.</li>
       <li>Los poderes caloríficos y las masas de los materiales son datos del proyecto con la fuente indicada en la Tabla de inventario.</li>
     </ul>
     ${memFirmas(meta)}
@@ -43165,11 +43558,12 @@ function efMejoraHtml(r) {
 function renderEstudioFuego(container) {
   const optsObj = o => Object.keys(o).map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
   const funcOpts = '<option value="0">—</option>' + EF_FUNC.map((f, i) => `<option value="${i + 1}">${esc(f)}</option>`).join('');
-  const tipoOpts = [['I-H','I / H'],['U','Canal U'],['L','Ángulo L'],['CHS','Tubo circular'],['RHS','RHS/SHS o cajón'],['TUB','Tubest'],['C','Conformado en frío C/CA']].map(t => `<option value="${t[0]}">${t[1]}</option>`).join('');
+  const tipoOpts = EF_TIPOS_PERFIL.map(t => `<option value="${t[0]}">${t[1]}</option>`).join('');
+  const excOpts = '<option value="">— ninguna —</option>' + Object.keys(EF_EXC).map(k => `<option value="${k}">${esc(EF_EXC[k].txt.split(' — ')[0])}</option>`).join('');
   container.innerHTML = `
     <div class="calc-head">
       <h1>Estudio de Resistencia al Fuego — Estructura de Acero</h1>
-      <div class="sub">Estudio encadenado: carga combustible (NCh 1916 / NCh 1993), tipo de edificio (OGUC Art. 4.3.4), resistencia exigida por elemento según su función (Art. 4.3.3), masividad, temperatura del acero y temperatura crítica (EN 1993-1-2), espesor de pintura intumescente por tabla ensayada y lista de chequeo para asimilación (Art. 4.3.2; NCh 3684/1-2:2022).</div>
+      <div class="sub">Estudio encadenado: carga combustible (NCh 1916) y densidad puntual por barrido de 2×2 m (NCh 1993), tipo de edificio (OGUC Art. 4.3.4 y 4.3.5), resistencia exigida por elemento según su función (Art. 4.3.3), masividad, temperatura del acero y temperatura crítica (EN 1993-1-2), espesor de protección según la referencia que cubre al elemento y lista de chequeo para asimilación (Art. 4.3.2; NCh 3684/1-2:2022). Tablas OGUC y procedimiento de densidad puntual comunes con «Carga combustible y clasificación del edificio».</div>
     </div>
 
     <div class="panel">
@@ -43177,40 +43571,44 @@ function renderEstudioFuego(container) {
       <div class="field-grid">
         <div class="field"><label>Sector analizado</label><input type="text" id="ef_sector" placeholder="Ej: Nave de bodegaje 1"></div>
         <div class="field"><label>Superficie del sector para DCC media (m²)</label><input type="text" inputmode="decimal" id="ef_area"></div>
-        <div class="field"><label>Densidad puntual máxima manual (MJ/m², opcional)</label><input type="text" inputmode="decimal" id="ef_puntual" placeholder="vacío = calcular por zonas 2×2"></div>
+        <div class="field"><label>Densidad puntual máxima medida (MJ/m², opcional)</label><input type="text" inputmode="decimal" id="ef_puntual" placeholder="vacío = barrido 2×2 m"></div>
+        <div class="field"><label>Procedencia de la densidad puntual medida</label><input type="text" id="ef_puntualFte" placeholder="informe, medición, fecha"></div>
       </div>
-      <div class="note" style="margin:.6rem 0">Carga = masa × poder calorífico. Ingrese el poder calorífico con su fuente (NCh 1916, ensayo NCh 1914/2 o ficha técnica); la planilla no trae valores por defecto. Para la densidad puntual máxima (NCh 1993), asigne cada acopio a una superficie de 2×2 m con un código en "Zona 2×2": la planilla suma la carga de cada zona y la divide por 4 m².</div>
-      <div style="overflow-x:auto"><table class="results editable" style="min-width:900px">
-        <thead><tr><th>N°</th><th>Material / acopio</th><th>Masa (kg)</th><th>Poder calorífico (MJ/kg)</th><th>Fuente del poder calorífico</th><th>Zona 2×2</th><th>Carga (MJ)</th><th></th></tr></thead>
+      <div class="note" style="margin:.6rem 0">Carga = masa × poder calorífico. Ingrese el poder calorífico con su fuente (NCh 1916, ensayo NCh 1914/2 o ficha técnica); la planilla no trae valores por defecto. Densidad puntual (NCh 1993): indique la huella en planta de cada acopio como «x; y; largo; ancho» en metros, con un mismo origen para el sector; la planilla busca la ventana de 2×2 m más cargada, también entre acopios vecinos, y el resultado no cambia al dividir filas ni al renombrar ubicaciones. Escriba «distribuido» en Ubicación si el material está repartido en todo el sector. Una ubicación sin huella solo da una estimación y la clasificación queda provisoria.</div>
+      <div style="overflow-x:auto"><table class="results editable" style="min-width:1000px">
+        <thead><tr><th>N°</th><th>Material / acopio</th><th>Masa (kg)</th><th>Poder calorífico (MJ/kg)</th><th>Fuente del poder calorífico</th><th>Ubicación</th><th>Huella x; y; largo; ancho (m)</th><th>Carga (MJ)</th><th></th></tr></thead>
         <tbody id="ef_mat"></tbody></table></div>
+      <datalist id="dl_ef_ubic"><option value="distribuido"></option></datalist>
       <button type="button" class="btn-add" id="ef_addMat">+ Agregar material</button>
       <div id="ef_resCarga" style="margin-top:.6rem"></div>
     </div>
 
     <div class="panel">
-      <h3>2 · Tipo de edificio (OGUC Art. 4.3.4)</h3>
+      <h3>2 · Tipo de edificio (OGUC Art. 4.3.4 y 4.3.5)</h3>
       <div class="field-grid">
-        <div class="field"><label>N° de pisos reales</label><input type="text" inputmode="numeric" id="ef_pisos" value="1"></div>
-        <div class="field"><label>Altura interior máxima (m)</label><input type="text" inputmode="decimal" id="ef_altura" placeholder="altura / 3,5 m = pisos"></div>
+        <div class="field"><label>N° de pisos</label><input type="text" inputmode="numeric" id="ef_pisos" value="1"></div>
+        <div class="field"><label>Alturas de piso (m; separar con «;»)</label><input type="text" inputmode="decimal" id="ef_altura" placeholder="solo pisos de más de 3,5 m"></div>
         <div class="field"><label>¿Tiene altillos o superficies intermedias?</label><select id="ef_altillos"><option value="no">No</option><option value="si">Sí</option></select></div>
         <div class="field"><label>Tabla 1 — destino por superficie</label><select id="ef_t1"><option value="">No aplica</option>${optsObj(EF_T1)}</select></div>
         <div class="field"><label>Superficie edificada (m²)</label><input type="text" inputmode="decimal" id="ef_sup"></div>
         <div class="field"><label>Tabla 2 — destino por ocupantes</label><select id="ef_t2"><option value="">No aplica</option>${optsObj(EF_T2)}</select></div>
         <div class="field"><label>Máximo de ocupantes</label><input type="text" inputmode="numeric" id="ef_ocup"></div>
         <div class="field"><label>Tabla 3 — destino por carga combustible</label><select id="ef_t3"><option value="">No aplica</option>${optsObj(EF_T3)}</select></div>
-        <div class="field"><label>Tipo adoptado manualmente (opcional)</label><select id="ef_tipoMan"><option value="">— usar el calculado —</option><option value="a">a</option><option value="b">b</option><option value="c">c</option><option value="d">d</option></select></div>
+        <div class="field"><label>Tipo adoptado por el proyectista (opcional)</label><select id="ef_tipoMan"><option value="">— usar el calculado —</option><option value="a">a</option><option value="b">b</option><option value="c">c</option><option value="d">d</option></select></div>
+        <div class="field"><label>Excepción que justifica un tipo menos exigente</label><select id="ef_tipoExc"><option value="">— ninguna —</option>${Object.keys(EF_EXC_TIPO).map(k => `<option value="${k}">${esc(EF_EXC_TIPO[k].split(' — ')[0])}</option>`).join('')}</select></div>
+        <div class="field"><label>Respaldo documental de la excepción</label><input type="text" id="ef_tipoResp" placeholder="documento que la acredita"></div>
       </div>
       <div id="ef_resTipo" style="margin-top:.6rem"></div>
-      <div class="disclosure">Pisos: la altura interior se divide por 3,5 m y la fracción cuenta como un piso más. Se exceptúan las estructuras de un solo piso con DCC media inferior a 500 MJ/m² y sin altillos, que se consideran de 1 piso. En la Tabla 3 se entra con la mayor de las dos densidades; si el edificio cae en varias tablas, se adopta el tipo más exigente. Tablas transcritas de una fuente secundaria (Biblioteca Nacional BIM); confirmar contra el texto oficial de la OGUC.</div>
+      <div class="disclosure">Pisos (Art. 4.3.5 n°1): piso hasta 3,5 m; las alturas de los pisos que superan 3,5 m se suman aparte y se dividen por 3,5 m, y la fracción cuenta como un piso más. Se exceptúan las estructuras de un solo piso con DCC media inferior a 500 MJ/m² y sin altillos, que se consideran de 1 piso. En la Tabla 3 se entra con la mayor de las dos densidades; si el edificio cae en varias tablas, se adopta el tipo más exigente. Un tipo menos exigente que el calculado solo se adopta con una excepción del Art. 4.3.5 y su respaldo; en otro caso las exigencias se evalúan con el tipo calculado. Tablas 1, 2, 3 y del Art. 4.3.3 contrastadas con el texto de la OGUC.</div>
     </div>
 
     <div class="panel">
       <h3>3 · Elementos de acero</h3>
-      <div class="note" style="margin-bottom:.6rem">La función según OGUC Art. 4.3.3 fija la exigencia F; si el elemento cumple dos funciones (p. ej. viga de marco que además soporta techumbre), se adopta la mayor. μ0 = Efi,d / Rfi,d,0, grado de utilización en la combinación de incendio con γM,fi = 1,0 (EN 1993-1-2 §4.2.4). Fy en kg/cm².</div>
+      <div class="note" style="margin-bottom:.6rem">La función según OGUC Art. 4.3.3 fija la exigencia F; si el elemento cumple dos funciones, se adopta la mayor. «F manual» puede fijar una exigencia mayor; una menor solo se adopta con una excepción del Art. 4.3.5 y su respaldo documental. μ0 = Efi,d / Rfi,d,0 en la combinación de incendio con γM,fi = 1,0 (EN 1993-1-2 §4.2.4). Fy en kg/cm². La orientación, la condición bajo losa y la exposición definen qué tabla de protección cubre al elemento; «Cobertura» confirma, con su referencia documental, que el informe o la inscripción corresponde a esa sección, orientación, exposición y sistema.</div>
       <datalist id="dl_ef_fy"><option value="2530">2530 — ASTM A36</option><option value="2700">2700 — A270ES (NCh 203)</option><option value="3450">3450 — A345ES (NCh 203)</option><option value="3515">3515 — ASTM A572 Gr. 50</option></datalist>
       <div style="overflow-x:auto"><style>table.ef-lista input, table.ef-lista select{ font-size:.8rem !important; padding:.24rem .28rem !important; } table.ef-lista td{ padding:.2rem .16rem; }</style>
-      <table class="results editable ef-lista" style="min-width:1900px">
-        <thead><tr><th>N°</th><th>Elemento</th><th>Función principal</th><th>Función adicional</th><th>F manual</th><th>Origen</th><th>Perfil</th><th>Tipo</th><th>h</th><th>b</th><th>tw</th><th>tf</th><th>r</th><th>A (cm²)</th><th>Caras</th><th>Solicitación</th><th>Fy</th><th>μ0</th><th>Inestab.</th><th>Protección</th><th>Esp. cert. (µm)</th><th>Esp. propuesto (µm pintura / mm mortero o placa)</th><th></th></tr></thead>
+      <table class="results editable ef-lista" style="min-width:2600px">
+        <thead><tr><th>N°</th><th>Elemento</th><th>Función principal</th><th>Función adicional</th><th>F manual</th><th>Excepción 4.3.5</th><th>Respaldo de la excepción</th><th>Origen</th><th>Perfil</th><th>Tipo</th><th>h</th><th>b</th><th>tw</th><th>tf</th><th>r</th><th>A (cm²)</th><th>Orientación</th><th>Bajo losa</th><th>Caras</th><th>Exposición</th><th>Solicitación</th><th>Fy</th><th>μ0</th><th>Inestab.</th><th>Protección</th><th>Esp. cert.</th><th>Esp. propuesto (µm pintura / mm mortero o placa)</th><th>Cobertura</th><th>Referencia documental</th><th></th></tr></thead>
         <tbody id="ef_body"></tbody></table></div>
       <button type="button" class="btn-add" id="ef_add">+ Agregar elemento</button>
     </div>
@@ -43232,13 +43630,17 @@ function renderEstudioFuego(container) {
       <div id="ef_resAsim" style="margin-top:.6rem"></div>
       <div class="disclosure">OGUC 4.3.2: lo que no figure en el Listado Oficial se acredita con certificado de ensaye de una Institución Oficial de Control Técnico. Si un elemento no figura en el Listado ni tiene certificación, un profesional especialista puede certificar su asimilación a un tipo del Art. 4.3.3, adjuntando la certificación en el país de origen; si no es posible, el Director de Obras Municipales exige el ensaye. Listado ED17-2025, punto 7: la asimilación sigue NCh 3684/1:2022 (ensayos nacionales, estructuras de acero o madera con placas) y NCh 3684/2:2022 (ensayos extranjeros). Esta lista ordena los antecedentes; no reemplaza el texto de esas normas ni el juicio del profesional que firma.</div>
     </div>
-    ${memPanelHtml('efi', '6', 'Memoria de cálculo (informe)', 'Ej: Nave de bodegaje de estructura de acero de un nivel, con marcos de pilares y vigas IPE y costaneras de techumbre...')}
+
+    <div class="panel" data-resumen="force">
+      <h3>6 · Resultado global y pendientes</h3>
+      <div id="ef_resGlobal"></div>
+    </div>
+    ${memPanelHtml('efi', '7', 'Memoria de cálculo (informe)', 'Ej: Nave de bodegaje de estructura de acero de un nivel, con marcos de pilares y vigas IPE y costaneras de techumbre...')}
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div><div id="printSheetInforme"></div>
   `;
 
   const mat = document.getElementById('ef_mat'), body = document.getElementById('ef_body');
-  const num = (el) => { const v = parseFloat(String(el.value).replace(',', '.')); return isNaN(v) ? 0 : v; };
-  const numId = id => num(document.getElementById(id));
+  const val = id => document.getElementById(id).value;
 
   function addMat(pre) {
     const tr = document.createElement('tr');
@@ -43247,7 +43649,8 @@ function renderEstudioFuego(container) {
       <td><input type="text" inputmode="decimal" data-f="masa" style="min-width:80px"></td>
       <td><input type="text" inputmode="decimal" data-f="hc" style="min-width:70px"></td>
       <td><input type="text" data-f="fuente" style="min-width:180px" placeholder="Ej: ficha técnica / NCh 1916"></td>
-      <td><input type="text" data-f="zona" style="min-width:60px" placeholder="Z1"></td>
+      <td><input type="text" data-f="zona" style="min-width:80px" placeholder="Z1" list="dl_ef_ubic"></td>
+      <td><input type="text" data-f="huella" style="min-width:130px" placeholder="x; y; largo; ancho"></td>
       <td class="num" data-role="carga"></td>
       <td><button type="button" class="btn-remove" title="Eliminar">✕</button></td>`;
     mat.appendChild(tr);
@@ -43261,23 +43664,30 @@ function renderEstudioFuego(container) {
       <td><select data-f="f1" style="min-width:170px">${funcOpts}</select></td>
       <td><select data-f="f2" style="min-width:150px">${funcOpts}</select></td>
       <td>${inp('Fmanual', 46, 'auto')}</td>
+      <td><select data-f="exc" style="min-width:120px">${excOpts}</select></td>
+      <td><input type="text" data-f="excResp" style="min-width:150px" placeholder="documento"></td>
       <td><select data-f="origen" style="min-width:86px"><option value="catalogo">Catálogo</option><option value="manual">Manual</option></select></td>
       <td><select data-f="desig" style="min-width:160px">${afOpciones()}</select></td>
       <td><select data-f="tipo" style="min-width:110px">${tipoOpts}</select></td>
       <td>${inp('h')}</td><td>${inp('b')}</td><td>${inp('tw', 44)}</td><td>${inp('tf', 44)}</td><td>${inp('r', 38)}</td><td>${inp('A', 56)}</td>
+      <td><select data-f="orient" style="min-width:96px"><option value="">— elegir —</option><option value="pilar">Pilar</option><option value="viga">Viga</option></select></td>
+      <td><select data-f="bajoLosa" style="min-width:76px"><option value="">—</option><option value="si">Sí</option><option value="no">No</option></select></td>
       <td><select data-f="caras" style="min-width:64px"><option value="4">4 caras</option><option value="3">3 caras</option></select></td>
+      <td><select data-f="expo" style="min-width:110px"><option value="">— elegir —</option>${Object.keys(EF_EXPO).map(k => `<option value="${k}">${EF_EXPO[k]}</option>`).join('')}</select></td>
       <td><select data-f="solic" style="min-width:110px"><option value="compresion">Compresión</option><option value="flexion">Flexión</option><option value="flexocomp">Flexocompresión</option></select></td>
       <td><input type="text" inputmode="decimal" data-f="Fy" style="min-width:60px" list="dl_ef_fy"></td>
       <td>${inp('mu', 48)}</td>
       <td><select data-f="inest" style="min-width:56px"><option value="no">No</option><option value="si">Sí</option></select></td>
       <td><select data-f="prot" style="min-width:170px">${efProtOpts()}</select></td>
       <td>${inp('espCert', 56)}</td><td>${inp('espProp', 56)}</td>
+      <td><select data-f="cob" style="min-width:120px"><option value="pend">Sin antecedente</option><option value="si">Confirmada</option><option value="no">No cubre</option></select></td>
+      <td><input type="text" data-f="refDoc" style="min-width:170px" placeholder="informe / tabla / inscripción"></td>
       <td><button type="button" class="btn-remove" title="Eliminar">✕</button></td>`;
     body.appendChild(tr);
     const q = f => tr.querySelector(`[data-f="${f}"]`);
     q('desig').value = (pre && pre.desig) || 'IPE300';
     q('Fy').value = (pre && pre.Fy) || 2530;
-    ['nombre', 'f1', 'f2', 'caras', 'solic', 'mu', 'inest', 'prot', 'espProp'].forEach(k => { if (pre && pre[k] != null) q(k).value = pre[k]; });
+    ['nombre', 'f1', 'f2', 'caras', 'solic', 'mu', 'inest', 'prot', 'espProp', 'orient', 'bajoLosa', 'expo'].forEach(k => { if (pre && pre[k] != null) q(k).value = pre[k]; });
     syncRow(tr);
   }
   function syncRow(tr) {
@@ -43291,73 +43701,85 @@ function renderEstudioFuego(container) {
     }
     q('espCert').disabled = q('prot').value !== 'otro';
     q('espProp').disabled = q('prot').value === 'ninguna';
+    q('bajoLosa').disabled = q('orient').value === 'pilar';
     const uP = (EF_PROT[q('prot').value] || {}).u || '';
     q('espProp').placeholder = uP; q('espCert').placeholder = q('prot').value === 'otro' ? uP : '';
   }
+  // Lee las entradas como texto: la validación (vacío, inválido, fuera de rango) la hace calcEstudioFuego.
   function leer() {
     const materiales = Array.from(mat.children).map(tr => {
-      const q = f => tr.querySelector(`[data-f="${f}"]`);
-      return {desc: q('desc').value.trim(), masa: num(q('masa')), hc: num(q('hc')), fuente: q('fuente').value.trim(), zona: q('zona').value.trim()};
+      const q = f => tr.querySelector(`[data-f="${f}"]`).value;
+      return {desc: q('desc').trim(), masa: q('masa'), hc: q('hc'), fuente: q('fuente').trim(), zona: q('zona').trim(), huella: q('huella').trim()};
     });
     const elementos = Array.from(body.children).map((tr, i) => {
-      const q = f => tr.querySelector(`[data-f="${f}"]`);
-      const manual = q('origen').value === 'manual';
-      return {n: i + 1, nombre: q('nombre').value.trim() || ('Elemento ' + (i + 1)), f1: +q('f1').value, f2: +q('f2').value, Fmanual: num(q('Fmanual')),
-        perfil: manual ? 'Manual' : q('desig').value, tipo: q('tipo').value, h: num(q('h')), b: num(q('b')), tw: num(q('tw')), tf: num(q('tf')), r: num(q('r')), A: num(q('A')),
-        caras: q('caras').value, solic: q('solic').value, Fy: num(q('Fy')), mu: num(q('mu')), inest: q('inest').value, prot: q('prot').value, espCert: num(q('espCert')), espProp: num(q('espProp'))};
+      const q = f => tr.querySelector(`[data-f="${f}"]`).value;
+      const manual = q('origen') === 'manual';
+      return {n: i + 1, nombre: q('nombre').trim() || ('Elemento ' + (i + 1)), f1: +q('f1'), f2: +q('f2'), Fmanual: q('Fmanual'), exc: q('exc'), excResp: q('excResp').trim(),
+        perfil: manual ? 'Manual' : q('desig'), tipo: q('tipo'), h: q('h'), b: q('b'), tw: q('tw'), tf: q('tf'), r: q('r'), A: q('A'),
+        orient: q('orient'), bajoLosa: q('orient') === 'pilar' ? '' : q('bajoLosa'), caras: q('caras'), expo: q('expo'), solic: q('solic'), Fy: q('Fy'), mu: q('mu'), inest: q('inest'),
+        prot: q('prot'), espCert: q('espCert'), espProp: q('prot') === 'ninguna' ? '' : q('espProp'), cob: q('cob'), refDoc: q('refDoc').trim()};
     });
     const chk = {};
-    EF_CHK.forEach(c => { chk[c[0]] = {v: document.getElementById('ef_chk_' + c[0]).value, obs: document.getElementById('ef_obs_' + c[0]).value.trim()}; });
-    return {sector: document.getElementById('ef_sector').value.trim(), area: numId('ef_area'), puntualManual: numId('ef_puntual'), materiales,
-      pisosReales: numId('ef_pisos') || 1, altura: numId('ef_altura'), altillos: document.getElementById('ef_altillos').value,
-      t1: document.getElementById('ef_t1').value, superficie: numId('ef_sup'), t2: document.getElementById('ef_t2').value, ocupantes: numId('ef_ocup'),
-      t3: document.getElementById('ef_t3').value, tipoManual: document.getElementById('ef_tipoMan').value, elementos, chk, origenEnsayo: document.getElementById('ef_origen').value};
+    EF_CHK.forEach(c => { chk[c[0]] = {v: val('ef_chk_' + c[0]), obs: val('ef_obs_' + c[0]).trim()}; });
+    return {sector: val('ef_sector').trim(), area: val('ef_area'), puntualManual: val('ef_puntual'), puntualFuente: val('ef_puntualFte').trim(), materiales,
+      pisosReales: val('ef_pisos'), altura: val('ef_altura'), altillos: val('ef_altillos'),
+      t1: val('ef_t1'), superficie: val('ef_sup'), t2: val('ef_t2'), ocupantes: val('ef_ocup'),
+      t3: val('ef_t3'), tipoManual: val('ef_tipoMan'), tipoExc: val('ef_tipoExc'), tipoResp: val('ef_tipoResp').trim(), elementos, chk, origenEnsayo: val('ef_origen')};
   }
   const sp = (c, t) => `<span class="chip ${c}">${esc(t)}</span>`;
   const n = (v, d) => (v == null || !isFinite(v)) ? '—' : Number(v).toLocaleString('es-CL', {minimumFractionDigits: d, maximumFractionDigits: d});
+  const fTxt = F => F == null ? '—' : (F ? 'F-' + F : 'Sin exigencia');
 
   function recalc() {
     const inp = leer();
     const r = calcEstudioFuego(inp);
-    Array.from(mat.children).forEach((tr, i) => { tr.querySelector('[data-role="n"]').textContent = i + 1; tr.querySelector('[data-role="carga"]').textContent = n(r.mats[i].carga, 0); });
+    Array.from(mat.children).forEach((tr, i) => { tr.querySelector('[data-role="n"]').textContent = i + 1; const m = r.mats[i]; tr.querySelector('[data-role="carga"]').textContent = m.errs.length ? 'inválido' : n(m.carga, 0); });
     Array.from(body.children).forEach((tr, i) => { tr.querySelector('[data-role="n"]').textContent = i + 1; });
+    const p = r.pun;
     document.getElementById('ef_resCarga').innerHTML = `<table class="results">
       <tr><th>Magnitud</th><th>Valor</th><th>Observación</th></tr>
-      <tr><td>Carga combustible total</td><td class="num">${n(r.cargaTotal, 0)} MJ</td><td>Σ masa × poder calorífico</td></tr>
+      <tr><td>Carga combustible total</td><td class="num">${r.cargaTotal != null ? n(r.cargaTotal, 0) + ' MJ' : '—'}</td><td>${r.cargaTotal != null ? 'Σ masa × poder calorífico' : 'Inventario incompleto o inválido (suma parcial ' + n(r.cargaParcial, 0) + ' MJ)'}</td></tr>
       <tr><td><strong>Densidad de carga combustible media</strong></td><td class="num"><strong>${n(r.media, 0)} MJ/m²</strong></td><td>Carga total / superficie del sector (NCh 1916)</td></tr>
-      <tr><td><strong>Densidad puntual máxima</strong></td><td class="num"><strong>${n(r.puntual, 0)} MJ/m²</strong></td><td>${inp.puntualManual > 0 ? 'Valor ingresado' : (r.zonasArr.length ? 'Zona más cargada: ' + esc(r.zonasArr[0].zona) + ' (carga / 4 m²)' : 'No determinada')}</td></tr>
+      <tr><td><strong>Densidad puntual máxima</strong></td><td class="num"><strong>${n(r.puntual, 0)} MJ/m²</strong></td><td>${p.origen === 'medida' ? 'Valor medido: ' + esc(inp.puntualFuente) : esc(cbPuntualTxt(p))}</td></tr>
     </table>`;
     document.getElementById('ef_resTipo').innerHTML = `<table class="results">
       <tr><th>Tabla</th><th>Tipo</th><th>Observación</th></tr>
-      <tr><td>Pisos para clasificación</td><td class="num">${r.pisosEq}</td><td>${r.excepcion ? 'Excepción de un piso (DCC media < 500 MJ/m², sin altillos)' : (r.pisosAltura ? 'Máximo entre pisos reales y altura / 3,5 m = ' + r.pisosAltura : 'Pisos reales')}</td></tr>
+      <tr><td>Pisos para clasificación</td><td class="num">${r.pisosEq != null ? r.pisosEq : '—'}</td><td>${esc(r.pisos.detalle || r.pisos.errs.join('; ') || '—')}</td></tr>
       <tr><td>Tabla 1 (superficie)</td><td class="num">${r.t1 || '—'}</td><td>${inp.t1 ? esc(inp.t1) : 'No aplica'}</td></tr>
       <tr><td>Tabla 2 (ocupantes)</td><td class="num">${r.t2 || '—'}</td><td>${inp.t2 ? esc(inp.t2) : 'No aplica'}</td></tr>
-      <tr><td>Tabla 3 (carga combustible)</td><td class="num">${r.t3 ? r.t3.letra : '—'}</td><td>${inp.t3 ? esc(inp.t3) + (r.t3 && r.t3.porPuntual ? ' — gobierna la densidad puntual' : '') : 'No aplica'}</td></tr>
-      <tr><td><strong>Tipo adoptado</strong></td><td class="num"><strong>${r.tipo || '—'}</strong></td><td>${inp.tipoManual ? 'Adoptado manualmente' : 'El más exigente de las tablas aplicables'}</td></tr>
+      <tr><td>Tabla 3 (carga combustible)</td><td class="num">${r.t3 ? r.t3.letra : '—'}</td><td>${inp.t3 ? esc(inp.t3) + (r.t3 && r.t3.porPuntual ? ' — gobierna la densidad puntual' : '') + (r.tipoProv ? ' — provisorio' : '') : 'No aplica'}</td></tr>
+      <tr><td>Tipo calculado</td><td class="num">${r.tipoCalc || '—'}</td><td>El más exigente de las tablas aplicables</td></tr>
+      <tr><td><strong>Tipo adoptado para las exigencias</strong></td><td class="num"><strong>${r.tipo || '—'}${r.tipoProv ? ' (provisorio)' : ''}</strong></td><td>${r.tipoRed === 'no justificada' ? sp('bad', `Tipo ${r.tipoManual} no adoptado: reducción sin excepción documentada`) : (r.tipoRed === 'justificada' ? esc('Reducción por ' + r.tipoExcTxt) : (r.tipoManual ? 'Ingresado por el proyectista (igual o más exigente)' : 'Calculado'))}</td></tr>
     </table>
-    ${r.tipo ? `<div style="overflow-x:auto;margin-top:.5rem"><table class="results"><tr><th>Elemento (OGUC 4.3.3)</th><th>Tipo ${r.tipo}</th></tr>${EF_FUNC.map((f, i) => `<tr><td>${esc(f)}</td><td class="num">${EF_T433[r.tipo][i] ? 'F-' + EF_T433[r.tipo][i] : '—'}</td></tr>`).join('')}</table></div>` : ''}`;
-    document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="overflow-x:auto"><table class="results" style="min-width:1200px">
-      <tr><th>N°</th><th>Elemento</th><th>F exigida</th><th>Am/V usado (m⁻¹)</th><th>F 4 caras (m⁻¹)</th><th>ksh</th><th>Clase de sección</th><th>θcr (°C)</th><th>t sin protección (min)</th><th>Esp. requerido</th><th>Estado</th></tr>
-      ${r.elems.map((e, i) => `<tr><td class="num">${i + 1}</td><td>${esc(e.nombre)}<div class="note">${esc(e.perfil)}</div></td><td class="num">${e.Freq ? 'F-' + e.Freq : (e.Freq === 0 ? '—' : '?')}</td><td class="num">${n(e.F, 0)}</td><td class="num">${n(e.F4, 0)}</td><td class="num">${n(e.ksh, 2)}</td>
+    ${r.resist ? `<div style="overflow-x:auto;margin-top:.5rem"><table class="results"><tr><th>Elemento (OGUC 4.3.3)</th><th>Tipo ${r.tipo}</th><th>Condición (4.3.5)</th></tr>${r.resist.map(x => `<tr><td>${esc(x.elemento)}</td><td class="num">${esc(x.txt)}</td><td class="note">${esc(x.cond)}</td></tr>`).join('')}</table></div>` : ''}`;
+    document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="overflow-x:auto"><table class="results" style="min-width:1300px">
+      <tr><th>N°</th><th>Elemento</th><th>F calculada</th><th>F adoptada</th><th>Am/V usado (m⁻¹)</th><th>F 4 caras (m⁻¹)</th><th>ksh</th><th>Clase de sección</th><th>θcr (°C)</th><th>t sin protección (min)</th><th>Esp. requerido</th><th>Estado</th></tr>
+      ${r.elems.map((e, i) => `<tr><td class="num">${i + 1}</td><td>${esc(e.nombre)}<div class="note">${esc(e.perfil)} · ${esc(EF_ORIENT[e.orient] || 'orientación sin indicar')}</div></td>
+        <td class="num">${fTxt(e.FreqCalc)}</td><td class="num">${fTxt(e.Freq)}${e.reduccion ? `<div class="note">${e.reduccion === 'justificada' ? 'reducción justificada' : 'reducción no justificada: no se aplica'}</div>` : ''}</td>
+        <td class="num">${n(e.F, 0)}</td><td class="num">${n(e.F4, 0)}</td><td class="num">${n(e.ksh, 2)}${e.kshEc && e.kshEc !== 'convexa' ? `<div class="note">ec. ${e.kshEc}</div>` : ''}</td>
         <td>${e.cls ? (e.clase4 ? sp('warn', 'Clase 4 → 350 °C') : 'Clase 1-3') + `<div class="note">${esc(e.cls.txt)}</div>` : '<span class="note">No evaluada</span>'}</td>
-        <td class="num">${n(e.thcr, 0)}</td><td class="num">${n(e.tcr, 1)}</td><td class="num">${e.prot === 'ninguna' ? '—' : esc(e.espTxt)}</td>
-        <td>${sp(e.estado[0], e.estado[1])}${e.av.length ? `<div class="note">${e.av.map(esc).join('<br>')}</div>` : ''}</td></tr>`).join('')}
+        <td class="num">${e.metodoCr === 'inestabilidad' ? '<span class="note">No aplicable (§4.2.3)</span>' : (e.metodoCr === 'mu_mayor_1' ? '<span class="note">μ0 > 1</span>' : n(e.thcr, 0))}</td><td class="num">${n(e.tcr, 1)}</td>
+        <td class="num">${e.prot === 'ninguna' ? '—' : esc(e.espTxt)}${e.espInfo && e.espInfo.por ? `<div class="note">${esc(e.espInfo.por)}</div>` : ''}</td>
+        <td>${sp(e.estado[0], e.estadoCorto)}<div class="note">${esc(e.estado[1].replace(/^[^—]+— /, ''))}</div>${e.av.length ? `<div class="note">${e.av.map(esc).join('<br>')}</div>` : ''}</td></tr>`).join('')}
     </table></div>${efMejoraHtml(r)}` : '<div class="note">Agregue elementos en la sección 3.</div>';
-    document.getElementById('ef_resAsim').innerHTML = `${r.chkAuto.length ? `<table class="results" style="margin-bottom:.5rem"><tr><th>Criterio calculado</th><th>Estado</th><th>Detalle</th></tr>${r.chkAuto.map(c => `<tr><td>${esc(c.txt)}</td><td>${c.v === 'si' ? sp('ok', 'Cumple') : sp('bad', 'No cumple')}</td><td>${esc(c.obs)}</td></tr>`).join('')}</table>` : ''}
+    document.getElementById('ef_resAsim').innerHTML = `${r.chkAuto.length ? `<table class="results" style="margin-bottom:.5rem"><tr><th>Criterio calculado</th><th>Estado</th><th>Detalle</th></tr>${r.chkAuto.map(c => `<tr><td>${esc(c.txt)}</td><td>${c.v === 'si' ? sp('ok', 'Cumple') : (c.v === 'pend' ? sp('warn', 'Pendiente') : sp('bad', 'No cumple'))}</td><td>${esc(c.obs)}</td></tr>`).join('')}</table>` : ''}
       <div class="verdict-row"><span>Método aplicable</span><span>${esc(r.metodo)}</span></div>
-      <div class="verdict-row"><span>Resultado</span><span>${sp(r.asim[0], r.asim[1])}</span></div>
+      <div class="verdict-row"><span>Resultado</span><span>${sp(r.asim[0], r.asim[1])}</span></div>`;
+    document.getElementById('ef_resGlobal').innerHTML = `<div class="global-verdict ${r.global[0] === 'ok' ? 'ok' : 'bad'}"><span class="label">ESTUDIO DE RESISTENCIA AL FUEGO</span><span class="label">${esc(r.global[1])}</span></div>
+      ${r.pend.length ? `<table class="results" style="margin-top:.5rem"><tr><th>Ámbito</th><th>Pendiente o dato faltante</th><th>Bloquea la conclusión</th></tr>${r.pend.map(q => `<tr><td>${esc(q.ambito)}</td><td>${esc(q.txt)}</td><td>${q.bloquea ? 'Sí' : 'No'}</td></tr>`).join('')}</table>` : ''}
       ${r.avisos.length ? `<div class="note" style="margin-top:.4rem">${r.avisos.map(esc).join('<br>')}</div>` : ''}`;
     xlsxSetPrintSheets(estudioFuegoDatosHtml(inp, r), estudioFuegoCalcHtml(inp, r, false), estudioFuegoCalcHtml(inp, r, true));
     ultimo = {inp, r};
   }
   let ultimo = null;
+  (window.REV_RESULTADOS = window.REV_RESULTADOS || {}).estudioFuego = () => { recalc(); return efResultadoJson(ultimo.inp, ultimo.r); };
   document.getElementById('efi_imprimir').addEventListener('click', () => { recalc(); memImprimir(efMemoriaHtml(ultimo.inp, ultimo.r, memMeta('efi'))); });
 
   mat.addEventListener('input', recalc);
   mat.addEventListener('click', e => { const b = e.target.closest('.btn-remove'); if (!b) return; b.closest('tr').remove(); recalc(); });
   body.addEventListener('input', e => {
     const tr = e.target.closest('tr');
-    if (tr && ['origen', 'desig', 'prot'].includes(e.target.dataset.f)) syncRow(tr);
+    if (tr && ['origen', 'desig', 'prot', 'orient'].includes(e.target.dataset.f)) syncRow(tr);
     recalc();
   });
   body.addEventListener('click', e => { const b = e.target.closest('.btn-remove'); if (!b) return; b.closest('tr').remove(); recalc(); });
@@ -43365,7 +43787,8 @@ function renderEstudioFuego(container) {
   document.getElementById('ef_add').addEventListener('click', () => { addRow(); recalc(); });
   container.querySelectorAll('.panel > .field-grid input, .panel > .field-grid select, #ef_chk select, #ef_chk input').forEach(el => el.addEventListener('input', recalc));
 
-  // Fila de ejemplo de formato (sin valores de poder calorífico: se ingresan con su fuente).
+  // Caso inicial (entradas de la versión 22-10-2026, incompleto a propósito): sin poder calorífico ni superficie,
+  // sin μ0, orientación ni espesores. Se ingresan los datos con su fuente.
   addMat({desc: 'Ej.: pallets de madera (reemplazar)', zona: 'Z1'});
   addRow({nombre: 'Pilar de marco', f1: 5, desig: 'IPE300', caras: '4', solic: 'flexocomp', prot: 'cerefire'});
   addRow({nombre: 'Viga de marco', f1: 9, f2: 8, desig: 'IPE300', caras: '3', solic: 'flexion', prot: 'cerefire'});
@@ -51058,7 +51481,7 @@ function revLeeme(tool, slug, nombres, S, P) {
       : /\.pdf$/.test(n) ? 'impresión completa de la planilla tal como la entrega la Mesa (membrete, datos, cálculo, esquemas).'
       : /_codigo_calculo\.js$/.test(n) ? 'código fuente JavaScript de la planilla (' + S.codigo.length + ' bloques: funciones de cálculo, dibujo, tablas y hoja de impresión), con índice al inicio.'
       : /_catalogos_datos\.js$/.test(n) ? 'catálogos y tablas de datos que usa la planilla (' + S.datos.map(b => b.nombres.join(', ')).join('; ') + ').'
-      : /\.json$/.test(n) ? 'valores de todos los campos de la planilla al exportar, para reproducir el caso.' : 'este archivo.')).join('\n'),
+      : /\.json$/.test(n) ? 'valores de todos los campos de la planilla al exportar, para reproducir el caso' + (typeof REV_RESULTADOS[tool.calc] === 'function' ? ', y el objeto de resultados del cálculo («resultado»), del que salen la pantalla, el Excel y el PDF.' : '.') : 'este archivo.')).join('\n'),
     '',
     '## Normativa declarada por la planilla',
     '',
@@ -51078,6 +51501,8 @@ function revLeeme(tool, slug, nombres, S, P) {
     '',
   ].join('\n');
 }
+// Resultado de cálculo por planilla (calc → función que devuelve un objeto plano), para el JSON del paquete.
+var REV_RESULTADOS = window.REV_RESULTADOS = window.REV_RESULTADOS || {};
 async function revBin(b) { return new Uint8Array(await b.arrayBuffer()); }
 // Arma los archivos del paquete para la planilla abierta en #mainView
 async function revPaquete(tool, opt, pre) {
@@ -51098,7 +51523,12 @@ async function revPaquete(tool, opt, pre) {
   } catch (e) { avisos.push('PDF: ' + ((e && e.message) || 'error')); }
   let S = {codigo:[], datos:[]};
   if (opt.codigo) try { const r = await revCodigoArchivos(tool, slug); S = r.S; r.archivos.forEach(a => F.push(a)); } catch (e) { avisos.push('Código: ' + ((e && e.message) || 'error')); }
-  try { F.push({name:slug + '_datos_entrada.json', data:JSON.stringify({planilla:tool.name, id:tool.id, version:revVersion(), exportado:new Date().toISOString(), proyecto:P.proyecto, calculo:P.calculo, campos:fsCaptureMain(main)}, null, 1)}); } catch (e) {}
+  try {
+    const J = {planilla:tool.name, id:tool.id, version:revVersion(), exportado:new Date().toISOString(), proyecto:P.proyecto, calculo:P.calculo, campos:fsCaptureMain(main)};
+    // Planillas que exponen su objeto de cálculo: se agrega el resultado (misma fuente que pantalla, Excel y PDF).
+    if (typeof REV_RESULTADOS[tool.calc] === 'function') try { J.resultado = REV_RESULTADOS[tool.calc](); } catch (e) { avisos.push('JSON: resultado no disponible (' + ((e && e.message) || 'error') + ')'); }
+    F.push({name:slug + '_datos_entrada.json', data:JSON.stringify(J, null, 1)});
+  } catch (e) {}
   const leeme = slug + '_LEEME_REVISION.md';
   F.unshift({name:leeme, data:revLeeme(tool, slug, [leeme].concat(F.map(f => f.name)), S, P) + (avisos.length ? '\n## Avisos de la exportación\n\n' + avisos.map(a => '- ' + a).join('\n') + '\n' : '')});
   if (pre) F.forEach(f => f.name = pre + f.name);
