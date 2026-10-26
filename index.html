@@ -18912,9 +18912,12 @@ function vtValidarBase(inp, e, pend) {
   const I = TABLA2_IMPORTANCIA_VIENTO[inp.importancia];
   if (I == null) e.push('Seleccione la categoría de ocupación (factor de importancia I).');
   if (!(vtFin(inp.Kzt) && inp.Kzt >= 1)) e.push('Kzt — factor topográfico: ingrese un valor numérico ≥ 1 (Kzt = 1 sin efecto topográfico).');
-  if (inp.n1 === null || inp.n1 === undefined) pend.push('Acredite la frecuencia fundamental n1: G = 0,85 solo es válido para estructura rígida (n1 ≥ 1 Hz).');
+  if (inp.n1Origen === 'delta') {
+    if (inp.delta === null || inp.delta === undefined) pend.push('Ingrese δ: desplazamiento lateral (mm) del nivel de la masa bajo una carga lateral igual a su peso, en la dirección más flexible; con él se obtiene n1 = (1/2π)·√(g/δ).');
+    else if (!(vtFin(inp.delta) && inp.delta > 0)) e.push('δ — desplazamiento lateral: ingrese un valor numérico mayor que 0 mm.');
+  } else if (inp.n1 === null || inp.n1 === undefined) pend.push('Ingrese n1 del análisis modal (modo fundamental en la dirección más flexible), o elija «Estimación con δ» e ingrese el desplazamiento lateral bajo el peso: G = 0,85 solo es válido si n1 ≥ 1 Hz.');
   else if (!(vtFin(inp.n1) && inp.n1 > 0)) e.push('n1 — frecuencia fundamental: ingrese un valor numérico mayor que 0 Hz, o deje el campo vacío.');
-  else if (inp.n1 < 1) e.push(`FUERA DE ALCANCE — estructura flexible (n1 = ${vtTxt(inp.n1, 2)} Hz < 1 Hz): el factor de ráfaga Gf de estructuras flexibles no está implementado; no se supone G = 0,85.`);
+  if (vtFin(inp.n1) && inp.n1 > 0 && inp.n1 < 1) e.push(`FUERA DE ALCANCE — estructura flexible (n1 = ${vtTxt(inp.n1, 2)} Hz < 1 Hz): el factor de ráfaga Gf de estructuras flexibles no está implementado; no se supone G = 0,85.`);
   if (!inp.comb3171) pend.push('Confirme que las presiones se usarán en las combinaciones de carga de NCh3171: Kd = 0,85 solo es aplicable en ese caso.');
   return { ex, I };
 }
@@ -19066,7 +19069,7 @@ function calcGalponViento(inp) {
     Aproj: Ahast, lateral: latP, casos: franjasCasos(Lx, hLP), alturas: [hc, hc], franjas: true });
 
   const res = vtArmarEstados(dirs, ctx);
-  return { modulo: 'galpon', pendientes: pend, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, GCpi, V: inp.V, Kzt: inp.Kzt, n1: inp.n1,
+  return { modulo: 'galpon', pendientes: pend, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, GCpi, V: inp.V, Kzt: inp.Kzt, n1: inp.n1, n1Origen: inp.n1Origen, delta: inp.delta,
     tipoTecho: inp.tipoTecho, cerramiento: inp.cerramiento, Lx, Ly, ha, hc, theta, h, hCriterio: theta <= 10 ? 'θ ≤ 10°: h = altura de cumbrera (3.3)' : 'θ > 10°: h = altura media del techo (3.3)',
     Kh, qh: ctx.qh, dirs: dirs.map(d => ({ k: d.k, txt: d.txt, L: d.L, B: d.B, hL: d.hL, LB: d.LB, CpSota: d.CpSota, Aproj: d.Aproj, franjas: d.franjas, alturas: d.alturas, casos: d.casos.map(c => c.txt) })),
     ...res };
@@ -19116,7 +19119,7 @@ function calcReticuladoViento(inp) {
   const dirs = [{ k: 'N', txt: 'Viento normal a una cara', F: sum('Fn'), M: sum('Mn') }];
   if (hayCuadrada) dirs.push({ k: 'D', txt: 'Viento diagonal (45° respecto de las caras, sección cuadrada)', F: sum('Fd'), M: sum('Md') });
   dirs.forEach(d => { d.cumpleMin = d.F >= Fmin - 1e-9; });
-  return { modulo: 'reticulado', pendientes: pend, avisos, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, V: inp.V, Kzt: inp.Kzt, n1: inp.n1,
+  return { modulo: 'reticulado', pendientes: pend, avisos, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, V: inp.V, Kzt: inp.Kzt, n1: inp.n1, n1Origen: inp.n1Origen, delta: inp.delta,
     tramos, AfTot, Fmin, dirs, hayCuadrada, H: T[T.length - 1].z2 };
 }
 
@@ -19173,7 +19176,7 @@ function calcBovedaViento(inp) {
       ] });
   }
   const res = vtArmarEstados(dirs, ctx);
-  return { modulo: 'boveda', pendientes: pend, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, GCpi, V: inp.V, Kzt: inp.Kzt, n1: inp.n1,
+  return { modulo: 'boveda', pendientes: pend, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, GCpi, V: inp.V, Kzt: inp.Kzt, n1: inp.n1, n1Origen: inp.n1Origen, delta: inp.delta,
     cerramiento: inp.cerramiento, apoyo: inp.apoyo, D, r, ha, Lb: conLb ? Lb : null, rD, hTop, h, Kh, qh: ctx.qh, cp,
     dirs: dirs.map(d => ({ k: d.k, txt: d.txt, L: d.L, B: d.B, hL: d.hL, LB: d.LB, CpSota: d.CpSota, Aproj: d.Aproj, franjas: d.franjas, casos: d.casos.map(c => c.txt), muros: !!d.muroB })),
     ...res };
@@ -19188,7 +19191,8 @@ function vtTabla(cls, head, rows) {
   const fila = r => `<tr>${r.map((c, i) => i === 0 ? `<td${pr && !head ? ' class="xv-label"' : ''}>${c}</td>` : `<td class="${num}">${c}</td>`).join('')}</tr>`;
   return `<table class="${cls}">${pr ? '<tbody>' : ''}${h}${rows.map(fila).join('')}${pr ? '</tbody>' : ''}</table>`;
 }
-const vtGTxt = r => r.n1 === null || r.n1 === undefined ? 'G = 0,85 (estructura rígida; n1 sin acreditar)' : `G = 0,85 (estructura rígida, n1 = ${vtTxt(r.n1, 2)} Hz ≥ 1 Hz)`;
+const vtGTxt = r => !vtFin(r.n1) ? 'G = 0,85 (estructura rígida; n1 sin acreditar)'
+  : `G = 0,85 (estructura rígida, n1 = ${vtTxt(r.n1, 2)} Hz ≥ 1 Hz${r.n1Origen === 'delta' ? `; n1 = (1/2π)·√(g/δ), δ = ${vtTxt(r.delta, 1)} mm, un grado de libertad` : ', análisis modal'})`;
 function vtFilasBase(r) {
   return [
     ['V — velocidad básica de viento', vtTxt(r.V, 1) + ' m/s'],
@@ -19327,20 +19331,20 @@ function vtSvgEstado(r, st) {
     o += `<polyline points="${X(0)},${yb} ${X(0)},${Y(g.zIzq)} ${pts.join(' ')} ${X(g.L)},${Y(g.zDer)} ${X(g.L)},${yb}" fill="var(--surface-alt)" fill-opacity="0.35" stroke="var(--ink)" stroke-width="2"/>`;
     o += ESQ.line(X(-0.05 * g.L) - 20, yb, X(g.L) + 30, yb, { width: 1.5 });
     if (g.alero) o += ESQ.line(X(0), Y(g.alero), X(g.L), Y(g.alero), { width: 1, dash: '4,3', color: 'var(--ink-muted)' });
-    o += ESQ.arrow(m, 8, 62, 0, 46, 'Viento', { fontSize: 11 });
+    o += ESQ.arrow(m, 8, 50, 0, 46, 'Viento', { fontSize: 11 });
     o += ESQ.text(W / 2 + 20, 16, `${st.id} — ${st.dirTxt}`, { fontSize: 11.5, bold: true });
-    o += ESQ.text(W / 2 + 20, 31, (st.minimo ? st.casoTxt : `${st.casoTxt} · GCpi ${vtSig(st.GCpi, 2)}`) + ' · p en Pa', { fontSize: 9.5 });
+    o += ESQ.text(W / 2 + 20, 31, (st.minimo || st.GCpi === null ? st.casoTxt : `${st.casoTxt} · GCpi ${vtSig(st.GCpi, 2)}`) + ' · p en Pa', { fontSize: 9.5 });
     if (st.minimo) {
       for (let i = 0; i < 4; i++) { const z = zMax * (i + 0.5) / 4; o += fl(X(0), Y(z), -1, 0, VT_PMIN, i === 3 ? '+480 Pa' : ''); }
     } else { let nt = 0; st.sup.forEach(sp => {
-      if (sp.tipo === 'muroB') { let yUlt = Infinity; sp.bandas.forEach((b, j) => { const zt = Math.min(b.z2, g.zIzq), zm = (b.z1 + zt) / 2; if (zt <= b.z1) return; const ok = j === sp.bandas.length - 1 || yUlt - Y(zm) >= 12; if (ok) yUlt = Y(zm); o += fl(X(0), Y(zm), -1, 0, b.p, ok ? vtSig(b.p, 0) : ''); }); }
-      else if (sp.tipo === 'muroS') [0.3, 0.7].forEach((f, i) => { o += fl(X(g.L), Y(g.zDer * f), 1, 0, sp.p, i ? vtSig(sp.p, 0) : ''); });
+      if (sp.tipo === 'muroB') { let yUlt = Infinity; sp.bandas.forEach((b, j) => { const zt = Math.min(b.z2, g.zIzq), zm = (b.z1 + zt) / 2; if (zt <= b.z1) return; const ok = j === sp.bandas.length - 1 || yUlt - Y(zm) >= 12; if (ok) yUlt = Y(zm); o += fl(X(0), Y(zm), -1, 0, b.p, ok ? (b.lbl || vtSig(b.p, 0)) : ''); }); }
+      else if (sp.tipo === 'muroS') [0.3, 0.7].forEach((f, i) => { o += fl(X(g.L), Y(g.zDer * f), 1, 0, sp.p, i ? (sp.lbl || vtSig(sp.p, 0)) : ''); });
       else if (sp.tipo === 'techo') {
         const ancho = (sp.x2 - sp.x1) * s, xs = ancho > 50 ? [1 / 3, 2 / 3] : [0.5];
         xs.forEach((f, i) => {
           const x = sp.x1 + (sp.x2 - sp.x1) * f, dz = (g.prof(Math.min(g.L, x + 1e-3 * g.L)) - g.prof(Math.max(0, x - 1e-3 * g.L))) / (2e-3 * g.L);
           const nn = Math.hypot(dz, 1);
-          o += fl(X(x), Y(g.prof(x)), -dz / nn, -1 / nn, sp.p, i === xs.length - 1 ? vtSig(sp.p, 0) : '', (nt % 2) * 12);
+          o += fl(X(x), Y(g.prof(x)), -dz / nn, -1 / nn, sp.p, i === xs.length - 1 ? (sp.lbl || vtSig(sp.p, 0)) : '', (nt % 2) * 12);
         });
         nt++;
         if (sp.x1 > 0) o += ESQ.line(X(sp.x1), Y(g.prof(sp.x1)) - 4, X(sp.x1), Y(g.prof(sp.x1)) + 4, { width: 1.2, color: 'var(--ink-muted)' });
@@ -19348,7 +19352,7 @@ function vtSvgEstado(r, st) {
     }); }
     const lat = st.sup.find(sp => sp.tipo === 'muroL');
     const pie = [];
-    if (lat) pie.push(`Muros laterales: ${vtSig(lat.p, 0)} Pa`);
+    if (lat) pie.push(`Muros laterales: ${lat.lbl || vtSig(lat.p, 0)} Pa`);
     if (vtFin(st.Fx)) pie.push(`Fx = ${vtKN(st.Fx)} kN`);
     if (vtFin(st.Fz) && !st.minimo) pie.push(`Fz = ${vtKN(st.Fz)} kN (+ hacia abajo)`);
     o += ESQ.dim(m, X(0), yb + 16, X(g.L), yb + 16, `L = ${vtTxt(g.L, 2)} m`, { labelOffset: -4, fontSize: 9.5 });
@@ -19374,8 +19378,27 @@ function vtSvgTorre(r) {
     return o;
   }, { viewBox: '0 10 470 330', maxWidth: 480, aria: 'Elevación de la torre reticulada con la fuerza de viento por tramo' });
 }
-function vtEsquemasHtml(r) {
+// Esquema simplificado: por dirección, cada superficie con su presión máxima y su succión máxima de todos los
+// estados de esa dirección (envolvente local, no un estado de carga). Flechas según el valor de mayor magnitud.
+function vtEstadoSimplificado(r, k) {
+  const ests = r.estados.filter(e => e.dir === k && !e.minimo);
+  if (!ests.length) return null;
+  const ext = vals => { const mx = Math.max(...vals), mn = Math.min(...vals);
+    return { p: Math.abs(mx) >= Math.abs(mn) ? mx : mn, lbl: mx > 0 && mn < 0 ? `${vtSig(mx, 0)} / ${vtSig(mn, 0)}` : vtSig(Math.abs(mx) >= Math.abs(mn) ? mx : mn, 0) }; };
+  const sup = ests[0].sup.map((sp, j) => sp.bandas
+    ? { ...sp, bandas: sp.bandas.map((b, i) => ({ ...b, ...ext(ests.map(e => e.sup[j].bandas[i].p)) })) }
+    : { ...sp, ...ext(ests.map(e => e.sup[j].p)) });
+  const m = r.estados.find(e => e.dir === k && e.minimo);
+  return { id: 'Simplificado', dir: k, dirTxt: ests[0].dirTxt, GCpi: null, sup, Fx: null, Fz: null,
+    casoTxt: `Envolvente SPRFV de ${ests.map(e => e.id).join(', ')} (no es un estado de carga)${m ? ' · mínimo 5.2.1: ' + m.id : ''}` };
+}
+function vtEsquemasHtml(r, vista) {
   if (r.modulo === 'reticulado') return vtSvgTorre(r);
+  if (vista === 'simple') {
+    const ks = [...new Set(r.estados.map(e => e.dir))];
+    return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">${ks.map(k => vtEstadoSimplificado(r, k)).filter(Boolean).map(e => `<div>${vtSvgEstado(r, e)}</div>`).join('')}</div>`
+      + `<p class="note">Esquema simplificado: en cada superficie se indica la presión máxima y la succión máxima entre todos los estados de esa dirección. Es un resumen del sistema principal (SPRFV): para el marco use los estados completos, que no mezclan signos de GCpi entre superficies. No reemplaza las presiones de componentes y revestimientos (costaneras, planchas, fijaciones), que esta planilla no calcula.</p>`;
+  }
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">${r.estados.filter(e => e.Aproj !== null || !e.minimo).map(e => `<div>${vtSvgEstado(r, e)}</div>`).join('')}</div>`;
 }
 
@@ -19389,7 +19412,8 @@ function vientoDatosHtml(state) {
   const filas = [
     row('V — velocidad básica de viento (m/s)', t(state[P + 'V'])), row('Categoría de exposición', ex(state[P + 'Categoria'])),
     row('Categoría de ocupación', esc(state[P + 'Importancia'] || '—')), row('Kzt — factor topográfico', t(state[P + 'Kzt'])),
-    row('n1 — frecuencia fundamental (Hz)', t(state[P + 'N1'])),
+    row('n1 — origen', state[P + 'N1Origen'] === 'delta' ? 'Estimación de un grado de libertad con δ' : 'Análisis modal'),
+    state[P + 'N1Origen'] === 'delta' ? row('δ — desplazamiento lateral bajo carga lateral igual al peso (mm)', t(state[P + 'Delta'])) : row('n1 — frecuencia fundamental (Hz)', t(state[P + 'N1'])),
     row('Presiones usadas con las combinaciones de NCh3171', state[P + 'Comb'] ? 'Sí' : 'No')];
   if (m === 'galpon') filas.push(row('Tipo de cerramiento', esc(state.gCerramiento)), row('Tipo de techo', esc(state.gTipoTecho)),
     row('Lx — dimensión paralela a la cumbrera (m)', t(state.gLx)), row('Ly — dimensión normal a la cumbrera (m)', t(state.gLy)),
@@ -19447,13 +19471,18 @@ function renderViento(container) {
           <div class="field"><label>Categoría de exposición</label><select id="${p}_categoria">${optExpo}</select></div>
           <div class="field"><label>Categoría de ocupación (importancia)</label><select id="${p}_importancia">${optImp}</select></div>
           <div class="field"><label>Kzt — factor topográfico</label><input type="text" inputmode="decimal" id="${p}_Kzt" value="${valIn(state[p + 'Kzt'])}"></div>
-          <div class="field"><label>n1 — frecuencia fundamental (Hz)</label><input type="text" inputmode="decimal" id="${p}_n1" value="" placeholder="sin acreditar"></div>`;
+          <div class="field"><label>n1 — cómo se obtiene la frecuencia fundamental</label><select id="${p}_n1Origen"><option value="modal">Análisis modal (ingresar n1)</option><option value="delta">Estimación con δ: n1 = (1/2π)·√(g/δ)</option></select></div>
+          <div class="field" id="${p}_n1Box"><label>n1 — frecuencia fundamental, modo de la dirección más flexible (Hz)</label><input type="text" inputmode="decimal" id="${p}_n1" value="" placeholder="del modelo (RAM, SAP…)"></div>
+          <div class="field" id="${p}_deltaBox" style="display:none"><label>δ — desplazamiento lateral del nivel de la masa bajo carga lateral igual a su peso (mm)</label><input type="text" inputmode="decimal" id="${p}_delta" value=""></div>
+          <div class="field" id="${p}_n1Res" style="display:none"><label>n1 estimado (Hz)</label><input type="text" id="${p}_n1Calc" value="" readonly tabindex="-1"></div>`;
   const comb = p => `<label style="display:flex;gap:.5rem;align-items:flex-start;margin:.6rem 0"><input type="checkbox" id="${p}_comb"><span>Las presiones se usarán en las combinaciones de carga de NCh3171 (condición para aplicar Kd = 0,85).</span></label>`;
   const panelesRes = p => `
       <div id="${p}_errores"></div>
       <div class="panel"><h3>3 · PARÁMETROS Y COEFICIENTES</h3><div id="${p}_param"></div></div>
       <div class="panel"><h3>4 · PRESIONES Y FUERZAS POR ESTADO DE CARGA</h3><div id="${p}_estados"></div></div>
-      <div class="panel"><h3>5 · ESQUEMAS DE LOS ESTADOS DE CARGA</h3><div id="${p}_figuras"></div></div>
+      <div class="panel"><h3>5 · ESQUEMAS DE LOS ESTADOS DE CARGA</h3>
+        <div class="field-grid"><div class="field"><label>Vista del esquema</label><select id="${p}_vista"><option value="estados">Completo — un esquema por estado de carga</option><option value="simple">Simplificado — presión y succión máximas por superficie</option></select></div></div>
+        <div id="${p}_figuras"></div></div>
       <div class="panel"><h3>6 · NOTAS</h3><div id="${p}_notas"></div></div>`;
 
   container.innerHTML = `
@@ -19472,7 +19501,7 @@ function renderViento(container) {
           </select>
         </div>
       </div>
-      <p class="note">Ingrese n1 solo si está acreditado (cálculo o medición); con n1 vacío o sin confirmar el uso de NCh3171 el cálculo se muestra como preliminar y no se permite imprimir ni exportar. Estructuras flexibles (n1 &lt; 1 Hz) y techos libres (cerramiento abierto) quedan fuera de alcance.</p>
+      <p class="note">n1: use la frecuencia del modo fundamental en la dirección más flexible obtenida del modelo (RAM Elements, SAP2000, etc.). Sin modelo, elija «Estimación con δ»: aplique en el modelo una carga lateral igual al peso concentrado en el nivel de la masa (techo o cúspide) y lea el desplazamiento δ en ese nivel; n1 = (1/2π)·√(g/δ) es exacta para un grado de libertad. Con n1 vacío o sin confirmar el uso de NCh3171 el cálculo se muestra como preliminar y no se permite imprimir ni exportar. Estructuras flexibles (n1 &lt; 1 Hz) y techos libres (cerramiento abierto) quedan fuera de alcance.</p>
     </div>
 
     <div id="vt_galpon">
@@ -19543,8 +19572,16 @@ function renderViento(container) {
   const leerComunes = p => {
     state[p + 'V'] = vtNum($(p + '_V').value); state[p + 'Categoria'] = $(p + '_categoria').value;
     state[p + 'Importancia'] = $(p + '_importancia').value; state[p + 'Kzt'] = vtNum($(p + '_Kzt').value);
-    state[p + 'N1'] = numOpt(p + '_n1'); state[p + 'Comb'] = $(p + '_comb').checked;
-    return { V: state[p + 'V'], expo: state[p + 'Categoria'], importancia: state[p + 'Importancia'], Kzt: state[p + 'Kzt'], n1: state[p + 'N1'], comb3171: state[p + 'Comb'] };
+    const orig = state[p + 'N1Origen'] = $(p + '_n1Origen').value === 'delta' ? 'delta' : 'modal';
+    state[p + 'Delta'] = numOpt(p + '_delta'); state[p + 'Comb'] = $(p + '_comb').checked;
+    const d = state[p + 'Delta'];
+    // Un grado de libertad: δ = W/k = m·g/k → ω = √(g/δ), n1 = ω/2π (δ en m)
+    const n1d = orig === 'delta' && vtFin(d) && d > 0 ? Math.sqrt(9.81 / (d / 1000)) / (2 * Math.PI) : null;
+    state[p + 'N1'] = orig === 'delta' ? n1d : numOpt(p + '_n1');
+    $(p + '_n1Box').style.display = orig === 'delta' ? 'none' : '';
+    $(p + '_deltaBox').style.display = $(p + '_n1Res').style.display = orig === 'delta' ? '' : 'none';
+    $(p + '_n1Calc').value = n1d === null ? '' : vtTxt(n1d, 2) + (n1d >= 1 ? ' ≥ 1 Hz: rígida' : ' < 1 Hz: flexible');
+    return { V: state[p + 'V'], expo: state[p + 'Categoria'], importancia: state[p + 'Importancia'], Kzt: state[p + 'Kzt'], n1: state[p + 'N1'], n1Origen: orig, delta: d, comb3171: state[p + 'Comb'] };
   };
   const sinRes = '<p class="note">Sin resultados: corregir los datos indicados arriba.</p>';
   function mostrar(p, r) {
@@ -19560,7 +19597,7 @@ function renderViento(container) {
     const bl = b => `<div style="margin:.4rem 0 .9rem"><div style="font-weight:600;margin-bottom:.3rem">${b.t}</div><div style="overflow-x:auto">${b.html}</div></div>`;
     $(p + '_param').innerHTML = B.filter(b => b.param).map(bl).join('');
     $(p + '_estados').innerHTML = B.filter(b => !b.param).map(bl).join('');
-    $(p + '_figuras').innerHTML = vtEsquemasHtml(r);
+    $(p + '_figuras').innerHTML = vtEsquemasHtml(r, $(p + '_vista') ? $(p + '_vista').value : 'estados');
     $(p + '_notas').innerHTML = `<ul class="note">${vtNotas(r).map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
   }
   const activo = () => res[state.modulo];
@@ -19645,9 +19682,10 @@ function renderViento(container) {
   };
 
   const enlazar = (ids, fn) => ids.forEach(id => { const el = $(id); el.addEventListener('input', fn); el.addEventListener('change', fn); });
-  const com = p => ['_V', '_categoria', '_importancia', '_Kzt', '_n1', '_comb'].map(s => p + s);
+  const com = p => ['_V', '_categoria', '_importancia', '_Kzt', '_n1Origen', '_n1', '_delta', '_comb'].map(s => p + s);
   enlazar(com('g').concat(['g_cerramiento', 'g_tipoTecho', 'g_Lx', 'g_Ly', 'g_hAlero', 'g_hCumbrera']), recalcGalpon);
   enlazar(com('r'), recalcReticulado);
+  enlazar(['g_vista'], recalcGalpon); enlazar(['b_vista'], recalcBoveda);
   enlazar(com('b').concat(['b_cerramiento', 'b_apoyo', 'b_D', 'b_r', 'b_hArranque', 'b_Lb']), recalcBoveda);
 
   renderTramosTable();
