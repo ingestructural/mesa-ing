@@ -19323,7 +19323,8 @@ function vtSvgEstado(r, st) {
       let t = '';
       if (p >= 0) t += ESQ.arrow(m, px + nx * (gap + len), py + ny * (gap + len), Math.atan2(-ny, -nx) * 180 / Math.PI, len, '', {});
       else t += ESQ.arrow(m, px + nx * gap, py + ny * gap, Math.atan2(ny, nx) * 180 / Math.PI, len, '', {});
-      if (lbl) t += ESQ.note(px + nx * (gap + len + 12 + extra), py + ny * (gap + len + 12 + extra) + 3, lbl, { fontSize: 9, color: 'var(--ink)' });
+      const hz = Math.abs(nx) > 0.7, dl = hz ? 4 : 12;   // muros: texto alineado al extremo de la flecha
+      if (lbl) t += ESQ.note(px + nx * (gap + len + dl + extra), py + ny * (gap + len + dl + extra) + 3, lbl, { fontSize: 9, color: 'var(--ink)', anchor: hz ? (nx > 0 ? 'start' : 'end') : 'middle' });
       return t;
     };
     // contorno
@@ -19333,7 +19334,7 @@ function vtSvgEstado(r, st) {
     if (g.alero) o += ESQ.line(X(0), Y(g.alero), X(g.L), Y(g.alero), { width: 1, dash: '4,3', color: 'var(--ink-muted)' });
     o += ESQ.arrow(m, 8, 50, 0, 46, 'Viento', { fontSize: 11 });
     o += ESQ.text(W / 2 + 20, 16, `${st.id} — ${st.dirTxt}`, { fontSize: 11.5, bold: true });
-    o += ESQ.text(W / 2 + 20, 31, (st.minimo || st.GCpi === null ? st.casoTxt : `${st.casoTxt} · GCpi ${vtSig(st.GCpi, 2)}`) + ' · p en Pa', { fontSize: 9.5 });
+    o += ESQ.text(W / 2 + 20, 31, (st.minimo || st.GCpi === null ? st.casoTxt : `${st.casoTxt} · GCpi ${vtSig(st.GCpi, 2)}`) + (st.kgf ? ' · p en kgf/m²' : ' · p en Pa'), { fontSize: 9.5 });
     if (st.minimo) {
       for (let i = 0; i < 4; i++) { const z = zMax * (i + 0.5) / 4; o += fl(X(0), Y(z), -1, 0, VT_PMIN, i === 3 ? '+480 Pa' : ''); }
     } else { let nt = 0; st.sup.forEach(sp => {
@@ -19352,7 +19353,7 @@ function vtSvgEstado(r, st) {
     }); }
     const lat = st.sup.find(sp => sp.tipo === 'muroL');
     const pie = [];
-    if (lat) pie.push(`Muros laterales: ${lat.lbl || vtSig(lat.p, 0)} Pa`);
+    if (lat) pie.push(`Muros laterales: ${lat.lbl || vtSig(lat.p, 0)} ${st.kgf ? 'kgf/m²' : 'Pa'}`);
     if (vtFin(st.Fx)) pie.push(`Fx = ${vtKN(st.Fx)} kN`);
     if (vtFin(st.Fz) && !st.minimo) pie.push(`Fz = ${vtKN(st.Fz)} kN (+ hacia abajo)`);
     o += ESQ.dim(m, X(0), yb + 16, X(g.L), yb + 16, `L = ${vtTxt(g.L, 2)} m`, { labelOffset: -4, fontSize: 9.5 });
@@ -19378,26 +19379,28 @@ function vtSvgTorre(r) {
     return o;
   }, { viewBox: '0 10 470 330', maxWidth: 480, aria: 'Elevación de la torre reticulada con la fuerza de viento por tramo' });
 }
-// Esquema simplificado: por dirección, cada superficie con su presión máxima y su succión máxima de todos los
-// estados de esa dirección (envolvente local, no un estado de carga). Flechas según el valor de mayor magnitud.
+// Esquema simplificado: por dirección, una sola carga por superficie = la más desfavorable, es decir, la de mayor
+// magnitud (con su signo) entre todos los estados de esa dirección y, en el muro de barlovento, entre sus franjas
+// de altura. Envolvente local en kgf/m², no un estado de carga.
+const VT_KGF = 9.807;
 function vtEstadoSimplificado(r, k) {
   const ests = r.estados.filter(e => e.dir === k && !e.minimo);
   if (!ests.length) return null;
-  const ext = vals => { const mx = Math.max(...vals), mn = Math.min(...vals);
-    return { p: Math.abs(mx) >= Math.abs(mn) ? mx : mn, lbl: mx > 0 && mn < 0 ? `${vtSig(mx, 0)} / ${vtSig(mn, 0)}` : vtSig(Math.abs(mx) >= Math.abs(mn) ? mx : mn, 0) }; };
+  const gob = vals => vals.reduce((a, v) => Math.abs(v) > Math.abs(a) ? v : a, 0);
+  const una = p => ({ p, lbl: vtSig(p / VT_KGF, 1) });
   const sup = ests[0].sup.map((sp, j) => sp.bandas
-    ? { ...sp, bandas: sp.bandas.map((b, i) => ({ ...b, ...ext(ests.map(e => e.sup[j].bandas[i].p)) })) }
-    : { ...sp, ...ext(ests.map(e => e.sup[j].p)) });
+    ? { ...sp, bandas: [{ z1: 0, z2: sp.bandas[sp.bandas.length - 1].z2, ...una(gob(ests.flatMap(e => e.sup[j].bandas.map(b => b.p)))) }] }
+    : { ...sp, ...una(gob(ests.map(e => e.sup[j].p))) });
   const m = r.estados.find(e => e.dir === k && e.minimo);
-  return { id: 'Simplificado', dir: k, dirTxt: ests[0].dirTxt, GCpi: null, sup, Fx: null, Fz: null,
-    casoTxt: `Envolvente SPRFV de ${ests.map(e => e.id).join(', ')} (no es un estado de carga)${m ? ' · mínimo 5.2.1: ' + m.id : ''}` };
+  return { id: 'Simplificado', dir: k, dirTxt: ests[0].dirTxt, GCpi: null, sup, Fx: null, Fz: null, kgf: true,
+    casoTxt: `Carga más desfavorable por superficie de ${ests.map(e => e.id).join(', ')}${m ? ' · mínimo 5.2.1: ' + m.id : ''}` };
 }
 function vtEsquemasHtml(r, vista) {
   if (r.modulo === 'reticulado') return vtSvgTorre(r);
   if (vista === 'simple') {
     const ks = [...new Set(r.estados.map(e => e.dir))];
     return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">${ks.map(k => vtEstadoSimplificado(r, k)).filter(Boolean).map(e => `<div>${vtSvgEstado(r, e)}</div>`).join('')}</div>`
-      + `<p class="note">Esquema simplificado: en cada superficie se indica la presión máxima y la succión máxima entre todos los estados de esa dirección. Es un resumen del sistema principal (SPRFV): para el marco use los estados completos, que no mezclan signos de GCpi entre superficies. No reemplaza las presiones de componentes y revestimientos (costaneras, planchas, fijaciones), que esta planilla no calcula.</p>`;
+      + `<p class="note">Esquema simplificado: una sola carga por superficie, en kgf/m², igual a la más desfavorable (mayor valor absoluto, con su signo) entre todos los estados de esa dirección; en el muro de barlovento, la de la franja de altura que rige. Es un resumen del sistema principal (SPRFV): para el marco use los estados completos, que no mezclan signos de GCpi entre superficies. No reemplaza las presiones de componentes y revestimientos (costaneras, planchas, fijaciones), que esta planilla no calcula.</p>`;
   }
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">${r.estados.filter(e => e.Aproj !== null || !e.minimo).map(e => `<div>${vtSvgEstado(r, e)}</div>`).join('')}</div>`;
 }
