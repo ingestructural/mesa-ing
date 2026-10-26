@@ -853,6 +853,7 @@
   // se desvia el flujo de impresion normal (window.print directo / recorte de paneles web) hacia
   // #printSheetCompleto / #printSheetResumen, que replican el formato y texto de Datos+Calculo del xlsx.
   function printCompleto(){
+    if (typeof calcAvisoBloqueo === 'function' && calcAvisoBloqueo()) return;
     var sheet = document.getElementById('printSheetCompleto');
     if (typeof printXlsxStyle === 'function' && sheet && sheet.innerHTML.trim() !== '') {
       printXlsxStyle(false);
@@ -862,6 +863,7 @@
   }
 
   function printResumen(){
+    if (typeof calcAvisoBloqueo === 'function' && calcAvisoBloqueo()) return;
     var sheetR = document.getElementById('printSheetResumen');
     if (typeof printXlsxStyle === 'function' && sheetR && sheetR.innerHTML.trim() !== '') {
       printXlsxStyle(true);
@@ -949,6 +951,7 @@
     });
   }
   async function exportarPDF(resumen, soloBlob){ // soloBlob: devuelve {blob, nombre} sin entregar (paquete de revisión)
+    if (!soloBlob && typeof calcAvisoBloqueo === 'function' && calcAvisoBloqueo()) return;
     var btn = document.getElementById('pdfBtn'), txt0 = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando…'; }
     var cont = null;
@@ -20234,19 +20237,47 @@ function renderViento(container) {
 
 
 // ===================== FUERZAS SÍSMICAS — MÉTODO ESTÁTICO NCh433 =====================
+/* Método de análisis estático, NCh433.Of1996 Mod.2009 + DS61 (MINVU, 2011), cláusula 6.2 (revisión 2026-10-26).
+   - C = 2,75·S·Ao/(g·R)·(T'/T*)ⁿ y Cmin = Ao·S/(6g), según DS61 art. 12. Ao/g se usa como fracción de g.
+   - Cmax = k(R)·S·Ao/g, Tabla 6.4 (DS61 art. 12.4 la mantiene). R no tabulado: interpolación lineal entre
+     valores de la tabla (criterio de la planilla, se informa en las salidas). No se aplica la reducción opcional
+     de Cmax para edificios de muros (factor f = 1,25 − 0,5q), lo que queda del lado de la seguridad.
+   - Qo = C·I·P, con I de la Tabla 6.1 según la categoría de ocupación I–IV (NCh433, 4.3.1).
+   - Fk = Ak·Pk·Qo/Σ(Aj·Pj), Ak = √(1 − Zk−1/H) − √(1 − Zk/H), Z0 = 0 (6.2.5). Se comprueban ΣAk = 1 y ΣFk = Qo.
+   - Aplicabilidad 6.2.1: a) categorías I y II en zona 1; b) hasta 5 pisos y H ≤ 20 m; c) 6 a 15 pisos con
+     condiciones adicionales (fuera del alcance: la planilla admite hasta 5 niveles). Sin a) ni b) se bloquea.
+   - T*: período del modo con mayor masa traslacional equivalente en la dirección de análisis (dato del modelo).
+   - Suelo: tipo A–E según la clasificación del estudio geotécnico (DS61); F requiere estudio especial.
+   - Excentricidad accidental (6.2.8) y reducción para edificios de un piso con diafragma rígido (6.2.7): no incluidas.
+   - No incorpora NCh433:2026 (vigente desde el 10-02-2027, D. Exento N° 28).
+   Con datos inválidos calcSismoEstatico devuelve { errores } sin resultados: la pantalla lo informa, la hoja
+   impresa queda marcada con data-calc-bloqueo y se bloquean impresión, PDF, Memoria y Revisión
+   (calcBloqueoExport). Pantalla, esquema, hoja impresa, Excel y JSON salen del mismo objeto de resultados. */
+const SISMO_REGIMEN = 'NCh433.Of1996 Mod.2009 + DS61 (MINVU, 2011)';
+const SISMO_NCH433_2026 = '2027-02-10';
+function sismoRegimenTxt(hoyIso) {
+  let t = `Régimen normativo: ${SISMO_REGIMEN}, método de análisis estático (cláusula 6.2). No incorpora NCh433:2026, que entra en vigencia el 10-02-2027 (D. Exento N° 28); no se mezclan disposiciones de ambas versiones.`;
+  if ((hoyIso || '') >= SISMO_NCH433_2026) t += ' A la fecha de emisión ya rige NCh433:2026: verificar qué régimen corresponde al proyecto.';
+  return t;
+}
 const ZONA_SISMICA_SISMO = { 'Zona 1': 0.2, 'Zona 2': 0.3, 'Zona 3': 0.4 };
+// DS61, Tabla 6.3. Tipo F (suelos especiales) no tiene parámetros: requiere estudio especial.
 const SUELO_SISMO = {
-  'A — Vs30 ≥ 900 m/s': {S:0.9, To:0.15, Tp:0.2, n:1, p:2},
-  'B — 500 ≤ Vs30 < 900 m/s': {S:1.0, To:0.3, Tp:0.35, n:1.33, p:1.5},
-  'C — 350 ≤ Vs30 < 500 m/s': {S:1.05, To:0.4, Tp:0.45, n:1.4, p:1.6},
-  'D — 180 ≤ Vs30 < 350 m/s': {S:1.2, To:0.75, Tp:0.85, n:1.8, p:1},
-  'E — Vs30 < 180 m/s': {S:1.3, To:1.2, Tp:1.35, n:1.8, p:1}
+  'A': {S:0.9, To:0.15, Tp:0.2, n:1, p:2},
+  'B': {S:1.0, To:0.3, Tp:0.35, n:1.33, p:1.5},
+  'C': {S:1.05, To:0.4, Tp:0.45, n:1.4, p:1.6},
+  'D': {S:1.2, To:0.75, Tp:0.85, n:1.8, p:1},
+  'E': {S:1.3, To:1.2, Tp:1.35, n:1.8, p:1},
+  'F': null
 };
+const sueloSismoTxt = k => k === 'F' ? 'Tipo F — suelo especial (requiere estudio especial)' : `Tipo ${k}`;
+// NCh433, 4.3.1 (clasificación de ocupación) y Tabla 6.1 (coeficiente I). Ejemplos parciales: la lista
+// completa está en la norma.
 const CATEGORIA_EDIFICIO_SISMO = {
-  'I — Esencial o peligrosa (hospitales, cuarteles bomberos/policía, plantas de energía, etc.)': 1.2,
-  'II — Uso normal (público o privado, no incluida en I, III o IV)': 1.0,
-  'III — Menor importancia (bodegas, construcciones provisorias, no habitables)': 0.6,
-  'IV — Adosada a una construcción de categoría superior': 1.2
+  'I': { I:0.6, txt:'Categoría I — edificios y otras estructuras aislados o provisionales no destinados a habitación, de bajo riesgo para la vida humana en caso de falla (p. ej. instalaciones agrícolas, ciertas instalaciones provisorias, instalaciones menores de almacenaje)' },
+  'II': { I:1.0, txt:'Categoría II — edificios y otras estructuras destinados a la habitación privada o al uso público, no clasificados en las categorías I, III ni IV' },
+  'III': { I:1.2, txt:'Categoría III — edificios y otras estructuras cuyo contenido es de gran valor o donde existe frecuentemente aglomeración de personas (p. ej. bibliotecas, museos, salas de reunión, estadios, establecimientos educacionales, cárceles, grandes locales comerciales)' },
+  'IV': { I:1.2, txt:'Categoría IV — instalaciones esenciales, cuyo uso es de especial importancia en caso de catástrofe (p. ej. hospitales, postas de primeros auxilios, cuarteles de bomberos, garajes de vehículos de emergencia, torres de control aéreo)' }
 };
 const SISTEMA_RESISTENTE_SISMO = {
   'Acero — Pórticos OMF (ordinarios)': {R:4, Ro:5},
@@ -20265,6 +20296,7 @@ const SISTEMA_RESISTENTE_SISMO = {
   'Albañilería armada (bloques de hormigón o similar, con doble chapa)': {R:4, Ro:4},
   'Albañilería armada (ladrillos cerámicos tipo rejilla, bloques sin rellenar)': {R:3, Ro:3}
 };
+// Tabla 6.4: Cmax = k(R)·S·Ao/g
 const KR_TABLA64_SISMO = [ {R:2,k:0.9}, {R:3,k:0.6}, {R:4,k:0.55}, {R:5.5,k:0.4}, {R:6,k:0.35}, {R:7,k:0.35} ];
 
 function interpKRSismo(R) {
@@ -20274,171 +20306,115 @@ function interpKRSismo(R) {
   for (let i=0;i<T.length-1;i++) if (R >= T[i].R && R <= T[i+1].R)
     return T[i].k + (T[i+1].k-T[i].k)*(R-T[i].R)/(T[i+1].R-T[i].R);
 }
-function akSismo(Zk, H) { return (Zk/H)*(1+1.1*(Zk/H)); }
+// NCh433, 6.2.5: Ak = √(1 − Zk−1/H) − √(1 − Zk/H)
+function akSismo(ZkPrev, Zk, H) { return Math.sqrt(Math.max(0, 1 - ZkPrev/H)) - Math.sqrt(Math.max(0, 1 - Zk/H)); }
+
+// Número a partir de un dato de entrada (acepta coma decimal); NaN si está vacío o no es número.
+function sismoNum(v) {
+  if (typeof v === 'number') return v;
+  const s = String(v == null ? '' : v).trim().replace(',', '.');
+  return s === '' ? NaN : Number(s);
+}
+const sismoTxtNum = v => String(v).replace('.', ',');
+
+function sismoValidar(inp) {
+  const e = [];
+  if (!(inp.zona in ZONA_SISMICA_SISMO)) e.push('Seleccione la zona sísmica.');
+  if (!(inp.suelo in SUELO_SISMO)) e.push('Seleccione el tipo de suelo según la clasificación del estudio geotécnico.');
+  else if (!SUELO_SISMO[inp.suelo]) e.push('Suelo tipo F: requiere un estudio especial del sitio (DS61); esta planilla no tiene parámetros para ese suelo.');
+  if (!CATEGORIA_EDIFICIO_SISMO[inp.categoria]) e.push('Seleccione la categoría de ocupación (I, II, III o IV).');
+  if (!SISTEMA_RESISTENTE_SISMO[inp.sistema]) e.push('Seleccione el sistema estructural sismorresistente.');
+  if (inp.direccion !== 'X' && inp.direccion !== 'Y') e.push('Indique la dirección de análisis (X o Y).');
+  if (!Number.isFinite(inp.Tstar)) e.push('T* debe ser un número.');
+  else if (inp.Tstar <= 0) e.push('T* debe ser mayor que 0 s.');
+  const N = inp.nNiveles;
+  if (!Number.isInteger(N) || N < 1 || N > 5) { e.push('El N° de niveles debe ser un número entero entre 1 y 5.'); return e; }
+  const L = inp.niveles.slice(0, N);
+  let prev = 0, pesosOk = true;
+  L.forEach((l, i) => {
+    const k = i + 1;
+    if (!Number.isFinite(l.Zk)) e.push(`Nivel ${k}: Zk debe ser un número.`);
+    else {
+      if (!(l.Zk > prev)) e.push(k === 1 ? 'Nivel 1: Z1 debe ser mayor que 0 m (altura sobre el nivel basal).' : `Nivel ${k}: Z${k} = ${sismoTxtNum(l.Zk)} m debe ser mayor que Z${k-1} = ${sismoTxtNum(prev)} m (las alturas deben crecer).`);
+      prev = l.Zk;
+    }
+    if (!Number.isFinite(l.Pk)) { e.push(`Nivel ${k}: Pk debe ser un número.`); pesosOk = false; }
+    else if (l.Pk < 0) { e.push(`Nivel ${k}: Pk no puede ser negativo.`); pesosOk = false; }
+  });
+  if (pesosOk && !(L.reduce((s, l) => s + l.Pk, 0) > 0)) e.push('El peso sísmico total P debe ser mayor que 0 (puede haber niveles con Pk = 0, pero no todos).');
+  return e;
+}
+
+// NCh433, 6.2.1. La planilla admite hasta 5 niveles, por lo que 6.2.1 c) (6 a 15 pisos) no se evalúa.
+function sismoAplicabilidad(inp, H) {
+  const N = inp.nNiveles;
+  const a = inp.zona === 'Zona 1' && (inp.categoria === 'I' || inp.categoria === 'II');
+  const b = N <= 5 && H <= 20;
+  if (b) return { ok:true, txt:`Cumple 6.2.1 b): ${N} piso(s) ≤ 5 y H = ${fmt2(H)} m ≤ 20 m.` + (a ? ' Cumple además 6.2.1 a) (categoría ' + inp.categoria + ' en zona 1).' : '') };
+  if (a) return { ok:true, txt:`Cumple 6.2.1 a): categoría ${inp.categoria} en zona sísmica 1 (no cumple b): H = ${fmt2(H)} m > 20 m).` };
+  return { ok:false, txt:`No se puede usar el método estático (NCh433, 6.2.1): H = ${fmt2(H)} m > 20 m, por lo que no cumple b); no es categoría I o II en zona 1, por lo que no cumple a); y c) se refiere a edificios de 6 a 15 pisos. Corresponde el análisis modal espectral (6.3).` };
+}
 
 function calcSismoEstatico(inp) {
+  const errores = sismoValidar(inp);
+  if (errores.length) return { errores };
+  const activos = inp.niveles.slice(0, inp.nNiveles);
+  const H = activos[activos.length-1].Zk;
+  const aplic = sismoAplicabilidad(inp, H);
+  if (!aplic.ok) return { errores: [aplic.txt], aplic };
+
   const Ao = ZONA_SISMICA_SISMO[inp.zona];
   const { S, To, Tp, n } = SUELO_SISMO[inp.suelo];
-  const I = CATEGORIA_EDIFICIO_SISMO[inp.categoria];
+  const I = CATEGORIA_EDIFICIO_SISMO[inp.categoria].I;
   const { R, Ro } = SISTEMA_RESISTENTE_SISMO[inp.sistema];
 
-  const activos = inp.niveles.slice(0, inp.nNiveles);
-  const H = activos.length ? activos[activos.length-1].Zk : 0;
-
-  const Ccalc = 2.75*Ao*S/R*Math.pow(Tp/inp.Tstar, n);
+  const Ccalc = 2.75*S*Ao/R*Math.pow(Tp/inp.Tstar, n);
   const Cmin = Ao*S/6;
   const kR = interpKRSismo(R);
-  const Cmax = kR*Ao;
+  const kRInterp = !KR_TABLA64_SISMO.some(t => t.R === R);
+  const Cmax = kR*S*Ao;
   const Cdiseno = Math.min(Math.max(Ccalc, Cmin), Cmax);
   const gobierna = Cdiseno === Cmin ? 'Gobierna Cmin (cota inferior)' : (Cdiseno === Cmax ? 'Gobierna Cmax (cota superior)' : 'Gobierna el C calculado (no acotado)');
 
   const P = activos.reduce((s,l) => s+l.Pk, 0);
   const Qo = Cdiseno * I * P;
 
-  const sumAjPj = activos.reduce((s,l) => s + akSismo(l.Zk,H)*l.Pk, 0);
-  const filas = activos.map(l => {
-    const Ak = akSismo(l.Zk, H);
-    const Fk = sumAjPj !== 0 ? Qo * (Ak*l.Pk) / sumAjPj : 0;
-    return { Zk:l.Zk, Pk:l.Pk, Ak, Fk };
+  const filas = activos.map((l, i) => {
+    const Zprev = i ? activos[i-1].Zk : 0;
+    return { Zprev, Zk:l.Zk, Pk:l.Pk, Ak: akSismo(Zprev, l.Zk, H) };
   });
+  const sumAjPj = filas.reduce((s,f) => s + f.Ak*f.Pk, 0);
+  filas.forEach(f => { f.Fk = Qo*f.Ak*f.Pk/sumAjPj; });
+  const sumAk = filas.reduce((s,f) => s+f.Ak, 0);
   const sumaFk = filas.reduce((s,f) => s+f.Fk, 0);
+  const okSumAk = Math.abs(sumAk - 1) <= 1e-9;
+  const okSumFk = Math.abs(sumaFk - Qo) <= 1e-9*Math.max(1, Qo);
 
-  return { Ao, S, To, Tp, n, I, R, Ro, H, Ccalc, Cmin, kR, Cmax, Cdiseno, gobierna, P, Qo, sumAjPj, filas, sumaFk };
+  return { Ao, S, To, Tp, n, I, R, Ro, H, Ccalc, Cmin, kR, kRInterp, Cmax, Cdiseno, gobierna, P, Qo, sumAjPj, filas, sumAk, sumaFk, okSumAk, okSumFk,
+    aplicTxt: aplic.txt, direccion: inp.direccion, regimen: SISMO_REGIMEN };
 }
 
-/* =========================================================================
-   IMPRESION ESTILO PLANILLA EXCEL -- FUERZAS SÍSMICAS, MÉTODO ESTÁTICO NCh433
-   id interno "sismo"
-   Fuente de verdad: /root/work/planillas_src/Fuerzas_Sismicas_Metodo_Estatico_NCh433.xlsx
-   Hojas replicadas: "Datos" (entradas) y "Calculo" (coeficiente sísmico C,
-   corte basal Qo y distribución en altura). Las hojas "Portada", "Memoria de
-   Calculo" y "Tablas" NO se replican -- mismo criterio que el resto de esta
-   migración (p.ej. pila-ha.js/factor-masividad.js): son documentación/
-   catálogos normativos, no datos de entrada ni resultados de un caso
-   concreto. Reutiliza el motor genérico ya existente en mesa_calculo_26.html
-   (xlsxNum, xlsxCalcRowHtml, xlsxSetPrintSheets).
+// Bloqueo de impresión y exportación: una planilla con datos inválidos marca su hoja impresa con
+// data-calc-bloqueo="motivo". Lo consultan Imprimir, PDF, Memoria y Revisión.
+function calcBloqueoExport() {
+  const el = document.querySelector('#printSheetCompleto [data-calc-bloqueo]');
+  return el ? el.getAttribute('data-calc-bloqueo') : '';
+}
+function calcAvisoBloqueo() {
+  const m = calcBloqueoExport();
+  if (m) alert('No se puede imprimir ni exportar: ' + m);
+  return !!m;
+}
 
-   Decisiones de fidelidad (ver también inline donde corresponde):
+const TONF_A_KN_SISMO = 9.80665;
 
-   1. SIN CONCEPTO CUMPLE/NO CUMPLE: esta calculadora es una herramienta de
-      CÁLCULO DE CARGA (coeficiente sísmico, corte basal y su distribución
-      en altura), no una verificación de capacidad de un elemento. Ni el
-      xlsx (hoja "Calculo", secciones 1-4, revisada completa arriba) ni el
-      panel interactivo (renderSismo/recalc: sin ningún chip/estado CUMPLE
-      ⇄ NO CUMPLE en ninguna de sus tablas sm_coefC/sm_corteBasal/
-      sm_distribucion) tienen una fila de verificación booleana en ningún
-      punto. Por lo tanto NO se usa el mecanismo t:'chk'/opts.global de
-      xlsxBuildCalculoHtml (que no aplica -- no hay nada que verificar) --
-      igual criterio que factor-masividad.js. En su lugar se usa un flag
-      local `resumen:true` por fila (marcando las filas que son "la
-      respuesta final": Ao, I, R, T*, H, C de diseño, condición que
-      gobierna, P, Qo, y la tabla de distribución completa, que ES el
-      resultado final de la sección 4) y un builder local propio
-      smBuildCalculoHtml() (mismo layout/clases CSS que xlsxBuildCalculoHtml,
-      pero filtrando por `resumen===true` en vez de t==='chk', y con soporte
-      para `sec.extraHtml`, ver punto 2).
-
-   2. TABLA DE DISTRIBUCIÓN POR NIVEL (sección 4, hasta 5 niveles): a
-      diferencia de Muros de Corte (que SÍ necesitó "una sección repetida
-      por piso" porque cada piso trae ~45 filas de fórmulas independientes),
-      aquí cada nivel activo aporta solo 4 valores (Zk, Pk, Ak, Fk) y el
-      propio xlsx la presenta como UNA tabla compacta de 5 columnas
-      (Calculo!B45:F50: Nivel k | Zk | Pk | Ak | Fk), no como bloques
-      verticales repetidos. Replicarla como 5 secciones "4.k" habría sido
-      fiel pero mucho menos legible que el propio xlsx para una tabla tan
-      pequeña. En su lugar se generó una tabla HTML propia (smNivelesTableHtml,
-      con las mismas clases xlsx-table/xlsx-hdr-de/xv-num del motor genérico)
-      que reproduce 1:1 la grilla del xlsx, incluidas las filas de nivel NO
-      activo mostradas con "-" (Calculo!B50:F50 cuando N < 5, exactamente
-      como en el xlsx) y las dos filas de cierre (Σ Fk, Qo de verificación).
-      Esta tabla se inyecta como `sections[3].extraHtml` dentro de
-      smBuildCalculoHtml (nuevo campo, no existente en el motor genérico) y
-      se muestra tanto en "Completo" como en "Resumen" -- es el resultado
-      final de la planilla, análogo en espíritu a por qué muros-corte.js
-      SÍ muestra su tabla por piso también en Resumen (allí vía filas 'chk').
-
-   3. calcSismoEstatico(inp) NO necesita ningún cambio. Devuelve exactamente
-      {Ao,S,To,Tp,n,I,R,Ro,H,Ccalc,Cmin,kR,Cmax,Cdiseno,gobierna,P,Qo,
-      sumAjPj,filas,sumaFk} -- ya en las MISMAS unidades que la hoja Calculo
-      del xlsx (kN para P/Qo/Pk/Fk: recalc() en renderSismo llama a
-      calcSismoEstatico con niveles.map(l=>({Zk:l.Zk, Pk:l.Pk*TONF_A_KN}))
-      antes de invocarla, así que `r` que llega a buildPrintSheetsSismo ya
-      está en kN, sin que este archivo necesite reconvertir nada para la
-      hoja Calculo). r.gobierna reproduce carácter por carácter las 3
-      variantes de texto de Calculo!C31 (fórmula IF anidada verificada
-      contra C26/C27/C29 del xlsx: "Gobierna Cmin (cota inferior)" /
-      "Gobierna Cmax (cota superior)" / "Gobierna el C calculado (no
-      acotado)").
-
-   4. SUELO TIPO F: el xlsx ofrece una 6ª opción de suelo ("F", Datos!M9)
-      para la cual Calculo!C26 devuelve el texto "N/D - suelo F: requiere
-      estudio especial" (fórmula =IF(ISNUMBER($C$11),...,"N/D...")) porque
-      la hoja "Tablas" no entrega S/To/T'/n para ese tipo de suelo. El
-      objeto SUELO_SISMO de mesa_calculo_26.html (línea ~11514) SOLO define
-      A-E -- el <select id="sm_suelo"> interactivo nunca ofrece "F" como
-      opción, así que esta rama "N/D" del xlsx es físicamente inalcanzable
-      desde la calculadora web y no se replica (no hay ningún estado de
-      `state`/`r` que la represente). Esto ya está advertido explícitamente
-      en el propio panel interactivo (<p class="note">: "Suelo tipo F
-      requiere estudio especial de sitio (no incluido)"), y se repite aquí
-      en sismoDatosHtml() como nota de fidelidad visible en la hoja impresa.
-
-   5. "A. Identificación" (Datos!B6-B10: Proyecto/Elemento) -- `state` de
-      renderSismo (zona/suelo/categoria/sistema/Tstar/nNiveles/niveles) NO
-      guarda campos de proyecto/elemento: se reutiliza PROYECTO_META (mismo
-      patrón que pila-ha.js/consola-ha.js/columna-ha.js/factor-masividad.js),
-      con el texto de respaldo estándar "No disponible en esta versión web —
-      ver planilla Excel..." cuando PROYECTO_META está vacío. El xlsx no
-      tiene una fila "Fecha" en esta planilla (a diferencia de Pilas HA/
-      Columna HA) -- por eso Sección A aquí solo trae Proyecto + Elemento,
-      sin fila de Fecha inventada.
-
-   6. UNIDADES DE Pk EN LA HOJA DATOS -- doble unidad, documentada en la
-      propia tabla: la UI web pide Pk directamente en TONELADAS ("Pk — peso
-      sísmico del nivel k (Ton)", <input class="sm-pk">), mientras que
-      Datos!D33 del xlsx pide Pk en kN ("Pk - peso sismico del nivel k
-      [kN]") -- recalc() hace la conversión (×TONF_A_KN=9,80665) recién al
-      llamar a calcSismoEstatico, nunca en el propio `state`. Para no perder
-      ninguna de las dos representaciones, sismoDatosNivelesTableHtml()
-      muestra AMBAS columnas (Pk [Ton], tal como lo guarda `state`, y Pk
-      equivalente [kN] = Ton×9,80665, en las mismas unidades que el xlsx) --
-      mismo criterio que pila-ha.js con f'c/fy (t/cm² del state + su
-      equivalente en MPa). Zk SÍ está en metros en ambos lados (state.niveles
-      y Datos!C33 del xlsx) -- no requiere conversión ni columna doble.
-
-   7. Verificado con una simulación Node.js de calcSismoEstatico(), usando el
-      caso por defecto de renderSismo (Zona 3, suelo D, categoría I, sistema
-      "Hormigón armado — Muros de corte", T*=0,5 s, 4 niveles activos con
-      Pk=122,398/112,199/112,199/0 Ton → ×9,80665 = 1200,31/1100,30/1100,30/0
-      kN): Ao=0,40, S=1,20, To=0,75 s, T'=0,85 s, n=1,80, I=1,20, R=7,0,
-      Ro=11,0, H=15,00 m, C calculado=0,490, Cmin=0,080, k(R)=0,350,
-      Cmax=0,140, C de diseño=0,140 (gobierna Cmax), P=3400,9 kN,
-      Qo=571,4 kN, Σ(Aj·Pj)=2022,543, Ak=0,244/0,576/0,996/2,100,
-      Fk=82,7/179,0/309,6/0,0 kN, Σ Fk=571,4 kN=Qo (verificación OK) --
-      coincide con los valores cacheados de Calculo!C9:F49 del xlsx salvo
-      una diferencia menor de ~0,4 kN en P/Qo (3400,9 vs 3400,0 kN de
-      catálogo; 571,4 vs 571,2 kN), causada enteramente porque los valores
-      de demostración por defecto del panel web (122,398/112,199/112,199
-      Ton) fueron elegidos para aproximar 1200/1100/1100 kN redondos del
-      xlsx, no para reproducirlos exactamente al multiplicar por 9,80665 --
-      no es un error de fórmula (misma causa raíz que la diferencia de
-      ~0,03 kN en Vs,máx documentada en pila-ha.js). No se solicita ningún
-      cambio a calcSismoEstatico ni a los valores de demostración de
-      renderSismo por esto.
-   ========================================================================= */
-
-const TONF_A_KN_SISMO = 9.80665; // misma constante que TONF_A_KN dentro de renderSismo (mesa_calculo_26.html)
-
-// ---- builder local (misma forma que xlsxBuildCalculoHtml, ver punto 1) --
-// filtra "Resumen" por `row.resumen===true` (no existe t==='chk' en esta
-// planilla) y agrega soporte para `sec.extraHtml` (tabla de distribución por
-// nivel, ver punto 2) -- se muestra en Completo y en Resumen salvo que la
-// sección fije `extraInResumen:false` explícitamente.
+// Builder local (misma forma que xlsxBuildCalculoHtml): "Resumen" muestra las filas con resumen:true y la
+// tabla de distribución por nivel (sec.extraHtml).
 function smBuildCalculoHtml(sections, d, opts) {
   opts = opts || {};
   const resumen = !!opts.resumen;
   let html = `<div class="xlsx-title-bar">CÁLCULO</div>`;
-  if (opts.intro) html += `<div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">${opts.intro}${resumen ? ' (Resumen: solo los resultados finales — el detalle completo está en Imprimir completo.)' : ''}</div>`;
+  if (opts.intro) html += `<div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">${opts.intro}</div>`;
 
   sections.forEach(sec => {
     const rows = resumen ? sec.rows.filter(rr => rr.t === 'desc' || rr.resumen === true) : sec.rows;
@@ -20456,46 +20432,41 @@ function smBuildCalculoHtml(sections, d, opts) {
   return html;
 }
 
-// Tabla de distribución por nivel de la hoja Calculo (Calculo!B45:F50 del
-// xlsx) -- ver punto 2 del comentario de cabecera. `d.filas` (=r.filas) ya
-// está en kN. Niveles no activos (más allá de d.filas.length, hasta 5) se
-// muestran con "-" en cada celda, igual que Calculo!B50:F50 del xlsx cuando
-// N<5.
+// Tabla de distribución por nivel (kN). Niveles no activos (hasta 5) con "-".
 function smNivelesTableHtml(d) {
   const rows = [];
   for (let i = 0; i < 5; i++) {
     if (i < d.filas.length) {
       const f = d.filas[i];
-      rows.push(`<tr><td style="width:12%;text-align:center">${i + 1}</td>` +
-        `<td class="xv-num">${xlsxNum(f.Zk, 2)}</td><td class="xv-num">${xlsxNum(f.Pk, 1)}</td>` +
-        `<td class="xv-num">${xlsxNum(f.Ak, 3)}</td><td class="xv-num">${xlsxNum(f.Fk, 1)}</td></tr>`);
+      rows.push(`<tr><td style="width:10%;text-align:center">${i + 1}</td>` +
+        `<td class="xv-num">${xlsxNum(f.Zprev, 2)}</td><td class="xv-num">${xlsxNum(f.Zk, 2)}</td><td class="xv-num">${xlsxNum(f.Pk, 2)}</td>` +
+        `<td class="xv-num">${xlsxNum(f.Ak, 6)}</td><td class="xv-num">${xlsxNum(f.Fk, 2)}</td></tr>`);
     } else {
-      rows.push(`<tr style="opacity:.5"><td style="width:12%;text-align:center">${i + 1}</td>` +
-        `<td class="xv-num">-</td><td class="xv-num">-</td><td class="xv-num">-</td><td class="xv-num">-</td></tr>`);
+      rows.push(`<tr style="opacity:.5"><td style="width:10%;text-align:center">${i + 1}</td>` +
+        `<td class="xv-num">-</td><td class="xv-num">-</td><td class="xv-num">-</td><td class="xv-num">-</td><td class="xv-num">-</td></tr>`);
     }
   }
   return `<table class="xlsx-table xlsx-calc-table"><tbody>
-    <tr class="xlsx-hdr-de"><td style="width:12%">Nivel k</td><td class="xv-num">Zk [m]</td><td class="xv-num">Pk [kN]</td><td class="xv-num">Ak</td><td class="xv-num">Fk [kN]</td></tr>
+    <tr class="xlsx-hdr-de"><td style="width:10%">Nivel k</td><td class="xv-num">Zk−1 [m]</td><td class="xv-num">Zk [m]</td><td class="xv-num">Pk [kN]</td><td class="xv-num">Ak</td><td class="xv-num">Fk [kN]</td></tr>
     ${rows.join('')}
-    <tr class="xlsx-estado"><td colspan="4" class="xv-label" style="text-align:right">Σ Fk</td><td class="xv-num">${xlsxNum(d.sumaFk, 1)} kN</td></tr>
-    <tr><td colspan="4" class="xv-label" style="text-align:right">Qo (verificación: Σ Fk = Qo)</td><td class="xv-num">${xlsxNum(d.Qo, 1)} kN</td></tr>
+    <tr><td colspan="4" class="xv-label" style="text-align:right">Σ Ak (debe ser 1)</td><td class="xv-num">${xlsxNum(d.sumAk, 6)}</td><td class="xv-num">${d.okSumAk ? 'comprobado' : 'error'}</td></tr>
+    <tr><td colspan="5" class="xv-label" style="text-align:right">Σ Fk</td><td class="xv-num">${xlsxNum(d.sumaFk, 2)} kN</td></tr>
+    <tr><td colspan="5" class="xv-label" style="text-align:right">Qo (Σ Fk = Qo: ${d.okSumFk ? 'comprobado' : 'error'})</td><td class="xv-num">${xlsxNum(d.Qo, 2)} kN</td></tr>
   </tbody></table>`;
 }
 
-// Tabla de niveles de la hoja DATOS (Datos!B33:D38 del xlsx) -- doble
-// columna de Pk (Ton, tal como lo guarda `state`, + kN equivalente, mismas
-// unidades que el xlsx), ver punto 6 del comentario de cabecera.
+// Tabla de niveles de la hoja DATOS: Pk en Ton (dato) y su equivalente en kN.
 function sismoDatosNivelesTableHtml(state) {
   const rows = [];
   for (let i = 0; i < 5; i++) {
     const activo = i < state.nNiveles;
-    const l = state.niveles[i] || { Zk: 0, Pk: 0 };
+    const l = state.niveles[i] || { Zk: NaN, Pk: NaN };
     rows.push(`<tr${activo ? '' : ' style="opacity:.5"'}><td style="width:12%;text-align:center">${i + 1}</td>` +
-      `<td class="xv-num">${xlsxNum(l.Zk, 2)}</td><td class="xv-num">${xlsxNum(l.Pk, 3)}</td>` +
-      `<td class="xv-num">${xlsxNum(l.Pk * TONF_A_KN_SISMO, 1)}</td></tr>`);
+      `<td class="xv-num">${activo ? xlsxNum(l.Zk, 2) : '-'}</td><td class="xv-num">${activo ? xlsxNum(l.Pk, 3) : '-'}</td>` +
+      `<td class="xv-num">${activo ? xlsxNum(l.Pk * TONF_A_KN_SISMO, 2) : '-'}</td></tr>`);
   }
   return `<table class="xlsx-table xlsx-calc-table"><tbody>
-    <tr class="xlsx-hdr-de"><td style="width:12%">Nivel k</td><td class="xv-num">Zk — altura acumulada [m]</td><td class="xv-num">Pk — peso sísmico [Ton]</td><td class="xv-num">Pk equivalente [kN]</td></tr>
+    <tr class="xlsx-hdr-de"><td style="width:12%">Nivel k</td><td class="xv-num">Zk — altura sobre el nivel basal [m]</td><td class="xv-num">Pk — peso sísmico [Ton]</td><td class="xv-num">Pk equivalente [kN]</td></tr>
     ${rows.join('')}
   </tbody></table>`;
 }
@@ -20506,106 +20477,122 @@ function sismoDatosHtml(state) {
   }
   const proyecto = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.proyecto) ? PROYECTO_META.proyecto : '____________________';
   const elemento = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.calculo) ? PROYECTO_META.calculo : '____________________';
+  const cat = CATEGORIA_EDIFICIO_SISMO[state.categoria];
 
   return `
     <div class="xlsx-title-bar">DATOS DE ENTRADA</div>
-    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">Celdas azules sobre fondo amarillo = ingreso del usuario. El resto son valores calculados o de referencia.</div>
+    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">${sismoRegimenTxt(new Date().toISOString().slice(0, 10))}</div>
 
     <div class="xlsx-section">A. Identificación</div>
     <table class="xlsx-table"><tbody>
       ${row('Proyecto', proyecto)}
       ${row('Elemento / estructura', elemento)}
+      ${row('Dirección de análisis', state.direccion)}
     </tbody></table>
 
     <div class="xlsx-section">B. Parámetros sísmicos generales</div>
     <table class="xlsx-table"><tbody>
       ${row('Zona sísmica', state.zona)}
-      ${row('Tipo de suelo de fundación', state.suelo)}
-      ${row('Categoría del edificio', state.categoria)}
+      ${row('Tipo de suelo de fundación (clasificación del estudio geotécnico, DS61)', sueloSismoTxt(state.suelo))}
+      ${row('Categoría de ocupación (NCh433, 4.3.1)', cat ? cat.txt : '')}
       ${row('Sistema estructural sismorresistente', state.sistema)}
-      ${row('T* — período fundamental de vibración [s]', xlsxNum(state.Tstar, 2))}
-    </table></tbody>
-    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">T* debe determinarse por un procedimiento racional (análisis modal, Rayleigh u otro) fuera de esta planilla — la norma no entrega una fórmula empírica de aplicación general (ver Memoria de Cálculo, sección 6, hoja Excel). Suelo tipo F requiere estudio especial de sitio y NO está disponible en esta calculadora (ni en la lista desplegable del xlsx, que tampoco entrega S/To/T'/n para ese tipo de suelo — ver punto 4 de las decisiones de fidelidad al inicio de este archivo).</div>
+      ${row('T* — período del modo con mayor masa traslacional equivalente en la dirección de análisis [s]', xlsxNum(state.Tstar, 3))}
+    </tbody></table>
+    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">El tipo de suelo corresponde a la clasificación sísmica del terreno entregada por el estudio de mecánica de suelos según DS61; Vs30 por sí solo no acredita todos los requisitos de cada tipo. T* proviene del análisis del modelo estructural en la dirección indicada.</div>
 
-    <div class="xlsx-section">C. Niveles (hasta 5)</div>
+    <div class="xlsx-section">C. Niveles</div>
     <table class="xlsx-table"><tbody>
-      ${row('N° de niveles a considerar', xlsxNum(state.nNiveles, 0))}
+      ${row('N° de pisos (niveles sobre el nivel basal)', xlsxNum(state.nNiveles, 0))}
     </tbody></table>
     ${sismoDatosNivelesTableHtml(state)}
-    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">Zk = altura acumulada desde el nivel basal hasta el nivel k [m] (Zk del último nivel = altura total del edificio, H). Pk = peso sísmico del nivel k. Solo se usan las filas hasta el número de niveles indicado arriba; las filas adicionales se ignoran en el cálculo (mostradas atenuadas arriba).</div>`;
+    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">Zk = altura del nivel k sobre el nivel basal; Zk del último nivel = H. Pk = peso sísmico del nivel k.</div>`;
 }
 
-// ---- estructura de la hoja Calculo, 1:1 con la hoja "Calculo" del xlsx
-// (numeración 1..4 tal cual el propio xlsx). SIN sección "ESTADO GLOBAL":
-// esta planilla no verifica capacidad, ver punto 1 del comentario de
-// cabecera. `resumen:true` marca las filas que quedan en la vista Resumen.
+// Hoja Calculo. `resumen:true` marca las filas que quedan en la vista Resumen.
 const SISMO_CALC_SECTIONS = [
-  { num: '1', title: 'RESUMEN DE PARÁMETROS SÍSMICOS INGRESADOS', rows: [
+  { num: '1', title: 'RÉGIMEN NORMATIVO Y APLICABILIDAD DEL MÉTODO ESTÁTICO', rows: [
+    { t: 'text', label: 'Régimen normativo', f: 'regimen', resumen: true },
+    { t: 'text', label: 'Versión no aplicada', f: 'regimenNota', resumen: true },
+    { t: 'text', label: 'Dirección de análisis', f: 'direccion', resumen: true },
+    { t: 'text', label: 'Aplicabilidad (NCh433, 6.2.1)', f: 'aplicTxt', resumen: true },
+  ]},
+  { num: '2', title: 'RESUMEN DE PARÁMETROS SÍSMICOS', rows: [
     { t: 'text', label: 'Proyecto', f: 'proyecto', resumen: true },
     { t: 'text', label: 'Elemento / estructura', f: 'elemento', resumen: true },
     { t: 'text', label: 'Zona sísmica', f: 'zona', resumen: true },
-    { t: 'var1', label: 'Ao — aceleración efectiva máxima [× g]', f: 'Ao', d: 2, resumen: true },
-    { t: 'text', label: 'Tipo de suelo de fundación', f: 'sueloTxt' },
-    { t: 'var1', label: 'S', f: 'S', d: 2 },
+    { t: 'var1', label: 'Ao/g — aceleración efectiva máxima (fracción de g, Tabla 6.2)', f: 'Ao', d: 2, resumen: true },
+    { t: 'text', label: 'Tipo de suelo (clasificación del estudio geotécnico)', f: 'sueloTxt' },
+    { t: 'var1', label: 'S (DS61, Tabla 6.3)', f: 'S', d: 2 },
     { t: 'var1', label: 'To [s]', f: 'To', d: 2 },
     { t: 'var1', label: "T' [s]", f: 'Tp', d: 2 },
     { t: 'var1', label: 'n', f: 'n', d: 2 },
-    { t: 'text', label: 'Categoría del edificio', f: 'categoriaTxt', resumen: true },
-    { t: 'var1', label: 'I — factor de importancia', f: 'I', d: 2, resumen: true },
+    { t: 'text', label: 'Categoría de ocupación', f: 'categoriaTxt', resumen: true },
+    { t: 'var1', label: 'I — coeficiente de importancia (Tabla 6.1)', f: 'I', d: 2, resumen: true },
     { t: 'text', label: 'Sistema estructural sismorresistente', f: 'sistemaTxt', resumen: true },
-    { t: 'var1', label: 'R — factor de modificación de respuesta (método estático)', f: 'R', d: 1, resumen: true },
-    { t: 'var1', label: 'Ro — factor de modificación de respuesta (método modal espectral, referencia)', f: 'Ro', d: 1 },
-    { t: 'var1', label: 'T* — período fundamental [s]', f: 'Tstar', d: 2, resumen: true },
-    { t: 'var1', label: 'N° de niveles considerados', f: 'nNiveles', d: 0, resumen: true },
-    { t: 'var1', label: 'H — altura total (Zk del último nivel activo) [m]', f: 'H', d: 2, resumen: true },
+    { t: 'var1', label: 'R — factor de modificación de la respuesta (método estático, Tabla 5.1)', f: 'R', d: 1, resumen: true },
+    { t: 'var1', label: 'Ro — factor de modificación de la respuesta (método modal espectral, referencia)', f: 'Ro', d: 1 },
+    { t: 'var1', label: 'T* — período del modo con mayor masa traslacional equivalente [s]', f: 'Tstar', d: 3, resumen: true },
+    { t: 'var1', label: 'N° de pisos considerados', f: 'nNiveles', d: 0, resumen: true },
+    { t: 'var1', label: 'H — altura total sobre el nivel basal [m]', f: 'H', d: 2, resumen: true },
   ]},
-  { num: '2', title: 'COEFICIENTE SÍSMICO C (con cotas Cmin y Cmax)', rows: [
-    { t: 'var1', label: "C calculado = 2,75·Ao·S/R·(T'/T*)ⁿ", f: 'Ccalc', d: 3 },
-    { t: 'var1', label: 'Cmin = Ao·S/6 (cota inferior obligatoria, cláusula 6.2.3.1.1)', f: 'Cmin', d: 3 },
-    { t: 'var1', label: 'k(R) = Cmax/Ao (Tabla 6.4, interpolado linealmente si R no está tabulado — p.ej. R=5)', f: 'kR', d: 3 },
-    { t: 'var1', label: 'Cmax = k(R)·Ao (cota superior obligatoria, Tabla 6.4)', f: 'Cmax', d: 3 },
-    { t: 'var1', label: 'C de diseño = MIN(MAX(C calculado, Cmin), Cmax)', f: 'Cdiseno', d: 3, resumen: true },
+  { num: '3', title: 'COEFICIENTE SÍSMICO C (NCh433 6.2.3 + DS61)', rows: [
+    { t: 'var1', label: "C calculado = 2,75·S·Ao/(g·R)·(T'/T*)ⁿ", f: 'Ccalc', d: 4 },
+    { t: 'var1', label: 'Cmin = Ao·S/(6g)', f: 'Cmin', d: 4 },
+    { t: 'var1', label: 'k(R) — coeficiente de la Tabla 6.4', f: 'kR', d: 3 },
+    { t: 'text', label: 'Origen de k(R)', f: 'kRTxt' },
+    { t: 'var1', label: 'Cmax = k(R)·S·Ao/g (Tabla 6.4, mantenida por DS61 art. 12.4)', f: 'Cmax', d: 4 },
+    { t: 'var1', label: 'C de diseño = MIN(MAX(C calculado, Cmin), Cmax)', f: 'Cdiseno', d: 4, resumen: true },
     { t: 'text', label: 'Condición que gobierna', f: 'gobierna', resumen: true },
+    { t: 'desc', text: 'No se aplica la reducción opcional de Cmax para edificios estructurados con muros (factor f = 1,25 − 0,5q); el resultado queda del lado de la seguridad.' },
   ]},
-  { num: '3', title: 'CORTE BASAL', rows: [
-    { t: 'var1', label: 'P — peso sísmico total (niveles activos) [kN]', f: 'P', d: 1, resumen: true },
-    { t: 'var1', label: 'Qo = C,diseño × I × P [kN]', f: 'Qo', d: 1, resumen: true },
+  { num: '4', title: 'CORTE BASAL', rows: [
+    { t: 'var1', label: 'P — peso sísmico total sobre el nivel basal [kN]', f: 'P', d: 2, resumen: true },
+    { t: 'var1', label: 'Qo = C·I·P [kN]', f: 'Qo', d: 2, resumen: true },
   ]},
-  { num: '4', title: 'DISTRIBUCIÓN DE LA FUERZA SÍSMICA EN ALTURA', rows: [
-    { t: 'desc', text: "Fk = Qo·(Ak·Pk)/Σ(Aj·Pj), con Ak = (Zk/H)·[1+1,1·(Zk/H)] (implementado con confianza MEDIA — ver Memoria de Cálculo, sección 5). Solo se muestran valores para los niveles activos (k ≤ N° de niveles); la tabla completa (incluidos los niveles no activos, marcados '-') se muestra a continuación." },
-    { t: 'var1', label: 'Σ(Aj·Pj) — niveles activos', f: 'sumAjPj', d: 3 },
-    { t: 'desc', text: 'Verificación: la suma de todos los Fk activos debe ser igual a Qo. Excentricidad accidental/torsión (cláusula 6.2.7 y similares) no incluida — ver Memoria de Cálculo, sección 6.' },
-  ], extraHtml: null }, // extraHtml (tabla de distribución) se inyecta en sismoCalcHtml(), ver punto 2
+  { num: '5', title: 'DISTRIBUCIÓN DE LA FUERZA SÍSMICA EN ALTURA (NCh433, 6.2.5)', rows: [
+    { t: 'desc', text: 'Fk = Ak·Pk·Qo/Σ(Aj·Pj), con Ak = √(1 − Zk−1/H) − √(1 − Zk/H) y Z0 = 0. Las fuerzas se aplican en la dirección de análisis, todas en el mismo sentido.' },
+    { t: 'var1', label: 'Σ(Aj·Pj) [kN]', f: 'sumAjPj', d: 3 },
+    { t: 'desc', text: 'No incluye los momentos de torsión por excentricidad accidental (NCh433, 6.2.8) ni la reducción para edificios de un piso con diafragma rígido (6.2.7).' },
+  ], extraHtml: null }, // extraHtml (tabla de distribución) se inyecta en sismoCalcHtml()
 ];
 
 function sismoCalcHtml(d, opts) {
   const resumen = !!(opts && opts.resumen);
   const sections = SISMO_CALC_SECTIONS.map(s => Object.assign({}, s));
-  const secDist = sections.find(s => s.num === '4');
+  const secDist = sections.find(s => s.num === '5');
   secDist.extraHtml = smNivelesTableHtml(d);
   return smBuildCalculoHtml(sections, d, {
     resumen,
-    intro: 'Cálculo según hoja "Calculo" de la planilla Excel — Método de Análisis Estático (fuerza lateral equivalente), NCh433 Of.96 Mod.2009 + DS61:2011 (Texto Refundido), cláusula 6.2. Sin verificación de capacidad de elementos (no hay estado CUMPLE/NO CUMPLE en esta planilla — ver decisiones de fidelidad al inicio de sismo.js).',
+    intro: `Método de análisis estático (cláusula 6.2), ${SISMO_REGIMEN}, en la dirección ${d.direccion}. Fuerzas en kN (1 Ton = 9,80665 kN).`,
   });
 }
 
-// state: objeto de estado de renderSismo (zona, suelo, categoria, sistema,
-// Tstar, nNiveles, niveles[]). r: resultado de calcSismoEstatico(...) ya
-// calculado en recalc(), en kN (ver punto 3 del comentario de cabecera).
-function buildPrintSheetsSismo(state, r) {
+// Objeto de datos de la hoja impresa y del JSON de revisión, desde el resultado r (en kN).
+function sismoDatosSalida(state, r) {
   const proyecto = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.proyecto) ? PROYECTO_META.proyecto : '____________________';
   const elemento = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.calculo) ? PROYECTO_META.calculo : '____________________';
-
-  const d = Object.assign({}, r, {
+  return Object.assign({}, r, {
     proyecto, elemento,
     zona: state.zona,
-    sueloTxt: state.suelo,
-    categoriaTxt: state.categoria,
+    sueloTxt: sueloSismoTxt(state.suelo),
+    categoriaTxt: CATEGORIA_EDIFICIO_SISMO[state.categoria].txt,
     sistemaTxt: state.sistema,
     Tstar: state.Tstar,
     nNiveles: state.nNiveles,
+    regimenNota: 'NCh433:2026 (vigente desde el 10-02-2027, D. Exento N° 28): no se aplica ni se mezcla con esta versión.' + (new Date().toISOString().slice(0, 10) >= SISMO_NCH433_2026 ? ' A la fecha de emisión ya rige: verificar el régimen que corresponde al proyecto.' : ''),
+    kRTxt: r.kRInterp ? `R = ${sismoTxtNum(r.R)} no está tabulado: interpolación lineal entre valores de la Tabla 6.4 (criterio de la planilla)` : `Valor tabulado para R = ${sismoTxtNum(r.R)}`,
   });
+}
 
+// state: estado de renderSismo. r: resultado de calcSismoEstatico (kN) o { errores }.
+function buildPrintSheetsSismo(state, r) {
+  if (r.errores) {
+    const motivo = 'datos inválidos o método no aplicable — ' + r.errores.join(' ');
+    const err = `<div class="xlsx-title-bar" data-calc-bloqueo="${esc(motivo)}">CÁLCULO</div><div class="xlsx-section">DATOS INVÁLIDOS — NO SE CALCULA</div><table class="xlsx-table"><tbody>${r.errores.map(e => `<tr class="xlsx-desc-row"><td colspan="5">${esc(e)}</td></tr>`).join('')}</tbody></table>`;
+    xlsxSetPrintSheets('', err, err);
+    return;
+  }
+  const d = sismoDatosSalida(state, r);
   xlsxSetPrintSheets(sismoDatosHtml(state), sismoCalcHtml(d, { resumen: false }), sismoCalcHtml(d, { resumen: true }));
 }
 
@@ -20641,18 +20628,19 @@ function svgDistribucionSismicaAltura(filas, H, Qo) {
 }
 
 function renderSismo(container) {
-  const TONF_A_KN = 9.80665;
+  const TONF_A_KN = TONF_A_KN_SISMO;
+  // Ejemplo ficticio: edificio esencial (categoría IV, I = 1,2), zona 3, suelo D, muros HA, 4 niveles.
   const state = {
-    zona: 'Zona 3', suelo: 'D — 180 ≤ Vs30 < 350 m/s',
-    categoria: 'I — Esencial o peligrosa (hospitales, cuarteles bomberos/policía, plantas de energía, etc.)',
-    sistema: 'Hormigón armado — Muros de corte', Tstar: 0.5,
+    zona: 'Zona 3', suelo: 'D', categoria: 'IV',
+    sistema: 'Hormigón armado — Muros de corte', direccion: 'X', Tstar: 0.5,
     nNiveles: 4,
     niveles: [ {Zk:3, Pk:122.398}, {Zk:6, Pk:112.199}, {Zk:9, Pk:112.199}, {Zk:15, Pk:0}, {Zk:0, Pk:0} ]
   };
+  let ultimo = null;
 
-  const optZona = Object.keys(ZONA_SISMICA_SISMO).map(z => `<option value="${z}">${z} (Ao=${ZONA_SISMICA_SISMO[z]}g)</option>`).join('');
-  const optSuelo = Object.keys(SUELO_SISMO).map(s => `<option value="${s}">${s}</option>`).join('');
-  const optCategoria = Object.keys(CATEGORIA_EDIFICIO_SISMO).map(c => `<option value="${c}">${c}</option>`).join('');
+  const optZona = Object.keys(ZONA_SISMICA_SISMO).map(z => `<option value="${z}">${z} (Ao = ${String(ZONA_SISMICA_SISMO[z]).replace('.', ',')}g)</option>`).join('');
+  const optSuelo = Object.keys(SUELO_SISMO).map(s => `<option value="${s}">${sueloSismoTxt(s)}</option>`).join('');
+  const optCategoria = Object.keys(CATEGORIA_EDIFICIO_SISMO).map(c => `<option value="${c}">${esc(CATEGORIA_EDIFICIO_SISMO[c].txt)} — I = ${String(CATEGORIA_EDIFICIO_SISMO[c].I).replace('.', ',')}</option>`).join('');
   const optSistema = Object.keys(SISTEMA_RESISTENTE_SISMO).map(s => `<option value="${s}">${s} (R=${SISTEMA_RESISTENTE_SISMO[s].R})</option>`).join('');
 
   container.innerHTML = `
@@ -20662,27 +20650,31 @@ function renderSismo(container) {
     </div>
     <div class="panel">
       <h3 class="lbl-left">A · PARÁMETROS SÍSMICOS GENERALES</h3>
+      <div class="note" id="sm_regimen" style="margin-bottom:.6rem"></div>
       <div class="field-grid">
+        <div class="field"><label>Dirección de análisis</label><select id="sm_direccion"><option value="X">X</option><option value="Y">Y</option></select></div>
         <div class="field"><label>Zona sísmica</label><select id="sm_zona">${optZona}</select></div>
-        <div class="field"><label>Tipo de suelo de fundación</label><select id="sm_suelo">${optSuelo}</select></div>
-        <div class="field"><label>Categoría del edificio</label><select id="sm_categoria">${optCategoria}</select></div>
+        <div class="field"><label>Tipo de suelo (clasificación del estudio geotécnico, DS61)</label><select id="sm_suelo">${optSuelo}</select></div>
+        <div class="field"><label>Categoría de ocupación (NCh433 4.3.1, Tabla 6.1)</label><select id="sm_categoria">${optCategoria}</select></div>
         <div class="field"><label>Sistema estructural sismorresistente</label><select id="sm_sistema">${optSistema}</select></div>
-        <div class="field"><label>T* — período fundamental de vibración (s)</label><input type="text" inputmode="decimal" step="0.01" id="sm_Tstar" value="${state.Tstar}" list="dl_sm_Tstar"><datalist id="dl_sm_Tstar"><option value="0.1">0.1 s — estructura muy rígida (1 piso)</option><option value="0.3">0.3 s — edificio bajo (~3 pisos)</option><option value="0.5">0.5 s — edificio medio (~5 pisos, default)</option><option value="0.8">0.8 s — estructura más flexible</option><option value="1.2">1.2 s — límite superior típico NCh433 (≤5 pisos/20 m)</option></datalist></div>
+        <div class="field"><label>T* — período del modo con mayor masa traslacional equivalente en la dirección de análisis (s)</label><input type="text" inputmode="decimal" id="sm_Tstar" value="${state.Tstar}"></div>
       </div>
-      <p class="note">Método de análisis estático (fuerza lateral equivalente), NCh433 Of.96 Mod.2009 + DS61:2011 (Texto Refundido) — versión legalmente vigente y exigible en Chile. Aplicable, entre otras condiciones (cláusula 6.2.1), a estructuras de no más de 5 pisos y altura no mayor a 20 m; esta planilla NO verifica automáticamente las condiciones de regularidad estructural ni de zona/categoría — el proyectista debe confirmarlas. T* debe determinarse por un procedimiento racional (análisis modal, Rayleigh u otro) fuera de esta planilla; la norma no entrega una fórmula empírica de aplicación general. Suelo tipo F requiere estudio especial de sitio (no incluido). El coeficiente Ak de distribución vertical (Ak=(Zk/H)·[1+1,1·(Zk/H)]) se implementa con confianza MEDIA — fuentes consultadas entregaron variantes algo distintas; verificar contra el texto oficial del INN antes de un uso crítico. No calcula excentricidad accidental/torsión ni reemplaza el análisis modal espectral cuando sea obligatorio.</p>
+      <p class="note">Repita el cálculo para cada dirección de análisis con su propio T*. El tipo de suelo debe tomarse del estudio de mecánica de suelos: Vs30 por sí solo no acredita todos los requisitos de cada tipo según DS61; el suelo tipo F requiere estudio especial y bloquea el cálculo. T* se obtiene del modelo estructural (análisis modal); la norma no entrega una fórmula empírica para el método estático. La planilla verifica la aplicabilidad del método según 6.2.1 a) y b); no calcula la torsión accidental (6.2.8) ni reemplaza el análisis modal espectral cuando corresponde.</p>
     </div>
 
     <div class="panel">
       <h3 class="lbl-left">B · NIVELES (hasta 5)</h3>
       <div class="field-grid">
-        <div class="field"><label>N° de niveles a considerar</label><input type="text" inputmode="decimal" min="1" max="5" id="sm_nNiveles" value="${state.nNiveles}" list="dl_sm_nNiveles"><datalist id="dl_sm_nNiveles"><option value="1">1 nivel</option><option value="2">2 niveles</option><option value="3">3 niveles</option><option value="4">4 niveles (default)</option><option value="5">5 niveles (máximo del método estático)</option></datalist></div>
+        <div class="field"><label>N° de pisos sobre el nivel basal (1 a 5)</label><input type="text" inputmode="numeric" id="sm_nNiveles" value="${state.nNiveles}"></div>
       </div>
       <div id="sm_nivelesTable" style="margin-top:.6rem"></div>
-      <p class="note">Zk = altura acumulada desde el nivel basal hasta el nivel k (m); Zk del último nivel activo = altura total del edificio H. Pk = peso sísmico del nivel k (Ton). Solo se usan las filas hasta el número de niveles indicado arriba.</p>
+      <p class="note">Zk = altura del nivel k sobre el nivel basal (m), creciente; Zk del último nivel activo = H. Pk = peso sísmico del nivel k (Ton); se admiten niveles con Pk = 0, pero no negativos ni un total nulo. Solo se usan las filas hasta el N° de pisos indicado.</p>
     </div>
 
+    <div id="sm_errores"></div>
+
     <div class="panel" data-resumen="force">
-      <h3 class="lbl-left">C · COEFICIENTE SÍSMICO C (con cotas Cmin y Cmax)</h3>
+      <h3 class="lbl-left">C · APLICABILIDAD Y COEFICIENTE SÍSMICO C</h3>
       <div id="sm_coefC"></div>
     </div>
 
@@ -20692,9 +20684,8 @@ function renderSismo(container) {
     </div>
 
     <div class="panel">
-      <h3 class="lbl-left">E · DISTRIBUCIÓN DE LA FUERZA SÍSMICA EN ALTURA</h3>
+      <h3 class="lbl-left">E · DISTRIBUCIÓN DE LA FUERZA SÍSMICA EN ALTURA (6.2.5)</h3>
       <div id="sm_distribucion"></div>
-      <p class="note">Fk = Qo·(Ak·Pk)/Σ(Aj·Pj). Verificación: la suma de todos los Fk activos debe ser igual a Qo. Excentricidad accidental/torsión (cláusula 6.2.7 y similares) no incluida.</p>
     </div>
 
     <div class="panel">
@@ -20705,81 +20696,110 @@ function renderSismo(container) {
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>
   `;
 
+  document.getElementById('sm_direccion').value = state.direccion;
   document.getElementById('sm_zona').value = state.zona;
   document.getElementById('sm_suelo').value = state.suelo;
   document.getElementById('sm_categoria').value = state.categoria;
   document.getElementById('sm_sistema').value = state.sistema;
 
+  const nVisibles = () => Number.isInteger(state.nNiveles) ? Math.max(1, Math.min(5, state.nNiveles)) : 5;
+  const valIn = v => Number.isFinite(v) ? v : '';
+
   function renderNivelesTable() {
     const rows = [];
+    const nv = nVisibles();
     for (let i=0;i<5;i++) {
-      const activo = i < state.nNiveles;
+      const activo = i < nv;
       rows.push(`
         <tr ${activo?'':'style="opacity:.4"'}>
           <td>${i+1}</td>
-          <td><input type="number" step="0.1" class="sm-zk" data-i="${i}" value="${state.niveles[i].Zk}" ${activo?'':'disabled'}></td>
-          <td><input type="number" step="0.1" class="sm-pk" data-i="${i}" value="${state.niveles[i].Pk}" ${activo?'':'disabled'}></td>
+          <td><input type="number" step="0.1" class="sm-zk" data-i="${i}" value="${valIn(state.niveles[i].Zk)}" ${activo?'':'disabled'}></td>
+          <td><input type="number" step="0.1" class="sm-pk" data-i="${i}" value="${valIn(state.niveles[i].Pk)}" ${activo?'':'disabled'}></td>
         </tr>`);
     }
     document.getElementById('sm_nivelesTable').innerHTML = `
       <table class="results editable">
-        <tr><th>Nivel k</th><th>Zk — altura acumulada (m)</th><th>Pk — peso sísmico (Ton)</th></tr>
+        <tr><th>Nivel k</th><th>Zk — altura sobre el nivel basal (m)</th><th>Pk — peso sísmico (Ton)</th></tr>
         ${rows.join('')}
       </table>`;
     document.getElementById('sm_nivelesTable').querySelectorAll('input').forEach(el => el.addEventListener('input', () => {
       const i = +el.dataset.i;
-      if (el.classList.contains('sm-zk')) state.niveles[i].Zk = parseFloat(el.value)||0;
-      if (el.classList.contains('sm-pk')) state.niveles[i].Pk = parseFloat(el.value)||0;
+      if (el.classList.contains('sm-zk')) state.niveles[i].Zk = sismoNum(el.value);
+      if (el.classList.contains('sm-pk')) state.niveles[i].Pk = sismoNum(el.value);
       recalc();
     }));
   }
 
   function readState() {
+    state.direccion = document.getElementById('sm_direccion').value;
     state.zona = document.getElementById('sm_zona').value;
     state.suelo = document.getElementById('sm_suelo').value;
     state.categoria = document.getElementById('sm_categoria').value;
     state.sistema = document.getElementById('sm_sistema').value;
-    state.Tstar = +document.getElementById('sm_Tstar').value;
-    state.nNiveles = Math.max(1, Math.min(5, +document.getElementById('sm_nNiveles').value || 1));
+    state.Tstar = sismoNum(document.getElementById('sm_Tstar').value);
+    state.nNiveles = sismoNum(document.getElementById('sm_nNiveles').value);
+    // Los valores de la tabla se releen del DOM (también después de abrir un cálculo guardado).
+    document.querySelectorAll('#sm_nivelesTable input').forEach(el => {
+      const i = +el.dataset.i;
+      if (el.classList.contains('sm-zk')) state.niveles[i].Zk = sismoNum(el.value);
+      if (el.classList.contains('sm-pk')) state.niveles[i].Pk = sismoNum(el.value);
+    });
   }
 
   function recalc() {
     readState();
+    document.getElementById('sm_regimen').textContent = sismoRegimenTxt(new Date().toISOString().slice(0, 10));
     const r = calcSismoEstatico({
-      zona: state.zona, suelo: state.suelo, categoria: state.categoria, sistema: state.sistema,
+      zona: state.zona, suelo: state.suelo, categoria: state.categoria, sistema: state.sistema, direccion: state.direccion,
       Tstar: state.Tstar, nNiveles: state.nNiveles, niveles: state.niveles.map(l => ({Zk:l.Zk, Pk:l.Pk*TONF_A_KN}))
     });
+    ultimo = r;
+
+    if (r.errores) {
+      document.getElementById('sm_errores').innerHTML = `<div class="panel"><div class="global-verdict bad"><span class="label">DATOS INVÁLIDOS — no se calcula ni se permite imprimir o exportar</span></div><ul class="note">${r.errores.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>`;
+      ['sm_coefC','sm_corteBasal','sm_distribucion'].forEach(id => { document.getElementById(id).innerHTML = '<p class="note">Sin resultados: corregir los datos indicados arriba.</p>'; });
+      document.getElementById('sm_esquema').innerHTML = '';
+      if (typeof buildPrintSheetsSismo === 'function') buildPrintSheetsSismo(state, r);
+      return;
+    }
+    document.getElementById('sm_errores').innerHTML = '';
+    const d = sismoDatosSalida(state, r);
 
     document.getElementById('sm_coefC').innerHTML = `
       <table class="results">
-        <tr><td>Ao — aceleración efectiva máxima</td><td class="num">${fmt2(r.Ao)} g</td></tr>
-        <tr><td>S / To / T' / n (tipo de suelo)</td><td class="num">${fmt2(r.S)} / ${fmt2(r.To)} s / ${fmt2(r.Tp)} s / ${fmt2(r.n)}</td></tr>
-        <tr><td>I — factor de importancia</td><td class="num">${fmt2(r.I)}</td></tr>
+        <tr><td>Régimen normativo</td><td>${esc(r.regimen)}</td></tr>
+        <tr><td>Dirección de análisis</td><td>${esc(r.direccion)}</td></tr>
+        <tr><td>Aplicabilidad (6.2.1)</td><td>${esc(r.aplicTxt)}</td></tr>
+        <tr><td>Ao/g — aceleración efectiva máxima (fracción de g)</td><td class="num">${fmt2(r.Ao)}</td></tr>
+        <tr><td>S / To / T' / n (DS61, Tabla 6.3)</td><td class="num">${fmt2(r.S)} / ${fmt2(r.To)} s / ${fmt2(r.Tp)} s / ${fmt2(r.n)}</td></tr>
+        <tr><td>I — coeficiente de importancia (Tabla 6.1)</td><td class="num">${fmt2(r.I)}</td></tr>
         <tr><td>R (método estático) / Ro (método modal, referencia)</td><td class="num">${fmt2(r.R)} / ${fmt2(r.Ro)}</td></tr>
-        <tr><td>H — altura total (Zk del último nivel activo)</td><td class="num">${fmt2(r.H)} m</td></tr>
-        <tr><td>C calculado = 2,75·Ao·S/R·(T'/T*)ⁿ</td><td class="num">${fmt3(r.Ccalc)}</td></tr>
-        <tr><td>Cmin = Ao·S/6 (cota inferior obligatoria)</td><td class="num">${fmt3(r.Cmin)}</td></tr>
-        <tr><td>k(R) = Cmax/Ao (Tabla 6.4, interpolado si R no está tabulado)</td><td class="num">${fmt3(r.kR)}</td></tr>
-        <tr><td>Cmax = k(R)·Ao (cota superior obligatoria)</td><td class="num">${fmt3(r.Cmax)}</td></tr>
+        <tr><td>H — altura total sobre el nivel basal</td><td class="num">${fmt2(r.H)} m</td></tr>
+        <tr><td>C calculado = 2,75·S·Ao/(g·R)·(T'/T*)ⁿ</td><td class="num">${fmt3(r.Ccalc)}</td></tr>
+        <tr><td>Cmin = Ao·S/(6g)</td><td class="num">${fmt3(r.Cmin)}</td></tr>
+        <tr><td>k(R) — Tabla 6.4 (${esc(d.kRTxt)})</td><td class="num">${fmt3(r.kR)}</td></tr>
+        <tr><td>Cmax = k(R)·S·Ao/g (Tabla 6.4, DS61 art. 12.4)</td><td class="num">${fmt3(r.Cmax)}</td></tr>
         <tr><td><b>C de diseño = MIN(MAX(C calculado, Cmin), Cmax)</b></td><td class="num"><b>${fmt3(r.Cdiseno)}</b></td></tr>
         <tr><td>Condición que gobierna</td><td>${r.gobierna}</td></tr>
-      </table>`;
+      </table>
+      <p class="note">No se aplica la reducción opcional de Cmax para edificios de muros (factor f = 1,25 − 0,5q); el resultado queda del lado de la seguridad.</p>`;
 
     document.getElementById('sm_corteBasal').innerHTML = `
       <table class="results">
-        <tr><td>P — peso sísmico total (niveles activos)</td><td class="num">${fmt1(r.P/TONF_A_KN)} Ton</td></tr>
-        <tr><td><b>Qo = C,diseño × I × P</b></td><td class="num"><b>${fmt2(r.Qo/TONF_A_KN)} Ton</b></td></tr>
+        <tr><td>P — peso sísmico total sobre el nivel basal</td><td class="num">${fmt2(r.P/TONF_A_KN)} Ton = ${fmt2(r.P)} kN</td></tr>
+        <tr><td><b>Qo = C·I·P</b></td><td class="num"><b>${fmt2(r.Qo/TONF_A_KN)} Ton = ${fmt2(r.Qo)} kN</b></td></tr>
       </table>`;
 
     document.getElementById('sm_distribucion').innerHTML = `
+      <p class="note">Fk = Ak·Pk·Qo/Σ(Aj·Pj), con Ak = √(1 − Zk−1/H) − √(1 − Zk/H) y Z0 = 0 (NCh433, 6.2.5). No incluye la torsión accidental (6.2.8).</p>
       <table class="results">
-        <tr><td>Σ(Aj·Pj) — niveles activos</td><td class="num">${fmt2(r.sumAjPj)}</td></tr>
+        <tr><td>Σ(Aj·Pj) — niveles activos</td><td class="num">${fmt2(r.sumAjPj)} kN</td></tr>
       </table>
       <table class="results" style="margin-top:.6rem">
-        <tr><th>Nivel k</th><th>Zk (m)</th><th>Pk (Ton)</th><th>Ak</th><th>Fk (Ton)</th></tr>
-        ${r.filas.map((f,i) => `<tr><td>${i+1}</td><td class="num">${fmt2(f.Zk)}</td><td class="num">${fmt1(f.Pk/TONF_A_KN)}</td><td class="num">${fmt3(f.Ak)}</td><td class="num">${fmt2(f.Fk/TONF_A_KN)}</td></tr>`).join('')}
-        <tr><td><b>Σ Fk</b></td><td></td><td></td><td></td><td class="num"><b>${fmt2(r.sumaFk/TONF_A_KN)} Ton</b></td></tr>
-        <tr><td>Qo (verificación: Σ Fk = Qo)</td><td></td><td></td><td></td><td class="num">${fmt2(r.Qo/TONF_A_KN)} Ton</td></tr>
+        <tr><th>Nivel k</th><th>Zk−1 (m)</th><th>Zk (m)</th><th>Pk (Ton)</th><th>Ak</th><th>Fk (Ton)</th><th>Fk (kN)</th></tr>
+        ${r.filas.map((f,i) => `<tr><td>${i+1}</td><td class="num">${fmt2(f.Zprev)}</td><td class="num">${fmt2(f.Zk)}</td><td class="num">${fmt2(f.Pk/TONF_A_KN)}</td><td class="num">${xlsxNum(f.Ak, 6)}</td><td class="num">${fmt2(f.Fk/TONF_A_KN)}</td><td class="num">${fmt2(f.Fk)}</td></tr>`).join('')}
+        <tr><td><b>Σ</b></td><td></td><td></td><td></td><td class="num"><b>${xlsxNum(r.sumAk, 6)}</b></td><td class="num"><b>${fmt2(r.sumaFk/TONF_A_KN)}</b></td><td class="num"><b>${fmt2(r.sumaFk)}</b></td></tr>
+        <tr><td colspan="4">Verificación ΣAk = 1 / ΣFk = Qo (${fmt2(r.Qo)} kN)</td><td>${r.okSumAk ? 'comprobado' : 'error'}</td><td colspan="2">${r.okSumFk ? 'comprobado' : 'error'}</td></tr>
       </table>`;
 
     document.getElementById('sm_esquema').innerHTML = svgDistribucionSismicaAltura(
@@ -20788,12 +20808,20 @@ function renderSismo(container) {
     if (typeof buildPrintSheetsSismo === 'function') buildPrintSheetsSismo(state, r);
   }
 
-  ['sm_zona','sm_suelo','sm_categoria','sm_sistema','sm_Tstar'].forEach(id => {
+  (window.REV_RESULTADOS = window.REV_RESULTADOS || {}).sismo = () => {
+    recalc();
+    return ultimo && !ultimo.errores ? sismoDatosSalida(state, ultimo) : ultimo;
+  };
+
+  ['sm_direccion','sm_zona','sm_suelo','sm_categoria','sm_sistema','sm_Tstar'].forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener('input', recalc);
     el.addEventListener('change', recalc);
   });
-  ['input','change'].forEach(evt => document.getElementById('sm_nNiveles').addEventListener(evt, () => { renderNivelesTable(); recalc(); }));
+  ['input','change'].forEach(evt => document.getElementById('sm_nNiveles').addEventListener(evt, () => {
+    state.nNiveles = sismoNum(document.getElementById('sm_nNiveles').value);
+    renderNivelesTable(); recalc();
+  }));
 
   renderNivelesTable();
   recalc();
@@ -45540,6 +45568,7 @@ async function mvsCapturar() {
   const main = document.getElementById('mainView'), id = (location.hash || '').replace('#', '');
   const tool = (typeof TOOLS !== 'undefined' ? TOOLS : []).find(t => t.id === id);
   if (!tool || id === 'memorias') { fsToast('Abre primero la planilla que quieres llevar a la memoria.'); return; }
+  if (calcAvisoBloqueo()) return;
   const sheet = document.getElementById('printSheetCompleto');
   const secs = sheet && sheet.innerHTML.trim() ? mvsLeerHoja(sheet) : mvsLeerPaneles(main);
   if (!secs.length) { fsToast('Esta planilla no tiene resultados para llevar a la memoria.'); return; }
@@ -51563,6 +51592,7 @@ function revMenu(btn) {
 }
 async function revExportar(k) {
   const tool = revToolActual(); if (!tool) return;
+  if (k !== 'codigo' && calcAvisoBloqueo()) return;
   const btn = document.getElementById('revBtn'), t0 = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Preparando…'; }
   try {
