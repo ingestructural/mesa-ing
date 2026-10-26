@@ -18795,7 +18795,32 @@ function renderMadera(container) {
 }
 
 
-// ===================== CARGAS DE VIENTO — NCh432.Of2010 (Método Analítico) =====================
+// ===================== CARGAS DE VIENTO — NCh432.Of2010 (procedimiento analítico, SPRFV) =====================
+/* Revisión 2026-10-26 (observaciones de ING a la versión del 23-10-2026). Un único objeto de resultados por módulo
+   (calcGalponViento / calcReticuladoViento / calcBovedaViento) alimenta pantalla, esquemas, hoja impresa, Excel,
+   PDF y JSON de revisión.
+   - Exposición B, C o D (sin exposición A). Kz según Tabla 9, Caso 2 (SPRFV): Kz = 2,01·(máx(z; 4,6 m)/zg)^(2/α).
+   - Galpón: h según 3.3 (θ ≤ 10°: altura de cumbrera; θ > 10°: altura media del techo). qz por franjas de altura en
+     el muro de barlovento (q evaluado en el borde superior de cada franja). Cp de techo según Tabla 15: θ ≥ 10° con
+     viento normal a la cumbrera, interpolación en θ y h/L solo entre valores del mismo signo (0 donde no hay valor
+     del mismo signo); ambas condiciones cuando la tabla da dos valores. θ < 10° normal a la cumbrera y viento
+     paralelo a la cumbrera: franjas medidas desde el borde de barlovento, con el valor alternativo −0,18.
+   - Estados de carga completos: cada estado usa un único signo de GCpi en todas las superficies y una sola rama de
+     Cp de techo; la envolvente por superficie se muestra aparte y no se combina entre superficies.
+   - Mínimo (5.2.1): 0,48 kN/m² por el área proyectada sobre un plano vertical normal al viento, comparado con la
+     resultante horizontal de cada dirección; si no se alcanza, se agrega el estado «mínimo».
+   - Cerramiento «Abierto» (techos libres): FUERA DE ALCANCE. Estructura flexible (n1 < 1 Hz): FUERA DE ALCANCE
+     (Gf no implementado; no se supone G = 0,85). Sin n1 acreditado, o sin confirmar el uso de las combinaciones
+     de NCh3171 (condición de Kd = 0,85), el cálculo queda PRELIMINAR y se bloquean impresión y exportaciones.
+   - Torre: Cf de miembros de caras planas (cuadrada 4ε²−5,9ε+4; triangular 3,4ε²−4,7ε+3,4), miembros redondeados
+     × (0,51ε²+0,57 ≤ 1,0), viento diagonal en sección cuadrada × mín(1+0,75ε; 1,2); accesorios como Σ(Cf·A) del tramo.
+   - Bóveda: cubierta elevada (r/D < 0,2: −0,9; 0,2 ≤ r/D < 0,3: 1,5r/D−0,3; 0,3 ≤ r/D ≤ 0,6: 2,75r/D−0,7) y
+     cubierta nacida del suelo (1,4r/D); alternativa 6r/D−2,1 en el cuarto de barlovento para 0,2 ≤ r/D ≤ 0,3
+     (cubierta elevada); centro −0,7−r/D; sotavento −0,5. Viento paralelo al eje: franjas de la Tabla 15.
+   Con datos inválidos o fuera de alcance devuelve { errores }; con condiciones sin acreditar, el resultado lleva
+   `pendientes`. En ambos casos la hoja impresa queda marcada con data-calc-bloqueo (calcBloqueoExport). */
+
+// Tablas de la versión anterior: las usa «Chimenea Cilíndrica de Acero» (no se modifican en esta revisión).
 const TABLA1_EXPO_VIENTO = {
   'A (Grandes ciudades)': {alpha:5, zg:457.2, zmin:18.3},
   'B (Áreas urbanas)': {alpha:7, zg:365.76, zmin:9.1},
@@ -18806,1078 +18831,635 @@ const TABLA2_IMPORTANCIA_VIENTO = {
   'I (Instalaciones temporales)': 0.87, 'II (No incluidas I,III,IV)': 1.0,
   'III (Uso público)': 1.15, 'IV (Instalaciones esenciales)': 1.15
 };
-const TABLA4_GCPI_VIENTO = {
-  'Cerrado': {pos:0.18, neg:-0.18}, 'Parcialmente cerrado': {pos:0.55, neg:-0.55}, 'Abierto': {pos:0, neg:0}
-};
-const TABLA6_TECHO_VIENTO = [
-  {theta:0, B:-0.9, C:-0.9, E:-0.5}, {theta:10, B:-0.7, C:-1.0, E:-0.5},
-  {theta:15, B:-0.5, C:-0.7, E:-0.6}, {theta:20, B:-0.3, C:-0.4, E:-0.6},
-  {theta:25, B:-0.2, C:-0.3, E:-0.6}, {theta:30, B:0.2, C:0.2, E:-0.6},
-  {theta:35, B:0.3, C:0.3, E:-0.5}, {theta:45, B:0.4, C:0.4, E:-0.5}, {theta:60, B:0.5, C:0.5, E:-0.5}
-];
-
 function KzViento(z, zmin, zg, alpha) { return 2.01*Math.pow(Math.max(z,zmin)/zg, 2/alpha); }
-function qKgfViento(Kzval, Kzt, Kd, V, I) { return 0.613*Kzval*Kzt*Kd*V*V*I/9.807; }
-function cpSotaventoViento(LB) {
-  if (LB <= 1) return -0.5;
-  if (LB >= 4) return -0.2;
-  if (LB <= 2) return -0.5 + (LB-1)*(-0.3-(-0.5))/(2-1);
-  return -0.3 + (LB-2)*(-0.2-(-0.3))/(4-2);
+
+const VT_EXPO = {
+  B: { alpha: 7, zg: 365.76, txt: 'B — áreas urbanas y suburbanas, zonas boscosas u obstrucciones numerosas y próximas' },
+  C: { alpha: 9.5, zg: 274.32, txt: 'C — terreno abierto con obstrucciones dispersas' },
+  D: { alpha: 11.5, zg: 213.36, txt: 'D — áreas planas sin obstrucciones y superficies de agua' }
+};
+const VT_ZMIN = 4.6;                 // Tabla 9, Caso 2
+const VT_KD = 0.85, VT_G = 0.85;     // Kd: edificios (SPRFV), techos abovedados y torres reticuladas; G: estructura rígida
+const VT_PMIN = 480;                 // Pa — mínimo 5.2.1
+const VT_GCPI = { 'Cerrado': 0.18, 'Parcialmente cerrado': 0.55, 'Abierto': null };
+const VT_ALTURAS = [4.6, 6.1, 7.6, 9.1, 12.2, 15.2, 18.3, 21.3, 24.4, 27.4, 30.5, 36.6, 42.7, 48.8, 54.9, 61.0, 76.2, 91.4, 106.7, 121.9, 137.2, 152.4];
+
+// Tabla 15 — Cp de techo, viento normal a la cumbrera con θ ≥ 10°. Filas h/L ≤ 0,25 | 0,5 | ≥ 1,0; columnas θ.
+// Celdas con dos valores: el techo se diseña para ambas condiciones. Los 0,0 solo sirven para interpolar.
+const VT_T15_TH = [10, 15, 20, 25, 30, 35, 45, 60];
+const VT_T15_HL = [0.25, 0.5, 1.0];
+const VT_T15_BAR = [
+  [[-0.7, -0.18], [-0.5, 0.0], [-0.3, 0.2], [-0.2, 0.3], [-0.2, 0.3], [0.0, 0.4], [0.4], [0.6]],
+  [[-0.9, -0.18], [-0.7, -0.18], [-0.4, 0.0], [-0.3, 0.2], [-0.2, 0.2], [-0.2, 0.3], [0.0, 0.4], [0.6]],
+  [[-1.3, -0.18], [-1.0, -0.18], [-0.7, -0.18], [-0.5, 0.0], [-0.3, 0.2], [-0.2, 0.2], [0.0, 0.3], [0.6]]
+];                                   // θ ≥ 60°: Cp = 0,01·θ
+const VT_T15_SOT_TH = [10, 15, 20];  // sotavento, θ ≥ 20° constante
+const VT_T15_SOT = [[-0.3, -0.5, -0.6], [-0.5, -0.5, -0.6], [-0.7, -0.6, -0.6]];
+// Franjas (θ < 10° normal a la cumbrera, y viento paralelo a la cumbrera): 0–h/2, h/2–h, h–2h, > 2h.
+const VT_T15_FR05 = [-0.9, -0.9, -0.5, -0.3], VT_T15_FR10 = [-1.3, -0.7, -0.7, -0.7], VT_T15_FRALT = -0.18;
+
+function vtNum(v) {
+  if (typeof v === 'number') return v;
+  const s = String(v == null ? '' : v).trim().replace(',', '.');
+  return s === '' ? NaN : Number(s);
 }
-function interpTabla6Viento(theta, col) {
-  const T = TABLA6_TECHO_VIENTO;
-  if (theta <= T[0].theta) return T[0][col];
-  if (theta >= T[T.length-1].theta) return T[T.length-1][col];
-  for (let i=0;i<T.length-1;i++) if (theta >= T[i].theta && theta <= T[i+1].theta)
-    return T[i][col] + (theta-T[i].theta)*(T[i+1][col]-T[i][col])/(T[i+1].theta-T[i].theta);
+const vtR = x => Math.round(x * 1e10) / 1e10;      // limpia el ruido de coma flotante en coeficientes
+const vtFin = x => typeof x === 'number' && Number.isFinite(x);
+const vtTxt = (x, d) => vtFin(x) ? x.toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
+const vtSig = (x, d) => vtFin(x) ? (x > 0 ? '+' : '') + vtTxt(x, d) : '—';
+function vtKz(z, ex) { return 2.01 * Math.pow(Math.max(z, VT_ZMIN) / ex.zg, 2 / ex.alpha); }
+function vtQ(Kz, b) { return 0.613 * Kz * b.Kzt * VT_KD * b.V * b.V * b.I; }          // Pa
+function vtLin(x, xs, ys) {
+  const n = xs.length;
+  if (x <= xs[0]) return ys[0];
+  if (x >= xs[n - 1]) return ys[n - 1];
+  for (let i = 0; i < n - 1; i++) if (x <= xs[i + 1]) return ys[i] + (x - xs[i]) * (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]);
 }
-function presionVientoRow(q, G, Cp, qh, GCpi) {
-  const pPos = q*G*Cp - qh*GCpi.pos;
-  const pNeg = q*G*Cp - qh*GCpi.neg;
-  const pGob = Math.abs(pPos) >= Math.abs(pNeg) ? pPos : pNeg;
-  return { pPos, pNeg, pGob };
+// Cp muro de sotavento según L/B (0–1: −0,5; 2: −0,3; ≥ 4: −0,2)
+const vtCpSotaMuro = LB => vtR(vtLin(LB, [1, 2, 4], [-0.5, -0.3, -0.2]));
+
+// Cp de barlovento (Tabla 15, θ ≥ 10°): devuelve las condiciones de diseño [{Cp, rama}] (una o dos).
+// Interpolación lineal en θ y h/L por signo: negativos con su valor más negativo, positivos con su valor
+// positivo, alternativo (dos valores negativos) con el menos negativo; 0 donde no hay valor del mismo signo.
+function vtCpBarloT15(theta, hL) {
+  if (theta >= 60) return [{ Cp: 0.01 * theta, rama: 'única (0,01·θ)' }];
+  const fNeg = c => Math.min(0, ...c), fPos = c => Math.max(0, ...c);
+  const fAlt = c => { const m = Math.max(...c); return c.length > 1 && m < 0 ? m : 0; };
+  const val = f => vtLin(hL, VT_T15_HL, VT_T15_BAR.map(fila => vtLin(theta, VT_T15_TH, fila.map(f))));
+  const neg = vtR(val(fNeg)), pos = vtR(val(fPos)), alt = vtR(val(fAlt)), out = [];
+  if (neg < -1e-9) out.push({ Cp: neg, rama: 'succión' });
+  if (pos > 1e-9) out.push({ Cp: pos, rama: 'presión' });
+  else if (alt < -1e-9 && Math.abs(alt - neg) > 1e-9) out.push({ Cp: alt, rama: 'alternativo' });
+  return out;
 }
-function cfTorreViento(forma, eps) { return forma === 'Cuadrada' ? (4*eps*eps - 5.9*eps + 4) : (3.4*eps*eps - 4.7*eps + 3.4); }
-function cpZonaABovedaViento(rD) {
-  if (rD <= 0.2) return -0.9;
-  if (rD <= 0.3) return 1.5*rD - 0.3;
-  return 2.75*rD - 0.7;
+const vtCpSotaT15 = (theta, hL) => vtR(vtLin(hL, VT_T15_HL, VT_T15_SOT.map(f => vtLin(theta, VT_T15_SOT_TH, f))));
+// Franjas desde el borde de barlovento (longitud L en la dirección del viento)
+function vtFranjas(h, L, hL) {
+  const lim = [0, h / 2, h, 2 * h, Infinity], nom = ['0 a h/2', 'h/2 a h', 'h a 2h', '> 2h'], out = [];
+  for (let i = 0; i < 4; i++) {
+    const x1 = lim[i], x2 = Math.min(lim[i + 1], L);
+    if (x1 >= L - 1e-9) break;
+    out.push({ n: i + 1, txt: nom[i], x1, x2, Cp: vtR(vtLin(hL, [0.5, 1.0], [VT_T15_FR05[i], VT_T15_FR10[i]])) });
+  }
+  return out;
+}
+
+// Validación común (V, exposición, importancia, Kzt, n1, NCh3171)
+function vtValidarBase(inp, e, pend) {
+  if (!(vtFin(inp.V) && inp.V > 0)) e.push('V — velocidad básica: ingrese un valor numérico mayor que 0 m/s.');
+  const ex = VT_EXPO[inp.expo];
+  if (!ex) e.push('Seleccione la categoría de exposición B, C o D (la exposición A no existe en NCh432.Of2010).');
+  const I = TABLA2_IMPORTANCIA_VIENTO[inp.importancia];
+  if (I == null) e.push('Seleccione la categoría de ocupación (factor de importancia I).');
+  if (!(vtFin(inp.Kzt) && inp.Kzt >= 1)) e.push('Kzt — factor topográfico: ingrese un valor numérico ≥ 1 (Kzt = 1 sin efecto topográfico).');
+  if (inp.n1 === null || inp.n1 === undefined) pend.push('Acredite la frecuencia fundamental n1: G = 0,85 solo es válido para estructura rígida (n1 ≥ 1 Hz).');
+  else if (!(vtFin(inp.n1) && inp.n1 > 0)) e.push('n1 — frecuencia fundamental: ingrese un valor numérico mayor que 0 Hz, o deje el campo vacío.');
+  else if (inp.n1 < 1) e.push(`FUERA DE ALCANCE — estructura flexible (n1 = ${vtTxt(inp.n1, 2)} Hz < 1 Hz): el factor de ráfaga Gf de estructuras flexibles no está implementado; no se supone G = 0,85.`);
+  if (!inp.comb3171) pend.push('Confirme que las presiones se usarán en las combinaciones de carga de NCh3171: Kd = 0,85 solo es aplicable en ese caso.');
+  return { ex, I };
+}
+
+// Franjas de altura del muro de barlovento: área por franja (forma.area) y qz en el borde superior.
+function vtBandas(forma, ctx) {
+  const out = []; let z0 = 0;
+  const cortes = VT_ALTURAS.slice();
+  while (cortes[cortes.length - 1] < forma.H) cortes.push(cortes[cortes.length - 1] + 15.24);
+  for (const zc of cortes) {
+    const z1 = Math.min(zc, forma.H);
+    if (z1 > z0 + 1e-9) { const Kz = vtKz(z1, ctx.ex); out.push({ z1: z0, z2: z1, Kz, qz: vtQ(Kz, ctx), A: forma.area(z0, z1) }); }
+    z0 = z1;
+    if (z0 >= forma.H - 1e-9) break;
+  }
+  return out;
+}
+const vtFormaRect = (b, H) => ({ H, A: b * H, area: (z1, z2) => b * (Math.min(z2, H) - Math.max(z1, 0)) });
+// Hastial o testero de techo inclinado: ancho b hasta ha, decrece linealmente hasta 0 en hc (dos aguas y una agua)
+function vtFormaHastial(b, ha, hc) {
+  const tri = (a, c) => hc > ha ? b / (hc - ha) * ((hc - a) ** 2 - (hc - c) ** 2) / 2 : 0;
+  return { H: hc, A: b * ha + b * (hc - ha) / 2,
+    area: (z1, z2) => b * Math.max(0, Math.min(z2, ha) - z1) + (z2 > ha ? tri(Math.max(z1, ha), Math.min(z2, hc)) : 0) };
+}
+// Testero de bóveda (perfil parabólico): ancho D hasta ha, luego D·√(1 − (z−ha)/r)
+function vtFormaTestero(D, ha, r) {
+  const prim = y => -2 * D * r / 3 * Math.pow(Math.max(0, 1 - y / r), 1.5);
+  return { H: ha + r, A: D * ha + 2 * D * r / 3,
+    area: (z1, z2) => D * Math.max(0, Math.min(z2, ha) - z1) + (z2 > ha ? prim(Math.min(z2, ha + r) - ha) - prim(Math.max(z1, ha) - ha) : 0) };
+}
+
+/* Estado de carga completo: un signo de GCpi para todas las superficies y una rama de Cp de techo.
+   dir: { k, txt, L, B, prof(x), muroB (forma), Asota, CpSota, Aproj, lateral }; techo: [{nombre, x1, x2, Cp}]
+   Fx: resultante horizontal en el sentido del viento; Fz: resultante vertical de la cubierta (+ hacia abajo). */
+function vtEstado(dir, caso, s, ctx) {
+  const GCpi = s * ctx.GCpi, pi = ctx.qh * GCpi, sup = [];
+  let Fx = 0, Fz = 0;
+  if (dir.muroB) {
+    const bandas = vtBandas(dir.muroB, ctx).map(b => { const p = b.qz * VT_G * 0.8 - pi; Fx += p * b.A; return { ...b, Cp: 0.8, p }; });
+    sup.push({ k: 'mb', tipo: 'muroB', nombre: 'Muro de barlovento', Cp: 0.8, bandas, A: dir.muroB.A });
+    const ps = ctx.qh * VT_G * dir.CpSota - pi; Fx -= ps * dir.Asota;
+    sup.push({ k: 'ms', tipo: 'muroS', nombre: 'Muro de sotavento', Cp: dir.CpSota, q: ctx.qh, p: ps, A: dir.Asota });
+  }
+  if (dir.lateral) sup.push({ k: 'ml', tipo: 'muroL', nombre: 'Muros laterales', Cp: -0.7, q: ctx.qh, p: ctx.qh * VT_G * -0.7 - pi });
+  caso.techo.forEach((t, i) => {
+    const p = ctx.qh * VT_G * t.Cp - pi;
+    const fx = dir.B ? p * dir.B * (dir.prof(t.x2) - dir.prof(t.x1)) : null, fz = dir.B ? p * dir.B * (t.x2 - t.x1) : null;
+    if (dir.B) { Fx += fx; Fz += fz; }
+    sup.push({ k: 't' + i, tipo: 'techo', nombre: t.nombre, x1: t.x1, x2: t.x2, Cp: t.Cp, q: ctx.qh, p, Fx: fx, Fz: fz });
+  });
+  return { dir: dir.k, dirTxt: dir.txt, casoTxt: caso.txt, s, GCpi, sup, Fx: dir.B ? Fx : null, Fz: dir.B ? Fz : null, Aproj: dir.Aproj };
+}
+
+// Estados de todas las direcciones + envolvente + mínimo 5.2.1
+function vtArmarEstados(dirs, ctx) {
+  const estados = [], minimos = [];
+  dirs.forEach(dir => {
+    const signos = ctx.GCpi > 0 ? [1, -1] : [1];
+    const propios = [];
+    dir.casos.forEach(caso => signos.forEach(s => propios.push(vtEstado(dir, caso, s, ctx))));
+    let m = null;
+    if (vtFin(dir.Aproj) && propios.every(e => vtFin(e.Fx))) {
+      const FxMax = Math.max(...propios.map(e => e.Fx)), Fmin = VT_PMIN * dir.Aproj;
+      m = { dir: dir.k, dirTxt: dir.txt, Aproj: dir.Aproj, FxMax, Fmin, cumple: FxMax >= Fmin - 1e-9 };
+      minimos.push(m);
+    }
+    propios.forEach(e => estados.push(e));
+    if (m && !m.cumple) estados.push({ dir: dir.k, dirTxt: dir.txt, minimo: true, casoTxt: 'Carga mínima 5.2.1: 0,48 kN/m² × área proyectada', s: 0, GCpi: null, sup: [], Fx: m.Fmin, Fz: 0, Aproj: dir.Aproj });
+  });
+  estados.forEach((e, i) => { e.id = 'E' + (i + 1); });
+  // Envolvente local por superficie (no combina estados entre superficies)
+  const env = {};
+  estados.forEach(e => e.sup.forEach(sp => {
+    const filas = sp.bandas ? sp.bandas.map((b, j) => ({ key: e.dir + ':' + sp.k + ':' + j, nombre: `${sp.nombre}, z = ${vtTxt(b.z1, 2)}–${vtTxt(b.z2, 2)} m`, p: b.p }))
+      : [{ key: e.dir + ':' + sp.k, nombre: sp.nombre, p: sp.p }];
+    filas.forEach(f => {
+      const o = env[f.key] || (env[f.key] = { dir: e.dir, dirTxt: e.dirTxt, nombre: f.nombre, pMax: -Infinity, pMin: Infinity, eMax: '', eMin: '' });
+      if (f.p > o.pMax) { o.pMax = f.p; o.eMax = e.id; }
+      if (f.p < o.pMin) { o.pMin = f.p; o.eMin = e.id; }
+    });
+  }));
+  return { estados, minimos, envolvente: Object.values(env) };
 }
 
 // ---------- M1 GALPÓN ----------
 function calcGalponViento(inp) {
-  const { alpha, zg, zmin } = TABLA1_EXPO_VIENTO[inp.categoria];
-  const I = TABLA2_IMPORTANCIA_VIENTO[inp.importancia];
-  const Kd = 0.85, G = 0.85;
-  const GCpi = TABLA4_GCPI_VIENTO[inp.cerramiento];
+  const e = [], pend = [];
+  const { ex, I } = vtValidarBase(inp, e, pend);
+  const GCpi = VT_GCPI[inp.cerramiento];
+  if (!(inp.cerramiento in VT_GCPI)) e.push('Seleccione el tipo de cerramiento.');
+  else if (GCpi === null) e.push('FUERA DE ALCANCE — cerramiento «Abierto»: corresponde al procedimiento de techos libres (coeficientes de fuerza neta), no implementado en esta planilla. No se reutilizan los coeficientes del edificio cerrado.');
+  const dosAguas = inp.tipoTecho === 'Dos aguas';
+  if (!dosAguas && inp.tipoTecho !== 'Una agua') e.push('Seleccione el tipo de techo.');
+  const { Lx, Ly, hAlero: ha, hCumbrera: hc } = inp;
+  [['Lx', Lx], ['Ly', Ly], ['h_alero', ha], ['h_cumbrera', hc]].forEach(([n, v]) => { if (!(vtFin(v) && v > 0)) e.push(`${n}: ingrese una dimensión numérica mayor que 0 m.`); });
+  if (vtFin(ha) && vtFin(hc) && hc < ha) e.push('h_cumbrera menor que h_alero: geometría incompatible (en techo a una agua, h_alero es el alero bajo y h_cumbrera el alero alto).');
+  let theta = NaN;
+  if (!e.length) {
+    theta = Math.atan((hc - ha) / (dosAguas ? Ly / 2 : Ly)) * 180 / Math.PI;
+    if (theta > 80) e.push(`FUERA DE ALCANCE — θ = ${vtTxt(theta, 2)}° > 80°.`);
+  }
+  if (!e.length && hc > ex.zg) e.push('Altura mayor que zg: fuera del dominio de la Tabla 9.');
+  if (e.length) return { errores: e };
 
-  const h = inp.hAlero + (inp.hCumbrera - inp.hAlero)/2;
-  const theta = inp.tipoTecho === 'Dos aguas'
-    ? Math.atan((inp.hCumbrera-inp.hAlero)/(inp.Ly/2))*180/Math.PI
-    : Math.atan((inp.hCumbrera-inp.hAlero)/inp.Ly)*180/Math.PI;
+  const h = theta <= 10 ? hc : (ha + hc) / 2;
+  const Kh = vtKz(h, ex);
+  const ctx = { ex, I, V: inp.V, Kzt: inp.Kzt, GCpi };
+  ctx.qh = vtQ(Kh, ctx);
 
-  const KzBarlovento = KzViento(inp.hAlero, zmin, zg, alpha);
-  const KzCubierta = KzViento(h, zmin, zg, alpha);
-  const qzBarlovento = qKgfViento(KzBarlovento, inp.Kzt, Kd, inp.V, I);
-  const qh = qKgfViento(KzCubierta, inp.Kzt, Kd, inp.V, I);
+  // Direcciones: N (normal a la cumbrera; en una agua, N1 desde el alero bajo y N2 desde el alero alto) y P (paralela)
+  const dirs = [];
+  const hLN = h / Ly, hLP = h / Lx;
+  const franjasCasos = (L, hL) => {
+    const fr = vtFranjas(h, L, hL);
+    return [
+      { txt: 'Tabla 15, franjas — Cp', fr: fr.map(f => f.Cp), techo: fr.map(f => ({ nombre: `Techo, franja ${f.txt}`, x1: f.x1, x2: f.x2, Cp: f.Cp })) },
+      { txt: 'Tabla 15, franjas — Cp alternativo −0,18', fr: fr.map(() => VT_T15_FRALT), techo: fr.map(f => ({ nombre: `Techo, franja ${f.txt}`, x1: f.x1, x2: f.x2, Cp: VT_T15_FRALT })) }
+    ];
+  };
+  const latN = true, latP = true;
+  if (dosAguas) {
+    let casos;
+    if (theta < 10) casos = franjasCasos(Ly, hLN);
+    else {
+      const cs = vtCpSotaT15(theta, hLN);
+      casos = vtCpBarloT15(theta, hLN).map(c => ({ txt: `Tabla 15 — faldón barlovento Cp ${vtSig(c.Cp, 3)} (${c.rama})`,
+        techo: [{ nombre: 'Faldón de barlovento', x1: 0, x2: Ly / 2, Cp: c.Cp }, { nombre: 'Faldón de sotavento', x1: Ly / 2, x2: Ly, Cp: cs }] }));
+    }
+    dirs.push({ k: 'N', txt: 'Viento normal a la cumbrera', L: Ly, B: Lx, hL: hLN, LB: Ly / Lx,
+      prof: x => ha + (hc - ha) * (1 - Math.abs(2 * x / Ly - 1)), muroB: vtFormaRect(Lx, ha), Asota: Lx * ha,
+      CpSota: vtCpSotaMuro(Ly / Lx), Aproj: Lx * hc, lateral: latN, casos, alturas: [ha, ha], franjas: theta < 10 });
+  } else {
+    const mk = (k, txt, desdeBajo) => {
+      let casos;
+      if (theta < 10) casos = franjasCasos(Ly, hLN);
+      else if (desdeBajo) casos = vtCpBarloT15(theta, hLN).map(c => ({ txt: `Tabla 15 — cubierta a barlovento Cp ${vtSig(c.Cp, 3)} (${c.rama})`, techo: [{ nombre: 'Cubierta (barlovento)', x1: 0, x2: Ly, Cp: c.Cp }] }));
+      else { const cs = vtCpSotaT15(theta, hLN); casos = [{ txt: `Tabla 15 — cubierta a sotavento Cp ${vtSig(cs, 3)}`, techo: [{ nombre: 'Cubierta (sotavento)', x1: 0, x2: Ly, Cp: cs }] }]; }
+      return { k, txt, L: Ly, B: Lx, hL: hLN, LB: Ly / Lx,
+        prof: desdeBajo ? (x => ha + (hc - ha) * x / Ly) : (x => hc - (hc - ha) * x / Ly),
+        muroB: vtFormaRect(Lx, desdeBajo ? ha : hc), Asota: Lx * (desdeBajo ? hc : ha), CpSota: vtCpSotaMuro(Ly / Lx),
+        Aproj: Lx * hc, lateral: latN, casos, alturas: desdeBajo ? [ha, hc] : [hc, ha], franjas: theta < 10 };
+    };
+    dirs.push(mk('N1', 'Viento normal a la cumbrera, desde el alero bajo', true));
+    dirs.push(mk('N2', 'Viento normal a la cumbrera, desde el alero alto', false));
+  }
+  const Ahast = Ly * (ha + hc) / 2;
+  dirs.push({ k: 'P', txt: 'Viento paralelo a la cumbrera', L: Lx, B: Ly, hL: hLP, LB: Lx / Ly,
+    prof: () => hc, muroB: vtFormaHastial(Ly, ha, hc), Asota: Ahast, CpSota: vtCpSotaMuro(Lx / Ly),
+    Aproj: Ahast, lateral: latP, casos: franjasCasos(Lx, hLP), alturas: [hc, hc], franjas: true });
 
-  const LBd1 = inp.Ly/inp.Lx, LBd2 = inp.Lx/inp.Ly;
-  const CpSotD1 = cpSotaventoViento(LBd1), CpSotD2 = cpSotaventoViento(LBd2);
-
-  const hL = h/inp.Ly;
-  const CpB_le05 = interpTabla6Viento(theta, 'B');
-  const CpB_ge10 = interpTabla6Viento(theta, 'C');
-  const CpBarloventoTecho = CpB_le05 + (Math.min(Math.max(hL,0.5),1)-0.5)/0.5*(CpB_ge10-CpB_le05);
-  const CpAltDisponible = theta <= 10;
-  const CpAlt = CpAltDisponible ? -0.18 : null;
-  const CpSotaventoTecho = interpTabla6Viento(theta, 'E');
-
-  const esDosAguas = inp.tipoTecho === 'Dos aguas';
-  const esAscendente = inp.sentido === 'Ascendente';
-  const CpTechoUnico = esDosAguas ? CpBarloventoTecho : (esAscendente ? CpBarloventoTecho : CpSotaventoTecho);
-  const CpTechoAltAplica = esDosAguas || esAscendente;
-
-  const filas = [];
-  filas.push({ nombre:'Dirección Y — Muro barlovento', q:qzBarlovento, Cp:0.8, obs:'q evaluado a la altura de alero' });
-  filas.push({ nombre:'Dirección Y — Muro sotavento', q:qh, Cp:CpSotD1 });
-  filas.push({ nombre:'Dirección Y — Muro lateral', q:qh, Cp:-0.7 });
-  filas.push({ nombre:'Dirección Y — Techo barlovento (o cubierta de una sola agua)', q:qh, Cp:CpTechoUnico });
-  if (CpTechoAltAplica && CpAltDisponible) filas.push({ nombre:'Dirección Y — Techo, caso alternativo (succión reducida)', q:qh, Cp:CpAlt, obs:'Solo aplica si θ≤10°' });
-  if (esDosAguas) filas.push({ nombre:'Dirección Y — Techo sotavento', q:qh, Cp:CpSotaventoTecho, obs:'Solo aplica en techo dos aguas' });
-  filas.push({ nombre:'Dirección X — Muro barlovento', q:qzBarlovento, Cp:0.8, obs:'q evaluado a la altura de alero' });
-  filas.push({ nombre:'Dirección X — Muro sotavento', q:qh, Cp:CpSotD2 });
-  filas.push({ nombre:'Dirección X — Muro lateral', q:qh, Cp:-0.7 });
-  filas.push({ nombre:'Dirección X — Techo, franja 1 (0 a h/2)', q:qh, Cp:-0.9 });
-  filas.push({ nombre:'Dirección X — Techo, franja 2 (h/2 a h)', q:qh, Cp:-0.9 });
-  filas.push({ nombre:'Dirección X — Techo, franja 3 (h a 2h)', q:qh, Cp:-0.5 });
-  filas.push({ nombre:'Dirección X — Techo, franja 4 (> 2h)', q:qh, Cp:-0.3 });
-
-  filas.forEach(f => Object.assign(f, presionVientoRow(f.q, G, f.Cp, qh, GCpi)));
-
-  return { alpha, zg, zmin, I, Kd, G, GCpi, h, theta, KzBarlovento, KzCubierta, qzBarlovento, qh,
-    LBd1, LBd2, CpSotD1, CpSotD2, hL, CpBarloventoTecho, CpAlt, CpAltDisponible, CpSotaventoTecho, filas };
+  const res = vtArmarEstados(dirs, ctx);
+  return { modulo: 'galpon', pendientes: pend, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, GCpi, V: inp.V, Kzt: inp.Kzt, n1: inp.n1,
+    tipoTecho: inp.tipoTecho, cerramiento: inp.cerramiento, Lx, Ly, ha, hc, theta, h, hCriterio: theta <= 10 ? 'θ ≤ 10°: h = altura de cumbrera (3.3)' : 'θ > 10°: h = altura media del techo (3.3)',
+    Kh, qh: ctx.qh, dirs: dirs.map(d => ({ k: d.k, txt: d.txt, L: d.L, B: d.B, hL: d.hL, LB: d.LB, CpSota: d.CpSota, Aproj: d.Aproj, franjas: d.franjas, alturas: d.alturas, casos: d.casos.map(c => c.txt) })),
+    ...res };
 }
 
-// ---------- Diagrama de presiones externas (Dirección Y — corte transversal) ----------
-function renderDiagramaPresionesGalpon(r) {
-  const buscaFila = (prefijo) => r.filas.find(f => f.nombre.startsWith(prefijo));
-  const fBarloventoMuro = buscaFila('Dirección Y — Muro barlovento');
-  const fSotaventoMuro  = buscaFila('Dirección Y — Muro sotavento');
-  const fLateralMuro    = buscaFila('Dirección Y — Muro lateral');
-  const fBarloventoTecho= buscaFila('Dirección Y — Techo barlovento');
-  const fSotaventoTecho = buscaFila('Dirección Y — Techo sotavento');
-  const esDosAguas = !!fSotaventoTecho;
-
-  const nf = (f) => f ? (f.pGob >= 0 ? '+' : '') + f.pGob.toFixed(1) : '—';
-  const pBarloventoMuro = nf(fBarloventoMuro);
-  const pSotaventoMuro  = nf(fSotaventoMuro);
-  const pLateralMuro    = nf(fLateralMuro);
-  const pBarloventoTecho= nf(fBarloventoTecho);
-  const pSotaventoTecho = nf(fSotaventoTecho);
-
-  const valueBox = (x, y, w, h, text) => `
-    <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#8FD14F" stroke="#4a7a20" stroke-width="0.6" rx="1"/>
-    <text x="${x+w/2}" y="${y+h/2+4.5}" text-anchor="middle" font-size="12.5" font-weight="700" fill="#153a05">${text}</text>`;
-
-  const arrowsH = (x1, x2, yTop, yBot, dir) => {
-    // dir: 1 = pointing right (→), -1 = pointing left (←)
-    let s = '';
-    const n = 5;
-    for (let i=0;i<n;i++) {
-      const y = yTop + (yBot-yTop)*i/(n-1);
-      const xa = dir===1 ? x1 : x2, xb = dir===1 ? x2 : x1;
-      s += `<line x1="${xa}" y1="${y}" x2="${xb}" y2="${y}" stroke="#333" stroke-width="1" marker-end="url(#flechaViento)"/>`;
-    }
-    return s;
-  };
-  const arrowsV = (y1, y2, xLeft, xRight, dir) => {
-    // dir: 1 = pointing down (↓), -1 = pointing up (↑)
-    let s = '';
-    const n = 5;
-    for (let i=0;i<n;i++) {
-      const x = xLeft + (xRight-xLeft)*i/(n-1);
-      const ya = dir===1 ? y1 : y2, yb = dir===1 ? y2 : y1;
-      s += `<line x1="${x}" y1="${ya}" x2="${x}" y2="${yb}" stroke="#333" stroke-width="1" marker-end="url(#flechaViento)"/>`;
-    }
-    return s;
-  };
-  const arrowsDiag = (x1,y1,x2,y2,n,dir) => {
-    // arrows perpendicular-ish along a segment, dir=1 apuntando hacia el techo (hacia abajo), -1 alejándose
-    let s='';
-    const dx=(x2-x1)/(n+1), dy=(y2-y1)/(n+1);
-    const len=Math.hypot(x2-x1,y2-y1); const ux=(x2-x1)/len, uy=(y2-y1)/len;
-    const px=-uy, py=ux; // perpendicular
-    const arrLen = 14 * (dir===1?1:-1);
-    for (let i=1;i<=n;i++) {
-      const bx=x1+dx*i, by=y1+dy*i;
-      const ax=bx+px*arrLen, ay=by+py*arrLen;
-      s += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#333" stroke-width="1" marker-end="url(#flechaViento)"/>`;
-    }
-    return s;
-  };
-
-  // ---- PLANTA ----
-  const bx=95, by=55, bw=120, bh=120; // rectángulo edificio
-  const planta = `
-  <svg viewBox="0 0 300 250" width="100%" style="display:block; max-width:340px; margin:0 auto;">
-    <defs><marker id="flechaViento" markerWidth="5.5" markerHeight="5.5" refX="5" refY="2.5" orient="auto"><path d="M0,1 L5,2.5 L0,4 Z" fill="#333"/></marker></defs>
-    <text x="8" y="16" font-size="12" font-weight="700">Planta</text>
-    <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="none" stroke="#000" stroke-width="1.3"/>
-    ${arrowsH(70, bx, by+15, by+bh-15, 1)}
-    <line x1="15" y1="${by+bh/2}" x2="65" y2="${by+bh/2}" stroke="#000" stroke-width="1.4" marker-end="url(#flechaViento)"/>
-    <text x="16" y="${by+bh/2-8}" font-size="11">Viento</text>
-    ${arrowsV(by-18, by, bx+15, bx+bw-15, -1)}
-    ${arrowsH(bx+bw, bx+bw+22, by+15, by+bh-15, 1)}
-    ${arrowsV(by+bh, by+bh+18, bx+15, bx+bw-15, 1)}
-    <text x="${bx+8}" y="${by+bh/2-30}" font-size="9.5" transform="rotate(-90 ${bx+8} ${by+bh/2-30})">qz·GCp</text>
-    <text x="${bx+bw-40}" y="${by-4}" font-size="9.5">qh·GCp</text>
-    <text x="${bx+bw+4}" y="${by+bh/2-30}" font-size="9.5" transform="rotate(-90 ${bx+bw+4} ${by+bh/2-30})">qh·GCp</text>
-    <text x="${bx+bw-40}" y="${by+bh+14}" font-size="9.5">qh·GCp</text>
-    <line x1="${bx-14}" y1="${by}" x2="${bx-14}" y2="${by+bh}" stroke="#000" stroke-width="0.7"/>
-    <line x1="${bx-17}" y1="${by}" x2="${bx-11}" y2="${by}" stroke="#000" stroke-width="0.7"/>
-    <line x1="${bx-17}" y1="${by+bh}" x2="${bx-11}" y2="${by+bh}" stroke="#000" stroke-width="0.7"/>
-    <text x="${bx-24}" y="${by+bh/2+4}" font-size="10.5" text-anchor="middle">B</text>
-    <line x1="${bx}" y1="${by+bh+34}" x2="${bx+bw}" y2="${by+bh+34}" stroke="#000" stroke-width="0.7"/>
-    <text x="${bx+bw/2}" y="${by+bh+46}" font-size="10.5" text-anchor="middle">L</text>
-    ${valueBox(4, by+bh/2-11, 42, 22, pBarloventoMuro)}
-    ${valueBox(bx+bw+26, by+bh/2-11, 44, 22, pSotaventoMuro)}
-    ${valueBox(bx, by+bh+52, bw, 20, pLateralMuro)}
-  </svg>`;
-
-  // ---- ELEVACIÓN ----
-  const ex=95, ey=110, ew=120, eh=90; // muros
-  const apexX = ex+ew/2, apexY = esDosAguas ? 62 : ey;
-  const leftEaveY = esDosAguas ? ey : (fBarloventoTecho===fSotaventoTecho? ey : ey); // top of left wall
-  const rightEaveTopY = esDosAguas ? ey : ey - 40; // una agua: pendiente hasta el otro lado
-  const elevacion = `
-  <svg viewBox="0 0 320 250" width="100%" style="display:block; max-width:360px; margin:0 auto;">
-    <defs><marker id="flechaViento2" markerWidth="5.5" markerHeight="5.5" refX="5" refY="2.5" orient="auto"><path d="M0,1 L5,2.5 L0,4 Z" fill="#333"/></marker></defs>
-    <text x="8" y="16" font-size="12" font-weight="700">Elevación</text>
-    <rect x="${ex}" y="${ey}" width="${ew}" height="${eh}" fill="none" stroke="#000" stroke-width="1.3"/>
-    ${esDosAguas ? `
-      <line x1="${ex}" y1="${ey}" x2="${apexX}" y2="${apexY}" stroke="#000" stroke-width="1.3"/>
-      <line x1="${apexX}" y1="${apexY}" x2="${ex+ew}" y2="${ey}" stroke="#000" stroke-width="1.3"/>
-      <path d="M ${apexX-16} ${apexY+10} A 20 20 0 0 1 ${apexX+16} ${apexY+10}" fill="none" stroke="#000" stroke-width="0.7"/>
-      <text x="${apexX}" y="${apexY+26}" font-size="11" text-anchor="middle">θ</text>
-      ${arrowsDiag(ex-4, ey-4, apexX, apexY, 3, 1)}
-      ${arrowsDiag(apexX, apexY, ex+ew+4, ey-4, 3, 1)}
-      ${valueBox(ex-10, 55, 46, 20, pBarloventoTecho)}
-      ${valueBox(ex+ew-36, 55, 46, 20, pSotaventoTecho)}
-    ` : `
-      <line x1="${ex}" y1="${ey}" x2="${ex+ew}" y2="${ey-40}" stroke="#000" stroke-width="1.3"/>
-      ${arrowsDiag(ex-4, ey+2, ex+ew+4, ey-38, 5, 1)}
-      ${valueBox(apexX-23, ey-58, 46, 20, pBarloventoTecho)}
-    `}
-    ${arrowsH(70, ex, ey+18, ey+eh-15, 1)}
-    <line x1="15" y1="${ey+eh/2+10}" x2="65" y2="${ey+eh/2+10}" stroke="#000" stroke-width="1.4" marker-end="url(#flechaViento2)"/>
-    <text x="16" y="${ey+eh/2-2}" font-size="11">Viento</text>
-    ${arrowsH(ex+ew, ex+ew+22, ey+18, ey+eh-15, 1)}
-    <text x="${ex+6}" y="${ey+eh/2-30}" font-size="9.5" transform="rotate(-90 ${ex+6} ${ey+eh/2-30})">qz·GCp</text>
-    <text x="${ex+ew+4}" y="${ey+eh/2-30}" font-size="9.5" transform="rotate(-90 ${ex+ew+4} ${ey+eh/2-30})">qh·GCp</text>
-    <line x1="${ex-14}" y1="${ey}" x2="${ex-14}" y2="${ey+eh}" stroke="#000" stroke-width="0.7"/>
-    <text x="${ex-24}" y="${ey+eh/2+4}" font-size="10.5" text-anchor="middle">Z</text>
-    <line x1="${ex+ew+34}" y1="${apexY}" x2="${ex+ew+34}" y2="${ey+eh}" stroke="#000" stroke-width="0.7"/>
-    <text x="${ex+ew+44}" y="${(apexY+ey+eh)/2+4}" font-size="10.5" text-anchor="middle">h</text>
-    <line x1="${ex}" y1="${ey+eh+16}" x2="${ex+ew}" y2="${ey+eh+16}" stroke="#000" stroke-width="0.7"/>
-    <text x="${apexX}" y="${ey+eh+28}" font-size="10.5" text-anchor="middle">L</text>
-    ${valueBox(4, ey+eh/2-11, 42, 22, pBarloventoMuro)}
-    ${valueBox(ex+ew+26, ey+eh/2-11, 44, 22, pSotaventoMuro)}
-  </svg>`;
-
-  return `
-    <div class="note" style="margin-bottom:.5rem">p = q·G·Cp − qh·GCpi &nbsp;(kgf/m²) — valores mostrados: p gobernante de cada superficie, Dirección Y (viento normal a la cumbrera).</div>
-    <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start;justify-content:center">
-      ${planta}
-      ${elevacion}
-    </div>`;
-}
-
-// ---------- M2 RETICULADO ----------
+// ---------- M2 TORRE RETICULADA ----------
+const VT_FORMAS_TORRE = ['Cuadrada', 'Triangular'];
+const VT_MIEMBROS = { planos: 'Caras planas', redondeados: 'Redondeados' };
 function calcReticuladoViento(inp) {
-  const { alpha, zg, zmin } = TABLA1_EXPO_VIENTO[inp.categoria];
-  const I = TABLA2_IMPORTANCIA_VIENTO[inp.importancia];
-  const Kd = 0.85, G = 0.85;
-
-  const tramos = inp.tramos.map(t => {
-    const zProm = (t.z1+t.z2)/2;
-    const Kz = KzViento(zProm, zmin, zg, alpha);
-    const qz = qKgfViento(Kz, inp.Kzt, Kd, inp.V, I);
-    const cf = cfTorreViento(t.forma, t.eps);
-    const Af = t.eps * t.W * (t.z2-t.z1);
-    const F = qz * G * cf * Af;
-    const M = F * zProm;
-    return { ...t, zProm, Kz, qz, cf, Af, F, M };
+  const e = [], pend = [], avisos = [];
+  const { ex, I } = vtValidarBase(inp, e, pend);
+  const T = inp.tramos || [];
+  if (!T.length) e.push('Ingrese al menos un tramo.');
+  T.forEach((t, i) => {
+    const n = `Tramo ${i + 1}`;
+    if (!vtFin(t.z1) || !vtFin(t.z2)) e.push(`${n}: z1 y z2 deben ser valores numéricos.`);
+    else {
+      if (t.z1 < 0) e.push(`${n}: z1 debe ser ≥ 0 m.`);
+      if (t.z2 <= t.z1) e.push(`${n}: tramo invertido o de altura nula (z2 = ${vtTxt(t.z2, 2)} m ≤ z1 = ${vtTxt(t.z1, 2)} m).`);
+    }
+    if (!(vtFin(t.W) && t.W > 0)) e.push(`${n}: W — ancho de la cara debe ser mayor que 0 m.`);
+    if (!(vtFin(t.eps) && t.eps > 0 && t.eps < 1)) e.push(`${n}: ε — razón de solidez fuera del dominio (0 < ε < 1).`);
+    if (VT_FORMAS_TORRE.indexOf(t.forma) < 0) e.push(`${n}: seleccione la sección (cuadrada o triangular).`);
+    if (!(t.miembros in VT_MIEMBROS)) e.push(`${n}: seleccione el tipo de miembros.`);
+    if (!(vtFin(t.CfAa) && t.CfAa >= 0)) e.push(`${n}: Σ(Cf·A) de accesorios debe ser un número ≥ 0 m² (0 si no hay).`);
   });
-  const totalF = tramos.reduce((s,t) => s+t.F, 0);
-  const totalM = tramos.reduce((s,t) => s+t.M, 0);
+  if (!e.length) for (let i = 1; i < T.length; i++) {
+    if (T[i].z1 < T[i - 1].z2 - 1e-9) e.push(`Tramos ${i} y ${i + 1} superpuestos o fuera de orden (ingréselos de la base hacia la cúspide).`);
+    else if (T[i].z1 > T[i - 1].z2 + 1e-9) avisos.push(`Entre el tramo ${i} y el ${i + 1} hay un vacío de ${vtTxt(T[i].z1 - T[i - 1].z2, 2)} m sin área expuesta.`);
+  }
+  if (!e.length && T[T.length - 1].z2 > ex.zg) e.push('Altura mayor que zg: fuera del dominio de la Tabla 9.');
+  if (e.length) return { errores: e };
 
-  return { alpha, zg, zmin, I, Kd, G, tramos, totalF, totalM };
+  const ctx = { ex, I, V: inp.V, Kzt: inp.Kzt };
+  const tramos = T.map(t => {
+    const zc = (t.z1 + t.z2) / 2, Kz = vtKz(zc, ex), qz = vtQ(Kz, ctx), eps = t.eps;
+    const Cf0 = t.forma === 'Cuadrada' ? 4 * eps * eps - 5.9 * eps + 4 : 3.4 * eps * eps - 4.7 * eps + 3.4;
+    const kRed = t.miembros === 'redondeados' ? Math.min(1, 0.51 * eps * eps + 0.57) : 1;
+    const Cf = Cf0 * kRed, Af = eps * t.W * (t.z2 - t.z1);
+    const kDiag = t.forma === 'Cuadrada' ? Math.min(1 + 0.75 * eps, 1.2) : 1;
+    const Fn = qz * VT_G * (Cf * Af + t.CfAa), Fd = qz * VT_G * (Cf * kDiag * Af + t.CfAa);
+    return { ...t, zc, Kz, qz, Cf0, kRed, Cf, Af, kDiag, Fn, Fd, Mn: Fn * zc, Md: Fd * zc };
+  });
+  const sum = k => tramos.reduce((s, t) => s + t[k], 0);
+  const hayCuadrada = tramos.some(t => t.forma === 'Cuadrada');
+  const AfTot = sum('Af'), Fmin = VT_PMIN * AfTot;
+  const dirs = [{ k: 'N', txt: 'Viento normal a una cara', F: sum('Fn'), M: sum('Mn') }];
+  if (hayCuadrada) dirs.push({ k: 'D', txt: 'Viento diagonal (45° respecto de las caras, sección cuadrada)', F: sum('Fd'), M: sum('Md') });
+  dirs.forEach(d => { d.cumpleMin = d.F >= Fmin - 1e-9; });
+  return { modulo: 'reticulado', pendientes: pend, avisos, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, V: inp.V, Kzt: inp.Kzt, n1: inp.n1,
+    tramos, AfTot, Fmin, dirs, hayCuadrada, H: T[T.length - 1].z2 };
 }
 
 // ---------- M3 BÓVEDA ----------
+function vtCpBoveda(rD, apoyo) {
+  rD = vtR(rD);
+  const A = apoyo === 'suelo' ? 1.4 * rD : (rD < 0.2 ? -0.9 : (rD < 0.3 ? 1.5 * rD - 0.3 : 2.75 * rD - 0.7));
+  const tramo = apoyo === 'suelo' ? '0 < r/D ≤ 0,6: 1,4·r/D' : (rD < 0.2 ? '0 < r/D < 0,2: −0,9' : (rD < 0.3 ? '0,2 ≤ r/D < 0,3: 1,5·r/D − 0,3' : '0,3 ≤ r/D ≤ 0,6: 2,75·r/D − 0,7'));
+  const alt = apoyo === 'elevada' && rD >= 0.2 - 1e-12 && rD <= 0.3 + 1e-12 ? 6 * rD - 2.1 : null;
+  return { A: vtR(A), tramo, alt: alt === null ? null : vtR(alt), B: vtR(-0.7 - rD), C: -0.5 };
+}
 function calcBovedaViento(inp) {
-  const { alpha, zg, zmin } = TABLA1_EXPO_VIENTO[inp.categoria];
-  const I = TABLA2_IMPORTANCIA_VIENTO[inp.importancia];
-  const Kd = 0.85, G = 0.85;
-  const GCpi = TABLA4_GCPI_VIENTO[inp.cerramiento];
-
-  const rD = inp.r / inp.D;
-  const hTotal = inp.hArranque + inp.r;
-  const Kz = KzViento(hTotal, zmin, zg, alpha);
-  const qh = qKgfViento(Kz, inp.Kzt, Kd, inp.V, I);
-
-  const CpA = cpZonaABovedaViento(rD);
-  const CpB = -0.7 - rD;
-  const CpC = -0.5;
-
-  const zonaA = presionVientoRow(qh, G, CpA, qh, GCpi);
-  const zonaB = presionVientoRow(qh, G, CpB, qh, GCpi);
-  const zonaC = presionVientoRow(qh, G, CpC, qh, GCpi);
-
-  return { alpha, zg, zmin, I, Kd, G, GCpi, rD, hTotal, Kz, qh, CpA, CpB, CpC, zonaA, zonaB, zonaC };
-}
-
-/* =========================================================================
-   IMPRESION ESTILO PLANILLA EXCEL -- CARGAS DE VIENTO (NCh432.Of2010)
-   Fuente de verdad: /root/work/planillas_src/Cargas_Viento_NCh432_2010_1.xlsx
-   Leido con openpyxl, dos pasadas (data_only=True para valores cacheados;
-   data_only=False en paralelo para el TEXTO/formula real de cada celda,
-   usado en la verificacion numerica de abajo). wb.sheetnames trae 10 hojas:
-
-     - 'Portada'            -- caratula (contenido, como usar la planilla,
-       codigo de colores, advertencia de que Cp/Cf/V deben verificarse
-       contra la norma oficial). Sin datos de caso ni resultados.
-     - 'Memoria de Cálculo' -- desarrollo teorico en prosa.
-     - 'Tablas NCh432'      -- tablas base COMUNES a los 3 modulos: Tabla 1
-       (categorias de exposicion, alpha/zg/zmin), Tabla 2 (factor de
-       importancia I), Tabla 3 (Kd), Tabla 4 (GCpi), Tabla 5 (Cp muros
-       galpon), Tabla 6 (Cp techo, viento normal a cumbrera), Tabla 7 (Cp
-       techo, viento paralelo a cumbrera, por franjas), Tabla 8 (Cf torres
-       reticuladas), Tabla 9 (Cp boveda por zona), constante de presion
-       dinamica. Verificado 1:1 contra TABLA1_EXPO_VIENTO/
-       TABLA2_IMPORTANCIA_VIENTO/TABLA4_GCPI_VIENTO/TABLA6_TECHO_VIENTO
-       (mesa_calculo_26.html linea ~14561-14579) -- coinciden exactamente
-       (Tabla 7 y Tabla 8 NO tienen const JS propia: sus valores estan
-       INLINE dentro de calcGalponViento/cfTorreViento, ver mas abajo).
-     - 'M1 Galpón · Datos' / 'M1 Galpón · Cálculo' -- Módulo 1: galpones
-       con techo a una o dos aguas (muros + techo, 2 direcciones de viento).
-     - 'Hoja1'               -- hoja vacia (A1:A1, sin contenido). Se omite.
-     - 'M2 Reticulado · Datos' / 'M2 Reticulado · Cálculo' -- Módulo 2:
-       torres/estructuras reticuladas (coeficiente de fuerza Cf por tramo).
-     - 'M3 Bóveda · Datos' / 'M3 Bóveda · Cálculo' -- Módulo 3: cubiertas
-       abovedadas (Cp por zona segun razon flecha/luz r/D).
-
-   'Portada'/'Memoria de Cálculo'/'Tablas NCh432'/'Hoja1' se OMITEN de la
-   hoja impresa (mismo criterio ya usado en TODA esta migracion: caratula,
-   prosa teorica, tablas de referencia ya reproducidas 1:1 como const JS,
-   y hoja vacia -- no son datos de entrada de un caso concreto ni
-   resultados de calculo de un modulo). Se imprime, de los 3 pares
-   Datos/Cálculo de modulo, SOLO el par del modulo actualmente activo.
-
-   ESTRUCTURA REAL DE LOS 3 MODULOS (verificada leyendo el xlsx Y
-   renderViento -- mesa_calculo_26.html lineas 14842-15201):
-     - state.modulo ∈ {'galpon','reticulado','boveda'} -- UN SELECT UNICO
-       (<select id="vt_modulo">). Cada modulo tiene su PROPIO par de hojas
-       Datos/Cálculo fisicas en el xlsx, con su propia funcion de calculo
-       en mesa_calculo_26.html: calcGalponViento(inp) [linea 14610],
-       calcReticuladoViento(inp) [linea 14798], calcBovedaViento(inp)
-       [linea 14820]. switchModuloViento() (linea 14998) SOLO alterna
-       display:none/'' de los 3 contenedores #vt_galpon/#vt_reticulado/
-       #vt_boveda -- NO dispara ningun recalculo. renderViento() TERMINA
-       con `renderTramosTable(); recalcGalpon(); recalcReticulado();
-       recalcBoveda();` (lineas 15197-15200), es decir los 3 modulos
-       SIEMPRE se leen y calculan, independientemente de cual este
-       visible -- exactamente el mismo patron que losa-medio-elastico.js
-       (4 modulos siempre calculados, solo se IMPRIME el actualmente
-       seleccionado) y que boussinesq.js (aunque boussinesq SI imprime
-       los 3 a la vez porque asi coexisten fisicamente en su xlsx de
-       origen -- aqui, en cambio, cada modulo es un caso de diseño
-       alternativo/excluyente del mismo proyecto, igual espiritu que
-       muros-contencion.js/losa-medio-elastico.js: se imprime 1 a la vez).
-       Por eso este archivo sigue el patron de CACHE de losa-medio-
-       elastico.js: buildPrintSheetsViento(state, rGalpon, rReticulado,
-       rBoveda) recibe los 3 resultados cacheados y solo ARMA/IMPRIME el
-       modulo actualmente visible (state.modulo).
-
-   ¿CONCEPTO CUMPLE/NO CUMPLE? NO EXISTE, en ningun modulo. Se revisaron
-   celda por celda las 3 hojas "Cálculo" completas (grep de "CUMPLE",
-   case-insensitive, sobre las 3 hojas con openpyxl data_only=False) y
-   NINGUNA celda usa IF(...,"CUMPLE","NO CUMPLE") ni ninguna variante de
-   verificacion normativa -- son puramente tablas de coeficientes (Kz, Cp,
-   Cf) y presiones/fuerzas resultantes (p = q·G·Cp − qh·GCpi ; F = qz·G·
-   Cf·Af) en funcion de la geometria y categoria de exposicion. Coherente
-   con el propio disclaimer de 'Portada'!A26 y con el <p class="note"> del
-   panel interactivo ("esta planilla reconstruye las tablas clasicas...
-   deben verificarse contra las tablas y figuras oficiales de NCh432.
-   Of2010"): "Cargas de Viento" es una herramienta de CALCULO DE
-   PRESIONES/FUERZAS DE DISEÑO, no una verificacion de capacidad de un
-   elemento estructural (a diferencia de, p.ej., punzonamiento.js que SI
-   compara Vu vs φVn). Por lo tanto esta hoja impresa NO usa
-   xlsxBuildCalculoHtml()/xlsxCalcRowHtml()/opts.global (mecanismo t:'chk',
-   pensado para el layout dual LRFD/ASD de verificaciones de capacidad) en
-   absoluto -- se define un builder local propio vtBuildCalculoHtml() (
-   mismo layout/clases CSS que el motor generico: xlsx-title-bar/
-   xlsx-section/xlsx-table/xlsx-desc-row/xv-label/xv-num/xlsx-hdr-de), con
-   soporte para `sec.extraHtml` (tablas de varias columnas: Cp por
-   direccion/franja, resumen de presiones, calculo por tramo) -- mismo
-   patron "tabla dinamica via extraHtml" que bzBuildCalculoHtml de
-   boussinesq.js (unica otra calculadora ya migrada sin ningun concepto
-   CUMPLE/NO CUMPLE).
-
-   TABLA 7 (Cp techo, viento paralelo a cumbrera, por franjas) Y TABLA 8
-   (Cf torres, formula por forma) -- SIN CONST JS PROPIA, VALORES INLINE.
-   calcGalponViento() no lee 'Tablas NCh432'!Tabla 7 desde ningun objeto:
-   las franjas 1-4 (Cp = -0.9/-0.9/-0.5/-0.3) estan escritas litealmente
-   como numeros en cada `filas.push({...})` de la Direccion X (lineas
-   14652-14655). cfTorreViento(forma,eps) (linea 14602) tampoco lee
-   'Tabla 8' desde un objeto: las 2 formulas (Cuadrada: 4ε²−5.9ε+4;
-   Triangular/otra: 3.4ε²−4.7ε+3.4) estan escritas inline en el propio
-   cuerpo de la funcion. En ambos casos coinciden exactamente con B67/B68
-   de 'Tablas NCh432' y con las formulas D44:D47 de 'M1 Galpón · Cálculo'
-   -- se reproducen tal cual (valores fijos) en este archivo, sin definir
-   ninguna tabla nueva ni tocar calcGalponViento/cfTorreViento.
-
-   VALORES DE Cp ALTERNATIVO (columna E de Tabla 7, -0.18 fijo en las 4
-   franjas) -- presentes en el xlsx (E44:E47 de 'M1 Galpón · Cálculo') pero
-   SIN USO downstream: ninguna formula de la Seccion 6 (Resumen) del xlsx
-   ni ninguna fila de `filas` en calcGalponViento lee esta columna
-   alternativa para las franjas de Direccion X (a diferencia de la
-   franja/caso alternativo de Direccion Y, que SI se usa vía CpAlt). Se
-   reproduce igualmente en la tabla de la Seccion 5 de este archivo (fila
-   por franja) por fidelidad visual con la hoja xlsx, con una nota
-   aclaratoria de que no participa en el resumen de presiones.
-
-   DATOS DE PROYECTO EN EL XLSX -- 'M1 Galpón · Datos' trae valores de
-   EJEMPLO REALES (Proyecto="GIORGIO", Ubicación="CONCEPCION", Elemento=
-   "MARCO TÍPICO", Calculó="JGAH"), mientras que 'M2 Reticulado · Datos' y
-   'M3 Bóveda · Datos' traen placeholders genericos sin completar
-   ("Nombre del proyecto", "Comuna, Región", "Torre tipo"/"Bóveda tipo",
-   "Nombre"). renderViento() NO guarda NINGUNO de estos 5 campos
-   (Proyecto/Ubicación/Elemento/Calculó/Fecha) en `state` -- no hay inputs
-   para ellos en el panel de esta calculadora (a diferencia de otras
-   calculadoras HA que SI declaran b_proyecto/b_elemento). Se reutiliza
-   PROYECTO_META (mismo patron que TODA la migracion) para Proyecto y
-   Elemento; Ubicación/Calculó/Fecha usan el mismo texto de fallback fijo
-   ya usado en pila-ha.js/consola-ha.js/losa-colaborante.js/boussinesq.js
-   ("No disponible en esta versión web — ver planilla Excel, hoja Datos,
-   sección A").
-
-   FORMA EN PLANTA DE LA TORRE (M2 RETICULADO) -- DIFERENCIA DE ESTRUCTURA
-   ENTRE XLSX Y APP WEB, DOCUMENTADA (no un error de esta migracion). El
-   xlsx trae 'M2 Reticulado · Datos'!B15 como UN UNICO campo global "Forma
-   en planta de la torre" (aplicado a los 5 tramos por igual vía columna
-   F19:F23, que en el xlsx de origen replica ese unico valor). La app web,
-   en cambio, permite forma INDEPENDIENTE por tramo (state.tramos[i].forma,
-   columna "Forma" de renderTramosTable(), linea ~15069) -- mas flexible
-   que el xlsx (permite modelar transiciones de seccion en altura). Este
-   archivo refleja la estructura REAL de la app (forma por tramo, ya
-   visible en la propia tabla de tramos de la hoja Datos impresa) en vez
-   de fabricar un campo global "Forma en planta" que no existe en `state`.
-
-   VERIFICACION NUMERICA (harness Node.js ad-hoc,
-   /root/work/scratch_harness/harness_viento.js, ejecutado con `node`) --
-   se copiaron TODAS las funciones de calculo y tablas TAL CUAL de
-   mesa_calculo_26.html (KzViento/qKgfViento/cpSotaventoViento/
-   interpTabla6Viento/presionVientoRow/cfTorreViento/cpZonaABovedaViento/
-   calcGalponViento/calcReticuladoViento/calcBovedaViento, líneas
-   14561-14840) y se alimentaron con los valores por defecto de `state` en
-   renderViento -- que COINCIDEN EXACTAMENTE con los valores de ejemplo
-   cacheados de 'M1 Galpón · Datos'/'M2 Reticulado · Datos'/'M3 Bóveda ·
-   Datos' del propio xlsx:
-     - Galpón (V=45,categoria='B (Áreas urbanas)',importancia='II (No
-       incluidas I,III,IV)',Kzt=1,cerramiento='Cerrado',tipoTecho='Dos
-       aguas',sentido='Ascendente',Lx=35,Ly=25,hAlero=3.9,hCumbrera=5.25):
-       TODOS los valores comparados (alpha,zg,zmin,h,theta,KzBarlovento,
-       KzCubierta,qzBarlovento,qh,LBd1,LBd2,CpSotD1,CpSotD2,hL,
-       CpBarloventoTecho,CpAlt,CpSotaventoTecho, y las 13 filas completas
-       de q/Cp/pPos/pNeg/pGob) coinciden con los valores CACHEADOS de 'M1
-       Galpón · Cálculo' (C6:C39, E51:G63) con diff≈1e-13 (redondeo de
-       punto flotante por orden de operaciones, igual magnitud que el
-       resto de esta migracion) -- 13 filas exactas, incluyendo el numero
-       de filas (13, coincide con B51:B63 del xlsx: se activan tanto la
-       fila "Techo caso alternativo" [CpTechoAltAplica && CpAltDisponible,
-       ambas true con θ=6.16°≤10° y tipoTecho='Dos aguas'] como "Techo
-       sotavento" [esDosAguas=true]).
-     - Reticulado (V=35,categoria='B (Áreas urbanas)',importancia='II (No
-       incluidas I,III,IV)',Kzt=1,5 tramos con z1/z2/W/eps/forma = valores
-       por defecto de state.tramos): alpha/zg/zmin/Kz/qz/cf/Af/F/M por
-       tramo y totalF/totalM calculados localmente. NOTA: las celdas
-       B5:B9,B16:B20 de 'M2 Reticulado · Cálculo' estan CACHEADAS como
-       #N/A en el propio xlsx -- CONFIRMADO que es un defecto del xlsx de
-       origen (no de esta migracion ni de calcReticuladoViento): 'M2
-       Reticulado · Datos'!B12/B13 tienen los valores 'B'/'II' (códigos
-       cortos) en vez de las etiquetas completas 'B (Áreas urbanas)'/'II
-       (No incluidas I,III,IV)' que usan las formulas MATCH() contra
-       'Tablas NCh432'!$A$6:$A$9/$A$14:$A$17 -- el MATCH() por tanto falla
-       y propaga #N/A a toda la hoja de calculo. La app web, en cambio,
-       usa <select> con las etiquetas COMPLETAS como value (ver
-       optCategoria/optImportancia en renderViento, generadas desde
-       Object.keys(TABLA1_EXPO_VIENTO)/Object.keys(
-       TABLA2_IMPORTANCIA_VIENTO)) por lo que calcReticuladoViento SI
-       calcula correctamente con los mismos datos de tramos -- mismo
-       "defecto de datos de ejemplo, no de formula" ya visto en boussinesq
-       (celdas Zona A/B/C con placeholders sin completar). Se usan por
-       tanto los resultados de calcReticuladoViento (correctos) como
-       fuente de verdad para esta hoja impresa, no las celdas #N/A
-       cacheadas.
-     - Bóveda (V=35,categoria='A (Grandes ciudades)',importancia='II (No
-       incluidas I,III,IV)',Kzt=1,cerramiento='Cerrado',D=20,r=4,
-       hArranque=5): rD=0.2 (== 'M3 Bóveda · Datos'!B23), hTotal=9 (==
-       B24), CpA=-0.9/CpB=-0.8999999999999999/CpC=-0.5 (== 'M3 Bóveda ·
-       Cálculo'!C26/C27/C28, coinciden exacto -- estas 3 celdas NO
-       dependen de categoria/alpha, por eso SI estan cacheadas
-       correctamente pese al mismo defecto de datos de ejemplo que
-       Reticulado, ver arriba: 'M3 Bóveda · Datos'!B12 también trae solo
-       'A' en vez de 'A (Grandes ciudades)', por lo que B6:B10/B14:B16/
-       B32:F34 de 'M3 Bóveda · Cálculo' SI están cacheadas como #N/A --
-       mismo defecto de datos, mismo criterio: se usan los resultados de
-       calcBovedaViento, correctos con las etiquetas completas que sí usa
-       el <select> de la app).
-     Conclusion: KzViento/qKgfViento/cpSotaventoViento/interpTabla6Viento/
-     presionVientoRow/cfTorreViento/cpZonaABovedaViento/calcGalponViento/
-     calcReticuladoViento/calcBovedaViento NO NECESITAN NINGUN CAMBIO --
-     reproducen 1:1 las formulas del xlsx (las celdas #N/A encontradas en
-     2 de las 3 hojas de Cálculo del xlsx son un defecto de LOS DATOS DE
-     EJEMPLO del propio archivo fuente -- código corto en vez de etiqueta
-     completa en Categoría de exposición/Categoría de ocupación -- no de
-     las fórmulas ni de calcReticuladoViento/calcBovedaViento).
-
-   DECISIONES DE FIDELIDAD ADICIONALES:
-
-   1. UNIDADES DE q/qz/qh: la formula NATIVA de NCh432 (constante 0.613)
-      da el resultado en Pa; qKgfViento() YA divide por 9.807 internamente
-      (linea 14582) y por tanto devuelve DIRECTAMENTE kgf/m² -- la MISMA
-      unidad nativa que usa el panel interactivo (fmt2(r.qh) + ' kgf/m²',
-      linea 15043). El xlsx, en cambio, muestra AMBAS unidades como 2
-      celdas separadas (fila "...Pa" y fila "...kgf/m²", p.ej. C17/C18 de
-      'M1 Galpón · Cálculo'). Este archivo reproduce ambas filas: kgf/m²
-      viene directo de `r` (qzBarlovento/qh), Pa se REVIERTE localmente
-      multiplicando por 9.807 (mismo factor exacto que usa qKgfViento) --
-      sin tocar ninguna funcion de calculo, mismo patron que bzKgf() de
-      boussinesq.js.
-
-   2. Secciones "Esquema de cargas resultantes" (§7 de Galpón Cálculo,
-      §3 de Reticulado Cálculo, §5 de Bóveda Cálculo) -- SE OMITEN de la
-      hoja impresa, mismo criterio ya usado en TODA esta migracion para
-      reproducciones puramente GRAFICAS/esquematicas de valores YA
-      tabulados en la seccion de resumen inmediatamente anterior (ningun
-      dato NUMERICO nuevo: solo repiten, en formato de diagrama/planta/
-      elevacion con celdas combinadas, los mismos p/F/M ya impresos en la
-      tabla resumen). El caso de Galpón además YA tiene su equivalente
-      interactivo en pantalla: renderDiagramaPresionesGalpon(r) (linea
-      14664), un diagrama SVG de planta+elevación con las mismas 5
-      presiones de Dirección Y -- se agrega una nota referenciando esa
-      función, igual criterio que distribucion-sismica.js/estanque-ha.js
-      omiten hojas/graficos Excel embebidos con nota de reemplazo por la
-      visualización interactiva ya existente en pantalla.
-
-   3. Tabla de referencia indicativa de V por zona geográfica ('M1 Galpón
-      · Datos'!B12:C16, "Zona norte 30-40 m/s"/"Zona central 30-35 m/s"/
-      "Zona sur 35-45 m/s"/"Zona austral/cordillera 40-55 m/s") -- SI se
-      reproduce (a diferencia de otras tablas de catalogo ya omitidas en
-      esta migracion, p.ej. grados de hormigon de losa-medio-elastico.js)
-      porque es CORTA (4 filas), aparece SOLO en la hoja Datos del Módulo
-      1 (no se repite en M2/M3, que no traen este bloque en su propio
-      xlsx), y el <datalist> de la app (id="dl_g_V", mismo criterio que
-      "Referencia indicativa" del xlsx) ya ofrece exactamente estos mismos
-      4 rangos como sugerencias -- mismo espíritu que el resto de la
-      migracion (reproducir catálogos SOLO cuando la app tiene un
-      mecanismo equivalente real, aquí el propio <datalist>).
-
-   4. Numero de decimales de cada fila: tomado 1:1 del number_format real
-      de la celda xlsx correspondiente (openpyxl, wsf[cell].number_format,
-      data_only=False) -- α usa 1 decimal ('0.0'); zg/zmin/Kd/I/G/GCpi/L-B/
-      Cp/q(kgf)/p usan 2 decimales ('0.00'); Kz usa 3 decimales ('0.000');
-      r/D (Bóveda) usa 3 decimales ('0.000', celda B23/B24 de 'M3 Bóveda ·
-      Datos'); qz/qh en Pa usan 1 decimal ('0.0'). Ver `d:` inline en cada
-      fila de las secciones más abajo.
-   ========================================================================= */
-
-const VIENTO_FALLBACK = '____________________';
-
-// Revierte a Pa la conversion que qKgfViento() hace internamente (÷9.807) -- mismo factor exacto,
-// sin tocar la funcion de calculo. Ver nota de fidelidad "UNIDADES DE q/qz/qh" arriba.
-function vtPa(kgfM2) { return kgfM2 * 9.807; }
-
-/* ---- extiende cada resultado con los campos de `state`/derivados que la hoja xlsx muestra y que
-   calcXViento(inp) no devuelve directamente (V, Kzt, geometria de entrada, Pa, GCpi.pos/neg
-   aplanados, CpB_le05/CpB_ge10 intermedios de Galpón) -- mismo patron que losaExtendPuntual() de
-   losa-medio-elastico.js / bzKgf()+bzSFTheta() de boussinesq.js: no se toca ninguna funcion de
-   calculo, solo se agregan campos de presentacion a una copia del resultado. ---- */
-function vtExtendGalpon(state, r) {
-  const rr = Object.assign({}, r);
-  rr.V = state.gV; rr.Kzt = state.gKzt;
-  rr.hAlero = state.gHAlero; rr.hCumbrera = state.gHCumbrera; rr.Lx = state.gLx; rr.Ly = state.gLy;
-  rr.categoria = state.gCategoria; rr.importancia = state.gImportancia; rr.cerramiento = state.gCerramiento;
-  rr.tipoTecho = state.gTipoTecho; rr.sentido = state.gSentido;
-  rr.qzBarloventoPa = vtPa(r.qzBarlovento);
-  rr.qhPa = vtPa(r.qh);
-  rr.GCpiPos = r.GCpi.pos; rr.GCpiNeg = r.GCpi.neg;
-  // CpB_le05/CpB_ge10: valores intermedios de interpolación en θ que calcGalponViento calcula pero
-  // no devuelve (solo devuelve CpBarloventoTecho, ya interpolado también en h/L) -- 'M1 Galpón ·
-  // Cálculo'!C35/C36 SI los muestra como filas propias. Se recalculan localmente con la MISMA
-  // función global interpTabla6Viento (ya presente en el mismo scope de mesa_calculo_26.html donde
-  // se integrará este archivo) -- no es una fórmula nueva, es la misma duplicada solo para
-  // exponerla, mismo patrón que bzSFTheta(m,n) de boussinesq.js.
-  rr.CpB_le05 = interpTabla6Viento(r.theta, 'B');
-  rr.CpB_ge10 = interpTabla6Viento(r.theta, 'C');
-  return rr;
-}
-function vtExtendReticulado(state, r) {
-  const rr = Object.assign({}, r);
-  rr.V = state.rV; rr.Kzt = state.rKzt; rr.categoria = state.rCategoria; rr.importancia = state.rImportancia;
-  return rr;
-}
-function vtExtendBoveda(state, r) {
-  const rr = Object.assign({}, r);
-  rr.V = state.bV; rr.Kzt = state.bKzt; rr.categoria = state.bCategoria; rr.importancia = state.bImportancia;
-  rr.cerramiento = state.bCerramiento; rr.D = state.bD; rr.rFlecha = state.bR; rr.hArranque = state.bHArranque;
-  rr.qhPa = vtPa(r.qh);
-  rr.GCpiPos = r.GCpi.pos; rr.GCpiNeg = r.GCpi.neg;
-  return rr;
-}
-
-/* ---------------------------------------------------------------------------
-   HOJA DATOS -- una función con 3 ramas (una por módulo), ya que cada módulo
-   tiene su propia hoja "· Datos" físicamente independiente en el xlsx (a
-   diferencia de losa-medio-elastico.js, que SI comparte una sección de
-   materiales/suelo común entre sus 4 módulos vía la hoja "Datos Generales").
-   Solo se imprime el módulo ACTUALMENTE seleccionado (state.modulo).
-   --------------------------------------------------------------------------- */
-function vientoDatosHtml(state) {
-  function row(label, value, span) {
-    return `<tr><td class="xv-label">${label}</td><td class="xv-input" colspan="${span || 3}">${value}</td></tr>`;
+  const e = [], pend = [];
+  const { ex, I } = vtValidarBase(inp, e, pend);
+  const GCpi = VT_GCPI[inp.cerramiento];
+  if (!(inp.cerramiento in VT_GCPI)) e.push('Seleccione el tipo de cerramiento.');
+  else if (GCpi === null) e.push('FUERA DE ALCANCE — cerramiento «Abierto»: los coeficientes de techos abovedados corresponden a estructuras cerradas o parcialmente cerradas.');
+  const { D, r, hArranque: ha, Lb } = inp;
+  if (!(vtFin(D) && D > 0)) e.push('D — luz: ingrese un valor numérico mayor que 0 m.');
+  if (!(vtFin(r) && r > 0)) e.push('r — flecha: ingrese un valor numérico mayor que 0 m.');
+  if (!(vtFin(ha) && ha >= 0)) e.push('h_arranque: ingrese un valor numérico ≥ 0 m.');
+  if (inp.apoyo !== 'elevada' && inp.apoyo !== 'suelo') e.push('Seleccione si la cubierta está sobre una estructura elevada o nace del suelo.');
+  else if (vtFin(ha)) {
+    if (inp.apoyo === 'suelo' && ha > 0) e.push('Cubierta nacida del suelo: h_arranque debe ser 0 m (con muros bajo el arranque corresponde «sobre estructura elevada»).');
+    if (inp.apoyo === 'elevada' && ha === 0) e.push('Cubierta sobre estructura elevada con h_arranque = 0 m: seleccione «nace del suelo».');
   }
-  const proyecto = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.proyecto) ? PROYECTO_META.proyecto : '____________________';
-  const elemento = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META && PROYECTO_META.calculo) ? PROYECTO_META.calculo : '____________________';
+  if (Lb === null || Lb === undefined) pend.push('Ingrese Lb (largo según el eje de la bóveda): sin él no se calculan los muros, el viento paralelo al eje, las resultantes ni el mínimo 5.2.1.');
+  else if (!(vtFin(Lb) && Lb > 0)) e.push('Lb — largo según el eje: ingrese un valor numérico mayor que 0 m, o deje el campo vacío.');
+  const rD = vtFin(D) && vtFin(r) && D > 0 ? r / D : NaN;
+  if (vtFin(rD) && rD > 0.6) e.push(`r/D = ${vtTxt(rD, 3)} fuera del dominio tabulado (0 < r/D ≤ 0,6).`);
+  if (!e.length && ha + r > ex.zg) e.push('Altura mayor que zg: fuera del dominio de la Tabla 9.');
+  if (e.length) return { errores: e };
 
-  if (state.modulo === 'galpon') {
-    // h/theta: mismas 2 formulas exactas usadas dentro de calcGalponViento (linea 14616-14619) --
-    // duplicadas SOLO para poder mostrarlas en la sección "D. Geometría derivada" de la hoja Datos
-    // (el xlsx las muestra ahí, C32/C33 de 'M1 Galpón · Datos', ANTES de la hoja Cálculo), sin tocar
-    // calcGalponViento ni requerir pasar `r` a esta función (firma = solo `state`, mismo patrón que
-    // losaDatosHtml/boussinesqDatosHtml).
-    const h = state.gHAlero + (state.gHCumbrera - state.gHAlero) / 2;
-    const theta = state.gTipoTecho === 'Dos aguas'
-      ? Math.atan((state.gHCumbrera - state.gHAlero) / (state.gLy / 2)) * 180 / Math.PI
-      : Math.atan((state.gHCumbrera - state.gHAlero) / state.gLy) * 180 / Math.PI;
-
-    return `
-    <div class="xlsx-title-bar">MÓDULO 1 — GALPÓN (TECHO A UNA O DOS AGUAS) — DATOS DE ENTRADA</div>
-
-    <div class="xlsx-section">A. Identificación del proyecto</div>
-    <table class="xlsx-table"><tbody>
-      ${row('Proyecto', proyecto)}
-      ${row('Ubicación (comuna / región)', VIENTO_FALLBACK)}
-      ${row('Elemento / eje analizado', elemento)}
-      ${row('Calculó', VIENTO_FALLBACK)}
-      ${row('Fecha', '____________________')}
-    </tbody></table>
-
-    <div class="xlsx-section">B. Datos generales de viento</div>
-    <table class="xlsx-table"><tbody>
-      ${row('V — Velocidad básica de viento', xlsxNum(state.gV, 1) + ' m/s')}
-      ${row('Categoría de exposición', state.gCategoria)}
-      ${row('Categoría de ocupación (importancia)', state.gImportancia)}
-      ${row('Kzt — Factor topográfico', xlsxNum(state.gKzt, 2))}
-      ${row('Tipo de cerramiento', state.gCerramiento)}
-      ${row('Tipo de techo', state.gTipoTecho)}
-      ${row('Techo 1 agua: sentido del viento (Dirección 1)', state.gSentido)}
-    </tbody></table>
-    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">Referencia indicativa de V por zona geográfica (NO oficial — verificar Anexo A de NCh432.Of2010): Zona norte (costa/desierto) 30–40 m/s · Zona central 30–35 m/s · Zona sur 35–45 m/s · Zona austral / cordillera 40–55 m/s.</div>
-
-    <div class="xlsx-section">C. Geometría del galpón (m)</div>
-    <table class="xlsx-table"><tbody>
-      ${row('Lx — dimensión en planta paralela a la cumbrera', xlsxNum(state.gLx, 2) + ' m')}
-      ${row('Ly — dimensión en planta normal a la cumbrera (ancho de la cubierta)', xlsxNum(state.gLy, 2) + ' m')}
-      ${row('h_alero — altura de alero', xlsxNum(state.gHAlero, 2) + ' m')}
-      ${row('h_cumbrera — altura de cumbrera (o punto más alto, techo 1 agua)', xlsxNum(state.gHCumbrera, 2) + ' m')}
-    </tbody></table>
-
-    <div class="xlsx-section">D. Geometría derivada (calculada)</div>
-    <table class="xlsx-table"><tbody>
-      ${row('h — altura media de cubierta = h_alero + (h_cumbrera − h_alero)/2', xlsxNum(h, 2) + ' m')}
-      ${row('θ — ángulo de inclinación del techo', xlsxNum(theta, 2) + ' °')}
-    </tbody></table>`;
+  const hTop = ha + r, h = hTop;          // q en la clave del arco (criterio conservador del programa)
+  const Kh = vtKz(h, ex);
+  const ctx = { ex, I, V: inp.V, Kzt: inp.Kzt, GCpi };
+  ctx.qh = vtQ(Kh, ctx);
+  const cp = vtCpBoveda(rD, inp.apoyo);
+  const conLb = vtFin(Lb) && Lb > 0, elevada = inp.apoyo === 'elevada';
+  const prof = x => ha + 4 * r * x * (D - x) / (D * D);
+  const techoN = CpA => [{ nombre: 'Cuarto de barlovento (A)', x1: 0, x2: D / 4, Cp: CpA }, { nombre: 'Mitad central (B)', x1: D / 4, x2: 3 * D / 4, Cp: cp.B }, { nombre: 'Cuarto de sotavento (C)', x1: 3 * D / 4, x2: D, Cp: cp.C }];
+  const casosN = [{ txt: `Cp zona A = ${vtSig(cp.A, 3)} (${cp.tramo})`, techo: techoN(cp.A) }];
+  if (cp.alt !== null) casosN.push({ txt: `Cp alternativo zona A = 6·r/D − 2,1 = ${vtSig(cp.alt, 3)}`, techo: techoN(cp.alt) });
+  const dirs = [{ k: 'N', txt: 'Viento normal al eje de la bóveda', L: D, B: conLb ? Lb : null, hL: null, LB: conLb ? D / Lb : null, prof,
+    muroB: elevada && conLb ? vtFormaRect(Lb, ha) : null, Asota: conLb ? Lb * ha : 0, CpSota: conLb ? vtCpSotaMuro(D / Lb) : null,
+    Aproj: conLb ? Lb * hTop : null, lateral: true, casos: casosN, franjas: false }];
+  if (conLb) {
+    const hL = h / Lb, fr = vtFranjas(h, Lb, hL), test = vtFormaTestero(D, ha, r);
+    dirs.push({ k: 'P', txt: 'Viento paralelo al eje de la bóveda', L: Lb, B: D, hL, LB: Lb / D, prof: () => hTop,
+      muroB: test, Asota: test.A, CpSota: vtCpSotaMuro(Lb / D), Aproj: test.A, lateral: elevada, franjas: true,
+      casos: [
+        { txt: 'Tabla 15, franjas — Cp', techo: fr.map(f => ({ nombre: `Cubierta, franja ${f.txt}`, x1: f.x1, x2: f.x2, Cp: f.Cp })) },
+        { txt: 'Tabla 15, franjas — Cp alternativo −0,18', techo: fr.map(f => ({ nombre: `Cubierta, franja ${f.txt}`, x1: f.x1, x2: f.x2, Cp: VT_T15_FRALT })) }
+      ] });
   }
-
-  if (state.modulo === 'reticulado') {
-    return `
-    <div class="xlsx-title-bar">MÓDULO 2 — TORRE / ESTRUCTURA RETICULADA — DATOS DE ENTRADA</div>
-
-    <div class="xlsx-section">A. Identificación del proyecto</div>
-    <table class="xlsx-table"><tbody>
-      ${row('Proyecto', proyecto)}
-      ${row('Ubicación (comuna / región)', VIENTO_FALLBACK)}
-      ${row('Elemento / torre analizada', elemento)}
-      ${row('Calculó', VIENTO_FALLBACK)}
-      ${row('Fecha', '____________________')}
-    </tbody></table>
-
-    <div class="xlsx-section">B. Datos generales de viento (misma metodología que Módulo 1)</div>
-    <table class="xlsx-table"><tbody>
-      ${row('V — Velocidad básica de viento', xlsxNum(state.rV, 1) + ' m/s')}
-      ${row('Categoría de exposición', state.rCategoria)}
-      ${row('Categoría de ocupación (importancia)', state.rImportancia)}
-      ${row('Kzt — Factor topográfico', xlsxNum(state.rKzt, 2))}
-    </tbody></table>
-
-    <div class="xlsx-section">C. Geometría por tramos (de la base hacia la cúspide)</div>
-    <table class="xlsx-table"><tbody>
-      <tr class="xlsx-hdr-de"><td>Tramo</td><td class="xv-num">z1 (m)</td><td class="xv-num">z2 (m)</td><td class="xv-num">W (m)</td><td class="xv-num">ε</td><td class="xv-num">Forma</td></tr>
-      ${state.tramos.map((t, i) => `<tr><td style="text-align:center">${i + 1}</td><td class="xv-num">${xlsxNum(t.z1, 2)}</td><td class="xv-num">${xlsxNum(t.z2, 2)}</td><td class="xv-num">${xlsxNum(t.W, 2)}</td><td class="xv-num">${xlsxNum(t.eps, 2)}</td><td class="xv-num">${t.forma}</td></tr>`).join('')}
-    </tbody></table>
-    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">ε = razón de solidez = área proyectada sólida de la cara del tramo / área bruta de esa cara (An/Ag). Fórmulas Cf(ε) válidas orientativamente para 0.1 ≤ ε ≤ 0.5. La forma en planta (Cuadrada/Triangular) se define de forma INDEPENDIENTE por cada tramo en esta versión web (a diferencia del xlsx origen, que trae un único campo global "Forma en planta de la torre" aplicado a todos los tramos por igual — ver nota de fidelidad "FORMA EN PLANTA DE LA TORRE" al inicio de este archivo).</div>`;
-  }
-
-  // boveda
-  const rD = state.bR / state.bD;
-  const hTotal = state.bHArranque + state.bR;
-  return `
-    <div class="xlsx-title-bar">MÓDULO 3 — CUBIERTA ABOVEDADA — DATOS DE ENTRADA</div>
-
-    <div class="xlsx-section">A. Identificación del proyecto</div>
-    <table class="xlsx-table"><tbody>
-      ${row('Proyecto', proyecto)}
-      ${row('Ubicación (comuna / región)', VIENTO_FALLBACK)}
-      ${row('Elemento / nave analizada', elemento)}
-      ${row('Calculó', VIENTO_FALLBACK)}
-      ${row('Fecha', '____________________')}
-    </tbody></table>
-
-    <div class="xlsx-section">B. Datos generales de viento (misma metodología que Módulos 1 y 2)</div>
-    <table class="xlsx-table"><tbody>
-      ${row('V — Velocidad básica de viento', xlsxNum(state.bV, 1) + ' m/s')}
-      ${row('Categoría de exposición', state.bCategoria)}
-      ${row('Categoría de ocupación (importancia)', state.bImportancia)}
-      ${row('Kzt — Factor topográfico', xlsxNum(state.bKzt, 2))}
-      ${row('Tipo de cerramiento', state.bCerramiento)}
-    </tbody></table>
-
-    <div class="xlsx-section">C. Geometría de la bóveda (m)</div>
-    <table class="xlsx-table"><tbody>
-      ${row('D — luz (span) de la bóveda', xlsxNum(state.bD, 2) + ' m')}
-      ${row('r — flecha (rise) de la bóveda', xlsxNum(state.bR, 2) + ' m')}
-      ${row('h_arranque — altura de muros hasta el arranque del arco', xlsxNum(state.bHArranque, 2) + ' m')}
-    </tbody></table>
-
-    <div class="xlsx-section">D. Geometría derivada (calculada)</div>
-    <table class="xlsx-table"><tbody>
-      ${row('r/D — razón flecha / luz', xlsxNum(rD, 3))}
-      ${row('h — altura total a la cumbrera del arco (h_arranque + r)', xlsxNum(hTotal, 2) + ' m')}
-    </tbody></table>
-    <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">Rango de validez de la Tabla 9 (Cp bóveda): 0 ≤ r/D ≤ 0.6. Fuera de este rango, verificar formulación específica de NCh432.Of2010.</div>`;
+  const res = vtArmarEstados(dirs, ctx);
+  return { modulo: 'boveda', pendientes: pend, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, GCpi, V: inp.V, Kzt: inp.Kzt, n1: inp.n1,
+    cerramiento: inp.cerramiento, apoyo: inp.apoyo, D, r, ha, Lb: conLb ? Lb : null, rD, hTop, h, Kh, qh: ctx.qh, cp,
+    dirs: dirs.map(d => ({ k: d.k, txt: d.txt, L: d.L, B: d.B, hL: d.hL, LB: d.LB, CpSota: d.CpSota, Aproj: d.Aproj, franjas: d.franjas, casos: d.casos.map(c => c.txt), muros: !!d.muroB })),
+    ...res };
 }
 
-/* ---------------------------------------------------------------------------
-   BUILDER LOCAL DE LA HOJA CALCULO -- mismo layout/clases CSS que el motor
-   generico (xlsx-title-bar/xlsx-section/xlsx-table/xlsx-desc-row/xv-label/
-   xv-num/xlsx-hdr-de), pero SIN pasar por xlsxBuildCalculoHtml/
-   xlsxCalcRowHtml (pensados para el layout dual LRFD/ASD de verificaciones
-   t:'chk', que esta planilla no tiene -- ver nota "¿CONCEPTO CUMPLE/NO
-   CUMPLE?" al inicio). Mismo patrón que bzBuildCalculoHtml() de
-   boussinesq.js (única otra calculadora migrada sin ningún chk).
-   `rows` solo trae 'var1' (label + 1 valor ya formateado) y 'desc' (nota).
-   `sec.extraHtml` = tabla de varias columnas (Cp por dirección/franja,
-   resumen de presiones, cálculo por tramo, Cp por zona) ya armada por los
-   builders de tabla de cada módulo, más abajo. `sec.resumenInclude`
-   (default false) controla si la SECCION COMPLETA aparece en modo Resumen
-   -- las secciones tituladas "Resumen de presiones..." en el propio xlsx
-   (Galpón §6, Bóveda §4) se marcan true (son, textualmente, el resumen que
-   el xlsx ya distingue de su propio detalle de cálculo); las secciones de
-   derivación de coeficientes (Kz, Cp por dirección/franja) se marcan false
-   -- solo aparecen en "Imprimir completo".
-   --------------------------------------------------------------------------- */
-function vtBuildCalculoHtml(titleText, sections, opts) {
-  opts = opts || {};
-  const resumen = !!opts.resumen;
-  let html = `<div class="xlsx-title-bar">${titleText}</div>`;
-  if (opts.intro) html += `<div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">${opts.intro}${resumen ? ' (Resumen: solo el/los resultado(s) final(es) — el detalle completo de coeficientes está en Imprimir completo.)' : ''}</div>`;
+// ---------- Salidas (pantalla e impresión usan las mismas tablas, desde el mismo resultado) ----------
+const vtKN = N => vtTxt(N / 1000, 2);
+// cls: 'results' (pantalla) o 'xlsx-table' (hoja impresa / Excel)
+function vtTabla(cls, head, rows) {
+  const pr = cls === 'xlsx-table', num = pr ? 'xv-num' : 'num';
+  const h = head ? (pr ? `<tr class="xlsx-hdr-de">${head.map(c => `<td>${c}</td>`).join('')}</tr>` : `<tr>${head.map(c => `<th>${c}</th>`).join('')}</tr>`) : '';
+  const fila = r => `<tr>${r.map((c, i) => i === 0 ? `<td${pr && !head ? ' class="xv-label"' : ''}>${c}</td>` : `<td class="${num}">${c}</td>`).join('')}</tr>`;
+  return `<table class="${cls}">${pr ? '<tbody>' : ''}${h}${rows.map(fila).join('')}${pr ? '</tbody>' : ''}</table>`;
+}
+const vtGTxt = r => r.n1 === null || r.n1 === undefined ? 'G = 0,85 (estructura rígida; n1 sin acreditar)' : `G = 0,85 (estructura rígida, n1 = ${vtTxt(r.n1, 2)} Hz ≥ 1 Hz)`;
+function vtFilasBase(r) {
+  return [
+    ['V — velocidad básica de viento', vtTxt(r.V, 1) + ' m/s'],
+    ['Categoría de exposición', esc(r.ex.txt)],
+    ['α / zg (Tabla 9, Caso 2: zmín = 4,6 m)', `${vtTxt(r.ex.alpha, 1)} / ${vtTxt(r.ex.zg, 2)} m`],
+    ['I — factor de importancia', vtTxt(r.I, 2)],
+    ['Kzt — factor topográfico', vtTxt(r.Kzt, 2)],
+    ['Kd — factor de direccionalidad (solo con las combinaciones de NCh3171)', vtTxt(r.Kd, 2)],
+    ['G — factor de efecto de ráfaga', vtGTxt(r)]
+  ];
+}
+function vtBloquesEdificio(r, cls) {
+  const B = [];
+  const base = vtFilasBase(r);
+  base.push(['GCpi — presión interna (' + esc(r.cerramiento) + ')', '± ' + vtTxt(r.GCpi, 2)]);
+  if (r.modulo === 'galpon') base.push(['θ — ángulo del techo', vtTxt(r.theta, 2) + '°'], ['h — ' + r.hCriterio, vtTxt(r.h, 3) + ' m']);
+  else base.push(['r/D — razón flecha/luz', vtTxt(r.rD, 3)], ['h — altura de la clave del arco (h_arranque + r), usada para qh', vtTxt(r.h, 3) + ' m']);
+  base.push(['Kh = 2,01·(máx(h; 4,6)/zg)^(2/α)', vtTxt(r.Kh, 5)],
+    ['qh = 0,613·Kh·Kzt·Kd·V²·I', `${vtTxt(r.qh, 2)} Pa (${vtTxt(r.qh / 9.807, 2)} kgf/m²)`]);
+  B.push({ t: 'Parámetros de viento y presión dinámica', html: vtTabla(cls, null, base), param: true });
 
-  sections.forEach(sec => {
-    if (resumen && !sec.resumenInclude) return;
-    html += `<div class="xlsx-section">${sec.num}. ${sec.title}</div>`;
-    if (sec.rows && sec.rows.length) {
-      html += `<table class="xlsx-table"><tbody>`;
-      sec.rows.forEach(row => {
-        if (row.t === 'desc') html += `<tr class="xlsx-desc-row"><td colspan="2">${row.text}</td></tr>`;
-        else html += `<tr><td class="xv-label">${row.label}</td><td class="xv-num">${row.txt}</td></tr>`;
-      });
-      html += `</tbody></table>`;
-    }
-    if (sec.extraHtml) html += sec.extraHtml;
+  const coef = [];
+  r.dirs.forEach(d => {
+    coef.push([`<b>${esc(d.txt)}</b>`, '']);
+    coef.push(['L (paralela al viento) / B (normal al viento)', `${vtTxt(d.L, 2)} m / ${d.B ? vtTxt(d.B, 2) + ' m' : '—'}`]);
+    if (d.hL !== null) coef.push(['h/L', vtTxt(d.hL, 3)]);
+    if (d.LB !== null && d.CpSota !== null) coef.push(['Muros: barlovento Cp = 0,8 (qz) · sotavento Cp(L/B = ' + vtTxt(d.LB, 3) + ') · laterales Cp = −0,7', vtSig(d.CpSota, 3)]);
+    d.casos.forEach((c, i) => coef.push([`Cubierta, caso ${i + 1}`, esc(c)]));
   });
+  if (r.modulo === 'boveda') {
+    coef.push(['<b>Techo abovedado, viento normal al eje (' + (r.apoyo === 'suelo' ? 'cubierta nacida del suelo' : 'cubierta sobre estructura elevada') + ')</b>', '']);
+    coef.push(['Cuarto de barlovento A: ' + esc(r.cp.tramo), vtSig(r.cp.A, 3)]);
+    if (r.cp.alt !== null) coef.push(['Cuarto de barlovento A, alternativo (0,2 ≤ r/D ≤ 0,3): 6·r/D − 2,1', vtSig(r.cp.alt, 3)]);
+    coef.push(['Mitad central B: −0,7 − r/D', vtSig(r.cp.B, 3)], ['Cuarto de sotavento C', vtSig(r.cp.C, 3)]);
+  }
+  B.push({ t: 'Coeficientes de presión externa por dirección', html: vtTabla(cls, null, coef), param: true });
+
+  // qz por altura en el muro de barlovento (del primer estado de cada dirección)
+  const filasQ = [];
+  r.dirs.forEach(d => {
+    const st = r.estados.find(e => e.dir === d.k && !e.minimo);
+    const mb = st && st.sup.find(s => s.k === 'mb');
+    if (mb) mb.bandas.forEach(b => filasQ.push([esc(d.txt), `${vtTxt(b.z1, 2)} – ${vtTxt(b.z2, 2)}`, vtTxt(b.Kz, 5), vtTxt(b.qz, 2), vtTxt(b.A, 2)]));
+  });
+  if (filasQ.length) B.push({ t: 'qz por altura — muro de barlovento (q evaluado en el borde superior de cada franja)', html: vtTabla(cls, ['Dirección', 'z (m)', 'Kz', 'qz (Pa)', 'Área (m²)'], filasQ), param: true });
+
+  // Presiones por estado, una tabla por dirección
+  r.dirs.forEach(d => {
+    const ests = r.estados.filter(e => e.dir === d.k && !e.minimo);
+    const head = ['Superficie'].concat(ests.map(e => `${e.id} (GCpi ${vtSig(e.GCpi, 2)})`));
+    const filas = [['Caso de cubierta'].concat(ests.map(e => esc(e.casoTxt)))];
+    const mod = ests[0];
+    mod.sup.forEach((s, j) => {
+      if (s.bandas) s.bandas.forEach((b, k) => filas.push([`${esc(s.nombre)}, z = ${vtTxt(b.z1, 2)}–${vtTxt(b.z2, 2)} m (Cp 0,80)`].concat(ests.map(e => vtSig(e.sup[j].bandas[k].p, 1)))));
+      else filas.push([esc(s.nombre) + (s.tipo !== 'techo' ? ` (Cp ${vtSig(s.Cp, 3)})` : '')].concat(ests.map(e => vtSig(e.sup[j].p, 1) + (s.tipo === 'techo' ? ` (Cp ${vtSig(e.sup[j].Cp, 3)})` : ''))));
+    });
+    B.push({ t: `Presiones de diseño p = q·G·Cp − qh·(GCpi) [Pa] — ${esc(d.txt)}`, html: vtTabla(cls, head, filas), resumen: true });
+  });
+  B.push({ t: 'Envolvente local por superficie [Pa] (no combina estados entre superficies)',
+    html: vtTabla(cls, ['Dirección', 'Superficie', 'p máx', 'Estado', 'p mín', 'Estado'], r.envolvente.map(o => [esc(o.dirTxt), esc(o.nombre), vtSig(o.pMax, 1), o.eMax, vtSig(o.pMin, 1), o.eMin])) });
+
+  const filasF = r.estados.map(e => [e.id, esc(e.dirTxt), esc(e.casoTxt), e.minimo ? '—' : vtSig(e.GCpi, 2), vtFin(e.Fx) ? vtKN(e.Fx) : '—', vtFin(e.Fz) ? vtKN(e.Fz) : '—']);
+  let htmlF = vtTabla(cls, ['Estado', 'Dirección', 'Caso', 'GCpi', 'Fx (kN)', 'Fz (kN)'], filasF);
+  if (r.minimos.length) htmlF += vtTabla(cls, ['Dirección', 'Área proyectada (m²)', 'Fx máx de los estados (kN)', 'Mínimo 0,48 kN/m² × A (kN)', 'Resultado'],
+    r.minimos.map(m => [esc(m.dirTxt), vtTxt(m.Aproj, 2), vtKN(m.FxMax), vtKN(m.Fmin), m.cumple ? 'supera el mínimo' : 'no alcanza: se agrega el estado mínimo']));
+  B.push({ t: 'Resultantes por estado y mínimo 5.2.1', html: htmlF, resumen: true });
+  return B;
+}
+function vtBloquesTorre(r, cls) {
+  const B = [{ t: 'Parámetros de viento', html: vtTabla(cls, null, vtFilasBase(r)), param: true }];
+  const head = ['Tramo', 'z1–z2 (m)', 'zc (m)', 'Kz', 'qz (Pa)', 'Sección / miembros', 'ε', 'Cf caras planas', 'Factor redondeados', 'Cf', 'Af (m²)', 'Σ(Cf·A) acces. (m²)', 'Fn (kN)', 'Mn (kN·m)'];
+  if (r.hayCuadrada) head.push('Factor diagonal', 'Fd (kN)', 'Md (kN·m)');
+  const filas = r.tramos.map((t, i) => {
+    const f = [i + 1, `${vtTxt(t.z1, 2)}–${vtTxt(t.z2, 2)}`, vtTxt(t.zc, 2), vtTxt(t.Kz, 4), vtTxt(t.qz, 1), `${t.forma} / ${VT_MIEMBROS[t.miembros]}`, vtTxt(t.eps, 3), vtTxt(t.Cf0, 4), vtTxt(t.kRed, 4), vtTxt(t.Cf, 4), vtTxt(t.Af, 3), vtTxt(t.CfAa, 3), vtKN(t.Fn), vtKN(t.Mn)];
+    if (r.hayCuadrada) f.push(t.forma === 'Cuadrada' ? vtTxt(t.kDiag, 4) : '—', vtKN(t.Fd), vtKN(t.Md));
+    return f;
+  });
+  B.push({ t: 'Fuerza por tramo F = qz·G·(Cf·Af + Σ Cf·A accesorios), M respecto de la base', html: vtTabla(cls, head, filas) });
+  const filasT = r.dirs.map(d => [esc(d.txt), vtKN(d.F), vtKN(d.M), vtKN(r.Fmin), d.cumpleMin ? 'supera el mínimo' : 'no alcanza: usar el mínimo']);
+  let html = vtTabla(cls, ['Dirección', 'F total (kN)', 'M base (kN·m)', 'Mínimo 0,48 kN/m² × ΣAf (kN)', 'Resultado'], filasT);
+  const dg = r.dirs.find(d => d.k === 'D');
+  if (dg) html += vtTabla(cls, null, [['Viento diagonal: componentes según los ejes de las caras, Fx = Fy = Fd/√2', `${vtKN(dg.F / Math.SQRT2)} kN`], ['Momento basal diagonal, componentes Mx = My = Md/√2', `${vtKN(dg.M / Math.SQRT2)} kN·m`]]);
+  B.push({ t: 'Fuerzas y momentos totales por dirección', html, resumen: true });
+  return B;
+}
+const vtBloques = (r, cls) => r.modulo === 'reticulado' ? vtBloquesTorre(r, cls) : vtBloquesEdificio(r, cls);
+
+// Notas normativas (impresas). Las ayudas de uso del programa van solo en pantalla.
+function vtNotas(r) {
+  const n = ['Convención de signos: presión positiva actúa hacia la superficie; negativa, alejándose de ella (succión). Cada estado aplica un único signo de GCpi a todas las superficies.',
+    'Alcance: sistema principal resistente a fuerzas de viento (SPRFV), procedimiento analítico, estructura rígida. No incluye componentes y revestimientos.'];
+  if (r.modulo === 'galpon' || r.modulo === 'boveda') n.push('Tabla 15: la reducción por área del coeficiente −1,3 (h/L ≥ 1,0) no se aplica (conservador). Interpolación lineal en θ, h/L y L/B solo entre valores del mismo signo.');
+  if (r.modulo === 'boveda') n.push('El perfil del arco se supone parabólico solo para las resultantes y el esquema; los coeficientes de presión no dependen del perfil.');
+  if (r.modulo === 'reticulado') {
+    n.push('Cf de la tabla corresponde a miembros de caras planas; para miembros redondeados se multiplica por 0,51ε² + 0,57 ≤ 1,0. Viento diagonal en sección cuadrada: Cf × mín(1 + 0,75ε; 1,2). En sección triangular el viento puede actuar en cualquier dirección con el mismo Cf.');
+    n.push('Af = ε·W·(z2 − z1): área sólida de una cara del tramo. Los accesorios no incluidos en ε se ingresan como Σ(Cf·A) con su coeficiente de fuerza.');
+    (r.avisos || []).forEach(a => n.push(a));
+  }
+  return n;
+}
+
+// ---------- Esquemas (un SVG por estado, flechas según el signo de la presión) ----------
+function vtGeoDir(r, k) {
+  if (r.modulo === 'galpon') {
+    const { ha, hc, Lx, Ly } = r;
+    if (k === 'P') return { L: Lx, zIzq: hc, zDer: hc, prof: () => hc, alero: ha };
+    if (k === 'N') return { L: Ly, zIzq: ha, zDer: ha, prof: x => ha + (hc - ha) * (1 - Math.abs(2 * x / Ly - 1)) };
+    if (k === 'N1') return { L: Ly, zIzq: ha, zDer: hc, prof: x => ha + (hc - ha) * x / Ly };
+    return { L: Ly, zIzq: hc, zDer: ha, prof: x => hc - (hc - ha) * x / Ly };
+  }
+  const { D, r: f, ha, hTop, Lb } = r;
+  if (k === 'P') return { L: Lb, zIzq: hTop, zDer: hTop, prof: () => hTop, alero: ha };
+  return { L: D, zIzq: ha, zDer: ha, prof: x => ha + 4 * f * x * (D - x) / (D * D) };
+}
+function vtSvgEstado(r, st) {
+  const g = vtGeoDir(r, st.dir);
+  const W = 470, zMax = Math.max(g.zIzq, g.zDer, ...Array.from({ length: 21 }, (_, i) => g.prof(g.L * i / 20)));
+  const s = Math.min((W - 190) / g.L, 170 / zMax);
+  const x0 = 100, top = 112, yb = top + zMax * s + 10, Hs = yb + 62;
+  const X = x => x0 + x * s, Y = z => yb - z * s;
+  const pTodas = st.sup.flatMap(sp => sp.bandas ? sp.bandas.map(b => b.p) : [sp.p]).filter(vtFin);
+  const pMax = Math.max(1, ...pTodas.map(Math.abs), st.minimo ? VT_PMIN : 0);
+  return ESQ.svg(m => {
+    let o = '';
+    // flecha normal a la superficie: + hacia la superficie, − alejándose (succión)
+    const fl = (px, py, nx, ny, p, lbl, extra = 0) => {
+      const len = 12 + 30 * Math.abs(p) / pMax, gap = 3;
+      let t = '';
+      if (p >= 0) t += ESQ.arrow(m, px + nx * (gap + len), py + ny * (gap + len), Math.atan2(-ny, -nx) * 180 / Math.PI, len, '', {});
+      else t += ESQ.arrow(m, px + nx * gap, py + ny * gap, Math.atan2(ny, nx) * 180 / Math.PI, len, '', {});
+      if (lbl) t += ESQ.note(px + nx * (gap + len + 12 + extra), py + ny * (gap + len + 12 + extra) + 3, lbl, { fontSize: 9, color: 'var(--ink)' });
+      return t;
+    };
+    // contorno
+    const pts = Array.from({ length: 41 }, (_, i) => { const x = g.L * i / 40; return `${X(x).toFixed(1)},${Y(g.prof(x)).toFixed(1)}`; });
+    o += `<polyline points="${X(0)},${yb} ${X(0)},${Y(g.zIzq)} ${pts.join(' ')} ${X(g.L)},${Y(g.zDer)} ${X(g.L)},${yb}" fill="var(--surface-alt)" fill-opacity="0.35" stroke="var(--ink)" stroke-width="2"/>`;
+    o += ESQ.line(X(-0.05 * g.L) - 20, yb, X(g.L) + 30, yb, { width: 1.5 });
+    if (g.alero) o += ESQ.line(X(0), Y(g.alero), X(g.L), Y(g.alero), { width: 1, dash: '4,3', color: 'var(--ink-muted)' });
+    o += ESQ.arrow(m, 8, 62, 0, 46, 'Viento', { fontSize: 11 });
+    o += ESQ.text(W / 2 + 20, 16, `${st.id} — ${st.dirTxt}`, { fontSize: 11.5, bold: true });
+    o += ESQ.text(W / 2 + 20, 31, (st.minimo ? st.casoTxt : `${st.casoTxt} · GCpi ${vtSig(st.GCpi, 2)}`) + ' · p en Pa', { fontSize: 9.5 });
+    if (st.minimo) {
+      for (let i = 0; i < 4; i++) { const z = zMax * (i + 0.5) / 4; o += fl(X(0), Y(z), -1, 0, VT_PMIN, i === 3 ? '+480 Pa' : ''); }
+    } else { let nt = 0; st.sup.forEach(sp => {
+      if (sp.tipo === 'muroB') { let yUlt = Infinity; sp.bandas.forEach((b, j) => { const zt = Math.min(b.z2, g.zIzq), zm = (b.z1 + zt) / 2; if (zt <= b.z1) return; const ok = j === sp.bandas.length - 1 || yUlt - Y(zm) >= 12; if (ok) yUlt = Y(zm); o += fl(X(0), Y(zm), -1, 0, b.p, ok ? vtSig(b.p, 0) : ''); }); }
+      else if (sp.tipo === 'muroS') [0.3, 0.7].forEach((f, i) => { o += fl(X(g.L), Y(g.zDer * f), 1, 0, sp.p, i ? vtSig(sp.p, 0) : ''); });
+      else if (sp.tipo === 'techo') {
+        const ancho = (sp.x2 - sp.x1) * s, xs = ancho > 50 ? [1 / 3, 2 / 3] : [0.5];
+        xs.forEach((f, i) => {
+          const x = sp.x1 + (sp.x2 - sp.x1) * f, dz = (g.prof(Math.min(g.L, x + 1e-3 * g.L)) - g.prof(Math.max(0, x - 1e-3 * g.L))) / (2e-3 * g.L);
+          const nn = Math.hypot(dz, 1);
+          o += fl(X(x), Y(g.prof(x)), -dz / nn, -1 / nn, sp.p, i === xs.length - 1 ? vtSig(sp.p, 0) : '', (nt % 2) * 12);
+        });
+        nt++;
+        if (sp.x1 > 0) o += ESQ.line(X(sp.x1), Y(g.prof(sp.x1)) - 4, X(sp.x1), Y(g.prof(sp.x1)) + 4, { width: 1.2, color: 'var(--ink-muted)' });
+      }
+    }); }
+    const lat = st.sup.find(sp => sp.tipo === 'muroL');
+    const pie = [];
+    if (lat) pie.push(`Muros laterales: ${vtSig(lat.p, 0)} Pa`);
+    if (vtFin(st.Fx)) pie.push(`Fx = ${vtKN(st.Fx)} kN`);
+    if (vtFin(st.Fz) && !st.minimo) pie.push(`Fz = ${vtKN(st.Fz)} kN (+ hacia abajo)`);
+    o += ESQ.dim(m, X(0), yb + 16, X(g.L), yb + 16, `L = ${vtTxt(g.L, 2)} m`, { labelOffset: -4, fontSize: 9.5 });
+    o += ESQ.note(W / 2 + 20, yb + 44, pie.join(' · '), { fontSize: 9.5, color: 'var(--ink)' });
+    return o;
+  }, { viewBox: `0 0 ${W + 40} ${Hs}`, maxWidth: 520, aria: `Esquema del estado de carga ${st.id}: presiones de viento por superficie` });
+}
+function vtSvgTorre(r) {
+  const H = r.H, maxW = Math.max(...r.tramos.map(t => t.W)), maxF = Math.max(...r.tramos.map(t => Math.max(t.Fn, t.Fd)));
+  const sH = 260 / H, sW = Math.min(50, 120 / maxW), cx = 170, yb = 300;
+  return ESQ.svg(m => {
+    let o = ESQ.line(cx - 30, yb, cx + 30, yb, { width: 3 });
+    r.tramos.forEach((t, i) => {
+      const y1 = yb - t.z1 * sH, y2 = yb - t.z2 * sH, w = Math.max(6, t.W * sW), ym = yb - t.zc * sH;
+      o += ESQ.rect(cx - w / 2, y2, w, y1 - y2, { stroke: 'var(--ink)', strokeWidth: 1.5 });
+      o += ESQ.line(cx - w / 2, y1, cx + w / 2, y2, { width: 0.8, color: 'var(--ink-muted)' }) + ESQ.line(cx + w / 2, y1, cx - w / 2, y2, { width: 0.8, color: 'var(--ink-muted)' });
+      o += ESQ.arrow(m, cx - w / 2 - 12 - 60 * t.Fn / maxF, ym, 0, 60 * t.Fn / maxF + 8, '', {});
+      o += ESQ.note(cx + w / 2 + 8, ym + 3, `F${i + 1}: Fn ${vtKN(t.Fn)} kN${r.hayCuadrada ? ' · Fd ' + vtKN(t.Fd) + ' kN' : ''}`, { anchor: 'start', fontSize: 9, color: 'var(--ink)' });
+    });
+    o += ESQ.dim(m, cx - 140, yb - H * sH, cx - 140, yb, `H = ${vtTxt(H, 2)} m`, { labelOffset: -6, fontSize: 9.5 });
+    o += ESQ.arrow(m, cx - 110, 22, 0, 40, 'Viento', { fontSize: 10 });
+    o += ESQ.note(cx + 60, yb + 26, r.dirs.map(d => `${d.k === 'N' ? 'Normal' : 'Diagonal'}: F = ${vtKN(d.F)} kN · M = ${vtKN(d.M)} kN·m`).join(' | '), { fontSize: 9.5, color: 'var(--ink)' });
+    return o;
+  }, { viewBox: '0 10 470 330', maxWidth: 480, aria: 'Elevación de la torre reticulada con la fuerza de viento por tramo' });
+}
+function vtEsquemasHtml(r) {
+  if (r.modulo === 'reticulado') return vtSvgTorre(r);
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">${r.estados.filter(e => e.Aproj !== null || !e.minimo).map(e => `<div>${vtSvgEstado(r, e)}</div>`).join('')}</div>`;
+}
+
+// ---------- Hoja impresa (Excel y PDF salen de aquí) ----------
+const VT_TITULO = { galpon: 'MÓDULO 1 — GALPÓN (TECHO A UNA O DOS AGUAS)', reticulado: 'MÓDULO 2 — TORRE RETICULADA', boveda: 'MÓDULO 3 — CUBIERTA ABOVEDADA' };
+function vientoDatosHtml(state) {
+  const row = (l, v) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${v}</td></tr>`;
+  const t = v => vtFin(v) ? String(v).replace('.', ',') : (v === null || v === undefined || v === '' ? '—' : esc(String(v)));
+  const ex = k => VT_EXPO[k] ? esc(VT_EXPO[k].txt) : '—';
+  const m = state.modulo, P = { galpon: 'g', reticulado: 'r', boveda: 'b' }[m];
+  const filas = [
+    row('V — velocidad básica de viento (m/s)', t(state[P + 'V'])), row('Categoría de exposición', ex(state[P + 'Categoria'])),
+    row('Categoría de ocupación', esc(state[P + 'Importancia'] || '—')), row('Kzt — factor topográfico', t(state[P + 'Kzt'])),
+    row('n1 — frecuencia fundamental (Hz)', t(state[P + 'N1'])),
+    row('Presiones usadas con las combinaciones de NCh3171', state[P + 'Comb'] ? 'Sí' : 'No')];
+  if (m === 'galpon') filas.push(row('Tipo de cerramiento', esc(state.gCerramiento)), row('Tipo de techo', esc(state.gTipoTecho)),
+    row('Lx — dimensión paralela a la cumbrera (m)', t(state.gLx)), row('Ly — dimensión normal a la cumbrera (m)', t(state.gLy)),
+    row('h_alero (m)' + (state.gTipoTecho === 'Una agua' ? ' — alero bajo' : ''), t(state.gHAlero)), row('h_cumbrera (m)' + (state.gTipoTecho === 'Una agua' ? ' — alero alto' : ''), t(state.gHCumbrera)));
+  if (m === 'boveda') filas.push(row('Tipo de cerramiento', esc(state.bCerramiento)), row('Apoyo de la cubierta', state.bApoyo === 'suelo' ? 'Nace del suelo' : 'Sobre estructura elevada'),
+    row('D — luz (m)', t(state.bD)), row('r — flecha (m)', t(state.bR)), row('h_arranque (m)', t(state.bHArranque)), row('Lb — largo según el eje (m)', t(state.bLb)));
+  let html = `<div class="xlsx-title-bar">${VT_TITULO[m]} — DATOS DE ENTRADA</div><div class="xlsx-section">A. Datos de viento y geometría</div><table class="xlsx-table"><tbody>${filas.join('')}</tbody></table>`;
+  if (m === 'reticulado') html += `<div class="xlsx-section">B. Tramos (de la base hacia la cúspide)</div><table class="xlsx-table"><tbody><tr class="xlsx-hdr-de"><td>Tramo</td><td>z1 (m)</td><td>z2 (m)</td><td>W (m)</td><td>ε</td><td>Sección</td><td>Miembros</td><td>Σ(Cf·A) accesorios (m²)</td></tr>${state.tramos.map((tr, i) => `<tr><td>${i + 1}</td><td class="xv-num">${t(tr.z1)}</td><td class="xv-num">${t(tr.z2)}</td><td class="xv-num">${t(tr.W)}</td><td class="xv-num">${t(tr.eps)}</td><td>${esc(tr.forma)}</td><td>${esc(VT_MIEMBROS[tr.miembros] || '—')}</td><td class="xv-num">${t(tr.CfAa)}</td></tr>`).join('')}</tbody></table>`;
   return html;
 }
-
-/* ====================== M1 GALPÓN ====================== */
-
-function vtTablaCpMurosGalpon(rr) {
-  return `<table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td>Dirección del viento</td><td class="xv-num">L/B</td><td class="xv-num">Cp barlovento</td><td class="xv-num">Cp sotavento</td><td class="xv-num">Cp lateral</td></tr>
-    <tr><td>Dirección 1 — normal a la cumbrera</td><td class="xv-num">${xlsxNum(rr.LBd1, 2)}</td><td class="xv-num">0,80</td><td class="xv-num">${xlsxNum(rr.CpSotD1, 2)}</td><td class="xv-num">-0,70</td></tr>
-    <tr><td>Dirección 2 — paralela a la cumbrera</td><td class="xv-num">${xlsxNum(rr.LBd2, 2)}</td><td class="xv-num">0,80</td><td class="xv-num">${xlsxNum(rr.CpSotD2, 2)}</td><td class="xv-num">-0,70</td></tr>
-  </tbody></table>`;
+function vientoCalcHtml(r, resumen) {
+  let html = `<div class="xlsx-title-bar">${VT_TITULO[r.modulo]} — CÁLCULO</div><div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">NCh432.Of2010, procedimiento analítico, sistema principal resistente a fuerzas de viento. Presiones en Pa (1 kgf/m² = 9,807 Pa); fuerzas en kN.</div>`;
+  vtBloques(r, 'xlsx-table').forEach((b, i) => { if (!resumen || b.resumen) html += `<div class="xlsx-section">${i + 1}. ${b.t}</div>${b.html}`; });
+  html += `<div class="xlsx-section">Notas</div><table class="xlsx-table"><tbody>${vtNotas(r).map(n => `<tr><td class="xv-label" colspan="5">${esc(n)}</td></tr>`).join('')}</tbody></table>`;
+  return html;
 }
-function vtTablaCpFranjasGalpon(rr) {
-  const h = rr.h;
-  const franjas = [
-    { n: 1, dist: `0 a ${xlsxNum(h / 2, 2)} m`, cp: -0.9 },
-    { n: 2, dist: `${xlsxNum(h / 2, 2)} a ${xlsxNum(h, 2)} m`, cp: -0.9 },
-    { n: 3, dist: `${xlsxNum(h, 2)} a ${xlsxNum(2 * h, 2)} m`, cp: -0.5 },
-    { n: 4, dist: `> ${xlsxNum(2 * h, 2)} m`, cp: -0.3 },
-  ];
-  return `<table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td>Franja</td><td>Distancia desde borde de barlovento</td><td class="xv-num">Cp</td><td class="xv-num">Cp alternativo</td></tr>
-    ${franjas.map(f => `<tr><td>Franja ${f.n}</td><td>${f.dist}</td><td class="xv-num">${xlsxNum(f.cp, 2)}</td><td class="xv-num">-0,18</td></tr>`).join('')}
-  </tbody></table>
-  <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">La columna "Cp alternativo" (-0,18 fijo en las 4 franjas, Tabla 7 de 'Tablas NCh432') no participa en el Resumen de presiones de diseño (Sección 6) — ninguna fila de Dirección 2 la utiliza, ver nota de fidelidad al inicio de este archivo.</div>`;
-}
-function vtTablaResumenGalpon(rr) {
-  const rows = rr.filas.map(f => `<tr>
-      <td>${f.nombre}${f.obs ? `<br><span style="font-size:.8em;color:#666">${f.obs}</span>` : ''}</td>
-      <td class="xv-num">${xlsxNum(f.q, 2)}</td>
-      <td class="xv-num">${xlsxNum(f.Cp, 2)}</td>
-      <td class="xv-num">${xlsxNum(f.pPos, 2)}</td>
-      <td class="xv-num">${xlsxNum(f.pNeg, 2)}</td>
-      <td class="xv-num"><b>${xlsxNum(f.pGob, 2)}</b></td>
-    </tr>`).join('');
-  return `<table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td>Superficie / caso</td><td class="xv-num">q usado<br>(kgf/m²)</td><td class="xv-num">Cp</td><td class="xv-num">p (+GCpi)<br>kgf/m²</td><td class="xv-num">p (−GCpi)<br>kgf/m²</td><td class="xv-num">p gobernante<br>kgf/m²</td></tr>
-    ${rows}
-  </tbody></table>
-  <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">Presión positiva = actuando hacia la superficie (presión); presión negativa = actuando desde la superficie (succión). Diseñar cada elemento para la condición más desfavorable entre p(+GCpi) y p(−GCpi). Verificar todos los coeficientes Cp contra las figuras oficiales de NCh432.Of2010 antes de usar estos resultados en un proyecto real.</div>`;
-}
-
-function vientoCalcSectionsGalpon(rr) {
-  return [
-    { num: '1', title: 'Coeficiente de exposición Kz y presión dinámica qz', rows: [
-      { t: 'var1', label: 'α (según categoría de exposición)', txt: xlsxNum(rr.alpha, 1) },
-      { t: 'var1', label: 'zg (m)', txt: xlsxNum(rr.zg, 2) },
-      { t: 'var1', label: 'zmin (m)', txt: xlsxNum(rr.zmin, 2) },
-      { t: 'var1', label: 'Kd (edificios, SPRFV)', txt: xlsxNum(rr.Kd, 2) },
-      { t: 'var1', label: 'I — factor de importancia', txt: xlsxNum(rr.I, 2) },
-      { t: 'var1', label: 'V — velocidad básica de viento', txt: xlsxNum(rr.V, 1) + ' m/s' },
-      { t: 'var1', label: 'Kzt — factor topográfico', txt: xlsxNum(rr.Kzt, 2) },
-      { t: 'var1', label: 'z, muro barlovento (= h_alero)', txt: xlsxNum(rr.hAlero, 2) + ' m' },
-      { t: 'var1', label: 'Kz, muro barlovento', txt: xlsxNum(rr.KzBarlovento, 3) },
-      { t: 'var1', label: 'z, cubierta (= h, altura media)', txt: xlsxNum(rr.h, 2) + ' m' },
-      { t: 'var1', label: 'Kz, cubierta (qh)', txt: xlsxNum(rr.KzCubierta, 3) },
-      { t: 'var1', label: 'qz — presión dinámica, muro barlovento', txt: xlsxNum(rr.qzBarloventoPa, 1) + ' Pa' },
-      { t: 'var1', label: 'qz — presión dinámica, muro barlovento', txt: xlsxNum(rr.qzBarlovento, 2) + ' kgf/m²' },
-      { t: 'var1', label: 'qh — presión dinámica a la altura media de cubierta', txt: xlsxNum(rr.qhPa, 1) + ' Pa' },
-      { t: 'var1', label: 'qh — presión dinámica a la altura media de cubierta', txt: xlsxNum(rr.qh, 2) + ' kgf/m²' },
-    ]},
-    { num: '2', title: 'Factor de ráfaga G y coeficiente de presión interna GCpi', rows: [
-      { t: 'var1', label: 'G — factor de ráfaga (estructura rígida)', txt: xlsxNum(rr.G, 2) },
-      { t: 'var1', label: 'GCpi (+i)', txt: xlsxNum(rr.GCpiPos, 2) },
-      { t: 'var1', label: 'GCpi (−i)', txt: xlsxNum(rr.GCpiNeg, 2) },
-    ]},
-    { num: '3', title: 'Coeficientes Cp — Muros', extraHtml: vtTablaCpMurosGalpon(rr) },
-    { num: '4', title: 'Coeficientes Cp — Techo, Dirección 1 (viento normal a la cumbrera / a la cubierta)', rows: [
-      { t: 'var1', label: 'h/L — con L = Ly (dimensión en dirección del viento)', txt: xlsxNum(rr.hL, 2) },
-      { t: 'var1', label: 'Cp barlovento interpolado en θ, columna h/L≤0.5', txt: xlsxNum(rr.CpB_le05, 2) },
-      { t: 'var1', label: 'Cp barlovento interpolado en θ, columna h/L≥1.0', txt: xlsxNum(rr.CpB_ge10, 2) },
-      { t: 'var1', label: 'Cp barlovento techo (interpolado en θ y h/L)', txt: xlsxNum(rr.CpBarloventoTecho, 2) },
-      { t: 'var1', label: 'Cp barlovento techo, caso alternativo (solo si θ≤10°)', txt: rr.CpAltDisponible ? xlsxNum(rr.CpAlt, 2) : 'No aplica (θ>10°)' },
-      { t: 'var1', label: 'Cp sotavento techo (interpolado en θ)', txt: xlsxNum(rr.CpSotaventoTecho, 2) },
-      { t: 'desc', text: 'Para techo a Una agua: si Sentido=Ascendente, toda la cubierta usa Cp barlovento; si Sentido=Descendente, toda la cubierta usa Cp sotavento (aproximación, ver Memoria de Cálculo §6 del xlsx).' },
-    ]},
-    { num: '5', title: 'Coeficientes Cp — Techo, Dirección 2 (viento paralelo a la cumbrera / a la cubierta)', extraHtml: vtTablaCpFranjasGalpon(rr) },
-    { num: '6', title: 'Resumen de presiones de diseño (p = q·G·Cp − qh·GCpi)', extraHtml: vtTablaResumenGalpon(rr), resumenInclude: true },
-  ];
-}
-
-function vientoCalcHtmlGalpon(rr, opts) {
-  const resumen = !!(opts && opts.resumen);
-  return vtBuildCalculoHtml('MÓDULO 1 — GALPÓN — CÁLCULO DE PRESIONES DE VIENTO (NCh432.Of2010, Método analítico)', vientoCalcSectionsGalpon(rr), {
-    resumen,
-    intro: 'Presiones de viento sobre muros y techo de un galpón con techumbre a una o dos aguas, en las 2 direcciones del viento (normal y paralela a la cumbrera). Método analítico (Método 2) de NCh432.Of2010.',
-  });
-}
-
-/* ====================== M2 RETICULADO ====================== */
-
-function vtTablaTramosReticulado(rr) {
-  const rows = rr.tramos.map((t, i) => `<tr>
-      <td style="text-align:center">${i + 1}</td>
-      <td class="xv-num">${xlsxNum(t.zProm, 2)}</td>
-      <td class="xv-num">${xlsxNum(t.Kz, 3)}</td>
-      <td class="xv-num">${xlsxNum(t.qz, 2)}</td>
-      <td class="xv-num">${xlsxNum(t.eps, 2)}</td>
-      <td class="xv-num">${xlsxNum(t.cf, 2)}</td>
-      <td class="xv-num">${xlsxNum(t.Af, 2)}</td>
-      <td class="xv-num">${xlsxNum(t.F, 2)}</td>
-      <td class="xv-num">${xlsxNum(t.M, 2)}</td>
-      <td>${t.forma}</td>
-    </tr>`).join('');
-  return `<div style="overflow-x:auto"><table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td>Tramo</td><td class="xv-num">z prom.<br>(m)</td><td class="xv-num">Kz</td><td class="xv-num">qz<br>(kgf/m²)</td><td class="xv-num">ε</td><td class="xv-num">Cf</td><td class="xv-num">Af = ε·W·Δz<br>(m²)</td><td class="xv-num">F = qz·G·Cf·Af<br>(kgf)</td><td class="xv-num">M = F·z<br>(kgf·m)</td><td>Forma</td></tr>
-    ${rows}
-    <tr><td><b>TOTAL</b></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="xv-num"><b>${xlsxNum(rr.totalF, 2)}</b></td><td class="xv-num"><b>${xlsxNum(rr.totalM, 2)}</b></td><td></td></tr>
-  </tbody></table></div>
-  <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">F = fuerza de viento total sobre el tramo (SPRFV); M = momento respecto de la base de la torre (z=0), útil para el diseño de la fundación. Fórmulas de Cf válidas orientativamente para 0.1 ≤ ε ≤ 0.5 (Tabla 8, hoja «Tablas NCh432»); verificar contra la norma oficial para razones de solidez fuera de este rango. Verificar el valor de Kd contra el texto oficial de NCh432.Of2010 antes de un uso definitivo.</div>`;
-}
-function vtTablaTotalesReticulado(rr) {
-  return `<table class="xlsx-table"><tbody>
-    <tr><td class="xv-label"><b>FUERZA TOTAL</b> (SPRFV, suma de los ${rr.tramos.length} tramos)</td><td class="xv-num"><b>${xlsxNum(rr.totalF, 2)}</b> kgf</td></tr>
-    <tr><td class="xv-label"><b>MOMENTO EN LA BASE</b> (respecto de z=0)</td><td class="xv-num"><b>${xlsxNum(rr.totalM, 2)}</b> kgf·m</td></tr>
-  </tbody></table>`;
-}
-
-function vientoCalcSectionsReticulado(rr) {
-  return [
-    { num: '1', title: 'Parámetros generales', rows: [
-      { t: 'var1', label: 'α (según categoría de exposición)', txt: xlsxNum(rr.alpha, 1) },
-      { t: 'var1', label: 'zg (m)', txt: xlsxNum(rr.zg, 2) },
-      { t: 'var1', label: 'zmin (m)', txt: xlsxNum(rr.zmin, 2) },
-      { t: 'var1', label: 'Kd (torres reticuladas, sección triangular/cuadrada/rectangular)', txt: xlsxNum(rr.Kd, 2) },
-      { t: 'var1', label: 'I — factor de importancia', txt: xlsxNum(rr.I, 2) },
-      { t: 'var1', label: 'V — velocidad básica de viento', txt: xlsxNum(rr.V, 1) + ' m/s' },
-      { t: 'var1', label: 'Kzt — factor topográfico', txt: xlsxNum(rr.Kzt, 2) },
-      { t: 'var1', label: 'G — factor de ráfaga (estructura rígida)', txt: xlsxNum(rr.G, 2) },
-    ]},
-    { num: '2', title: 'Cálculo por tramo y totales', extraHtml: vtTablaTramosReticulado(rr) },
-    { num: 'TOTAL', title: 'Fuerza total y momento en la base (resultado final)', extraHtml: vtTablaTotalesReticulado(rr), resumenInclude: true },
-  ];
-}
-
-function vientoCalcHtmlReticulado(rr, opts) {
-  const resumen = !!(opts && opts.resumen);
-  return vtBuildCalculoHtml('MÓDULO 2 — TORRE RETICULADA — CÁLCULO DE FUERZAS DE VIENTO (NCh432.Of2010, Método analítico)', vientoCalcSectionsReticulado(rr), {
-    resumen,
-    intro: 'Fuerza de viento total y momento en la base de una torre o estructura reticulada (celosía), calculados tramo por tramo desde la base hacia la cúspide. Coeficiente de fuerza Cf según razón de solidez ε y forma en planta de cada tramo. Método analítico (Método 2) de NCh432.Of2010.',
-  });
-}
-
-/* ====================== M3 BÓVEDA ====================== */
-
-function vtTablaCpZonaBoveda(rr) {
-  return `<table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td>Zona</td><td>Descripción</td><td class="xv-num">Cp</td></tr>
-    <tr><td>Zona A</td><td>Borde de barlovento (1/4 de la luz)</td><td class="xv-num">${xlsxNum(rr.CpA, 2)}</td></tr>
-    <tr><td>Zona B</td><td>Tramo central (1/2 de la luz)</td><td class="xv-num">${xlsxNum(rr.CpB, 2)}</td></tr>
-    <tr><td>Zona C</td><td>Borde de sotavento (1/4 de la luz)</td><td class="xv-num">${xlsxNum(rr.CpC, 2)}</td></tr>
-  </tbody></table>`;
-}
-function vtTablaResumenBoveda(rr) {
-  const zonas = [
-    { nombre: 'Zona A — borde barlovento', z: rr.zonaA, cp: rr.CpA, obs: '1/4 de la luz, lado de barlovento' },
-    { nombre: 'Zona B — tramo central', z: rr.zonaB, cp: rr.CpB, obs: '1/2 central de la luz' },
-    { nombre: 'Zona C — borde sotavento', z: rr.zonaC, cp: rr.CpC, obs: '1/4 de la luz, lado de sotavento' },
-  ];
-  const rows = zonas.map(x => `<tr>
-      <td>${x.nombre}<br><span style="font-size:.8em;color:#666">${x.obs}</span></td>
-      <td class="xv-num">${xlsxNum(rr.qh, 2)}</td>
-      <td class="xv-num">${xlsxNum(x.cp, 2)}</td>
-      <td class="xv-num">${xlsxNum(x.z.pPos, 2)}</td>
-      <td class="xv-num">${xlsxNum(x.z.pNeg, 2)}</td>
-      <td class="xv-num"><b>${xlsxNum(x.z.pGob, 2)}</b></td>
-    </tr>`).join('');
-  return `<table class="xlsx-table"><tbody>
-    <tr class="xlsx-hdr-de"><td>Zona</td><td class="xv-num">q usado<br>(kgf/m²)</td><td class="xv-num">Cp</td><td class="xv-num">p (+GCpi)<br>kgf/m²</td><td class="xv-num">p (−GCpi)<br>kgf/m²</td><td class="xv-num">p gobernante<br>kgf/m²</td></tr>
-    ${rows}
-  </tbody></table>
-  <div class="xlsx-desc-row" style="padding:.2rem .3rem .6rem">Verificar las fórmulas de Cp (Tabla 9) y el valor de Kd contra el anexo oficial de NCh432.Of2010 aplicable a cubiertas abovedadas antes de un uso definitivo.</div>`;
-}
-
-function vientoCalcSectionsBoveda(rr) {
-  return [
-    { num: '1', title: 'Coeficiente de exposición Kz y presión dinámica qh', rows: [
-      { t: 'var1', label: 'α (según categoría de exposición)', txt: xlsxNum(rr.alpha, 1) },
-      { t: 'var1', label: 'zg (m)', txt: xlsxNum(rr.zg, 2) },
-      { t: 'var1', label: 'zmin (m)', txt: xlsxNum(rr.zmin, 2) },
-      { t: 'var1', label: 'Kd (cubiertas abovedadas)', txt: xlsxNum(rr.Kd, 2) },
-      { t: 'var1', label: 'I — factor de importancia', txt: xlsxNum(rr.I, 2) },
-      { t: 'var1', label: 'V — velocidad básica de viento', txt: xlsxNum(rr.V, 1) + ' m/s' },
-      { t: 'var1', label: 'Kzt — factor topográfico', txt: xlsxNum(rr.Kzt, 2) },
-      { t: 'var1', label: 'z — altura total a la cumbrera (h)', txt: xlsxNum(rr.hTotal, 2) + ' m' },
-      { t: 'var1', label: 'Kz', txt: xlsxNum(rr.Kz, 3) },
-      { t: 'var1', label: 'qh — presión dinámica', txt: xlsxNum(rr.qhPa, 1) + ' Pa' },
-      { t: 'var1', label: 'qh — presión dinámica', txt: xlsxNum(rr.qh, 2) + ' kgf/m²' },
-    ]},
-    { num: '2', title: 'Factor de ráfaga G y coeficiente de presión interna GCpi', rows: [
-      { t: 'var1', label: 'G — factor de ráfaga (estructura rígida)', txt: xlsxNum(rr.G, 2) },
-      { t: 'var1', label: 'GCpi (+i)', txt: xlsxNum(rr.GCpiPos, 2) },
-      { t: 'var1', label: 'GCpi (−i)', txt: xlsxNum(rr.GCpiNeg, 2) },
-    ]},
-    { num: '3', title: 'Coeficientes Cp por zona (según r/D)', rows: [
-      { t: 'var1', label: 'r/D', txt: xlsxNum(rr.rD, 3) },
-    ], extraHtml: vtTablaCpZonaBoveda(rr) },
-    { num: '4', title: 'Resumen de presiones de diseño por zona (p = qh·G·Cp − qh·GCpi)', extraHtml: vtTablaResumenBoveda(rr), resumenInclude: true },
-  ];
-}
-
-function vientoCalcHtmlBoveda(rr, opts) {
-  const resumen = !!(opts && opts.resumen);
-  return vtBuildCalculoHtml('MÓDULO 3 — CUBIERTA ABOVEDADA — CÁLCULO DE PRESIONES DE VIENTO (NCh432.Of2010, Método analítico)', vientoCalcSectionsBoveda(rr), {
-    resumen,
-    intro: 'Presiones de viento sobre una cubierta abovedada (arco/bóveda), por zona (A: borde barlovento, B: tramo central, C: borde sotavento) según la razón flecha/luz r/D. Método analítico (Método 2) de NCh432.Of2010.',
-  });
-}
-
-/* ---------------------------------------------------------------------------
-   DISPATCHER -- imprime SOLO el módulo actualmente seleccionado
-   (state.modulo ∈ {'galpon','reticulado','boveda'}), igual criterio que
-   losaCalcHtmlUniforme/losaCalcHtmlPuntual de losa-medio-elastico.js.
-   `results` = { galpon: rGalpon|null, reticulado: rReticulado|null,
-   boveda: rBoveda|null } -- los 3 últimos resultados cacheados de
-   calcGalponViento/calcReticuladoViento/calcBovedaViento (las 3 funciones
-   recalcX() corren SIEMPRE, ver nota "ESTRUCTURA REAL DE LOS 3 MODULOS" al
-   inicio de este archivo). `opts` = { resumen }.
-   --------------------------------------------------------------------------- */
-function vientoCalcHtml(state, results, opts) {
-  const resumen = !!(opts && opts.resumen);
-  if (state.modulo === 'galpon') {
-    if (!results || !results.galpon) return '';
-    return vientoCalcHtmlGalpon(vtExtendGalpon(state, results.galpon), { resumen });
+function buildPrintSheetsViento(state, r) {
+  if (!r) return;
+  const lista = r.errores || r.pendientes || [];
+  if (lista.length) {
+    const motivo = (r.errores ? 'datos inválidos o fuera de alcance — ' : 'condiciones sin acreditar — ') + lista.join(' ');
+    const err = `<div class="xlsx-title-bar" data-calc-bloqueo="${esc(motivo)}">CÁLCULO</div><div class="xlsx-section">${r.errores ? 'DATOS INVÁLIDOS O FUERA DE ALCANCE — NO SE CALCULA' : 'CONDICIONES SIN ACREDITAR — NO SE EMITE'}</div><table class="xlsx-table"><tbody>${lista.map(e => `<tr class="xlsx-desc-row"><td colspan="5">${esc(e)}</td></tr>`).join('')}</tbody></table>`;
+    xlsxSetPrintSheets('', err, err);
+    return;
   }
-  if (state.modulo === 'reticulado') {
-    if (!results || !results.reticulado) return '';
-    return vientoCalcHtmlReticulado(vtExtendReticulado(state, results.reticulado), { resumen });
-  }
-  if (!results || !results.boveda) return '';
-  return vientoCalcHtmlBoveda(vtExtendBoveda(state, results.boveda), { resumen });
-}
-
-// state: shape de renderViento (state.modulo + campos g*/r*/tramos/b*, ver mesa_calculo_26.html
-// líneas 14843-14861). rGalpon/rReticulado/rBoveda: ÚLTIMOS resultados cacheados de
-// calcGalponViento/calcReticuladoViento/calcBovedaViento (las 3 funciones recalcX() corren SIEMPRE,
-// ver nota "ESTRUCTURA REAL DE LOS 3 MODULOS" al inicio de este archivo) -- se cachean en variables
-// de clausura de renderViento y se pasan aquí. Solo se imprime el módulo ACTUALMENTE seleccionado
-// (state.modulo), igual criterio que buildPrintSheetsLosaMedioElastico de losa-medio-elastico.js.
-function buildPrintSheetsViento(state, rGalpon, rReticulado, rBoveda) {
-  const activo = state.modulo === 'galpon' ? rGalpon : (state.modulo === 'reticulado' ? rReticulado : rBoveda);
-  if (!activo) return;
-  const results = { galpon: rGalpon, reticulado: rReticulado, boveda: rBoveda };
-  const datosHtml = vientoDatosHtml(state);
-  const calcCompleto = vientoCalcHtml(state, results, { resumen: false });
-  const calcResumen = vientoCalcHtml(state, results, { resumen: true });
-  xlsxSetPrintSheets(datosHtml, calcCompleto, calcResumen);
-}
-
-function svgReticuladoViento(state, r) {
-  const tramos = r.tramos.map((t,i) => ({...t, z1:state.tramos[i].z1, z2:state.tramos[i].z2, W:state.tramos[i].W}));
-  const Htotal = tramos.length ? tramos[tramos.length-1].z2 : 0.01;
-  const maxW = Math.max(0.01, ...tramos.map(t => t.W||0));
-  const maxF = Math.max(0.01, ...tramos.map(t => Math.abs(t.F||0)));
-  const scaleH = Math.min(40, 260/Math.max(Htotal,0.01));
-  const scaleW = Math.min(60, 140/maxW);
-  const cx = 190, yBase = 300;
-  const arrLenMax = 70;
-  return ESQ.svg(m => `
-    <line x1="${cx-16}" y1="${yBase}" x2="${cx+16}" y2="${yBase}" stroke="var(--ink)" stroke-width="3"/>
-    ${tramos.map((t,i) => {
-      const y1 = yBase - (t.z1||0)*scaleH, y2 = yBase - (t.z2||0)*scaleH;
-      const wpx = Math.max(6, (t.W||0)*scaleW);
-      const len = Math.max(10, arrLenMax*Math.abs(t.F||0)/maxF);
-      const ymid = (y1+y2)/2;
-      return `
-        <rect x="${cx-wpx/2}" y="${y2}" width="${wpx}" height="${y1-y2}" fill="var(--surface-alt)" fill-opacity="0.35" stroke="var(--ink)" stroke-width="1.6"/>
-        ${ESQ.arrow(m, cx+wpx/2, ymid, 0, len, `F${i+1}=${fmt1(t.F)} kgf`, {labelDx:6, labelDy:-4, fontSize:9.5})}
-        ${ESQ.note(cx-wpx/2-8, ymid, `z${i+1}=${fmt1(t.z1)}-${fmt1(t.z2)}m · W=${fmt2(t.W)}m`, {anchor:'end', fontSize:8.5, color:'var(--ink-muted)'})}
-      `;
-    }).join('')}
-    ${ESQ.dim(m, cx-100, yBase-Htotal*scaleH, cx-100, yBase, `H=${fmt2(Htotal)} m`, {labelOffset:-6})}
-    ${ESQ.note(cx, yBase+30, `F total=${fmt1(r.totalF)} kgf · M base=${fmt1(r.totalM)} kgf·m`, {fontSize:10, color:'var(--good)'})}
-  `, {viewBox:'0 20 400 360', maxWidth:400, aria:'Elevación esquemática de la torre reticulada por tramos, con su fuerza de viento y momento en la base'});
-}
-
-function svgBovedaViento(state, r) {
-  const D = state.bD||0.01, rise = state.bR||0.01, hArr = state.bHArranque||0;
-  const scale = Math.min(16, 320/D, 200/(rise+hArr+1));
-  const cx = 200, yBase = 280;
-  const rx = D/2*scale, ry = rise*scale, hArrPx = hArr*scale;
-  const yArranque = yBase - hArrPx;
-  const xL = cx-rx, xR = cx+rx;
-  const q1 = cx-rx/2, q3 = cx+rx/2;
-  return ESQ.svg(m => `
-    <line x1="${xL}" y1="${yBase}" x2="${xL}" y2="${yArranque}" stroke="var(--ink)" stroke-width="3"/>
-    <line x1="${xR}" y1="${yBase}" x2="${xR}" y2="${yArranque}" stroke="var(--ink)" stroke-width="3"/>
-    <path d="M ${xL} ${yArranque} A ${rx} ${ry} 0 0 1 ${xR} ${yArranque}" fill="var(--surface-alt)" fill-opacity="0.4" stroke="var(--ink)" stroke-width="2.4"/>
-    <line x1="${q1}" y1="${yArranque}" x2="${q1}" y2="${yArranque-ry*Math.sqrt(1-0.25)}" stroke="var(--ink-muted)" stroke-width="1" stroke-dasharray="3,3"/>
-    <line x1="${q3}" y1="${yArranque}" x2="${q3}" y2="${yArranque-ry*Math.sqrt(1-0.25)}" stroke="var(--ink-muted)" stroke-width="1" stroke-dasharray="3,3"/>
-    ${ESQ.arrow(m, xL-40, yArranque-ry*0.6, 0, 34, 'Viento', {fontSize:10})}
-    ${ESQ.note((xL+q1)/2, yArranque+18, `Zona A: p=${fmt1(r.zonaA.pGob)} kgf/m²`, {fontSize:9})}
-    ${ESQ.note(cx, yArranque+18, `Zona B: p=${fmt1(r.zonaB.pGob)} kgf/m²`, {fontSize:9})}
-    ${ESQ.note((q3+xR)/2, yArranque+18, `Zona C: p=${fmt1(r.zonaC.pGob)} kgf/m²`, {fontSize:9})}
-    ${ESQ.dim(m, xL, yBase+22, xR, yBase+22, `D=${fmt2(D)} m`, {labelOffset:-6})}
-    ${ESQ.dim(m, xR+26, yArranque, xR+26, yArranque-ry, `r=${fmt2(rise)} m`, {labelOffset:-6})}
-    ${ESQ.dim(m, xL-26, yBase, xL-26, yArranque, `h_arranque=${fmt2(hArr)} m`, {labelOffset:-6})}
-  `, {viewBox:'0 20 440 320', maxWidth:420, aria:'Sección de la cubierta abovedada con las zonas de presión de viento A, B y C'});
+  xlsxSetPrintSheets(vientoDatosHtml(state), vientoCalcHtml(r, false), vientoCalcHtml(r, true));
 }
 
 function renderViento(container) {
+  // Casos de prueba: entradas originales de la versión del 23-10-2026. La bóveda usaba la exposición A, que no
+  // existe en NCh432.Of2010: queda sin seleccionar y se informa. n1 y la condición de NCh3171 quedan sin acreditar.
   const state = {
     modulo: 'galpon',
-    // --- M1 Galpón ---
-    gV: 45, gCategoria: 'B (Áreas urbanas)', gImportancia: 'II (No incluidas I,III,IV)', gKzt: 1,
-    gCerramiento: 'Cerrado', gTipoTecho: 'Dos aguas', gSentido: 'Ascendente',
-    gLx: 35, gLy: 25, gHAlero: 3.9, gHCumbrera: 5.25,
-    // --- M2 Reticulado ---
-    rV: 35, rCategoria: 'B (Áreas urbanas)', rImportancia: 'II (No incluidas I,III,IV)', rKzt: 1,
+    gV: 45, gCategoria: 'B', gImportancia: 'II (No incluidas I,III,IV)', gKzt: 1, gN1: null, gComb: false,
+    gCerramiento: 'Cerrado', gTipoTecho: 'Dos aguas', gLx: 35, gLy: 25, gHAlero: 3.9, gHCumbrera: 5.25,
+    rV: 35, rCategoria: 'B', rImportancia: 'II (No incluidas I,III,IV)', rKzt: 1, rN1: null, rComb: false,
     tramos: [
-      {z1:0, z2:6, W:3, eps:0.25, forma:'Cuadrada'},
-      {z1:6, z2:12, W:2.4, eps:0.22, forma:'Cuadrada'},
-      {z1:12, z2:18, W:1.8, eps:0.2, forma:'Cuadrada'},
-      {z1:18, z2:24, W:1.2, eps:0.18, forma:'Cuadrada'},
-      {z1:24, z2:30, W:0.8, eps:0.16, forma:'Cuadrada'}
+      { z1: 0, z2: 6, W: 3, eps: 0.25, forma: 'Cuadrada', miembros: 'planos', CfAa: 0 },
+      { z1: 6, z2: 12, W: 2.4, eps: 0.22, forma: 'Cuadrada', miembros: 'planos', CfAa: 0 },
+      { z1: 12, z2: 18, W: 1.8, eps: 0.2, forma: 'Cuadrada', miembros: 'planos', CfAa: 0 },
+      { z1: 18, z2: 24, W: 1.2, eps: 0.18, forma: 'Cuadrada', miembros: 'planos', CfAa: 0 },
+      { z1: 24, z2: 30, W: 0.8, eps: 0.16, forma: 'Cuadrada', miembros: 'planos', CfAa: 0 }
     ],
-    // --- M3 Bóveda ---
-    bV: 35, bCategoria: 'A (Grandes ciudades)', bImportancia: 'II (No incluidas I,III,IV)', bKzt: 1,
-    bCerramiento: 'Cerrado', bD: 20, bR: 4, bHArranque: 5
+    bV: 35, bCategoria: '', bImportancia: 'II (No incluidas I,III,IV)', bKzt: 1, bN1: null, bComb: false,
+    bCerramiento: 'Cerrado', bApoyo: 'elevada', bD: 20, bR: 4, bHArranque: 5, bLb: null
   };
-
-  let rGalponCache = null, rReticuladoCache = null, rBovedaCache = null;
-
-  const optCategoria = Object.keys(TABLA1_EXPO_VIENTO).map(c => `<option value="${c}">${c}</option>`).join('');
-  const optImportancia = Object.keys(TABLA2_IMPORTANCIA_VIENTO).map(c => `<option value="${c}">${c}</option>`).join('');
-  const optCerramiento = Object.keys(TABLA4_GCPI_VIENTO).map(c => `<option value="${c}">${c}</option>`).join('');
+  const res = { galpon: null, reticulado: null, boveda: null };
+  const sel = '<option value="">— seleccione —</option>';
+  const optExpo = sel + Object.keys(VT_EXPO).map(k => `<option value="${k}">${esc(VT_EXPO[k].txt)}</option>`).join('');
+  const optImp = sel + Object.keys(TABLA2_IMPORTANCIA_VIENTO).map(c => `<option value="${c}">${c} — I = ${vtTxt(TABLA2_IMPORTANCIA_VIENTO[c], 2)}</option>`).join('');
+  const optCerr = sel + Object.keys(VT_GCPI).map(c => `<option value="${c}">${c}${VT_GCPI[c] === null ? ' (techos libres: fuera de alcance)' : ' — GCpi = ±' + vtTxt(VT_GCPI[c], 2)}</option>`).join('');
+  const valIn = v => vtFin(v) ? v : '';
+  const comunes = p => `
+          <div class="field"><label>V — velocidad básica de viento (m/s)</label><input type="text" inputmode="decimal" id="${p}_V" value="${valIn(state[p === 'g' ? 'gV' : p + 'V'])}"></div>
+          <div class="field"><label>Categoría de exposición</label><select id="${p}_categoria">${optExpo}</select></div>
+          <div class="field"><label>Categoría de ocupación (importancia)</label><select id="${p}_importancia">${optImp}</select></div>
+          <div class="field"><label>Kzt — factor topográfico</label><input type="text" inputmode="decimal" id="${p}_Kzt" value="${valIn(state[p + 'Kzt'])}"></div>
+          <div class="field"><label>n1 — frecuencia fundamental (Hz)</label><input type="text" inputmode="decimal" id="${p}_n1" value="" placeholder="sin acreditar"></div>`;
+  const comb = p => `<label style="display:flex;gap:.5rem;align-items:flex-start;margin:.6rem 0"><input type="checkbox" id="${p}_comb"><span>Las presiones se usarán en las combinaciones de carga de NCh3171 (condición para aplicar Kd = 0,85).</span></label>`;
+  const panelesRes = p => `
+      <div id="${p}_errores"></div>
+      <div class="panel"><h3>3 · PARÁMETROS Y COEFICIENTES</h3><div id="${p}_param"></div></div>
+      <div class="panel"><h3>4 · PRESIONES Y FUERZAS POR ESTADO DE CARGA</h3><div id="${p}_estados"></div></div>
+      <div class="panel"><h3>5 · ESQUEMAS DE LOS ESTADOS DE CARGA</h3><div id="${p}_figuras"></div></div>
+      <div class="panel"><h3>6 · NOTAS</h3><div id="${p}_notas"></div></div>`;
 
   container.innerHTML = `
     <div class="calc-head">
       <h1>Cargas de Viento</h1>
-      <div class="sub">Presiones y fuerzas de viento por método analítico: galpones, reticulados y bóvedas.</div>
+      <div class="sub">Presiones y fuerzas de viento NCh432.Of2010 (procedimiento analítico, SPRFV): galpones, torres reticuladas y bóvedas.</div>
     </div>
     <div class="panel">
       <h3>ESTADO DE DISEÑO</h3>
@@ -19885,354 +19467,193 @@ function renderViento(container) {
         <div class="field"><label>Tipología estructural</label>
           <select id="vt_modulo">
             <option value="galpon">M1 — Galpón (techo a una o dos aguas)</option>
-            <option value="reticulado">M2 — Torre / estructura reticulada</option>
+            <option value="reticulado">M2 — Torre reticulada</option>
             <option value="boveda">M3 — Cubierta abovedada</option>
           </select>
         </div>
       </div>
-      <p class="note">Método analítico (Método 2) de NCh432.Of2010, para estructuras rígidas (G=0.85, frecuencia propia n1≥1 Hz). No incluye método simplificado ni procedimiento dinámico. IMPORTANTE: los coeficientes de forma (Cp, Cf) y las velocidades básicas de viento deben verificarse contra las tablas y figuras oficiales de NCh432.Of2010 antes de un proyecto real — esta planilla reconstruye las tablas clásicas del procedimiento analítico (base ASCE 7) adoptado por la norma. Kzt=1 por defecto (terreno sin efectos topográficos); no incluye componentes y revestimientos (solo SPRFV).</p>
+      <p class="note">Ingrese n1 solo si está acreditado (cálculo o medición); con n1 vacío o sin confirmar el uso de NCh3171 el cálculo se muestra como preliminar y no se permite imprimir ni exportar. Estructuras flexibles (n1 &lt; 1 Hz) y techos libres (cerramiento abierto) quedan fuera de alcance.</p>
     </div>
 
     <div id="vt_galpon">
       <div class="panel">
         <h3>1 · DATOS GENERALES DE VIENTO</h3>
-        <div class="field-grid">
-          <div class="field"><label>V — velocidad básica de viento (m/s)</label><input type="text" inputmode="decimal" id="g_V" value="${state.gV}" list="dl_g_V"><datalist id="dl_g_V"><option value="35">35 m/s — zona interior protegida</option><option value="40">40 m/s — valor típico zona central</option><option value="45">45 m/s — habitual industrial (default)</option><option value="50">50 m/s — zona expuesta</option><option value="60">60 m/s — costa/zona sur ventosa</option></datalist></div>
-          <div class="field"><label>Categoría de exposición</label><select id="g_categoria">${optCategoria}</select></div>
-          <div class="field"><label>Categoría de ocupación (importancia)</label><select id="g_importancia">${optImportancia}</select></div>
-          <div class="field"><label>Kzt — factor topográfico</label><input type="text" inputmode="decimal" step="0.01" id="g_Kzt" value="${state.gKzt}" list="dl_g_Kzt"><datalist id="dl_g_Kzt"><option value="1">1.0 — terreno plano, sin efectos topográficos</option><option value="1.15">1.15 — loma/colina suave</option><option value="1.3">1.3 — cresta o escarpe moderado</option><option value="1.43">1.43 — efecto topográfico fuerte</option></datalist></div>
-          <div class="field"><label>Tipo de cerramiento</label><select id="g_cerramiento">${optCerramiento}</select></div>
+        <div class="field-grid">${comunes('g')}
+          <div class="field"><label>Tipo de cerramiento</label><select id="g_cerramiento">${optCerr}</select></div>
           <div class="field"><label>Tipo de techo</label><select id="g_tipoTecho"><option value="Dos aguas">Dos aguas</option><option value="Una agua">Una agua</option></select></div>
-          <div class="field"><label>Techo 1 agua — sentido del viento (Dirección Y)</label><select id="g_sentido"><option value="Ascendente">Ascendente</option><option value="Descendente">Descendente</option></select></div>
-        </div>
+        </div>${comb('g')}
       </div>
-
       <div class="panel">
         <h3>2 · GEOMETRÍA DEL GALPÓN (m)</h3>
         <div class="field-grid">
-          <div class="field"><label>Lx — dimensión en planta paralela a la cumbrera (m)</label><input type="text" inputmode="decimal" step="0.1" id="g_Lx" value="${state.gLx}" list="dl_g_Lx"><datalist id="dl_g_Lx"><option value="20">20 m — nave pequeña</option><option value="30">30 m — nave industrial típica</option><option value="40">40 m — galpón mediano</option><option value="50">50 m — galpón grande</option><option value="60">60 m — nave de gran longitud</option></datalist></div>
-          <div class="field"><label>Ly — dimensión en planta normal a la cumbrera (m)</label><input type="text" inputmode="decimal" step="0.1" id="g_Ly" value="${state.gLy}" list="dl_g_Ly"><datalist id="dl_g_Ly"><option value="15">15 m — luz menor</option><option value="20">20 m — luz típica</option><option value="25">25 m — luz habitual galpón (default)</option><option value="30">30 m — luz amplia</option><option value="40">40 m — luz de gran envergadura</option></datalist></div>
-          <div class="field"><label>h_alero — altura de alero (m)</label><input type="text" inputmode="decimal" step="0.1" id="g_hAlero" value="${state.gHAlero}" list="dl_g_hAlero"><datalist id="dl_g_hAlero"><option value="3">3 m — nave baja</option><option value="4.5">4.5 m — altura típica bodega</option><option value="6">6 m — nave con puente grúa liviano</option><option value="8">8 m — nave industrial alta</option><option value="10">10 m — nave de gran altura</option></datalist></div>
-          <div class="field"><label>h_cumbrera — altura de cumbrera (m)</label><input type="text" inputmode="decimal" step="0.1" id="g_hCumbrera" value="${state.gHCumbrera}" list="dl_g_hCumbrera"><datalist id="dl_g_hCumbrera"><option value="4">4 m — cumbrera baja</option><option value="5.5">5.5 m — cumbrera típica</option><option value="7">7 m — pendiente moderada</option><option value="9">9 m — nave alta</option><option value="12">12 m — cumbrera de gran altura</option></datalist></div>
+          <div class="field"><label>Lx — dimensión en planta paralela a la cumbrera (m)</label><input type="text" inputmode="decimal" id="g_Lx" value="${state.gLx}"></div>
+          <div class="field"><label>Ly — dimensión en planta normal a la cumbrera (m)</label><input type="text" inputmode="decimal" id="g_Ly" value="${state.gLy}"></div>
+          <div class="field"><label>h_alero — altura de alero (techo a una agua: alero bajo) (m)</label><input type="text" inputmode="decimal" id="g_hAlero" value="${state.gHAlero}"></div>
+          <div class="field"><label>h_cumbrera — altura de cumbrera (techo a una agua: alero alto) (m)</label><input type="text" inputmode="decimal" id="g_hCumbrera" value="${state.gHCumbrera}"></div>
         </div>
-        <div id="g_geomDerivada" style="margin-top:.6rem"></div>
-      </div>
-
-      <div class="panel">
-        <h3>3 · COEFICIENTE DE EXPOSICIÓN Y PRESIÓN DINÁMICA</h3>
-        <div id="g_presiones"></div>
-      </div>
-
-      <div class="panel">
-        <h3>4 · RESUMEN DE PRESIONES DE DISEÑO (p = q·G·Cp − qh·GCpi)</h3>
-        <p class="note">Presión positiva = actuando hacia la superficie; presión negativa = actuando desde la superficie (succión). Diseñar cada elemento para la condición más desfavorable entre p(+GCpi) y p(−GCpi).</p>
-        <div id="g_resumen"></div>
-      </div>
-
-      <div class="panel">
-        <h3>5 · DIAGRAMA DE PRESIONES EXTERNAS</h3>
-        <div id="g_diagrama"></div>
-      </div>
+      </div>${panelesRes('g')}
     </div>
 
     <div id="vt_reticulado" style="display:none">
       <div class="panel">
         <h3>1 · DATOS GENERALES DE VIENTO</h3>
-        <div class="field-grid">
-          <div class="field"><label>V — velocidad básica de viento (m/s)</label><input type="text" inputmode="decimal" id="r_V" value="${state.rV}" list="dl_r_V"><datalist id="dl_r_V"><option value="35">35 m/s — zona protegida</option><option value="40">40 m/s — típico torre liviana</option><option value="45">45 m/s — habitual (default)</option><option value="50">50 m/s — zona expuesta</option><option value="60">60 m/s — zona muy ventosa</option></datalist></div>
-          <div class="field"><label>Categoría de exposición</label><select id="r_categoria">${optCategoria}</select></div>
-          <div class="field"><label>Categoría de ocupación (importancia)</label><select id="r_importancia">${optImportancia}</select></div>
-          <div class="field"><label>Kzt — factor topográfico</label><input type="text" inputmode="decimal" step="0.01" id="r_Kzt" value="${state.rKzt}" list="dl_r_Kzt"><datalist id="dl_r_Kzt"><option value="1">1.0 — terreno plano</option><option value="1.15">1.15 — loma suave</option><option value="1.3">1.3 — cresta moderada</option><option value="1.43">1.43 — efecto topográfico fuerte</option></datalist></div>
-        </div>
+        <div class="field-grid">${comunes('r')}</div>${comb('r')}
       </div>
-
       <div class="panel">
         <h3>2 · GEOMETRÍA POR TRAMOS (de la base hacia la cúspide)</h3>
         <div id="r_table"></div>
         <button class="btn-add" id="r_add" type="button">+ Agregar tramo</button>
-        <p class="note">ε = razón de solidez = área proyectada sólida de la cara del tramo / área bruta de esa cara (An/Ag). Fórmulas Cf(ε) válidas orientativamente para 0.1 ≤ ε ≤ 0.5.</p>
+        <p class="note">ε = área sólida proyectada de una cara del tramo / área bruta de esa cara (0 &lt; ε &lt; 1). W = ancho de la cara. Σ(Cf·A) de accesorios: escaleras, antenas, cables y otros elementos no incluidos en ε, con su coeficiente de fuerza (0 si no hay).</p>
       </div>
-
-      <div class="panel">
-        <h3>3 · CÁLCULO POR TRAMO Y TOTALES</h3>
-        <div id="r_calculo"></div>
-      </div>
-
-      <div class="panel">
-        <h3>4 · ESQUEMA</h3>
-        <div id="r_esquema"></div>
-      </div>
+      <div id="r_errores"></div>
+      <div class="panel"><h3>3 · PARÁMETROS</h3><div id="r_param"></div></div>
+      <div class="panel"><h3>4 · FUERZAS POR TRAMO Y TOTALES</h3><div id="r_estados"></div></div>
+      <div class="panel"><h3>5 · ESQUEMA</h3><div id="r_figuras"></div></div>
+      <div class="panel"><h3>6 · NOTAS</h3><div id="r_notas"></div></div>
     </div>
 
     <div id="vt_boveda" style="display:none">
       <div class="panel">
         <h3>1 · DATOS GENERALES DE VIENTO</h3>
-        <div class="field-grid">
-          <div class="field"><label>V — velocidad básica de viento (m/s)</label><input type="text" inputmode="decimal" id="b_V" value="${state.bV}" list="dl_b_V"><datalist id="dl_b_V"><option value="35">35 m/s — zona protegida</option><option value="40">40 m/s — valor típico</option><option value="45">45 m/s — habitual (default)</option><option value="50">50 m/s — zona expuesta</option><option value="60">60 m/s — zona muy ventosa</option></datalist></div>
-          <div class="field"><label>Categoría de exposición</label><select id="b_categoria">${optCategoria}</select></div>
-          <div class="field"><label>Categoría de ocupación (importancia)</label><select id="b_importancia">${optImportancia}</select></div>
-          <div class="field"><label>Kzt — factor topográfico</label><input type="text" inputmode="decimal" step="0.01" id="b_Kzt" value="${state.bKzt}" list="dl_b_Kzt"><datalist id="dl_b_Kzt"><option value="1">1.0 — terreno plano</option><option value="1.15">1.15 — loma suave</option><option value="1.3">1.3 — cresta moderada</option></datalist></div>
-          <div class="field"><label>Tipo de cerramiento</label><select id="b_cerramiento">${optCerramiento}</select></div>
-        </div>
+        <div class="field-grid">${comunes('b')}
+          <div class="field"><label>Tipo de cerramiento</label><select id="b_cerramiento">${optCerr}</select></div>
+          <div class="field"><label>Apoyo de la cubierta</label><select id="b_apoyo"><option value="elevada">Sobre estructura elevada (muros bajo el arranque)</option><option value="suelo">Nace del suelo (h_arranque = 0)</option></select></div>
+        </div>${comb('b')}
       </div>
-
       <div class="panel">
         <h3>2 · GEOMETRÍA DE LA BÓVEDA (m)</h3>
         <div class="field-grid">
-          <div class="field"><label>D — luz (span) de la bóveda (m)</label><input type="text" inputmode="decimal" step="0.1" id="b_D" value="${state.bD}" list="dl_b_D"><datalist id="dl_b_D"><option value="10">10 m — bóveda pequeña</option><option value="15">15 m — luz media</option><option value="20">20 m — luz típica (default)</option><option value="25">25 m — luz amplia</option><option value="30">30 m — bóveda de gran luz</option></datalist></div>
-          <div class="field"><label>r — flecha (rise) de la bóveda (m)</label><input type="text" inputmode="decimal" step="0.1" id="b_r" value="${state.bR}" list="dl_b_r"><datalist id="dl_b_r"><option value="2">2 m — flecha baja (r/D≈0.1–0.15)</option><option value="3">3 m — flecha moderada</option><option value="4">4 m — flecha típica (default, r/D=0.2)</option><option value="5">5 m — flecha pronunciada</option><option value="6">6 m — bóveda muy peraltada (r/D≈0.3)</option></datalist></div>
-          <div class="field"><label>h_arranque — altura de muros hasta el arranque del arco (m)</label><input type="text" inputmode="decimal" step="0.1" id="b_hArranque" value="${state.bHArranque}" list="dl_b_hArranque"><datalist id="dl_b_hArranque"><option value="3">3 m — muro bajo</option><option value="4">4 m — muro típico</option><option value="5">5 m — altura habitual (default)</option><option value="6">6 m — muro alto</option><option value="8">8 m — nave de gran altura</option></datalist></div>
+          <div class="field"><label>D — luz de la bóveda (m)</label><input type="text" inputmode="decimal" id="b_D" value="${state.bD}"></div>
+          <div class="field"><label>r — flecha de la bóveda (m)</label><input type="text" inputmode="decimal" id="b_r" value="${state.bR}"></div>
+          <div class="field"><label>h_arranque — altura de muros hasta el arranque del arco (m)</label><input type="text" inputmode="decimal" id="b_hArranque" value="${state.bHArranque}"></div>
+          <div class="field"><label>Lb — largo de la bóveda según su eje (m)</label><input type="text" inputmode="decimal" id="b_Lb" value=""></div>
         </div>
-        <div id="b_geomDerivada" style="margin-top:.6rem"></div>
-        <p class="note">Rango de validez de la tabla de Cp (bóveda): 0 ≤ r/D ≤ 0.6.</p>
-      </div>
-
-      <div class="panel">
-        <h3>3 · COEFICIENTE DE EXPOSICIÓN Y PRESIÓN DINÁMICA</h3>
-        <div id="b_presiones"></div>
-      </div>
-
-      <div class="panel">
-        <h3>4 · RESUMEN DE PRESIONES DE DISEÑO POR ZONA</h3>
-        <div id="b_resumen"></div>
-      </div>
-
-      <div class="panel">
-        <h3>5 · ESQUEMA</h3>
-        <div id="b_esquema"></div>
-      </div>
+        <p class="note">Dominio de la tabla de techos abovedados: 0 &lt; r/D ≤ 0,6.</p>
+      </div>${panelesRes('b')}
     </div>
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>
   `;
 
-  document.getElementById('g_categoria').value = state.gCategoria;
-  document.getElementById('g_importancia').value = state.gImportancia;
-  document.getElementById('g_cerramiento').value = state.gCerramiento;
-  document.getElementById('g_tipoTecho').value = state.gTipoTecho;
-  document.getElementById('g_sentido').value = state.gSentido;
-  document.getElementById('r_categoria').value = state.rCategoria;
-  document.getElementById('r_importancia').value = state.rImportancia;
-  document.getElementById('b_categoria').value = state.bCategoria;
-  document.getElementById('b_importancia').value = state.bImportancia;
-  document.getElementById('b_cerramiento').value = state.bCerramiento;
+  [['g_categoria', 'gCategoria'], ['g_importancia', 'gImportancia'], ['g_cerramiento', 'gCerramiento'], ['g_tipoTecho', 'gTipoTecho'],
+   ['r_categoria', 'rCategoria'], ['r_importancia', 'rImportancia'],
+   ['b_categoria', 'bCategoria'], ['b_importancia', 'bImportancia'], ['b_cerramiento', 'bCerramiento'], ['b_apoyo', 'bApoyo']].forEach(([id, k]) => { document.getElementById(id).value = state[k]; });
+
+  const $ = id => document.getElementById(id);
+  const numOpt = id => { const s = $(id).value.trim(); return s === '' ? null : vtNum(s); };
+  const leerComunes = p => {
+    state[p + 'V'] = vtNum($(p + '_V').value); state[p + 'Categoria'] = $(p + '_categoria').value;
+    state[p + 'Importancia'] = $(p + '_importancia').value; state[p + 'Kzt'] = vtNum($(p + '_Kzt').value);
+    state[p + 'N1'] = numOpt(p + '_n1'); state[p + 'Comb'] = $(p + '_comb').checked;
+    return { V: state[p + 'V'], expo: state[p + 'Categoria'], importancia: state[p + 'Importancia'], Kzt: state[p + 'Kzt'], n1: state[p + 'N1'], comb3171: state[p + 'Comb'] };
+  };
+  const sinRes = '<p class="note">Sin resultados: corregir los datos indicados arriba.</p>';
+  function mostrar(p, r) {
+    if (r.errores) {
+      $(p + '_errores').innerHTML = `<div class="panel"><div class="global-verdict bad"><span class="label">DATOS INVÁLIDOS O FUERA DE ALCANCE — no se calcula ni se permite imprimir o exportar</span></div><ul class="note">${r.errores.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>`;
+      ['_param', '_estados', '_notas'].forEach(s => { $(p + s).innerHTML = sinRes; });
+      $(p + '_figuras').innerHTML = '';
+      return;
+    }
+    $(p + '_errores').innerHTML = r.pendientes.length
+      ? `<div class="panel"><div class="global-verdict bad"><span class="label">CÁLCULO PRELIMINAR — condiciones sin acreditar: no se permite imprimir ni exportar</span></div><ul class="note">${r.pendientes.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : '';
+    const B = vtBloques(r, 'results');
+    const bl = b => `<div style="margin:.4rem 0 .9rem"><div style="font-weight:600;margin-bottom:.3rem">${b.t}</div><div style="overflow-x:auto">${b.html}</div></div>`;
+    $(p + '_param').innerHTML = B.filter(b => b.param).map(bl).join('');
+    $(p + '_estados').innerHTML = B.filter(b => !b.param).map(bl).join('');
+    $(p + '_figuras').innerHTML = vtEsquemasHtml(r);
+    $(p + '_notas').innerHTML = `<ul class="note">${vtNotas(r).map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
+  }
+  const activo = () => res[state.modulo];
+  const imprimir = () => buildPrintSheetsViento(state, activo());
 
   function switchModuloViento() {
-    state.modulo = document.getElementById('vt_modulo').value;
-    document.getElementById('vt_galpon').style.display = state.modulo === 'galpon' ? '' : 'none';
-    document.getElementById('vt_reticulado').style.display = state.modulo === 'reticulado' ? '' : 'none';
-    document.getElementById('vt_boveda').style.display = state.modulo === 'boveda' ? '' : 'none';
-    if (typeof buildPrintSheetsViento === 'function') buildPrintSheetsViento(state, rGalponCache, rReticuladoCache, rBovedaCache);
+    state.modulo = $('vt_modulo').value;
+    ['galpon', 'reticulado', 'boveda'].forEach(m => { $('vt_' + m).style.display = state.modulo === m ? '' : 'none'; });
+    imprimir();
   }
-  document.getElementById('vt_modulo').addEventListener('change', switchModuloViento);
-
-  // ===== M1 GALPÓN =====
-  function readStateGalpon() {
-    state.gV = +document.getElementById('g_V').value;
-    state.gCategoria = document.getElementById('g_categoria').value;
-    state.gImportancia = document.getElementById('g_importancia').value;
-    state.gKzt = +document.getElementById('g_Kzt').value;
-    state.gCerramiento = document.getElementById('g_cerramiento').value;
-    state.gTipoTecho = document.getElementById('g_tipoTecho').value;
-    state.gSentido = document.getElementById('g_sentido').value;
-    state.gLx = +document.getElementById('g_Lx').value;
-    state.gLy = +document.getElementById('g_Ly').value;
-    state.gHAlero = +document.getElementById('g_hAlero').value;
-    state.gHCumbrera = +document.getElementById('g_hCumbrera').value;
-  }
+  $('vt_modulo').addEventListener('change', switchModuloViento);
 
   function recalcGalpon() {
-    readStateGalpon();
-    const r = calcGalponViento({
-      V: state.gV, categoria: state.gCategoria, importancia: state.gImportancia, Kzt: state.gKzt,
-      cerramiento: state.gCerramiento, tipoTecho: state.gTipoTecho, sentido: state.gSentido,
-      Lx: state.gLx, Ly: state.gLy, hAlero: state.gHAlero, hCumbrera: state.gHCumbrera
-    });
-
-    document.getElementById('g_geomDerivada').innerHTML = `
-      <table class="results">
-        <tr><td>h — altura media de cubierta</td><td class="num">${fmt3(r.h)} m</td></tr>
-        <tr><td>θ — ángulo de inclinación del techo</td><td class="num">${fmt2(r.theta)} °</td></tr>
-      </table>`;
-
-    document.getElementById('g_presiones').innerHTML = `
-      <table class="results">
-        <tr><td>α / zg / zmin (categoría ${state.gCategoria})</td><td class="num">${fmt2(r.alpha)} / ${fmt2(r.zg)} m / ${fmt2(r.zmin)} m</td></tr>
-        <tr><td>I — factor de importancia</td><td class="num">${fmt2(r.I)}</td></tr>
-        <tr><td>Kd (edificios, SPRFV)</td><td class="num">${fmt2(r.Kd)}</td></tr>
-        <tr><td>Kz, muro barlovento (z=h_alero)</td><td class="num">${fmt3(r.KzBarlovento)}</td></tr>
-        <tr><td>Kz, cubierta (z=h)</td><td class="num">${fmt3(r.KzCubierta)}</td></tr>
-        <tr><td>qz — presión dinámica, muro barlovento</td><td class="num">${fmt2(r.qzBarlovento)} kgf/m²</td></tr>
-        <tr><td>qh — presión dinámica a la altura media de cubierta</td><td class="num">${fmt2(r.qh)} kgf/m²</td></tr>
-        <tr><td>G — factor de ráfaga</td><td class="num">${fmt2(r.G)}</td></tr>
-        <tr><td>GCpi (+i / −i)</td><td class="num">${fmt2(r.GCpi.pos)} / ${fmt2(r.GCpi.neg)}</td></tr>
-      </table>`;
-
-    document.getElementById('g_resumen').innerHTML = `
-      <table class="results">
-        <tr><th>Superficie / caso</th><th>q usado</th><th>Cp</th><th>p(+GCpi)</th><th>p(−GCpi)</th><th>p gobernante</th></tr>
-        ${r.filas.map(f => `<tr><td>${f.nombre}${f.obs?`<br><span class="note" style="margin:0">${f.obs}</span>`:''}</td>
-          <td class="num">${fmt2(f.q)}</td><td class="num">${fmt3(f.Cp)}</td>
-          <td class="num">${fmt2(f.pPos)}</td><td class="num">${fmt2(f.pNeg)}</td><td class="num"><b>${fmt2(f.pGob)}</b></td></tr>`).join('')}
-      </table>
-      <p class="note">Valores en kgf/m². Verificar todos los coeficientes Cp contra las figuras oficiales de NCh432.Of2010 antes de usar estos resultados en un proyecto real.</p>`;
-
-    document.getElementById('g_diagrama').innerHTML = renderDiagramaPresionesGalpon(r);
-
-    rGalponCache = r;
-    if (typeof buildPrintSheetsViento === 'function') buildPrintSheetsViento(state, rGalponCache, rReticuladoCache, rBovedaCache);
+    const c = leerComunes('g');
+    state.gCerramiento = $('g_cerramiento').value; state.gTipoTecho = $('g_tipoTecho').value;
+    ['Lx', 'Ly', 'hAlero', 'hCumbrera'].forEach(k => { state['g' + k[0].toUpperCase() + k.slice(1)] = vtNum($('g_' + k).value); });
+    res.galpon = calcGalponViento({ ...c, cerramiento: state.gCerramiento, tipoTecho: state.gTipoTecho, Lx: state.gLx, Ly: state.gLy, hAlero: state.gHAlero, hCumbrera: state.gHCumbrera });
+    mostrar('g', res.galpon);
+    if (state.modulo === 'galpon') imprimir();
   }
 
-  // ===== M2 RETICULADO =====
   function renderTramosTable() {
-    const rows = state.tramos.map((t,i) => `
+    const opF = t => VT_FORMAS_TORRE.map(f => `<option value="${f}" ${t.forma === f ? 'selected' : ''}>${f}</option>`).join('');
+    const opM = t => Object.keys(VT_MIEMBROS).map(k => `<option value="${k}" ${t.miembros === k ? 'selected' : ''}>${VT_MIEMBROS[k]}</option>`).join('');
+    const rows = state.tramos.map((t, i) => `
       <tr>
-        <td>${i+1}</td>
-        <td><input type="number" step="0.1" class="rt-z1" data-i="${i}" value="${t.z1}"></td>
-        <td><input type="number" step="0.1" class="rt-z2" data-i="${i}" value="${t.z2}"></td>
-        <td><input type="number" step="0.01" class="rt-W" data-i="${i}" value="${t.W}"></td>
-        <td><input type="number" step="0.01" class="rt-eps" data-i="${i}" value="${t.eps}"></td>
-        <td><select class="rt-forma" data-i="${i}"><option value="Cuadrada" ${t.forma==='Cuadrada'?'selected':''}>Cuadrada</option><option value="Triangular" ${t.forma==='Triangular'?'selected':''}>Triangular</option></select></td>
-        <td><button type="button" class="btn-remove" data-i="${i}" ${state.tramos.length<=1?'disabled':''}>✕</button></td>
+        <td>${i + 1}</td>
+        <td><input type="text" inputmode="decimal" class="rt-z1" data-i="${i}" value="${valIn(t.z1)}"></td>
+        <td><input type="text" inputmode="decimal" class="rt-z2" data-i="${i}" value="${valIn(t.z2)}"></td>
+        <td><input type="text" inputmode="decimal" class="rt-W" data-i="${i}" value="${valIn(t.W)}"></td>
+        <td><input type="text" inputmode="decimal" class="rt-eps" data-i="${i}" value="${valIn(t.eps)}"></td>
+        <td><select class="rt-forma" data-i="${i}">${opF(t)}</select></td>
+        <td><select class="rt-miembros" data-i="${i}">${opM(t)}</select></td>
+        <td><input type="text" inputmode="decimal" class="rt-CfAa" data-i="${i}" value="${valIn(t.CfAa)}"></td>
+        <td><button type="button" class="btn-remove" data-i="${i}" ${state.tramos.length <= 1 ? 'disabled' : ''}>✕</button></td>
       </tr>`).join('');
-    document.getElementById('r_table').innerHTML = `
+    $('r_table').innerHTML = `
       <table class="results editable">
-        <tr><th>Tramo</th><th>z1 (m)</th><th>z2 (m)</th><th>W (m)</th><th>ε</th><th>Forma</th><th></th></tr>
+        <tr><th>Tramo</th><th>z1 (m)</th><th>z2 (m)</th><th>W (m)</th><th>ε</th><th>Sección</th><th>Miembros</th><th>Σ(Cf·A) acces. (m²)</th><th></th></tr>
         ${rows}
       </table>`;
-    document.getElementById('r_table').querySelectorAll('input').forEach(el => el.addEventListener('input', () => {
-      const i = +el.dataset.i;
-      if (el.classList.contains('rt-z1')) state.tramos[i].z1 = parseFloat(el.value)||0;
-      if (el.classList.contains('rt-z2')) state.tramos[i].z2 = parseFloat(el.value)||0;
-      if (el.classList.contains('rt-W')) state.tramos[i].W = parseFloat(el.value)||0;
-      if (el.classList.contains('rt-eps')) state.tramos[i].eps = parseFloat(el.value)||0;
-      recalcReticulado();
-    }));
-    document.getElementById('r_table').querySelectorAll('select').forEach(el => el.addEventListener('change', () => {
-      const i = +el.dataset.i;
-      state.tramos[i].forma = el.value;
-      recalcReticulado();
-    }));
-    document.getElementById('r_table').querySelectorAll('.btn-remove').forEach(el => el.addEventListener('click', () => {
-      state.tramos.splice(+el.dataset.i, 1);
-      renderTramosTable();
-      recalcReticulado();
+    $('r_table').querySelectorAll('input, select').forEach(el => { el.addEventListener('input', recalcReticulado); el.addEventListener('change', recalcReticulado); });
+    $('r_table').querySelectorAll('.btn-remove').forEach(el => el.addEventListener('click', () => {
+      leerTramos(); state.tramos.splice(+el.dataset.i, 1); renderTramosTable(); recalcReticulado();
     }));
   }
-
-  function readStateReticulado() {
-    state.rV = +document.getElementById('r_V').value;
-    state.rCategoria = document.getElementById('r_categoria').value;
-    state.rImportancia = document.getElementById('r_importancia').value;
-    state.rKzt = +document.getElementById('r_Kzt').value;
-  }
-
-  function recalcReticulado() {
-    readStateReticulado();
-    const r = calcReticuladoViento({
-      V: state.rV, categoria: state.rCategoria, importancia: state.rImportancia, Kzt: state.rKzt,
-      tramos: state.tramos
+  // Los tramos se releen del DOM (también después de abrir un cálculo guardado).
+  function leerTramos() {
+    $('r_table').querySelectorAll('input, select').forEach(el => {
+      const t = state.tramos[+el.dataset.i]; if (!t) return;
+      const k = el.className.replace('rt-', '');
+      t[k] = el.tagName === 'SELECT' ? el.value : (k === 'CfAa' && el.value.trim() === '' ? 0 : vtNum(el.value));
     });
-
-    document.getElementById('r_calculo').innerHTML = `
-      <table class="results">
-        <tr><td>α / zg / zmin (categoría ${state.rCategoria})</td><td class="num">${fmt2(r.alpha)} / ${fmt2(r.zg)} m / ${fmt2(r.zmin)} m</td></tr>
-        <tr><td>I — factor de importancia</td><td class="num">${fmt2(r.I)}</td></tr>
-        <tr><td>Kd (torres reticuladas)</td><td class="num">${fmt2(r.Kd)}</td></tr>
-        <tr><td>G — factor de ráfaga</td><td class="num">${fmt2(r.G)}</td></tr>
-      </table>
-      <table class="results" style="margin-top:.6rem">
-        <tr><th>Tramo</th><th>z prom. (m)</th><th>Kz</th><th>qz (kgf/m²)</th><th>Cf</th><th>Af (m²)</th><th>F (kgf)</th><th>M (kgf·m)</th></tr>
-        ${r.tramos.map((t,i) => `<tr><td>${i+1}</td><td class="num">${fmt2(t.zProm)}</td><td class="num">${fmt3(t.Kz)}</td>
-          <td class="num">${fmt2(t.qz)}</td><td class="num">${fmt3(t.cf)}</td><td class="num">${fmt2(t.Af)}</td>
-          <td class="num">${fmt1(t.F)}</td><td class="num">${fmt1(t.M)}</td></tr>`).join('')}
-        <tr><td><b>TOTAL</b></td><td></td><td></td><td></td><td></td><td></td><td class="num"><b>${fmt1(r.totalF)}</b></td><td class="num"><b>${fmt1(r.totalM)}</b></td></tr>
-      </table>
-      <p class="note">F = fuerza de viento total sobre el tramo (SPRFV); M = momento respecto de la base de la torre (z=0), útil para el diseño de la fundación. Fórmulas de Cf válidas orientativamente para 0.1 ≤ ε ≤ 0.5.</p>`;
-
-    document.getElementById('r_esquema').innerHTML = svgReticuladoViento(state, r);
-
-    rReticuladoCache = r;
-    if (typeof buildPrintSheetsViento === 'function') buildPrintSheetsViento(state, rGalponCache, rReticuladoCache, rBovedaCache);
   }
-
-  document.getElementById('r_add').addEventListener('click', () => {
-    const last = state.tramos[state.tramos.length-1];
-    state.tramos.push({ z1: last ? last.z2 : 0, z2: last ? last.z2+6 : 6, W: last ? last.W : 1, eps: last ? last.eps : 0.2, forma: last ? last.forma : 'Cuadrada' });
-    renderTramosTable();
-    recalcReticulado();
+  function recalcReticulado() {
+    const c = leerComunes('r');
+    leerTramos();
+    res.reticulado = calcReticuladoViento({ ...c, tramos: state.tramos.map(t => ({ ...t })) });
+    mostrar('r', res.reticulado);
+    if (state.modulo === 'reticulado') imprimir();
+  }
+  $('r_add').addEventListener('click', () => {
+    leerTramos();
+    const u = state.tramos[state.tramos.length - 1];
+    const z = u && vtFin(u.z2) ? u.z2 : 0;
+    state.tramos.push({ z1: z, z2: z + 6, W: u ? u.W : 1, eps: u ? u.eps : 0.2, forma: u ? u.forma : 'Cuadrada', miembros: u ? u.miembros : 'planos', CfAa: 0 });
+    renderTramosTable(); recalcReticulado();
   });
-
-  // ===== M3 BÓVEDA =====
-  function readStateBoveda() {
-    state.bV = +document.getElementById('b_V').value;
-    state.bCategoria = document.getElementById('b_categoria').value;
-    state.bImportancia = document.getElementById('b_importancia').value;
-    state.bKzt = +document.getElementById('b_Kzt').value;
-    state.bCerramiento = document.getElementById('b_cerramiento').value;
-    state.bD = +document.getElementById('b_D').value;
-    state.bR = +document.getElementById('b_r').value;
-    state.bHArranque = +document.getElementById('b_hArranque').value;
-  }
 
   function recalcBoveda() {
-    readStateBoveda();
-    const r = calcBovedaViento({
-      V: state.bV, categoria: state.bCategoria, importancia: state.bImportancia, Kzt: state.bKzt,
-      cerramiento: state.bCerramiento, D: state.bD, r: state.bR, hArranque: state.bHArranque
-    });
-
-    document.getElementById('b_geomDerivada').innerHTML = `
-      <table class="results">
-        <tr><td>r/D — razón flecha / luz</td><td class="num">${fmt3(r.rD)}</td></tr>
-        <tr><td>h — altura total a la cumbrera del arco</td><td class="num">${fmt2(r.hTotal)} m</td></tr>
-      </table>`;
-
-    document.getElementById('b_presiones').innerHTML = `
-      <table class="results">
-        <tr><td>α / zg / zmin (categoría ${state.bCategoria})</td><td class="num">${fmt2(r.alpha)} / ${fmt2(r.zg)} m / ${fmt2(r.zmin)} m</td></tr>
-        <tr><td>I — factor de importancia</td><td class="num">${fmt2(r.I)}</td></tr>
-        <tr><td>Kd (cubiertas abovedadas)</td><td class="num">${fmt2(r.Kd)}</td></tr>
-        <tr><td>Kz</td><td class="num">${fmt3(r.Kz)}</td></tr>
-        <tr><td>qh — presión dinámica</td><td class="num">${fmt2(r.qh)} kgf/m²</td></tr>
-        <tr><td>G — factor de ráfaga</td><td class="num">${fmt2(r.G)}</td></tr>
-        <tr><td>GCpi (+i / −i)</td><td class="num">${fmt2(r.GCpi.pos)} / ${fmt2(r.GCpi.neg)}</td></tr>
-      </table>`;
-
-    document.getElementById('b_resumen').innerHTML = `
-      <table class="results">
-        <tr><th>Zona</th><th>Cp</th><th>p(+GCpi)</th><th>p(−GCpi)</th><th>p gobernante</th></tr>
-        <tr><td>Zona A — borde barlovento (1/4 de la luz)</td><td class="num">${fmt3(r.CpA)}</td><td class="num">${fmt2(r.zonaA.pPos)}</td><td class="num">${fmt2(r.zonaA.pNeg)}</td><td class="num"><b>${fmt2(r.zonaA.pGob)}</b></td></tr>
-        <tr><td>Zona B — tramo central (1/2 de la luz)</td><td class="num">${fmt3(r.CpB)}</td><td class="num">${fmt2(r.zonaB.pPos)}</td><td class="num">${fmt2(r.zonaB.pNeg)}</td><td class="num"><b>${fmt2(r.zonaB.pGob)}</b></td></tr>
-        <tr><td>Zona C — borde sotavento (1/4 de la luz)</td><td class="num">${fmt3(r.CpC)}</td><td class="num">${fmt2(r.zonaC.pPos)}</td><td class="num">${fmt2(r.zonaC.pNeg)}</td><td class="num"><b>${fmt2(r.zonaC.pGob)}</b></td></tr>
-      </table>
-      <p class="note">Valores en kgf/m². Verificar las fórmulas de Cp y el valor de Kd contra el anexo oficial de NCh432.Of2010 aplicable a cubiertas abovedadas antes de un uso definitivo.</p>`;
-
-    document.getElementById('b_esquema').innerHTML = svgBovedaViento(state, r);
-
-    rBovedaCache = r;
-    if (typeof buildPrintSheetsViento === 'function') buildPrintSheetsViento(state, rGalponCache, rReticuladoCache, rBovedaCache);
+    const c = leerComunes('b');
+    state.bCerramiento = $('b_cerramiento').value; state.bApoyo = $('b_apoyo').value;
+    state.bD = vtNum($('b_D').value); state.bR = vtNum($('b_r').value); state.bHArranque = vtNum($('b_hArranque').value); state.bLb = numOpt('b_Lb');
+    res.boveda = calcBovedaViento({ ...c, cerramiento: state.bCerramiento, apoyo: state.bApoyo, D: state.bD, r: state.bR, hArranque: state.bHArranque, Lb: state.bLb });
+    mostrar('b', res.boveda);
+    if (state.modulo === 'boveda') imprimir();
   }
 
-  ['g_V','g_categoria','g_importancia','g_Kzt','g_cerramiento','g_tipoTecho','g_sentido','g_Lx','g_Ly','g_hAlero','g_hCumbrera'].forEach(id => {
-    const el = document.getElementById(id);
-    el.addEventListener('input', recalcGalpon);
-    el.addEventListener('change', recalcGalpon);
-  });
-  ['r_V','r_categoria','r_importancia','r_Kzt'].forEach(id => {
-    const el = document.getElementById(id);
-    el.addEventListener('input', recalcReticulado);
-    el.addEventListener('change', recalcReticulado);
-  });
-  ['b_V','b_categoria','b_importancia','b_Kzt','b_cerramiento','b_D','b_r','b_hArranque'].forEach(id => {
-    const el = document.getElementById(id);
-    el.addEventListener('input', recalcBoveda);
-    el.addEventListener('change', recalcBoveda);
-  });
+  (window.REV_RESULTADOS = window.REV_RESULTADOS || {}).viento = () => {
+    ({ galpon: recalcGalpon, reticulado: recalcReticulado, boveda: recalcBoveda })[state.modulo]();
+    return activo();
+  };
+
+  const enlazar = (ids, fn) => ids.forEach(id => { const el = $(id); el.addEventListener('input', fn); el.addEventListener('change', fn); });
+  const com = p => ['_V', '_categoria', '_importancia', '_Kzt', '_n1', '_comb'].map(s => p + s);
+  enlazar(com('g').concat(['g_cerramiento', 'g_tipoTecho', 'g_Lx', 'g_Ly', 'g_hAlero', 'g_hCumbrera']), recalcGalpon);
+  enlazar(com('r'), recalcReticulado);
+  enlazar(com('b').concat(['b_cerramiento', 'b_apoyo', 'b_D', 'b_r', 'b_hArranque', 'b_Lb']), recalcBoveda);
 
   renderTramosTable();
-  recalcGalpon();
   recalcReticulado();
   recalcBoveda();
+  recalcGalpon();
 }
 
 
