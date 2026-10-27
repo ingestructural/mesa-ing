@@ -49317,13 +49317,14 @@ const MC_CAT = [
 const MC_LINEAS = [['EST', 'Metalcon estructural (0,85 · 1,0 · 1,6 mm)'], ['CIE', 'Omegas Metalcon — costaneras y cielos (38x35x15x8)'], ['TAB', 'Metalcon tabiquería (0,5 mm — no estructural)'], ['COM', 'Complementarios (tirantes, pletinas, ángulo)']];
 // Canal que recibe a cada montante en el «cajón» C dentro de U
 const MC_PAR_U = { 40: '42C085', 60: '62C085', 90: '92C085', 100: '103C085', 150: '153C10', 200: '203C10', 250: '253C10' };
-// Tornillos autoperforantes: d nominal (mm), diámetro de cabeza o golilla dw (mm); Pss y Pts (kN) referenciales — usar los del fabricante
+// Tornillos autoperforantes: número y diámetro nominal d (mm) = 0,138"/0,164"/0,190"/0,216"/0,250".
+// Las resistencias del tornillo (Pnvs, Pnts) y los diámetros de cabeza y golilla se ingresan desde la ficha del fabricante.
 const MC_TORN = [
-  { id: '6', n: 'N°6 (3,51 mm)', d: 3.51, dw: 8.0, Pss: 2.9, Pts: 4.0 },
-  { id: '8', n: 'N°8 (4,17 mm) — cabeza lenteja, unión acero-acero', d: 4.17, dw: 11.1, Pss: 4.0, Pts: 5.3 },
-  { id: '10', n: 'N°10 (4,83 mm) — cabeza hexagonal con golilla', d: 4.83, dw: 10.0, Pss: 5.3, Pts: 8.0 },
-  { id: '12', n: 'N°12 (5,49 mm) — cabeza hexagonal con golilla', d: 5.49, dw: 10.7, Pss: 7.3, Pts: 10.7 },
-  { id: '14', n: 'N°14 / ¼" (6,35 mm) — cabeza hexagonal con golilla', d: 6.35, dw: 12.7, Pss: 10.2, Pts: 15.6 },
+  { id: '6', n: 'N.º 6 (d = 3,51 mm)', d: 3.51 },
+  { id: '8', n: 'N.º 8 (d = 4,17 mm)', d: 4.17 },
+  { id: '10', n: 'N.º 10 (d = 4,83 mm)', d: 4.83 },
+  { id: '12', n: 'N.º 12 (d = 5,49 mm)', d: 5.49 },
+  { id: '14', n: 'N.º 14 / ¼" (d = 6,35 mm)', d: 6.35 },
 ];
 
 /* ---------- geometría ---------- */
@@ -49360,7 +49361,7 @@ function mcPieza(g, opt) {
   if (g.k === 'CA' && g.c > t + ri + 0.5) {
     const hc = g.h - t, bc = g.b - t, cc = g.c - t / 2;
     verts = [[bc, -hc / 2 + cc], [bc, -hc / 2], [0, -hc / 2], [0, hc / 2], [bc, hc / 2], [bc, hc / 2 - cc]];
-    roles = [{ role: 'lip', sup: 'p2', D: g.c }, { role: 'flange', lipIdx: 0 }, { role: 'web', perf: !!g.perf }, { role: 'flange', lipIdx: 4 }, { role: 'lip', sup: 'p1', D: g.c }];
+    roles = [{ role: 'lip', sup: 'p2', D: g.c }, { role: 'flange', lipIdx: 0, bo: g.b }, { role: 'web', perf: !!g.perf }, { role: 'flange', lipIdx: 4, bo: g.b }, { role: 'lip', sup: 'p1', D: g.c }];
   } else if (g.k === 'CA' || g.k === 'U') {
     const hc = g.h - t, bc = g.b - t / 2;
     verts = [[bc, -hc / 2], [0, -hc / 2], [0, hc / 2], [bc, hc / 2]];
@@ -49369,7 +49370,7 @@ function mcPieza(g, opt) {
     const a = (g.b - t) / 2, H = g.h - t, f = g.c - t / 2, d = (g.d || 0) - t / 2;
     if (d > ri + t / 2 + 0.5) {
       verts = [[-(a + f), d], [-(a + f), 0], [-a, 0], [-a, H], [a, H], [a, 0], [a + f, 0], [a + f, d]];
-      roles = [{ role: 'lip', sup: 'p2', D: g.d }, { role: 'flange', lipIdx: 0 }, { role: 'web' }, { role: 'crown' }, { role: 'web' }, { role: 'flange', lipIdx: 6 }, { role: 'lip', sup: 'p1', D: g.d }];
+      roles = [{ role: 'lip', sup: 'p2', D: g.d }, { role: 'flange', lipIdx: 0, bo: g.c }, { role: 'web' }, { role: 'crown' }, { role: 'web' }, { role: 'flange', lipIdx: 6, bo: g.c }, { role: 'lip', sup: 'p1', D: g.d }];
     } else {
       verts = [[-(a + f), 0], [-a, 0], [-a, H], [a, H], [a, 0], [a + f, 0]];
       roles = [{ role: 'uf', sup: 'p2' }, { role: 'web' }, { role: 'crown' }, { role: 'web' }, { role: 'uf', sup: 'p1' }];
@@ -49384,7 +49385,7 @@ function mcPieza(g, opt) {
   // vincular cada ala atiesada con su labio (índices de tramos rectos → índices de partes)
   const flats = parts.filter(p => p.kind === 'flat');
   flats.forEach(p => { if (p.role === 'flange') { p.lip = flats[p.lipIdx]; p.lip.flange = p; } });
-  return { parts, t, g, name: opt.name || g.id || '', perfW: g.dh || 0 };
+  return { parts, t, g, name: opt.name || g.id || '', perfW: g.dh || 0, perfForma: g.hForma === 'C' ? 'C' : 'NC' };
 }
 function mcNodos(pz) { const out = []; pz.parts.forEach(p => { const ps = p.kind === 'flat' ? [p.p1, p.p2] : p.pts; ps.forEach(q => { const l = out[out.length - 1]; if (!l || Math.hypot(l[0] - q[0], l[1] - q[1]) > 1e-9) out.push(q); }); }); return out; }
 // tiras (tramos cortos) de una pieza: intervalos efectivos por tramo recto
@@ -49415,7 +49416,7 @@ function mcSeccion(sp) {
   if (!(g.b > 0)) err.push('ancho b debe ser mayor que 0');
   if (g.k === 'CA' && !(g.c >= 0)) err.push('atiesador c inválido');
   if (err.length) return { err };
-  g.ri = sp.ri > 0 ? sp.ri : g.t; g.dh = g.perf ? (sp.dh || 0) : 0;
+  g.ri = sp.ri > 0 ? sp.ri : g.t; g.dh = g.perf ? (sp.dh || 0) : 0; g.hForma = sp.hForma === 'C' ? 'C' : 'NC';
   const conf = (g.k === 'CA' && (sp.conf === '2CA' || sp.conf === 'CAU')) ? sp.conf : 'S';
   const P = [];
   if (conf === 'S') P.push(mcPieza(g, { name: g.id }));
@@ -49490,9 +49491,11 @@ function mcIntJ(sec, eje) { let s3 = 0, sq2 = 0; sec.P.forEach(pz => mcTiras(pz)
 
 /* ---------- ancho efectivo (AISI S100-16, Cap. 1) ---------- */
 function mcRho(k, w, t, f) { if (!(f > 0) || !(w > 0)) return 1; const lam = (1.052 / Math.sqrt(k)) * (w / t) * Math.sqrt(f / MC_E); return lam <= 0.673 ? 1 : Math.min(1, (1 - 0.22 / lam) / lam); }
-// fS(p) = tensión de compresión (MPa, + compresión) en el punto p. Devuelve tiras efectivas, mapa de intervalos y notas.
+// fS(p) = tensión de compresión (MPa, + compresión) en el punto p. Devuelve tiras efectivas, mapa de intervalos,
+// notas y «fuera»: condiciones fuera del alcance del Apéndice 1 (se propagan como NO VERIFICADO).
 function mcEfectiva(sec, fS) {
-  const mapa = new Map(), notas = new Set(), det = [];
+  const mapa = new Map(), notas = new Set(), fuera = new Set(), det = [];
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
   sec.P.forEach(pz => {
     const t = pz.t, flats = pz.parts.filter(p => p.kind === 'flat');
     const hecho = new Set();
@@ -49503,24 +49506,23 @@ function mcEfectiva(sec, fS) {
       if (p.role === 'plate') { iv([[0, w]]); return; }
       if (fm <= 1e-9) { iv([[0, w]]); if (p.role === 'flange' && p.lip) { mapa.set(p.lip, [[0, p.lip.L]]); hecho.add(p.lip); } det.push({ p, nom: mcRolNom(p), wt: w / t, f: fm, rho: 1, be: w }); return; }
       if (p.role === 'flange' && p.lip) {
-        // B4 / 1.3: ala con atiesador de borde simple (labio a 90°)
+        // 1.3: ala con atiesador de borde simple (labio a 90°, Tabla 1.3-1)
         const lip = p.lip, d = lip.L, D = lip.D || (d + t), S = 1.28 * Math.sqrt(MC_E / fm), wt = w / t;
-        let RI = 1, k = 4, Ia = 0, Is = d * d * d * t / 12, n = 1 / 3;
+        let RI = 1, k = 4, Ia = 0, Is = d * d * d * t / 12, n = 1 / 3, rho = 1, be = w, b1 = w / 2, b2 = w / 2;
         if (wt > 0.328 * S) {
           Ia = Math.min(399 * Math.pow(t, 4) * Math.pow(wt / S - 0.328, 3), Math.pow(t, 4) * (115 * wt / S + 5));
           RI = Ia > 0 ? Math.min(1, Is / Ia) : 1; n = Math.max(1 / 3, 0.582 - wt / (4 * S));
           const Dw = D / w;
           if (Dw <= 0.25) k = Math.min(4, 3.57 * Math.pow(RI, n) + 0.43);
-          else { k = Math.min(4, (4.82 - 5 * Dw) * Math.pow(RI, n) + 0.43); if (Dw > 0.8) notas.add('D/w del labio mayor que 0,8: fuera del alcance de 1.3 (se usa el límite)'); }
+          else { k = Math.min(4, (4.82 - 5 * Dw) * Math.pow(RI, n) + 0.43); if (Dw > 0.8) fuera.add(`D/w = ${(Dw).toFixed(2).replace('.', ',')} del labio mayor que 0,8: fuera de la Tabla 1.3-1`); }
+          rho = mcRho(k, w, t, fm); be = rho * w; b1 = (be / 2) * RI; b2 = be - b1; // Ec. 1.3-4 y 1.3-5: b1 junto al labio
         }
-        if (wt > 60) notas.add('w/t del ala atiesada mayor que 60 (B4.1)');
-        const rho = mcRho(k, w, t, fm), be = rho * w;
-        iv(rho >= 1 ? [[0, w]] : [[0, be / 2], [w - be / 2, w]]);
-        // labio: elemento no atiesado (k = 0,43) con la tensión máxima del labio, reducido por RI
+        const labioEnP1 = Math.min(dist(lip.p1, p.p1), dist(lip.p2, p.p1)) < Math.min(dist(lip.p1, p.p2), dist(lip.p2, p.p2));
+        iv(be >= w - 1e-9 ? [[0, w]] : labioEnP1 ? [[0, b1], [w - b2, w]] : [[0, b2], [w - b1, w]]);
+        // labio: 1.2.1 con k = 0,43 y la tensión máxima del labio (conservador frente a 1.2.2), ds = d's·RI (Ec. 1.3-6)
         const fl = Math.max(fS(lip.p1), fS(lip.p2));
         let ds = d, rl = 1;
         if (fl > 1e-9) { rl = mcRho(0.43, d, t, fl); ds = Math.min(d, rl * d * RI); }
-        else ds = d;
         const ivl = lip.sup === 'p1' ? [[0, ds]] : [[d - ds, d]];
         // porción traccionada del labio, siempre efectiva
         if (fl > 1e-9) { const fa = fS(lip.p1), fb = fS(lip.p2); if (fa < 0 || fb < 0) { const s0 = d * fa / (fa - fb); ivl.push(fa < 0 ? [0, s0] : [s0, d]); } }
@@ -49530,8 +49532,7 @@ function mcEfectiva(sec, fS) {
         return;
       }
       if (['uf', 'leg', 'lip'].includes(p.role)) {
-        // 1.2: elemento no atiesado, k = 0,43 con la tensión máxima (criterio conservador), medido desde el borde apoyado
-        if (w / t > 60) notas.add('w/t de un elemento no atiesado mayor que 60 (B4.1)');
+        // 1.2.1: elemento no atiesado, k = 0,43 con la tensión máxima (conservador frente a 1.2.2), medido desde el borde apoyado
         const rho = mcRho(0.43, w, t, fm), b = rho * w;
         const ivx = p.sup === 'p1' ? [[0, b]] : [[w - b, w]];
         if (f1 < 0 || f2 < 0) { const s0 = w * f1 / (f1 - f2); ivx.push(f1 < 0 ? [0, s0] : [s0, w]); }
@@ -49539,27 +49540,30 @@ function mcEfectiva(sec, fS) {
         return;
       }
       // elementos atiesados: alma y cresta (1.1)
-      const esAlma = p.role === 'web', dh = esAlma && p.perf ? pz.perfW : 0, wt = w / t;
-      if (esAlma && wt > 200) notas.add('h/t del alma mayor que 200 (B4.2)');
+      const esAlma = p.role === 'web', dh = esAlma && p.perf ? pz.perfW : 0, wt = w / t, circ = pz.perfForma === 'C';
       const comp0 = f1 >= f2; // borde comprimido en p1
       const fc = fm, fmin = Math.min(f1, f2);
       let ivw, info = { p, nom: mcRolNom(p), wt, f: fc };
       if (fmin >= -1e-9) {
-        // compresión en todo el elemento: compresión uniforme con la tensión máxima (conservador)
-        if (dh > 0) { // 1.1.3 (b) almas con perforaciones no circulares: dos franjas no atiesadas
+        // compresión en todo el elemento: compresión uniforme con la tensión máxima (conservador frente a 1.1.2(a)(2))
+        if (dh > 0 && circ) { // 1.1.1 perforación circular (Ec. 1.1.1-1 y 1.1.1-2), k = 4
+          const lam = (1.052 / 2) * wt * Math.sqrt(fc / MC_E);
+          let b = lam <= 0.673 ? w - dh : w * (1 - 0.22 / lam - 0.8 * dh / w + 0.085 * dh / (w * lam)) / lam; b = Math.max(0, Math.min(b, w - dh));
+          ivw = [[0, b / 2], [w - b / 2, w]]; Object.assign(info, { k: 4, rho: b / w, be: b, perf: true });
+        } else if (dh > 0) { // 1.1.1 perforación no circular: dos franjas no atiesadas, k = 0,43
           const ws = Math.max(0, (w - dh) / 2), r = mcRho(0.43, ws, t, fc), b = r * ws;
           ivw = [[0, b], [w - b, w]]; Object.assign(info, { k: 0.43, rho: r, be: 2 * b, perf: true });
         } else { const r = mcRho(4, w, t, fc), be = r * w; ivw = r >= 1 ? [[0, w]] : [[0, be / 2], [w - be / 2, w]]; Object.assign(info, { k: 4, rho: r, be }); }
       } else {
-        // 1.1.2: elemento atiesado con gradiente de tensiones
+        // 1.1.2(a)(1): elemento atiesado con gradiente de tensiones
         const psi = Math.abs(fmin / fc), k = 4 + 2 * Math.pow(1 + psi, 3) + 2 * (1 + psi), wc = w * fc / (fc - fmin);
         const r = mcRho(k, w, t, fc), be = r * w;
-        const ho = esAlma ? sec.g.h : 0, bo = esAlma ? sec.g.b : 1;
+        const ho = esAlma ? pz.g.h : 0, bo = esAlma ? pz.g.b : 1;
         let b1 = be / (3 + psi), b2;
         if (!esAlma || ho / bo <= 4) b2 = psi > 0.236 ? be / 2 : be - b1; else b2 = be / (1 + psi) - b1;
         Object.assign(info, { k, rho: r, be, psi, b1, b2, wc });
         let iloc; // intervalos medidos desde el borde comprimido
-        if (dh > 0 && dh / w >= 0.38) { // 1.1.3: la franja comprimida sobre la perforación se trata como no atiesada
+        if (dh > 0 && dh / w >= 0.38) { // 1.1.3: con dh/h ≥ 0,38 la porción comprimida junto a la perforación es no atiesada (1.2.1, f = f1)
           const ws = Math.max(0, (w - dh) / 2), rr = mcRho(0.43, ws, t, fc), b = rr * ws, he = (w + dh) / 2;
           iloc = [[0, b], [Math.max(he, wc), w]]; info.perf = true; info.be = b;
         } else iloc = (b1 + b2 >= wc) ? [[0, w]] : [[0, b1], [wc - b2, w]];
@@ -49570,7 +49574,7 @@ function mcEfectiva(sec, fS) {
     });
   });
   const tiras = [].concat(...sec.P.map(pz => mcTiras(pz, mapa)));
-  return { tiras, props: mcProps(tiras), mapa, notas: [...notas], det };
+  return { tiras, props: mcProps(tiras), mapa, notas: [...notas], fuera: [...fuera], det };
 }
 function mcRolNom(p) { return { web: 'Alma', flange: 'Ala atiesada', lip: 'Labio (atiesador)', uf: 'Ala no atiesada', leg: 'Ala del ángulo', crown: 'Cresta', plate: 'Pletina' }[p.role] || p.role; }
 // compresión uniforme a la tensión f
@@ -49594,27 +49598,30 @@ function mcFlexEf(sec, eje, sg, Fn, Fy) {
   return { Se: I / dc, M: I * fc / dc, Ie: I, na, fc, dc, dt, ef, tensionPrimero: fc < Fn - 1e-6, cMax, cMin };
 }
 
-/* ---------- pandeo distorsional, Sección 2.3.3.3 (secciones C con labio simple a 90°) ---------- */
-function mcDistorsional(sec, modo, Lm, kphi) {
+/* ---------- pandeo distorsional, Apéndice 2: 2.3.1.3 (compresión) y 2.3.3.3 (flexión), C con labio simple a 90° ----------
+   op.tw = espesor del alma en kφwe y k̃φwg; op.tL = espesor en Lcrd (2.3.2.3 y 2.3.4.3: alma con perforaciones, tr). */
+function mcDistorsional(sec, modo, Lm, kphi, op) {
+  op = op || {};
   const g = sec.g, t = g.t, b = g.b - t, d = g.c - t / 2, ho = g.h, mu = MC_MU, E = MC_E, G = MC_G, PI = Math.PI;
+  const tw = op.tw || t, tL = op.tL || t;
   const Af = (b + d) * t, Jf = b * t ** 3 / 3 + d * t ** 3 / 3;
   const Ixf = t * (t * t * b * b + 4 * b * d ** 3 + t * t * b * d + d ** 4) / (12 * (b + d));
   const Iyf = t * (b ** 4 + 4 * d * b ** 3) / (12 * (b + d)), Ixyf = t * b * b * d * d / (4 * (b + d)), Cwf = 0;
   const xof = b * b / (2 * (b + d)), hxf = -(b * b + 2 * d * b) / (2 * (b + d)), yof = -d * d / (2 * (b + d));
   const X = xof - hxf, base = Ixf * X * X + Cwf - Ixyf * Ixyf / Iyf * X * X;
-  const Lcr = modo === 'P' ? Math.pow(6 * PI ** 4 * ho * (1 - mu * mu) / t ** 3 * base, 0.25) : Math.pow(4 * PI ** 4 * ho * (1 - mu * mu) / t ** 3 * base + PI ** 4 * ho ** 4 / 720, 0.25);
+  const Lcr = modo === 'P' ? Math.pow(6 * PI ** 4 * ho * (1 - mu * mu) / tL ** 3 * base, 0.25) : Math.pow(4 * PI ** 4 * ho * (1 - mu * mu) / tL ** 3 * base + PI ** 4 * ho ** 4 / 720, 0.25);
   const L = Lm > 0 ? Math.min(Lcr, Lm) : Lcr, q = PI / L;
   const kfe = q ** 4 * (E * Ixf * X * X + E * Cwf - E * Ixyf * Ixyf / Iyf * X * X) + q * q * G * Jf;
   const kfg = q * q * (Af * (X * X * (Ixyf / Iyf) ** 2 - 2 * yof * X * (Ixyf / Iyf) + hxf * hxf + yof * yof) + Ixf + Iyf);
   let kwe, kwg;
-  if (modo === 'P') { kwe = E * t ** 3 / (6 * ho * (1 - mu * mu)); kwg = q * q * t * ho ** 3 / 60; }
+  if (modo === 'P') { kwe = E * tw ** 3 / (6 * ho * (1 - mu * mu)); kwg = q * q * tw * ho ** 3 / 60; }
   else {
-    const xi = 2, r = L / ho;
-    kwe = E * t ** 3 / (12 * (1 - mu * mu)) * (3 / ho + q * q * 19 * ho / 60 + q ** 4 * ho ** 3 / 240);
-    kwg = (ho * t * PI * PI / 13440) * (((45360 * (1 - xi) + 62160) * r * r + 448 * PI * PI + (1 / (r * r)) * (53 + 3 * (1 - xi)) * PI ** 4) / (PI ** 4 + 28 * PI * PI * r * r + 420 * r ** 4));
+    const xi = 2, r = L / ho; // ξweb = 2: flexión simétrica pura del alma (Ec. 2.3.3.3-6); β = 1 (Ec. 2.3.3.3-3, conservador)
+    kwe = E * tw ** 3 / (12 * (1 - mu * mu)) * (3 / ho + q * q * 19 * ho / 60 + q ** 4 * ho ** 3 / 240);
+    kwg = (ho * tw * PI * PI / 13440) * (((45360 * (1 - xi) + 62160) * r * r + 448 * PI * PI + (1 / (r * r)) * (53 + 3 * (1 - xi)) * PI ** 4) / (PI ** 4 + 28 * PI * PI * r * r + 420 * r ** 4));
   }
   const Fd = (kfe + kwe + (kphi || 0)) / (kfg + kwg);
-  return { Fd, Lcr, L, b, d, Af, Ixf, Iyf, Ixyf, xof, hxf, yof };
+  return { Fd, Lcr, L, b, d, Af, Ixf, Iyf, Ixyf, xof, hxf, yof, tw, tL };
 }
 
 /* ---------- pandeo global ---------- */
@@ -49652,197 +49659,504 @@ function mcFeCompresion(sec, inp) {
 }
 function mcFnE2(Fy, Fe) { const lc = Math.sqrt(Fy / Fe); return { Fn: lc <= 1.5 ? Math.pow(0.658, lc * lc) * Fy : 0.877 / (lc * lc) * Fy, lc }; }
 function mcFnF2(Fy, Fcre) { return Fcre >= 2.78 * Fy ? Fy : Fcre > 0.56 * Fy ? (10 / 9) * Fy * (1 - 10 * Fy / (36 * Fcre)) : Fcre; }
-function mcFcreLTB(sec, inp, sg) {
-  const E = MC_E, G = MC_G, PI = Math.PI, Lb = Math.max(inp.Lb * 1000, 1e-6), Cb = inp.Cb || 1;
-  const Sf = sg > 0 ? sec.Sxt : sec.Sxb;
-  if (!(inp.Lb > 0)) return { Fcre: Infinity, Sf, caso: 'ala comprimida arriostrada en forma continua' };
-  if (sec.cerrada) return { Fcre: Cb * PI / (Lb * Sf) * Math.sqrt(E * sec.Iy * G * sec.J), Sf, caso: 'F2.1.3 sección cerrada (cajón)' };
-  const sy = PI * PI * E / (Lb / sec.ry) ** 2, st = (G * sec.J + PI * PI * E * sec.Cw / (Lb * Lb)) / (sec.A * sec.ro * sec.ro);
-  if (sec.k === 'OMA') { // simétrica respecto de y; flexión en torno al eje perpendicular (F2.1.1 b)
-    const I = mcIntJ(sec, 'y'), sgn = sec.yo > 0 ? -1 : 1; // eje de simetría orientado con el centro de corte en coordenada negativa
-    const s3 = sgn ** 3 * I.s3, sq2 = sgn * I.sq2, xoA = -Math.abs(sec.yo), j = (s3 + sq2) / (2 * sec.Ix) - xoA;
-    const Cs = (sec.yo > 0) === (sg > 0) ? 1 : -1, CTF = 1;
-    const v = j * j + sec.ro * sec.ro * (st / sy);
-    return { Fcre: Cs * sec.A * sy * (j + Cs * Math.sqrt(v)) / (CTF * Sf), Sf, caso: `F2.1.1(b), Cs = ${Cs > 0 ? '+1' : '−1'}, j = ${j.toFixed(1)} mm, CTF = 1`, j, Cs };
+/* ---------- pandeo lateral-torsional (F2.1) ----------
+   eje = 'x' (Mx) o 'y' (My); sg = +1 comprime el lado positivo del eje perpendicular al de flexión.
+   Longitudes: KyLy = KtLt = KxLx = Lb (distancia entre arriostres del ala comprimida y al giro). */
+function mcFcreF2(sec, inp, eje, sg) {
+  const E = MC_E, G = MC_G, PI = Math.PI, Lb = inp.Lb * 1000, Cb = inp.Cb;
+  const Sf = eje === 'x' ? (sg > 0 ? sec.Sxt : sec.Sxb) : (sg > 0 ? sec.Syr : sec.Syl);
+  if (!(inp.Lb > 0)) return { Fcre: Infinity, Sf, caso: 'ala comprimida arriostrada en forma continua (Lb = 0)' };
+  const simX = sec.k !== 'OMA', dobleSim = sec.conf === '2CA';
+  const st = (G * sec.J + PI * PI * E * sec.Cw / (Lb * Lb)) / (sec.A * sec.ro * sec.ro);
+  if (dobleSim || (eje === 'x') === simX) {
+    // F2.1.1: flexión en torno al eje de simetría; σey con el radio de giro en torno al otro eje principal
+    const r = eje === 'x' ? sec.ry : sec.rx, se = PI * PI * E / (Lb / r) ** 2;
+    return { Fcre: Cb * sec.ro * sec.A / Sf * Math.sqrt(se * st), Sf, caso: `F2.1.1 (flexión en torno al eje de simetría), Cb = ${String(Cb).replace('.', ',')}`, se, st, ec: 'F2.1.1' };
   }
-  return { Fcre: Cb * sec.ro * sec.A / Sf * Math.sqrt(sy * st), Sf, caso: 'F2.1.1(a), flexión en torno al eje de simetría', sy, st };
+  // F2.1.2: flexión en torno al eje perpendicular al de simetría; x = eje de simetría con el centro de corte en coordenada negativa
+  const u0 = simX ? sec.xo : sec.yo, sgn = u0 > 0 ? -1 : 1, I = mcIntJ(sec, simX ? 'x' : 'y'), Iperp = simX ? sec.Iy : sec.Ix;
+  const j = sgn * (I.s3 + I.sq2) / (2 * Iperp) + Math.abs(u0);
+  const rs = simX ? sec.rx : sec.ry, sex = PI * PI * E / (Lb / rs) ** 2;
+  const Cs = (u0 > 0) === (sg > 0) ? 1 : -1, CTF = 1; // CTF = 1: conservador (Ec. F2.1.2-3 da CTF ≤ 1)
+  const Fcre = Cs * sec.A * sex * (j + Cs * Math.sqrt(j * j + sec.ro * sec.ro * (st / sex))) / (CTF * Sf);
+  return { Fcre, Sf, caso: `F2.1.2, Cs = ${Cs > 0 ? '+1' : '−1'}, j = ${j.toFixed(1).replace('.', ',')} mm, CTF = 1`, j, Cs, se: sex, st, ec: 'F2.1.2' };
 }
 
-/* ---------- abolladura del alma G5 (Tablas G5-2 / G5-3), coeficientes [C, CR, CN, Ch, Ω, φ, R/t máx.] ---------- */
-const MC_G5 = {
-  rig: { // C con alas atiesadas (montante CA)
-    fij: { EOF: [4, 0.14, 0.35, 0.02, 1.75, 0.85, 9], IOF: [13, 0.23, 0.14, 0.01, 1.65, 0.90, 5], ETF: [7.5, 0.08, 0.12, 0.048, 1.75, 0.85, 12], ITF: [20, 0.10, 0.08, 0.031, 1.75, 0.85, 12] },
-    lib: { EOF: [4, 0.14, 0.35, 0.02, 1.85, 0.80, 5], IOF: [13, 0.23, 0.14, 0.01, 1.65, 0.90, 5], ETF: [13, 0.32, 0.05, 0.04, 1.65, 0.90, 3], ITF: [24, 0.52, 0.15, 0.001, 1.90, 0.80, 3] } },
-  nor: { // canal con alas no atiesadas (U)
-    fij: { EOF: [4, 0.40, 0.60, 0.03, 1.80, 0.85, 2], IOF: [13, 0.32, 0.10, 0.01, 1.80, 0.85, 1], ETF: [2, 0.11, 0.37, 0.01, 2.00, 0.75, 1], ITF: [13, 0.47, 0.25, 0.04, 1.90, 0.80, 1] },
-    lib: { EOF: [4, 0.40, 0.60, 0.03, 1.80, 0.85, 2], IOF: [13, 0.32, 0.10, 0.01, 1.80, 0.85, 1], ETF: [2, 0.11, 0.37, 0.01, 2.00, 0.75, 1], ITF: [13, 0.47, 0.25, 0.04, 1.90, 0.80, 1] } },
+/* ---------- límites de aplicación del método del ancho efectivo (B4.1, Tabla B4.1-1) ---------- */
+function mcB41(sec, Fy) {
+  const out = new Set(), f = x => (Math.round(x * 10) / 10).toString().replace('.', ',');
+  if (!(Fy < 552)) out.add('Fy ≥ 552 MPa');
+  if (sec.k === 'PL') return [...out];
+  const ef = mcAe(sec, Fy);
+  sec.P.forEach(pz => {
+    const t = pz.t;
+    if (pz.g.ri / t > 10) out.add(`R/t = ${f(pz.g.ri / t)} > 10`);
+    pz.parts.filter(p => p.kind === 'flat').forEach(p => {
+      const wt = p.L / t;
+      if (p.role === 'web' && !(wt < 200)) out.add(`h/t del alma = ${f(wt)} ≥ 200`);
+      if (p.role === 'crown' && wt > 500) out.add(`w/t de la cresta = ${f(wt)} > 500`);
+      if (['uf', 'leg', 'lip'].includes(p.role) && wt > 60) out.add(`d/t de ${mcRolNom(p).toLowerCase()} = ${f(wt)} > 60`);
+      if (p.role === 'flange') {
+        const d = ef.det.find(x => x.p === p), insuf = d && d.RI != null && d.RI < 1 - 1e-9;
+        if (wt > (insuf ? 60 : 90)) out.add(`b/t del ala atiesada = ${f(wt)} > ${insuf ? '60 (Is < Ia)' : '90'}`);
+        if (p.lip && p.bo > 0 && (p.lip.D || 0) / p.bo > 0.7) out.add(`do/bo del labio = ${f(p.lip.D / p.bo)} > 0,7`);
+      }
+    });
+  });
+  return [...out];
+}
+
+/* ---------- perforaciones del alma (C): límites de 1.1.1, 1.1.3, G3 y G6 ---------- */
+function mcPerf(sec, inp) {
+  const g = sec.g, hp = inp.hp, t = g.t, h = g.h - 2 * (g.ri + t), dh = g.dh, circ = g.hForma === 'C', Lh = circ ? dh : hp.Lh, L = inp.L * 1000;
+  const f = x => (Math.round(x * 10) / 10).toString().replace('.', ',');
+  const a111 = [], a113 = [];
+  if (circ) {
+    if (dh / h > 0.5) a111.push(`dh/w = ${f(dh / h)} > 0,50`); if (h / t > 70) a111.push(`w/t = ${f(h / t)} > 70`);
+    if (hp.s < 0.5 * h) a111.push('separación entre centros < 0,50·w'); if (hp.s < 3 * dh) a111.push('separación entre centros < 3·dh');
+  } else {
+    if (hp.s < 610) a111.push(`separación entre centros ${f(hp.s)} mm < 610 mm`); if (hp.send < 254) a111.push(`distancia libre al extremo ${f(hp.send)} mm < 254 mm`);
+    if (dh > 63.5) a111.push('dh > 63,5 mm'); if (Lh > 114) a111.push('Lh > 114 mm'); if (dh / g.h > 0.5) a111.push(`dh/wo = ${f(dh / g.h)} > 0,5`);
+  }
+  if (dh / h > 0.7) a113.push(`dh/h = ${f(dh / h)} > 0,7`); if (h / t > 200) a113.push('h/t > 200');
+  if (hp.s - Lh < 457) a113.push(`distancia libre entre perforaciones ${f(hp.s - Lh)} mm < 457 mm`);
+  if (circ) { if (dh > 152) a113.push('diámetro > 152 mm'); }
+  else { if (!hp.rad2t) a113.push('radio de las esquinas de la perforación ≥ 2t no declarado'); if (dh > 63.5) a113.push('dh > 63,5 mm'); if (Lh > 114) a113.push('Lh > 114 mm'); }
+  if (!(dh > 14.3)) a113.push('dh ≤ 14,3 mm');
+  const nP = sec.P.filter(pz => pz.perfW > 0).length, patron = hp.s < L, Ah = circ ? Math.PI * dh * dh / 4 : dh * Lh;
+  return { h, t, dh, Lh, circ, a111, a113, patron, ratioWeb: patron ? 1 - Ah / (h * hp.s) : null, Anet: sec.A - nP * dh * t, nP };
+}
+// sección neta en la perforación (almas sin la franja dh)
+function mcNeta(sec) {
+  const mapa = new Map();
+  sec.P.forEach(pz => pz.parts.forEach(p => { if (p.kind === 'flat' && p.role === 'web' && p.perf && pz.perfW > 0) mapa.set(p, mcRestar([[0, p.L]], (p.L - pz.perfW) / 2, (p.L + pz.perfW) / 2)); }));
+  const pr = mcProps([].concat(...sec.P.map(pz => mcTiras(pz, mapa))));
+  return Object.assign(pr, { Sxn: pr.Ix / Math.max(sec.ymax - pr.yc, pr.yc - sec.ymin) });
+}
+// distorsional con perforaciones: tr según 2.3.2.3 (compresión) o 2.3.4.3 (flexión)
+function mcDistPerf(sec, modo, Lm, pf) {
+  const t = sec.g.t;
+  if (!pf) return mcDistorsional(sec, modo, Lm, 0);
+  if (pf.patron) { const tr = t * Math.cbrt(Math.max(0, pf.ratioWeb)), d = mcDistorsional(sec, modo, Lm, 0, { tw: tr, tL: tr }); return Object.assign(d, { tr, trEc: modo === 'P' ? 'Ec. 2.3.2.3-2, perforaciones en patrón' : 'Ec. 2.3.4.3-2, perforaciones en patrón' }); }
+  const d0 = mcDistorsional(sec, modo, Lm, 0), tr = t * Math.cbrt(Math.max(0, 1 - pf.Lh / d0.Lcr)), d = mcDistorsional(sec, modo, Lm, 0, { tw: tr });
+  return Object.assign(d, { tr, trEc: modo === 'P' ? 'Ec. 2.3.2.3-1, perforación aislada' : 'Ec. 2.3.4.3-1, perforación aislada' });
+}
+// sección girada un ángulo th (para el eje principal menor del ángulo)
+function mcRotarSec(sec, th) {
+  const c = Math.cos(th), s = Math.sin(th), Rt = q => [q[0] * c - q[1] * s, q[0] * s + q[1] * c];
+  const P = sec.P.map(pz => {
+    const map = new Map(), parts = pz.parts.map(p => { const o = Object.assign({}, p); if (p.kind === 'flat') { o.p1 = Rt(p.p1); o.p2 = Rt(p.p2); o.dir = Rt(p.dir); } else o.pts = p.pts.map(Rt); map.set(p, o); return o; });
+    parts.forEach(o => { if (o.lip) o.lip = map.get(o.lip); if (o.flange) o.flange = map.get(o.flange); });
+    return Object.assign({}, pz, { parts });
+  });
+  const out = Object.assign({}, sec, { P }), gp = mcProps([].concat(...P.map(pz => mcTiras(pz)))), nod = [].concat(...P.map(mcNodos)), t = sec.t;
+  Object.assign(out, gp, { ymax: Math.max(...nod.map(q => q[1])) + t / 2, ymin: Math.min(...nod.map(q => q[1])) - t / 2, xmax: Math.max(...nod.map(q => q[0])) + t / 2, xmin: Math.min(...nod.map(q => q[0])) - t / 2 });
+  out.Sxt = gp.Ix / (out.ymax - gp.yc); out.Sxb = gp.Ix / (gp.yc - out.ymin); out.Syr = gp.Iy / (out.xmax - gp.xc); out.Syl = gp.Iy / (gp.xc - out.xmin);
+  return out;
+}
+// ángulo: Mn en torno al eje principal menor con Fn = Fy (sin pandeo lateral-torsional en ese eje), F3.1, ambos sentidos
+function mcAnguloMenor(sec, Fy) {
+  const th0 = 0.5 * Math.atan2(-2 * sec.Ixy, sec.Ix - sec.Iy), c1 = mcRotarSec(sec, th0), c2 = mcRotarSec(sec, -th0), sr = Math.abs(c1.Ixy) <= Math.abs(c2.Ixy) ? c1 : c2, eje = sr.Ix <= sr.Iy ? 'x' : 'y';
+  const res = [1, -1].map(sg => { const fl = mcFlexEf(sr, eje, sg, Fy, Fy), Sfy = eje === 'x' ? Math.min(sr.Sxt, sr.Sxb) : Math.min(sr.Syr, sr.Syl); return { sg, fl, My: Sfy * Fy, Mn: Math.min(Sfy * Fy, fl.M) }; });
+  const gob = res[0].Mn <= res[1].Mn ? res[0] : res[1];
+  return { sr, eje, res, gob, Imin: Math.min(sr.Ix, sr.Iy) };
+}
+// m de I1.1: distancia del centro de corte de una C al plano medio de su alma
+function mcM1(sec) {
+  const s1 = mcSeccion({ g: Object.assign({}, sec.g, { perf: false }), ri: sec.g.ri, conf: 'S' });
+  return Math.abs(s1.sc ? s1.sc[0] : s1.xo);
+}
+
+/* ---------- abolladura del alma G5: Tablas G5-1, G5-2 y G5-4 de AISI S100-16 (EE. UU. y México)
+   coeficientes [C, CR, CN, Ch, Ωw, φw, R/t máx.]; lim = límites de cada tabla ---------- */
+const MC_G5T = {
+  'G5-1': { nom: 'Tabla G5-1 (perfil I de dos C espalda con espalda, por alma)', lim: { ht: 200, Nt: 210, Nh: 1.0 },
+    st: { fij: { EOF: [10, 0.14, 0.28, 0.001, 2.00, 0.75, 5], IOF: [20.5, 0.17, 0.11, 0.001, 1.75, 0.85, 5] },
+          lib: { EOF: [10, 0.14, 0.28, 0.001, 2.00, 0.75, 5], IOF: [20.5, 0.17, 0.11, 0.001, 1.75, 0.85, 3], ETF: [15.5, 0.09, 0.08, 0.04, 2.00, 0.75, 3], ITF: [36, 0.14, 0.08, 0.04, 2.00, 0.75, 3] } },
+    un: { fij: {}, lib: { EOF: [10, 0.14, 0.28, 0.001, 2.00, 0.75, 5], IOF: [20.5, 0.17, 0.11, 0.001, 1.75, 0.85, 3] } } },
+  'G5-2': { nom: 'Tabla G5-2 (canal y sección C de alma simple)', lim: { ht: 200, Nt: 210, Nh: 2.0 },
+    st: { fij: { EOF: [4, 0.14, 0.35, 0.02, 1.75, 0.85, 9], IOF: [13, 0.23, 0.14, 0.01, 1.65, 0.90, 5], ETF: [7.5, 0.08, 0.12, 0.048, 1.75, 0.85, 12], ITF: [20, 0.10, 0.08, 0.031, 1.75, 0.85, 12] },
+          lib: { EOF: [4, 0.14, 0.35, 0.02, 1.85, 0.80, 5], IOF: [13, 0.23, 0.14, 0.01, 1.65, 0.90, 5], ETF: [13, 0.32, 0.05, 0.04, 1.65, 0.90, 3], ITF: [24, 0.52, 0.15, 0.001, 1.90, 0.80, 3] } },
+    un: { fij: {}, lib: { EOF: [4, 0.40, 0.60, 0.03, 1.80, 0.85, 2], IOF: [13, 0.32, 0.10, 0.01, 1.80, 0.85, 1], ETF: [2, 0.11, 0.37, 0.01, 2.00, 0.75, 1], ITF: [13, 0.47, 0.25, 0.04, 1.90, 0.80, 1] } } },
+  'G5-4': { nom: 'Tabla G5-4 (sección omega simple, por alma)', lim: { ht: 200, Nt: 200, Nh: 2.0 },
+    st: { fij: { EOF: [4, 0.25, 0.68, 0.04, 2.00, 0.75, 5], IOF: [17, 0.13, 0.13, 0.04, 1.80, 0.85, 10], ETF: [9, 0.10, 0.07, 0.03, 1.75, 0.85, 10], ITF: [10, 0.14, 0.22, 0.02, 1.80, 0.85, 10] },
+          lib: { EOF: [4, 0.25, 0.68, 0.04, 2.00, 0.75, 5], IOF: [17, 0.13, 0.13, 0.04, 1.80, 0.85, 10] } } },
 };
 const MC_CASOS = [['EOF', 'Carga en un ala, en el extremo (EOF)'], ['IOF', 'Carga en un ala, interior (IOF)'], ['ETF', 'Carga en dos alas opuestas, en el extremo (ETF)'], ['ITF', 'Carga en dos alas opuestas, interior (ITF)']];
-function mcG5Alma(t, h, R, N, Fy, tipo, fij, caso) {
-  const c = MC_G5[tipo][fij ? 'fij' : 'lib'][caso];
-  const Pn = c[0] * t * t * Fy * (1 - c[1] * Math.sqrt(R / t)) * (1 + c[2] * Math.sqrt(N / t)) * (1 - c[3] * Math.sqrt(h / t));
-  const fuera = [];
-  if (h / t > 200) fuera.push('h/t > 200'); if (N / t > 210) fuera.push('N/t > 210'); if (N / h > 2) fuera.push('N/h > 2'); if (R / t > c[6]) fuera.push(`R/t > ${c[6]}`);
-  return { Pn: Math.max(0, Pn), Om: c[4], phi: c[5], c, fuera };
+// G5 (y G6 si hay perforación). Devuelve { fuera: [], err: [], Pn, Om, phi, ... }
+function mcG5(sec, inp, Fy, pf) {
+  const out = { fuera: [], err: [], filas: [] }, f = x => (Math.round(x * 100) / 100).toString().replace('.', ',');
+  const casoTxt = (MC_CASOS.find(c => c[0] === inp.caso) || ['', inp.caso])[1];
+  if (sec.conf === 'CAU') { out.fuera.push('cajón C dentro de U: secciones anidadas no cubiertas por las Tablas G5-1 a G5-5'); return out; }
+  if (sec.k === 'PL' || sec.k === 'L') { out.fuera.push('pletinas y ángulos no cubiertos por las Tablas G5-1 a G5-5'); return out; }
+  const g = sec.g, t = g.t, lab = sec.P[0].parts.some(p => p.role === 'lip');
+  const tab = sec.conf === '2CA' ? 'G5-1' : sec.k === 'OMA' ? 'G5-4' : 'G5-2', T = MC_G5T[tab], tipo = sec.k === 'OMA' ? 'st' : lab ? 'st' : 'un';
+  const c = (T[tipo][inp.fij ? 'fij' : 'lib'] || {})[inp.caso];
+  out.tabla = T.nom; out.tab = tab;
+  if (!c) { out.fuera.push(`la ${T.nom} no entrega coeficientes para ${tipo === 'un' ? 'alas no atiesadas ' : ''}${inp.fij ? 'fijadas al apoyo' : 'no fijadas'}, caso ${casoTxt}`); return out; }
+  const h = g.h - 2 * (g.ri + t), R = g.ri, N = inp.Nb, nAlmas = sec.k === 'OMA' ? 2 : sec.conf === '2CA' ? 2 : 1;
+  if (N < 19) out.fuera.push(`N = ${f(N)} mm < 19 mm (mínimo de G5)`);
+  if (h / t > T.lim.ht) out.fuera.push(`h/t = ${f(h / t)} > ${T.lim.ht}`);
+  if (N / t > T.lim.Nt) out.fuera.push(`N/t = ${f(N / t)} > ${T.lim.Nt}`);
+  if (N / h > T.lim.Nh) out.fuera.push(`N/h = ${f(N / h)} > ${f(T.lim.Nh)}`);
+  if (R / t > c[6]) out.fuera.push(`R/t = ${f(R / t)} > ${c[6]}`);
+  if (tab === 'G5-2' && inp.fij && inp.caso === 'ITF' && g.h < 110) out.fuera.push('ITF fijado: la Tabla G5-2 exige d ≥ 110 mm');
+  // definición de los casos (G5) y distancias al extremo exigidas por las Tablas G5-2/G5-3
+  const extremo = inp.caso === 'EOF' || inp.caso === 'ETF', dE = inp.dEnd;
+  if (extremo && dE > 1.5 * h + 1e-9) out.err.push(`El caso ${inp.caso} exige una distancia del borde del apoyo al extremo ≤ 1,5·h = ${f(1.5 * h)} mm (ingresada ${f(dE)} mm)`);
+  if (!extremo && !(dE > 1.5 * h)) out.err.push(`El caso ${inp.caso} exige una distancia del borde del apoyo al extremo > 1,5·h = ${f(1.5 * h)} mm (ingresada ${f(dE)} mm)`);
+  if (tab === 'G5-2' && inp.fij && inp.caso === 'ITF' && dE < 2.5 * h) out.fuera.push(`ITF fijado: la Tabla G5-2 exige prolongar la barra ≥ 2,5·h = ${f(2.5 * h)} mm desde el borde del apoyo`);
+  const Pw = c[0] * t * t * Fy * (1 - c[1] * Math.sqrt(R / t)) * (1 + c[2] * Math.sqrt(N / t)) * (1 - c[3] * Math.sqrt(h / t));
+  let Rc = 1;
+  if (pf) {
+    if (!(inp.hp.x > 0)) out.fuera.push('perforación dentro del largo de apoyo: G6 exige un atiesador de apoyo (no evaluado)');
+    else if (tab !== 'G5-2' || !['EOF', 'IOF'].includes(inp.caso)) out.fuera.push('G6 solo entrega Rc para carga en un ala (EOF, IOF) de C de alma simple (Tabla G5-2)');
+    else {
+      pf.a113.forEach(x => out.fuera.push('G6: ' + x));
+      if (inp.hp.hEnd < g.h) out.fuera.push(`G6 e): distancia del extremo al borde de la perforación ${f(inp.hp.hEnd)} mm < d = ${f(g.h)} mm`);
+      if (inp.caso === 'EOF' && N < 25.4) out.fuera.push('G6: N < 25,4 mm (EOF)'); if (inp.caso === 'IOF' && N < 76.2) out.fuera.push('G6: N < 76,2 mm (IOF)');
+      const x = inp.hp.x, dh = pf.dh;
+      Rc = Math.min(1, inp.caso === 'EOF' ? 1.01 - 0.325 * dh / h + 0.083 * x / h : 0.90 - 0.047 * dh / h + 0.053 * x / h);
+    }
+  }
+  if (!(Pw > 0)) out.fuera.push('Pn ≤ 0 con los coeficientes de la tabla');
+  Object.assign(out, { c, h, R, N, nAlmas, Pw, Rc, Pn: Math.max(0, Pw) * nAlmas * Rc, Om: c[4], phi: c[5] });
+  return out;
+}
+
+/* ---------- estado de una lista de verificaciones ---------- */
+const MC_NV = 'NO VERIFICADO';
+function mcEstado(chk) {
+  if (!chk.length) return 'SIN SOLICITACIONES';
+  if (chk.some(c => !c.fuera && !c.ok)) return 'NO CUMPLE';
+  if (chk.some(c => c.fuera)) return MC_NV;
+  return 'CUMPLE';
+}
+function mcAdd(chk) {
+  return (nom, dem, cap, u, extra) => { const ratio = cap > 0 ? Math.abs(dem) / cap : null; const o = Object.assign({ nom, dem: Math.abs(dem), cap, u, ratio, ok: ratio != null && ratio <= 1 + 1e-9 }, extra || {}); if (!o.fuera) delete o.fuera; chk.push(o); return o; };
+}
+function mcCierre(R) {
+  // resultados no finitos: error (se bloquea), nunca un estado
+  const malos = R.chk.filter(c => !c.fuera && (!isFinite(c.dem) || !isFinite(c.cap) || !(c.cap > 0)));
+  if (malos.length) R.errores = (R.errores || []).concat(malos.map(c => `Resultado no finito o capacidad nula en «${c.nom}»: revise los datos`));
+  R.estado = mcEstado(R.chk); R.ok = R.estado === 'CUMPLE';
+  return R;
 }
 
 /* ---------- cálculo completo de la barra ---------- */
 function calcMcBarra(sec, inp) {
+  if (sec.conf === 'CAU') return calcMcCajon(sec, inp);
   const m = inp.mat, Fy = m.Fy, Fu = m.Fu, LRFD = inp.metodo === 'LRFD';
   const disp = (Rn, Om, phi) => LRFD ? phi * Rn : Rn / Om;
-  const g = sec.g, t = g.t, chk = [], av = [], R = { m, sec };
-  const N = inp.N * MC_KGF, Mx = inp.Mx * MC_KGF * 1000, My = inp.My * MC_KGF * 1000, V = inp.V * MC_KGF;
-  const add = (nom, dem, cap, u, extra) => { const ratio = cap > 0 ? Math.abs(dem) / cap : null; const o = Object.assign({ nom, dem: Math.abs(dem), cap, u, ratio, ok: ratio != null && ratio <= 1 + 1e-9 }, extra || {}); chk.push(o); return o; };
+  const g = sec.g, t = g.t, chk = [], av = [], R = { m, sec, hip: [], errores: [] };
+  const N = inp.N * MC_KGF, Mx = inp.Mx * MC_KGF * 1000, My = inp.My * MC_KGF * 1000, V = Math.abs(inp.V) * MC_KGF;
+  const add = mcAdd(chk), nv = (nom, motivo, extra) => add(nom, 0, 0, null, Object.assign({ fuera: motivo }, extra || {}));
   const kgf = x => x / MC_KGF, kgfm = x => x / MC_KGF / 1000;
-  const esPL = sec.k === 'PL', esL = sec.k === 'L', esCA = sec.k === 'CA' && g.c > t + sec.g.ri + 0.5 && sec.conf !== 'CAU';
-  // propiedades efectivas de referencia a Fy
+  const esPL = sec.k === 'PL', esL = sec.k === 'L', esOMA = sec.k === 'OMA', es2 = sec.conf === '2CA';
+  const labOMA = esOMA && sec.P[0].parts.some(p => p.role === 'lip');
+  const esCA = sec.k === 'CA' && sec.P[0].parts.some(p => p.role === 'lip');
+  const pf = g.perf && g.dh > 0 ? mcPerf(sec, inp) : null; R.pf = pf;
+  const efFuera = ef => ef.fuera.length ? 'Ancho efectivo fuera del Apéndice 1: ' + ef.fuera.join('; ') : '';
+  const fcrdOk = v => v > 0 && !!inp.fcrdFuente;
+  const fcrdMsg = (que, v) => v > 0 ? `Indique la fuente del análisis numérico de ${que} (Apéndice 2, 2.2)` : `ingrese Fcrd de ${que} obtenido por análisis numérico (Apéndice 2, 2.2, p. ej. franjas finitas) y su fuente`;
   R.Ae_Fy = mcAe(sec, Fy).props.A;
-  if (!esPL && !esL) { const fx = mcFlexEf(sec, 'x', 1, Fy, Fy); R.Sxe_Fy = fx.Se; R.efFx = fx; }
-  R.notas = new Set();
-  // --- tracción ---
+  if (!esPL && !esL) { const fx = mcFlexEf(sec, 'x', 1, Fy, Fy); R.Sxe_Fy = fx.Se; }
+  // --- tracción (D2, D3) y rotura en la unión (J6.2) ---
   if (N < 0) {
-    const nPerf = sec.P.filter(pz => pz.perfW > 0).length;
-    const An = (sec.A - nPerf * (g.perf ? inp.dh : 0) * t) * (1 - inp.red / 100), Ae = inp.Ush * An;
-    const Tn1 = sec.A * Fy, Tn2 = Ae * Fu, T1 = disp(Tn1, 1.67, 0.90), T2 = disp(Tn2, 2.00, 0.75);
-    R.trac = { An, Ae, Tn1, Tn2, T1, T2 };
-    add('Tracción — fluencia de la sección bruta (D2)', kgf(N), kgf(T1), 'kgf');
-    add('Tracción — rotura de la sección neta (D3)', kgf(N), kgf(T2), 'kgf');
-    R.Ta = Math.min(T1, T2);
-  }
-  // --- compresión ---
-  if (N > 0) {
-    if (esPL) { add('Compresión en pletina/tirante', kgf(N), 0, 'kgf', { fuera: 'Las pletinas y tirantes Metalcon trabajan solo en tracción' }); }
+    const Ahol = pf ? pf.nP * pf.dh * t : 0, An = sec.A - Ahol - inp.red / 100 * sec.A;
+    if (!(An > 0)) R.errores.push('El área neta en tracción resulta nula o negativa: revise la perforación y la reducción ingresada');
     else {
-      const fe = mcFeCompresion(sec, inp), e2 = mcFnE2(Fy, fe.Fe), Pne = sec.A * e2.Fn;
-      const ae = mcAe(sec, e2.Fn), Pnl = Math.min(Pne, ae.props.A * e2.Fn);
-      let Pnd = Infinity, dist = null;
-      if (esCA) { dist = mcDistorsional(sec, 'P', inp.Lm * 1000, 0); const Py = sec.A * Fy, Pcrd = sec.A * dist.Fd, ld = Math.sqrt(Py / Pcrd); Pnd = ld <= 0.561 ? Py : (1 - 0.25 * Math.pow(Pcrd / Py, 0.6)) * Math.pow(Pcrd / Py, 0.6) * Py; Object.assign(dist, { Py, Pcrd, ld, Pnd }); }
+      const Tn1 = sec.A * Fy, Tn2 = An * Fu, T1 = disp(Tn1, 1.67, 0.90), T2 = disp(Tn2, 2.00, 0.75);
+      R.trac = { An, Ahol, Tn1, Tn2, T1, T2 };
+      add('Tracción — fluencia de la sección bruta (D2)', kgf(N), kgf(T1), 'kgf', { ch: 'D' });
+      add('Tracción — rotura de la sección neta (D3)', kgf(N), kgf(T2), 'kgf', { ch: 'D' });
+      const fac = { TOR: [3.00, 0.50, 'tornillos'], PER: [2.22, 0.65, 'pernos'], SOL: [2.50, 0.60, 'soldadura'] }[inp.uni];
+      if (!fac) nv('Tracción — rotura en la unión extrema (J6.2)', 'Tipo de unión extrema no definido: la rotura con rezago de corte (J6.2) debe verificarse con el detalle de la unión');
+      else { const Ae = inp.Ush * An, Pnt = Fu * Ae, Pa = disp(Pnt, fac[0], fac[1]); Object.assign(R.trac, { Ae, Pnt, Pa6: Pa, fac }); add(`Tracción — rotura en la unión con ${fac[2]} (J6.2): Fu·Usl·Ant`, kgf(N), kgf(Pa), 'kgf', { ch: 'J' }); }
+      R.Ta = Math.min(T1, T2);
+    }
+  }
+  // --- compresión (E2, E3, E4) ---
+  if (N > 0) {
+    if (esPL) nv('Compresión en pletina o tirante', 'Las pletinas y tirantes Metalcon se verifican solo en tracción');
+    else if (pf && pf.a111.length) { nv('Compresión axial (E2, E3)', 'Perforaciones fuera de los límites de 1.1.1 (' + pf.a111.join('; ') + '): E2.5 exige el Apéndice 2 con perforaciones (no implementado)'); R.compInc = true; }
+    else {
+      const fe = mcFeCompresion(sec, inp), aeFy = mcAe(sec, Fy), lleno = aeFy.props.A >= sec.A * (1 - 1e-9);
+      let Fe = fe.Fe, modoFe = fe.modo;
+      if (esL && lleno) { Fe = Math.min(fe.sx, fe.sy); modoFe = 'flexión, radio de giro mínimo (E2.2: ángulo con Ae = A a Fy)'; }
+      const e2 = mcFnE2(Fy, Fe), Pne = sec.A * e2.Fn, ae = mcAe(sec, e2.Fn), Pnl = Math.min(Pne, ae.props.A * e2.Fn);
+      let Pnd = Infinity, dist = null, distNV = '';
+      if (esCA) {
+        dist = mcDistPerf(sec, 'P', inp.Lm * 1000, pf);
+        const Py = sec.A * Fy, Pcrd = sec.A * dist.Fd, ld = Math.sqrt(Py / Pcrd);
+        const P41 = ld <= 0.561 ? Py : (1 - 0.25 * Math.pow(Pcrd / Py, 0.6)) * Math.pow(Pcrd / Py, 0.6) * Py;
+        Pnd = P41;
+        if (pf) { const Pyn = pf.Anet * Fy, l1 = 0.561 * (Pyn / Py), l2 = 0.561 * (14 * Math.pow(Py / Pyn, 0.4) - 13), Pd2 = (1 - 0.25 * Math.pow(1 / l2, 1.2)) * Math.pow(1 / l2, 1.2) * Py;
+          if (ld <= l1) Pnd = Pyn; else if (ld <= l2) Pnd = Pyn - (Pyn - Pd2) / (l2 - l1) * (ld - l1); Object.assign(dist, { Pyn, l1, l2, Pd2 }); }
+        Object.assign(dist, { Py, Pcrd, ld, Pnd, metodo: 'Apéndice 2, 2.3.1.3' + (pf ? `, tr = ${dist.tr.toFixed(3).replace('.', ',')} mm (${dist.trEc}), E4.2` : ', E4.1') });
+      } else if (labOMA) {
+        if (fcrdOk(inp.FcrdP)) { const Py = sec.A * Fy, Pcrd = sec.A * inp.FcrdP, ld = Math.sqrt(Py / Pcrd); Pnd = ld <= 0.561 ? Py : (1 - 0.25 * Math.pow(Pcrd / Py, 0.6)) * Math.pow(Pcrd / Py, 0.6) * Py; dist = { Fd: inp.FcrdP, Py, Pcrd, ld, Pnd, metodo: 'Fcrd por análisis numérico (Apéndice 2, 2.2): ' + inp.fcrdFuente + ', E4.1' }; }
+        else distNV = 'Omega con labios comprimida: 2.3.1.3 no se aplica a la omega; ' + fcrdMsg('compresión', inp.FcrdP);
+      }
       const Pn = Math.min(Pne, Pnl, Pnd), Pa = disp(Pn, 1.80, 0.85);
-      R.comp = { fe, e2, Pne, ae, Pnl, dist, Pnd, Pn, Pa, gob: Pn === Pnd && Pnd < Pnl ? 'distorsional (E4)' : Pnl < Pne - 1e-6 ? 'pandeo global (E2) con pandeo local (E3)' : 'pandeo global (E2)' };
-      ae.notas.forEach(x => R.notas.add(x));
-      add(`Compresión axial — gobierna ${R.comp.gob}`, kgf(N), kgf(Pa), 'kgf');
-      const esb = Math.max(fe.esbX, fe.esbY); if (esb > 200) av.push(['info', `Esbeltez KL/r = ${esb.toFixed(0)} mayor que 200 (recomendación de AISI S100 E1).`]);
-      if (fe.modif && inp.a > fe.modif.aMax) add('Separación de los tornillos de unión de la doble C (I1.2: a ≤ L·ri/(2·r))', inp.a, fe.modif.aMax, 'mm');
-      if (esL) av.push(['info', 'Ángulo comprimido: AISI S100 exige considerar además un momento P·L/1000 en torno al eje menor; verifíquelo si el ángulo trabaja como puntal.']);
+      R.comp = { fe, Fe, modoFe, e2, Pne, ae, Pnl, dist, Pnd, Pn, Pa, gob: Pn === Pnd && Pnd < Pnl ? 'distorsional (E4)' : Pnl < Pne - 1e-6 ? 'pandeo global (E2) con pandeo local (E3)' : 'pandeo global (E2)' };
+      add(`Compresión axial — gobierna ${R.comp.gob}`, kgf(N), kgf(Pa), 'kgf', { ch: 'E', fuera: efFuera(ae) });
+      if (efFuera(ae)) R.compInc = true;
+      if (distNV) { nv('Compresión — pandeo distorsional (E4)', distNV); R.compInc = true; }
+      if (es2) {
+        if (fe.modif) add('Doble C: separación de conectores a ≤ ½·ri·(KL/r) (I1.2 a)', inp.a, fe.modif.aMax, 'mm', { ch: 'I' });
+        if (inp.u2.ext !== 'Si') nv('Doble C: unión de los extremos (I1.2 b)', 'Declare los extremos unidos con soldadura de largo ≥ ancho máximo o con conectores a ≤ 4 diámetros en 1,5 veces el ancho máximo');
+        else R.hip.push('I1.2 b): extremos de la doble C unidos con conectores a ≤ 4d en 1,5 veces el ancho máximo (o soldadura equivalente), según lo declarado.');
+        if (inp.u2.Vc > 0) add('Doble C: conector intermedio resiste el 2,5 % de Pa (I1.2 c)', kgf(0.025 * Pa), inp.u2.Vc, 'kgf', { ch: 'I' });
+        else nv('Doble C: resistencia del conector intermedio (I1.2 c)', 'Ingrese la resistencia disponible de un conector de unión de las almas (de la verificación de la unión con tornillos)');
+      }
+      if (esL && (!lleno || Pn < Pne - 1e-6)) {
+        const am = mcAnguloMenor(sec, Fy), Ma = disp(am.gob.Mn, 1.67, 0.90), Mimp = N * inp.L * 1000 / 1000, val = N / Pa + Mimp / Ma;
+        R.ang = { am, Ma, Mimp, val };
+        add('Ángulo comprimido: P/Pa + (P·L/1000)/Ma, eje principal menor (E3.1, H1.2)', val, 1, null, { ch: 'H' });
+      } else if (esL) R.hip.push('Ángulo con Ae = A a Fy y Pn = Pne: H1.2 no exige el momento adicional P·L/1000.');
       R.Pa = Pa;
     }
   }
-  // --- flexión ---
-  const MnLo = {};
-  if ((Mx !== 0 || My !== 0 || V !== 0 || inp.R > 0) && (esPL || esL)) { if (Mx || My) add('Flexión', 0, 0, 'kgfm', { fuera: 'La verificación a flexión no está disponible para pletinas y ángulos' }); }
-  else {
+  // --- flexión, corte y abolladura ---
+  if (esPL || esL) {
+    if (Mx !== 0) nv('Flexión en torno a x (Mx)', 'Flexión no implementada para pletinas y ángulos');
+    if (My !== 0) nv('Flexión en torno a y (My)', 'Flexión no implementada para pletinas y ángulos');
+    if (V !== 0) nv('Corte (G2)', 'Corte no implementado para pletinas y ángulos');
+    if (inp.R > 0) nv('Abolladura del alma (G5)', 'Las Tablas G5-1 a G5-5 no cubren pletinas ni ángulos');
+  } else {
+    const flexNV = pf && pf.a113.length ? 'Perforaciones fuera de los límites de 1.1.3 (' + pf.a113.join('; ') + '): F2.2 y F3.1.2 exigen el Apéndice 2 con perforaciones (no implementado)' : '';
+    let MnLo = null;
     if (Mx !== 0 || V !== 0 || inp.R > 0) {
-      const sg = Mx >= 0 ? 1 : -1, lt = mcFcreLTB(sec, inp, sg), Fn = Math.min(Fy, mcFnF2(Fy, lt.Fcre)), My0 = lt.Sf * Fy;
-      const Mne = Math.min(My0, lt.Sf * Fn), fl = mcFlexEf(sec, 'x', sg, Fn, Fy), Mnl = Math.min(Mne, fl.M);
-      const flo = mcFlexEf(sec, 'x', sg, Fy, Fy); MnLo.x = Math.min(My0, flo.M);
-      let Mnd = Infinity, dist = null;
-      if (esCA) { dist = mcDistorsional(sec, 'M', inp.Lm * 1000, 0); const Mcrd = lt.Sf * dist.Fd, ld = Math.sqrt(My0 / Mcrd); Mnd = ld <= 0.673 ? My0 : (1 - 0.22 * Math.pow(Mcrd / My0, 0.5)) * Math.pow(Mcrd / My0, 0.5) * My0; Object.assign(dist, { Mcrd, ld, Mnd }); }
-      const Mn = Math.min(Mne, Mnl, Mnd), Ma = disp(Mn, 1.67, 0.90);
-      R.fx = { lt, Fn, My0, Mne, fl, flo, Mnl, dist, Mnd, Mn, Ma, sg, gob: Mn === Mnd && Mnd < Mnl ? 'distorsional (F4)' : Mne < My0 - 1e-6 ? 'pandeo lateral-torsional (F2)' + (Mnl < Mne - 1e-6 ? ' con pandeo local (F3)' : '') : Mnl < Mne - 1e-6 ? 'pandeo local (F3)' : 'fluencia (F2, Mne = My)' };
-      fl.ef.notas.forEach(x => R.notas.add(x));
-      if (Mx !== 0) add(`Flexión eje x (Mx) — gobierna ${R.fx.gob}`, kgfm(Mx), kgfm(Ma), 'kgfm');
-      R.Max = Ma; R.Malo = disp(MnLo.x, 1.67, 0.90);
+      if (flexNV) { if (Mx !== 0) { nv('Flexión en torno a x (Mx)', flexNV); R.flexInc = true; } }
+      else {
+        const sg = Mx >= 0 ? 1 : -1, lt = mcFcreF2(sec, inp, 'x', sg), Fn = Math.min(Fy, mcFnF2(Fy, lt.Fcre)), My0 = Math.min(sec.Sxt, sec.Sxb) * Fy;
+        const Mne = Math.min(My0, lt.Sf * Fn), fl = mcFlexEf(sec, 'x', sg, Fn, Fy), Mnl = Math.min(Mne, fl.M);
+        const flo = mcFlexEf(sec, 'x', sg, Fy, Fy); MnLo = Math.min(My0, flo.M);
+        let Mnd = Infinity, dist = null, distNV = '';
+        if (esCA) {
+          dist = mcDistPerf(sec, 'M', inp.Lm * 1000, pf);
+          const Mcrd = lt.Sf * dist.Fd, ld = Math.sqrt(My0 / Mcrd), M41 = ld <= 0.673 ? My0 : (1 - 0.22 * Math.pow(Mcrd / My0, 0.5)) * Math.pow(Mcrd / My0, 0.5) * My0;
+          Mnd = M41;
+          if (pf) { const Myn = mcNeta(sec).Sxn * Fy, l1 = 0.673 * Math.pow(Myn / My0, 3), l2 = 0.673 * (1.7 * Math.pow(My0 / Myn, 2.7) - 0.7), Md2 = (1 - 0.22 * (1 / l2)) * (1 / l2) * My0;
+            if (ld <= l1) Mnd = Myn; else if (ld <= l2) Mnd = Math.min(M41, Myn - (Myn - Md2) / (l2 - l1) * (ld - l1)); Object.assign(dist, { Myn, l1, l2, Md2 }); }
+          Object.assign(dist, { Mcrd, ld, Mnd, metodo: 'Apéndice 2, 2.3.3.3 (β = 1)' + (pf ? `, tr = ${dist.tr.toFixed(3).replace('.', ',')} mm (${dist.trEc}), F4.2` : ', F4.1') });
+        } else if (labOMA && sg < 0) {
+          if (fcrdOk(inp.FcrdMx)) { const Mcrd = lt.Sf * inp.FcrdMx, ld = Math.sqrt(My0 / Mcrd); Mnd = ld <= 0.673 ? My0 : (1 - 0.22 * Math.pow(Mcrd / My0, 0.5)) * Math.pow(Mcrd / My0, 0.5) * My0; dist = { Fd: inp.FcrdMx, Mcrd, ld, Mnd, metodo: 'Fcrd por análisis numérico (Apéndice 2, 2.2): ' + inp.fcrdFuente + ', F4.1' }; }
+          else distNV = 'Omega con las alas con labio comprimidas: 2.3.3.3 exige un alma única; ' + fcrdMsg('flexión en torno a x', inp.FcrdMx);
+        }
+        const Mn = Math.min(Mne, Mnl, Mnd), Ma = disp(Mn, 1.67, 0.90);
+        R.fx = { lt, Fn, My0, Mne, fl, flo, Mnl, dist, Mnd, Mn, Ma, sg, gob: Mn === Mnd && Mnd < Mnl ? 'distorsional (F4)' : Mne < My0 - 1e-6 ? 'pandeo lateral-torsional (F2)' + (Mnl < Mne - 1e-6 ? ' con pandeo local (F3)' : '') : Mnl < Mne - 1e-6 ? 'pandeo local (F3)' : 'fluencia (F2, Mne = My)' };
+        const ff = efFuera(fl.ef) || efFuera(flo.ef);
+        if (Mx !== 0) { add(`Flexión eje x (Mx) — gobierna ${R.fx.gob}`, kgfm(Mx), kgfm(Ma), 'kgfm', { ch: 'F', fuera: ff }); if (ff) R.flexInc = true; }
+        if (distNV && Mx !== 0) { nv('Flexión eje x — pandeo distorsional (F4)', distNV); R.flexInc = true; }
+        if (ff) MnLo = null;
+        R.Max = Ma; R.MnLo = MnLo; R.Malo = MnLo != null ? disp(MnLo, 1.67, 0.90) : null;
+      }
     }
     if (My !== 0) {
-      const sg = My >= 0 ? 1 : -1, Sf = sg > 0 ? sec.Syr : sec.Syl, My0 = Sf * Fy;
-      const fl = mcFlexEf(sec, 'y', sg, Fy, Fy), Mn = Math.min(My0, fl.M), Ma = disp(Mn, 1.67, 0.90);
-      R.fy = { Sf, My0, fl, Mn, Ma, sg }; fl.ef.notas.forEach(x => R.notas.add(x));
-      add(`Flexión eje y (My) — ${sg > 0 ? 'comprime el borde de las alas' : 'comprime el lado del alma'} (F3)`, kgfm(My), kgfm(Ma), 'kgfm');
-      R.May = Ma;
-      if (esCA && sg > 0) av.push(['info', 'Flexión en el eje débil con los labios comprimidos: el pandeo distorsional en este caso no está evaluado.']);
-    }
-    // --- corte G2.1 ---
-    if (V !== 0) {
-      const almas = sec.P.map(pz => { const gg = pz.g, h = gg.h - 2 * (gg.ri + gg.t), tw = gg.t, Aw = h * tw, kv = 5.34;
-        const Vy = 0.6 * Aw * Fy, Vcr = Math.PI ** 2 * MC_E * kv * Aw / (12 * (1 - MC_MU ** 2) * (h / tw) ** 2), lv = Math.sqrt(Vy / Vcr);
-        let Vn = lv <= 0.815 ? Vy : lv <= 1.227 ? 0.815 * Math.sqrt(Vcr * Vy) : Vcr, qs = 1;
-        if (pz.perfW > 0) { const c = h / 2 - pz.perfW / 2; qs = c / tw >= 54 ? 1 : Math.max(0, c / (54 * tw)); Vn *= qs; }
-        return { h, tw, Aw, Vy, Vcr, lv, Vn, qs }; });
-      const Vn = almas.reduce((s, a) => s + a.Vn, 0), Va = disp(Vn, 1.60, 0.95);
-      R.v = { almas, Vn, Va }; add(`Corte en el alma${almas.length > 1 ? ' (dos almas)' : ''} (G2.1${almas.some(a => a.qs < 1) ? ', G4 alma perforada' : ''})`, kgf(V), kgf(Va), 'kgf');
-      if (Mx !== 0 && R.Malo) { const val = Math.sqrt((Math.abs(Mx) / R.Malo) ** 2 + (Math.abs(V) / Va) ** 2); R.H2 = val; add('Interacción flexión y corte (H2)', val, 1, null); }
-    }
-    // --- abolladura del alma G5 ---
-    if (inp.R > 0) {
-      const Rr = inp.R * MC_KGF, out = [];
-      sec.P.forEach(pz => { const gg = pz.g, h = gg.h - 2 * (gg.ri + gg.t); out.push(Object.assign(mcG5Alma(gg.t, h, gg.ri, inp.Nb, Fy, gg.k === 'CA' && gg.c > gg.t + gg.ri + 0.5 ? 'rig' : 'nor', inp.fij, inp.caso), { h, pz })); });
-      const Pn = out.reduce((s, o) => s + o.Pn, 0), Om = Math.max(...out.map(o => o.Om)), phi = Math.min(...out.map(o => o.phi)), Pa = disp(Pn, Om, phi);
-      const fuera = [...new Set([].concat(...out.map(o => o.fuera)))];
-      R.g5 = { out, Pn, Om, phi, Pa };
-      add(`Abolladura del alma — ${(MC_CASOS.find(c => c[0] === inp.caso) || ['', ''])[1]}, ${inp.fij ? 'fijado al apoyo' : 'no fijado'} (G5)`, kgf(Rr), kgf(Pa), 'kgf', fuera.length ? { fuera: 'Fuera del rango de G5: ' + fuera.join(', ') } : null);
-      if (inp.MR !== 0 && MnLo.x) {
-        const Mr = Math.abs(inp.MR) * MC_KGF * 1000, multi = sec.conf === '2CA';
-        const a = multi ? 0.82 : 0.91, lim = multi ? 1.32 : 1.33;
-        const val = a * (Rr / Pn) + Mr / MnLo.x, cap = LRFD ? lim * 0.90 : lim / 1.70;
-        R.H3 = { val, cap, a, lim }; add(`Interacción abolladura y flexión (H3${multi ? ', alma múltiple' : ''}): ${a.toLocaleString('es-CL')}·P/Pn + M/Mnℓo ≤ ${(cap).toLocaleString('es-CL', { maximumFractionDigits: 3 })}`, val, cap, null);
+      if (flexNV) { nv('Flexión en torno a y (My)', flexNV); R.flexInc = true; }
+      else if (es2) { nv('Flexión en torno a y (My) de la doble C', 'La acción conjunta en flexión en torno al eje y (corte en la interfaz de las almas, transmitido por los conectores) no está cubierta por I1.1: verifique cada C por separado'); R.flexInc = true; }
+      else {
+        const sg = My >= 0 ? 1 : -1, lt = mcFcreF2(sec, inp, 'y', sg), Fn = Math.min(Fy, mcFnF2(Fy, lt.Fcre)), My0 = Math.min(sec.Syr, sec.Syl) * Fy;
+        const Mne = Math.min(My0, lt.Sf * Fn), fl = mcFlexEf(sec, 'y', sg, Fn, Fy), Mnl = Math.min(Mne, fl.M);
+        // labios comprimidos: C con My > 0 (bordes de las alas) u omega con labios (un ala con labio siempre comprimida)
+        const labComp = (esCA && sg > 0) || labOMA;
+        let Mnd = Infinity, dist = null, distNV = '';
+        if (labComp) {
+          if (fcrdOk(inp.FcrdMy)) { const Mcrd = lt.Sf * inp.FcrdMy, ld = Math.sqrt(My0 / Mcrd); Mnd = ld <= 0.673 ? My0 : (1 - 0.22 * Math.pow(Mcrd / My0, 0.5)) * Math.pow(Mcrd / My0, 0.5) * My0; dist = { Fd: inp.FcrdMy, Mcrd, ld, Mnd, metodo: 'Fcrd por análisis numérico (Apéndice 2, 2.2): ' + inp.fcrdFuente + ', F4.1' }; }
+          else distNV = 'Flexión en torno a y con labios comprimidos: 2.3.3.3 no cubre este caso; ' + fcrdMsg('flexión en torno a y', inp.FcrdMy);
+        }
+        const Mn = Math.min(Mne, Mnl, Mnd), Ma = disp(Mn, 1.67, 0.90);
+        R.fy = { lt, Fn, My0, Mne, fl, Mnl, dist, Mnd, Mn, Ma, sg, labComp, gob: Mn === Mnd && Mnd < Mnl ? 'distorsional (F4)' : Mne < My0 - 1e-6 ? 'pandeo lateral-torsional (F2)' + (Mnl < Mne - 1e-6 ? ' con pandeo local (F3)' : '') : Mnl < Mne - 1e-6 ? 'pandeo local (F3)' : 'fluencia (F2, Mne = My)' };
+        const ff = efFuera(fl.ef);
+        add(`Flexión eje y (My) — ${sg > 0 ? (esOMA ? 'comprime el lado x+' : 'comprime los bordes de las alas') : (esOMA ? 'comprime el lado x−' : 'comprime el lado del alma')}; gobierna ${R.fy.gob}`, kgfm(My), kgfm(Ma), 'kgfm', { ch: 'F', fuera: ff });
+        if (ff) R.flexInc = true;
+        if (distNV) { nv('Flexión eje y — pandeo distorsional (F4)', distNV); R.flexInc = true; }
+        R.May = Ma;
       }
-      if (g.perf) av.push(['info', 'Perfil perforado: G5 no considera la reducción por perforación; las perforaciones deben quedar fuera del largo de apoyo.']);
+    }
+    // --- corte (G2.1, G3) ---
+    if (V !== 0) {
+      if (pf && pf.a113.length) nv('Corte en el alma (G3)', 'Perforaciones fuera de los límites de G3: ' + pf.a113.join('; '));
+      else {
+        let fueraV = '';
+        const almas = [];
+        sec.P.forEach(pz => { const gg = pz.g, h = gg.h - 2 * (gg.ri + gg.t), tw = gg.t, Aw = h * tw, kv = 5.34, n = gg.k === 'OMA' ? 2 : 1;
+          const Vy = 0.6 * Aw * Fy, Vcr = Math.PI ** 2 * MC_E * kv * Aw / (12 * (1 - MC_MU ** 2) * (h / tw) ** 2), lv = Math.sqrt(Vy / Vcr);
+          let Vn = lv <= 0.815 ? Vy : lv <= 1.227 ? 0.815 * Math.sqrt(Vcr * Vy) : Vcr, qs = 1, c = null;
+          if (pz.perfW > 0) { c = h / 2 - pz.perfW / (pz.perfForma === 'C' ? 2.83 : 2); if (c / tw < 5) fueraV = 'G3: c/t < 5, fuera del rango de qs'; else qs = c / tw >= 54 ? 1 : c / (54 * tw); Vn *= qs; }
+          for (let i = 0; i < n; i++) almas.push({ h, tw, Aw, Vy, Vcr, lv, Vn, qs, c }); });
+        const Vn = almas.reduce((s, a) => s + a.Vn, 0), Va = disp(Vn, 1.60, 0.95);
+        R.v = { almas, Vn, Va };
+        add(`Corte en el alma${almas.length > 1 ? ` (${almas.length} almas)` : ''} (G2.1${almas.some(a => a.c != null) ? ', G3 alma perforada' : ''})`, kgf(V), kgf(Va), 'kgf', { ch: 'G', fuera: fueraV });
+        if (Mx !== 0) {
+          if (R.Malo == null || fueraV) nv('Interacción flexión y corte (H2)', 'Falta Mao o Va verificados');
+          else { const val = Math.sqrt((Math.abs(Mx) / R.Malo) ** 2 + (V / Va) ** 2); R.H2 = val; add('Interacción flexión y corte (H2): (M/Mao)² + (V/Va)² ≤ 1', val, 1, null, { ch: 'H' }); }
+        }
+      }
+    }
+    // --- abolladura del alma (G5, G6) e interacción H3 ---
+    if (inp.R > 0) {
+      const Rr = inp.R * MC_KGF, w5 = mcG5(sec, inp, Fy, pf), casoTxt = (MC_CASOS.find(c => c[0] === inp.caso) || ['', ''])[1];
+      w5.err.forEach(e => R.errores.push(e));
+      const nom = `Abolladura del alma — ${casoTxt}, ${inp.fij ? 'fijada al apoyo' : 'no fijada'} (G5${pf ? ', G6' : ''})`;
+      if (w5.fuera.length) nv(nom, 'Fuera del alcance de G5/G6: ' + w5.fuera.join('; '));
+      else { const Pa = disp(w5.Pn, w5.Om, w5.phi); w5.Pa = Pa; add(nom, kgf(Rr), kgf(Pa), 'kgf', { ch: 'G' }); }
+      R.g5 = w5;
+      if (inp.MR !== 0) {
+        if (w5.fuera.length || MnLo == null) nv('Interacción abolladura y flexión (H3)', 'Falta Pn (G5) o Mno (F3 con Fn = Fy) verificados');
+        else {
+          const Mr = Math.abs(inp.MR) * MC_KGF * 1000, Mao = disp(MnLo, 1.67, 0.90), multi = es2;
+          const a = multi ? 0.88 : 0.91, lim = multi ? 1.46 : 1.33, val = a * (Rr / w5.Pn) + Mr / MnLo, cap = LRFD ? lim * 0.90 : lim / 1.70;
+          R.H3 = { val, cap, a, lim, Mao, Mr };
+          add('Flexión en el punto de la carga: M ≤ Mao (H3)', kgfm(Mr), kgfm(Mao), 'kgfm', { ch: 'H' });
+          add(`Interacción abolladura y flexión (${multi ? 'H3-2, almas múltiples' : 'H3-1, alma simple'}): ${a.toLocaleString('es-CL')}·P/Pn + M/Mno ≤ ${cap.toLocaleString('es-CL', { maximumFractionDigits: 3 })}`, val, cap, null, { ch: 'H' });
+        }
+      }
+    }
+    // --- uniones de la doble C en flexión (I1.1) ---
+    if (es2 && (Mx !== 0 || V !== 0 || inp.R > 0)) {
+      const u2 = inp.u2;
+      if (!(u2.g > 0 && u2.Ts > 0 && u2.w != null && u2.w >= 0)) nv('Doble C en flexión: separación máxima de las conexiones (I1.1)', 'Ingrese g, Ts de la conexión (Cap. J) y la carga distribuida de diseño de la viga');
+      else {
+        const m1 = mcM1(sec), qU = 3 * u2.w * MC_KGF / 1000, qP = inp.R > 0 ? inp.R * MC_KGF / inp.Nb : 0, q = Math.max(qU, qP), Ts = u2.Ts * MC_KGF;
+        const smax = Math.min(inp.L * 1000 / 6, q > 0 ? 2 * u2.g * Ts / (m1 * q) : Infinity);
+        R.I11 = { m1, q, qU, qP, smax, Ts };
+        add('Doble C: separación de las conexiones s ≤ smax = mín(L/6; 2·g·Ts/(m·q)) (I1.1)', inp.a, smax, 'mm', { ch: 'I' });
+        if (inp.R > 0 && inp.Nb < inp.a) { const Tr = inp.R * MC_KGF * m1 / (2 * u2.g); R.I11.Tr = Tr; add('Doble C: tracción en la conexión junto a la carga concentrada, Tr = Ps·m/(2g) (I1.1)', kgf(Tr), u2.Ts, 'kgf', { ch: 'I' }); }
+      }
     }
   }
-  // --- interacción ---
-  if (N > 0 && R.Pa && (Mx !== 0 || My !== 0) && !esPL && !esL) {
-    const v = N / R.Pa + (Mx !== 0 ? Math.abs(Mx) / R.Max : 0) + (My !== 0 ? Math.abs(My) / R.May : 0);
-    R.H = { ec: 'H1.2', v }; add('Interacción compresión y flexión (H1.2)', v, 1, null);
-    av.push(['info', 'H1.2 de AISI S100-16 supone momentos de segundo orden (análisis directo, Cap. C). Si el análisis es de primer orden, ingrese los momentos amplificados.']);
+  // --- interacciones H1 ---
+  const hayM = Mx !== 0 || My !== 0;
+  if (N > 0 && hayM && !esPL && !esL) {
+    if (inp.ord !== '2O') nv('Interacción compresión y flexión (H1.2)', 'H1.2 exige P y M determinados según C1, con efectos de segundo orden; se declararon solicitaciones de primer orden sin amplificar');
+    else if (!R.Pa || R.compInc || R.flexInc || (Mx !== 0 && !R.Max) || (My !== 0 && !R.May)) nv('Interacción compresión y flexión (H1.2)', 'Falta alguna resistencia individual verificada (Pa, Max o May)');
+    else { const v = N / R.Pa + (Mx !== 0 ? Math.abs(Mx) / R.Max : 0) + (My !== 0 ? Math.abs(My) / R.May : 0); R.H = { ec: 'H1.2', v }; add('Interacción compresión y flexión (H1.2): P/Pa + Mx/Max + My/May ≤ 1', v, 1, null, { ch: 'H' }); }
   }
-  if (N < 0 && R.Ta && (Mx !== 0 || My !== 0) && !esPL && !esL) {
-    const Mxt = Mx !== 0 ? disp((Mx >= 0 ? sec.Sxb : sec.Sxt) * Fy, 1.67, 0.90) : 1, Myt = My !== 0 ? disp((My >= 0 ? sec.Syl : sec.Syr) * Fy, 1.67, 0.90) : 1;
-    const v1 = Math.abs(Mx) / Mxt + Math.abs(My) / Myt + Math.abs(N) / R.Ta, v2 = (Mx !== 0 ? Math.abs(Mx) / R.Max : 0) + (My !== 0 ? Math.abs(My) / R.May : 0) - Math.abs(N) / R.Ta;
-    R.H = { ec: 'H1.1', v: Math.max(v1, v2), v1, v2 }; add('Interacción tracción y flexión (H1.1)', Math.max(v1, v2), 1, null);
+  if (N < 0 && hayM && !esPL && !esL) {
+    if (!R.Ta || R.flexInc || (Mx !== 0 && !R.Max) || (My !== 0 && !R.May)) nv('Interacción tracción y flexión (H1.1)', 'Falta alguna resistencia individual verificada (Ta, Max o May)');
+    else {
+      const Mxt = Mx !== 0 ? disp((Mx >= 0 ? sec.Sxb : sec.Sxt) * Fy, 1.67, 0.90) : 1, Myt = My !== 0 ? disp((My >= 0 ? sec.Syl : sec.Syr) * Fy, 1.67, 0.90) : 1;
+      const v1 = Math.abs(Mx) / Mxt + Math.abs(My) / Myt + Math.abs(N) / R.Ta, v2 = (Mx !== 0 ? Math.abs(Mx) / R.Max : 0) + (My !== 0 ? Math.abs(My) / R.May : 0) - Math.abs(N) / R.Ta;
+      R.H = { ec: 'H1.1', v: Math.max(v1, v2), v1, v2 }; add('Interacción tracción y flexión (H1.1)', Math.max(v1, v2), 1, null, { ch: 'H' });
+    }
   }
-  R.notas.forEach(x => av.push(['info', x]));
-  R.chk = chk; R.av = av; R.ok = chk.length > 0 && chk.every(c => c.fuera ? true : c.ok) && !chk.some(c => c.fuera && c.cap === 0);
-  return R;
+  // --- hipótesis de análisis y de arriostramiento (C1, C2) ---
+  if (N > 0 && hayM) R.hip.push(inp.ord === '2O' ? 'P y M de un análisis que incluye los efectos de segundo orden (C1: análisis directo, o momentos amplificados según C1.2/C1.3), declarado.' : 'P y M declarados de primer orden sin amplificar.');
+  const usaArr = (N > 0 || hayM) && (inp.Ly < inp.L - 1e-9 || inp.Lt < inp.L - 1e-9 || (hayM && inp.Lb < inp.L - 1e-9) || (esCA && inp.Lm > 0 && inp.Lm < inp.L - 1e-9));
+  if (usaArr) {
+    if (inp.arr === 'DIS') R.hip.push(`Arriostres que definen Ly = ${mcF2(inp.Ly)} m, Lt = ${mcF2(inp.Lt)} m, Lb = ${inp.Lb > 0 ? mcF2(inp.Lb) + ' m' : 'continuo'}${esCA ? `, Lm = ${inp.Lm > 0 ? mcF2(inp.Lm) + ' m' : 'sin restricción (Lcrd)'}` : ''}: diseñados por separado con resistencia y rigidez (C2), declarado.`);
+    else nv('Arriostramiento (C2)', 'Las longitudes no arriostradas suponen arriostres intermedios o continuos que no se han verificado');
+  }
+  if (hayM || V !== 0) R.hip.push('F2: KyLy = KtLt = Lb' + (esCA || sec.k === 'U' || es2 ? '; Cb solo en F2.1.1' : '') + '; distorsional con kφ = 0 (sin aporte del revestimiento).');
+  if (inp.R > 0) R.hip.push('G5: alma perpendicular al apoyo (θ = 90°) y caso de carga según las definiciones de G5 (distancia libre entre cargas opuestas ≥ 1,5h para carga en un ala).');
+  if (pf) R.hip.push(`Alma perforada: ${pf.circ ? 'perforación circular' : 'perforación no circular'} centrada en el alma, dh = ${mcF2(pf.dh)} mm, Lh = ${mcF2(pf.Lh)} mm, separación entre centros ${mcF2(inp.hp.s)} mm.`);
+  // --- límites de B4.1: Ω y φ de los Cap. E a H solo dentro de la Tabla B4.1-1 ---
+  const b41 = (N > 0 || hayM || V !== 0 || inp.R > 0) ? mcB41(sec, Fy) : [];
+  R.b41 = b41;
+  if (b41.length) {
+    const mot = 'Fuera de la Tabla B4.1-1 (' + b41.join('; ') + '): rige A1.2 (no implementado)';
+    chk.forEach(c => { if (!c.fuera && ['E', 'F', 'G', 'H'].includes(c.ch)) c.fuera = mot; });
+    nv('Límites de aplicación del método del ancho efectivo (B4.1)', mot);
+  }
+  R.chk = chk; R.av = av;
+  return mcCierre(R);
+}
+const mcF2 = x => (Math.round(x * 100) / 100).toLocaleString('es-CL');
+
+/* ---------- cajón C dentro de U ---------- */
+function calcMcCajon(sec, inp) {
+  const R = { m: inp.mat, sec, chk: [], av: [], hip: [], errores: [], piezas: [] }, add = mcAdd(R.chk), nv = (nom, motivo) => add(nom, 0, 0, null, { fuera: motivo });
+  if (inp.cau !== 'IND') {
+    nv('Cajón C dentro de U — acción conjunta', 'Acción conjunta no justificada: AISI S100-16 no entrega un método para tratar el cajón unido con tornillos como sección cerrada (torsión, pandeo global y lateral-torsional), ni para verificar la transferencia de esfuerzos por sus conexiones. Se bloquea esa capacidad. Use «piezas independientes con reparto por rigidez» o justifique la acción conjunta por análisis racional o ensayos (A1.2, K2).');
+    return mcCierre(R);
+  }
+  const gC = Object.assign({}, sec.g), gU = Object.assign({}, sec.gU, { k: 'U', perf: false });
+  const sC = mcSeccion({ g: gC, ri: sec.g.ri, conf: 'S', dh: sec.g.dh, hForma: sec.g.hForma }), sU = mcSeccion({ g: gU, ri: sec.g.ri, conf: 'S' });
+  const A = sC.A + sU.A, Ix = sC.Ix + sU.Ix, Iy = sC.Iy + sU.Iy;
+  R.hip.push('Cajón verificado como dos piezas independientes (sin acción compuesta ni torsión de sección cerrada): N repartida por área, Mx y V por Ix, My por Iy de cada pieza. Supone la carga introducida en ambas piezas y las alas unidas con tornillos que aseguran deformaciones compatibles.');
+  if (inp.R > 0) nv('Abolladura del alma del cajón (G5)', 'Secciones anidadas: no cubiertas por las Tablas G5-1 a G5-5');
+  [[sC, 'C ' + (sec.g.id || ''), sC.A / A, sC.Ix / Ix, sC.Iy / Iy], [sU, 'U ' + (sec.gU.id || ''), sU.A / A, sU.Ix / Ix, sU.Iy / Iy]].forEach(([s, nom, fA, fx, fy]) => {
+    const ip = Object.assign({}, inp, { N: inp.N * fA, Mx: inp.Mx * fx, My: inp.My * fy, V: inp.V * fx, R: 0, MR: 0 });
+    const r = calcMcBarra(s, ip);
+    R.piezas.push({ nom, sec: s, r, fA, fx, fy, inp: ip });
+    r.chk.forEach(c => R.chk.push(Object.assign({}, c, { nom: nom.trim() + ' — ' + c.nom })));
+    r.hip.forEach(h => { if (!R.hip.includes(h)) R.hip.push(h); });
+    (r.errores || []).forEach(e => R.errores.push(nom.trim() + ': ' + e));
+  });
+  return mcCierre(R);
 }
 
-/* ---------- unión con tornillos autoperforantes (J4) ---------- */
+/* ---------- unión con tornillos autoperforantes (J4, J6.1) ---------- */
 function calcMcTornillos(inp) {
   const LRFD = inp.metodo === 'LRFD', disp = (Rn, Om, phi) => LRFD ? phi * Rn : Rn / Om;
-  const { d, t1, t2, Fu1, Fu2, n } = inp, chk = [], av = [], kgf = x => x / MC_KGF;
-  const add = (nom, dem, cap, u, extra) => { const ratio = cap > 0 ? Math.abs(dem) / cap : null; const o = Object.assign({ nom, dem: Math.abs(dem), cap, u, ratio, ok: ratio != null && ratio <= 1 + 1e-9 }, extra || {}); chk.push(o); return o; };
-  const Q = inp.V * MC_KGF / n, T = inp.T * MC_KGF / n;
-  // J4.3.1 corte por aplastamiento / volcamiento del tornillo
+  const { d, t1, t2, Fu1, Fu2, n } = inp, chk = [], av = [], hip = [], kgf = x => x / MC_KGF;
+  const add = mcAdd(chk), nv = (nom, motivo) => add(nom, 0, 0, null, { fuera: motivo });
+  const f = x => (Math.round(x * 100) / 100).toString().replace('.', ',');
+  const Q = Math.abs(inp.V) * MC_KGF / n, T = inp.T * MC_KGF / n, R = { Q, T, chk, av, hip, errores: [] };
+  if (!(d >= 2.03 && d <= 6.35)) { nv('Alcance de J4', `J4 aplica a tornillos con 2,03 mm ≤ d ≤ 6,35 mm (d = ${f(d)} mm)`); return mcCierre(R); }
+  const doc = !!inp.fuente, num = inp.num;
+  // J4.3.1 inclinación y aplastamiento
   const r = t2 / t1, a1 = 4.2 * Math.sqrt(t2 ** 3 * d) * Fu2, a2 = 2.7 * t1 * d * Fu1, a3 = 2.7 * t2 * d * Fu2;
-  const P1 = Math.min(a1, a2, a3), P25 = Math.min(a2, a3);
-  const Pns = r <= 1 ? P1 : r >= 2.5 ? P25 : P1 + (P25 - P1) * (r - 1) / 1.5;
-  const Pnv = Math.min(t1 * Fu1, t2 * Fu2) * inp.e;  // J4.3.2 distancia al borde (elemento más delgado gobierna)
+  const P1 = Math.min(a1, a2, a3), P25 = Math.min(a2, a3), Pnv = r <= 1 ? P1 : r >= 2.5 ? P25 : P1 + (P25 - P1) * (r - 1) / 1.5;
+  // J6.1 rotura por corte hacia el borde: Pnv = 0,6·Fu·Anv, Anv = 2·n·t·e_net (por tornillo, n = 1), e_net = e − d/2
+  const enet = inp.e - d / 2, Pr1 = 0.6 * Fu1 * 2 * t1 * enet, Pr2 = 0.6 * Fu2 * 2 * t2 * enet;
   const Pss = inp.Pss * 1000, Pts = inp.Pts * 1000;
-  const Vs = Math.min(disp(Pns, 3.0, 0.5), disp(Pnv, 3.0, 0.5), disp(Pss, 3.0, 0.5));
+  Object.assign(R, { r, a1, a2, a3, Pnv, enet, Pr1, Pr2, Pss, Pts });
   if (Q > 0) {
-    add('Corte por tornillo — volcamiento y aplastamiento (J4.3.1)', kgf(Q), kgf(disp(Pns, 3.0, 0.5)), 'kgf');
-    add('Corte por tornillo — distancia al borde (J4.3.2)', kgf(Q), kgf(disp(Pnv, 3.0, 0.5)), 'kgf');
-    add('Corte del tornillo — Pss del fabricante (J4.3.3)', kgf(Q), kgf(disp(Pss, 3.0, 0.5)), 'kgf');
+    add('Corte — inclinación y aplastamiento de la lámina (J4.3.1)', kgf(Q), kgf(disp(Pnv, 3.0, 0.5)), 'kgf');
+    if (enet > 0) {
+      add('Corte — rotura hacia el borde, lámina t1 (J6.1: 0,6·Fu1·2·t1·e_net)', kgf(Q), kgf(disp(Pr1, 3.0, 0.5)), 'kgf');
+      add('Corte — rotura hacia el borde, lámina t2 (J6.1: 0,6·Fu2·2·t2·e_net)', kgf(Q), kgf(disp(Pr2, 3.0, 0.5)), 'kgf');
+    } else nv('Corte — rotura hacia el borde (J6.1)', 'e_net = e − d/2 ≤ 0');
+    if (Pss > 0 && doc) add('Corte del tornillo — Pnvs documentado (J4.3.2)', kgf(Q), kgf(disp(Pss, 3.0, 0.5)), 'kgf');
+    else nv('Corte del tornillo (J4.3.2)', Pss > 0 ? 'Indique la fuente documentada de Pnvs (fabricante o ensayo de laboratorio independiente)' : 'Ingrese Pnvs del fabricante o de un ensayo de laboratorio independiente');
   }
-  // J4.4 tracción: arrancamiento y desgarro bajo la cabeza
-  const tc = inp.tc > 0 ? Math.min(inp.tc, t2) : t2, dw = Math.min(inp.dw, 12.7);
-  const Pnot = 0.85 * tc * d * Fu2, Pnov = 1.5 * t1 * dw * Fu1;
+  // J4.4.2 diámetro efectivo d'w
+  const cab = inp.cab, dh = inp.dh, tw = inp.tw, dw = inp.dw;
+  const dpw = cab === 'A' ? Math.min(dh + 2 * tw + t1, dw) : cab === 'C' ? Math.min(dh + 2 * tw + t1, dw, 19.1) : Math.min(dh, 19.1);
+  const dMax = cab === 'B' ? dh : Math.max(dh, dw);
+  const tc = inp.tc > 0 ? Math.min(inp.tc, t2) : t2, Pnot = 0.85 * tc * d * Fu2, Pnov = 1.5 * t1 * dpw * Fu1;
+  Object.assign(R, { dpw, dMax, tc, Pnot, Pnov });
   if (T > 0) {
-    add('Tracción por tornillo — arrancamiento (pull-out, J4.4.1)', kgf(T), kgf(disp(Pnot, 3.0, 0.5)), 'kgf');
-    add('Tracción por tornillo — desgarro bajo la cabeza (pull-over, J4.4.2)', kgf(T), kgf(disp(Pnov, 3.0, 0.5)), 'kgf');
-    add('Tracción del tornillo — Pts del fabricante (J4.4.3)', kgf(T), kgf(disp(Pts, 3.0, 0.5)), 'kgf');
+    add('Cabeza o golilla: diámetro ≥ 7,94 mm (J4.4)', 7.94, dMax, 'mm', { ok: dMax >= 7.94 - 1e-9, ratio: 7.94 / dMax });
+    if (cab !== 'B') {
+      if (dw > 19.1) nv('Golilla (J4.4)', 'dw > 19,1 mm: fuera de J4.4');
+      else { const twMin = Math.max(t1 > 0.686 ? 1.27 : 0.610, dw > 15.9 ? 1.60 : 0); add(`Espesor de la golilla ≥ ${f(twMin)} mm (J4.4)`, twMin, tw, 'mm', { ok: tw >= twMin - 1e-9, ratio: twMin / tw }); }
+    }
+    add('Tracción — arrancamiento, 0,85·tc·d·Fu2 (J4.4.1)', kgf(T), kgf(disp(Pnot, 3.0, 0.5)), 'kgf');
+    add(`Tracción — desgarro bajo la cabeza, 1,5·t1·d'w·Fu1 con d'w = ${f(dpw)} mm (J4.4.2 ${cab === 'A' ? 'a' : cab === 'C' ? 'c' : 'b'})`, kgf(T), kgf(disp(Pnov, 3.0, 0.5)), 'kgf');
+    if (Pts > 0 && doc) add('Tracción del tornillo — Pnts documentado (J4.4.3)', kgf(T), kgf(disp(Pts, 3.0, 0.5)), 'kgf');
+    else nv('Tracción del tornillo (J4.4.3)', Pts > 0 ? 'Indique la fuente documentada de Pnts (fabricante o ensayo de laboratorio independiente)' : 'Ingrese Pnts del fabricante o de un ensayo de laboratorio independiente');
   }
-  // J4.5 combinado corte y tracción
-  let comb = null;
+  // J4.5 corte y tracción combinados
   if (Q > 0 && T > 0) {
-    const okRango = t1 >= 0.72 && t1 <= 1.13 && d >= 4.17 && d <= 6.35 && dw <= 19.1 && Fu1 <= 483;
-    // J4.5.1 corte + desgarro bajo la cabeza
-    const v1 = Q / Pns + 0.71 * T / Pnov, c1 = LRFD ? 1.10 * 0.65 : 1.10 / 2.35;
-    // J4.5.2 corte + arrancamiento
-    const okR2 = t2 >= 0.72 && t2 <= 1.13 && Fu2 <= 483 && d >= 4.17 && d <= 6.35;
-    const v2 = Q / Pns + T / Pnot, c2 = LRFD ? 1.15 * 0.60 : 1.15 / 2.55;
-    // J4.5.3 corte + tracción del tornillo
-    const v3 = Q / Pss + T / Pts, c3 = LRFD ? 1.3 * 0.50 : 1.3 / 3.0;
-    comb = { v1, c1, v2, c2, v3, c3, okRango, okR2 };
-    if (okRango) add('Corte y desgarro bajo la cabeza (J4.5.1): Q/Pns + 0,71·T/Pnov', v1, c1, null); else add('Corte y desgarro bajo la cabeza (criterio lineal fuera del rango de J4.5.1)', Q / Vs + T / disp(Pnov, 3, 0.5), 1, null);
-    if (okR2) add('Corte y arrancamiento (J4.5.2): Q/Pns + T/Pnot', v2, c2, null); else add('Corte y arrancamiento (criterio lineal fuera del rango de J4.5.2)', Q / Vs + T / disp(Pnot, 3, 0.5), 1, null);
-    add('Corte y tracción del tornillo (J4.5.3): Q/Pss + T/Pts', v3, c3, null);
+    const l1 = [], l2 = [];
+    if (t1 < 0.724 || t1 > 1.13) l1.push('t1 fuera de 0,724–1,13 mm'); if (!['12', '14'].includes(num)) l1.push('solo tornillos N.º 12 y N.º 14');
+    if (dMax > 19.1) l1.push('dw > 19,1 mm'); if (Fu1 > 483) l1.push('Fu1 > 483 MPa'); if (r < 2.5) l1.push(`t2/t1 = ${f(r)} < 2,5`);
+    if (t2 < 0.754 || t2 > 1.84) l2.push('t2 fuera de 0,754–1,84 mm'); if (!['8', '10', '12', '14'].includes(num)) l2.push('solo tornillos N.º 8, 10, 12 y 14');
+    if (Fu2 > 834) l2.push('Fu2 > 834 MPa'); const rf = Fu2 / inp.Fy2; if (!(rf >= 1.0 && rf <= 1.62)) l2.push(`Fu/Fy = ${f(rf)} fuera de 1,0–1,62`);
+    const Pv1 = 2.7 * t1 * d * Fu1, Pov1 = 1.5 * t1 * dMax * Fu1, v1 = Q / Pv1 + 0.71 * T / Pov1, c1 = LRFD ? 1.10 * 0.65 : 1.10 / 2.35;
+    const Pv2 = a1, v2 = Q / Pv2 + T / Pnot, c2 = LRFD ? 1.15 * 0.60 : 1.15 / 2.55;
+    R.comb = { l1, l2, Pv1, Pov1, v1, c1, Pv2, v2, c2 };
+    if (!l1.length) add('Corte y desgarro bajo la cabeza (J4.5.1): V/Pnv + 0,71·T/Pnov, Pnv = 2,7·t1·d·Fu1', v1, c1, null);
+    else nv('Corte y desgarro bajo la cabeza (J4.5.1)', 'Fuera del rango de validez de la Ec. J4.5.1 (' + l1.join('; ') + '); la norma no entrega esta interacción fuera de ese rango');
+    if (!l2.length) add('Corte y arrancamiento (J4.5.2): V/Pnv + T/Pnot, Pnv = 4,2·√(t2³·d)·Fu2', v2, c2, null);
+    else nv('Corte y arrancamiento (J4.5.2)', 'Fuera del rango de validez de la Ec. J4.5.2 (' + l2.join('; ') + '); la norma no entrega esta interacción fuera de ese rango');
+    if (Pss > 0 && Pts > 0 && doc) { const v3 = Q / Pss + T / Pts, c3 = LRFD ? 1.3 * 0.50 : 1.3 / 3.0; R.comb.v3 = v3; R.comb.c3 = c3; add('Corte y tracción del tornillo (J4.5.3): V/Pnvs + T/Pnts', v3, c3, null); }
+    else nv('Corte y tracción del tornillo (J4.5.3)', 'Requiere Pnvs y Pnts documentados');
   }
-  // J4.1 y J4.2 espaciamiento y distancia al borde mínimos
-  add('Espaciamiento entre tornillos ≥ 3·d (J4.1)', 3 * d, inp.s, 'mm', { ok: inp.s >= 3 * d - 1e-9, ratio: 3 * d / inp.s });
+  // J4.1 y J4.2
+  if (n > 1) add('Espaciamiento entre tornillos ≥ 3·d (J4.1)', 3 * d, inp.s, 'mm', { ok: inp.s >= 3 * d - 1e-9, ratio: 3 * d / inp.s });
   add('Distancia al borde ≥ 1,5·d (J4.2)', 1.5 * d, inp.e, 'mm', { ok: inp.e >= 1.5 * d - 1e-9, ratio: 1.5 * d / inp.e });
-  if (n > 1) av.push(['info', 'Corte repartido en partes iguales entre los tornillos (carga concéntrica). Para grupos excéntricos, ingrese la fuerza del tornillo más solicitado con N° de tornillos = 1.']);
-  if (t1 > t2 + 1e-9) av.push(['info', 'El elemento en contacto con la cabeza (t1) es más grueso que el otro: conviene atornillar desde la lámina más delgada.']);
-  return { Pns, Pnv, Pss, Pnot, Pnov, Pts, Q, T, r, a1, a2, a3, comb, chk, av, ok: chk.every(c => c.ok), Vs };
+  if (n > 1) hip.push('Corte y tracción repartidos en partes iguales entre los tornillos (carga concéntrica).');
+  hip.push('J6.1: agujero del tornillo autoperforante igual a d (e_net = e − d/2); el borde se supone en ambas láminas.');
+  if (doc && (Pss > 0 || Pts > 0)) hip.push('Pnvs y Pnts según: ' + inp.fuente + '.');
+  if (n > 1) av.push(['uso', 'Para grupos con carga excéntrica, ingrese la fuerza del tornillo más solicitado con N.º de tornillos = 1.']);
+  if (t1 > t2 + 1e-9) av.push(['uso', 'El elemento en contacto con la cabeza (t1) es más grueso que el otro: conviene atornillar desde la lámina más delgada.']);
+  return mcCierre(R);
 }
 /* ---------- esquema de la sección (línea media a escala, porciones efectivas destacadas) ---------- */
 function mcSvgSeccion(sec, ef, titulo, nota) {
@@ -49889,7 +50203,7 @@ function mcSvgSeccion(sec, ef, titulo, nota) {
 function mcSvgTornillos(inp, r) {
   const sc = 3, n = Math.max(1, Math.min(inp.n, 8)), L = (2 * inp.e + (n - 1) * inp.s) * sc, Wp = 60 * sc / 1.5, x0 = 110, y0 = 50;
   let c = `<rect x="${x0 - 60}" y="${y0 - 8}" width="${L + 60}" height="${Wp + 16}" fill="#BFC5CC" fill-opacity="0.35" stroke="var(--ink)" stroke-width="1"/><rect x="${x0}" y="${y0}" width="${L + 70}" height="${Wp}" fill="#BFC5CC" fill-opacity="0.75" stroke="var(--ink)" stroke-width="1.3"/>`;
-  for (let i = 0; i < n; i++) { const cx = x0 + (inp.e + i * inp.s) * sc; c += `<circle cx="${cx.toFixed(1)}" cy="${(y0 + Wp / 2).toFixed(1)}" r="${Math.max(3, inp.dw * sc / 2).toFixed(1)}" fill="#fff" stroke="var(--ink)" stroke-width="1.2"/><circle cx="${cx.toFixed(1)}" cy="${(y0 + Wp / 2).toFixed(1)}" r="${Math.max(1.5, inp.d * sc / 2).toFixed(1)}" fill="#2E5395"/>`; }
+  for (let i = 0; i < n; i++) { const cx = x0 + (inp.e + i * inp.s) * sc; c += `<circle cx="${cx.toFixed(1)}" cy="${(y0 + Wp / 2).toFixed(1)}" r="${Math.max(3, (r.dMax || inp.dh) * sc / 2).toFixed(1)}" fill="#fff" stroke="var(--ink)" stroke-width="1.2"/><circle cx="${cx.toFixed(1)}" cy="${(y0 + Wp / 2).toFixed(1)}" r="${Math.max(1.5, inp.d * sc / 2).toFixed(1)}" fill="#2E5395"/>`; }
   return ESQ.svg(m => c
     + ESQ.arrow(m, x0 + L + 80, y0 + Wp / 2, 0, 46, `V = ${fmt1(inp.V)} kgf`, { labelDx: -44, labelDy: -14, fontSize: 11 })
     + ESQ.dim(m, x0, y0 + Wp + 22, x0 + inp.e * sc, y0 + Wp + 22, `e ${inp.e}`, { fontSize: 10 })
@@ -49905,7 +50219,7 @@ const MC_SUG = {
   mt_FyU: [['275.8', 'A653 SS Gr 40 — Metalcon estructural (2.812 kgf/cm²)'], ['255', 'A653 SS Gr 37'], ['230', 'A653 SS Gr 33'], ['340', 'A653 SS Gr 50']],
   mt_FuU: [['379.2', 'A653 SS Gr 40 (3.867 kgf/cm²)'], ['360', 'A653 SS Gr 37'], ['310', 'A653 SS Gr 33'], ['450', 'A653 SS Gr 50 Clase 1']],
   mt_ri: [['', 'Vacío: radio interior = t (criterio)'], ['0.85', 't para perfiles de 0,85 mm'], ['1', 't para 1,0 mm'], ['1.6', 't para 1,6 mm'], ['2.4', '1,5·t para 1,6 mm']],
-  mt_dh: [['0', 'Alma sin perforación'], ['38', 'Perforación de 38 mm (verificar en catálogo Cintac)'], ['32', 'Perforación de 32 mm'], ['25', 'Perforación de 25 mm']],
+  mt_dh: [['0', 'Alma sin perforación']],
   mt_h: [['90', 'Montante 2x4'], ['100', 'Montante 2x5'], ['150', 'Montante 2x6'], ['200', 'Montante 2x8'], ['250', 'Montante 2x10']],
   mt_b: [['38', 'Ala de montante 38 mm'], ['40', 'Ala de montante 40 mm'], ['50', 'Ala de montante 50 mm'], ['30', 'Ala de canal 30 mm'], ['25', 'Ala de canal 25 mm']],
   mt_c: [['12', 'Atiesador de 12 mm'], ['6', 'Atiesador de 6 mm'], ['15', 'Atiesador de 15 mm'], ['0', 'Sin atiesador (canal U)']],
@@ -49916,23 +50230,20 @@ const MC_SUG = {
   mt_Ky: [['1', 'Rotulado en ambos extremos'], ['0.8', 'Empotrado-rotulado']],
   mt_Lt: [['1.2', 'Igual a la separación de arriostres laterales'], ['2.4', 'Sin arriostre intermedio (= L)']],
   mt_Kt: [['1', 'Giro torsional impedido en los extremos'], ['0.5', 'Alabeo impedido en los extremos'], ['0.7', 'Intermedio']],
-  mt_Lb: [['1.2', 'Ala comprimida arriostrada cada 1,2 m'], ['0', 'Ala comprimida arriostrada en forma continua (tablero atornillado)'], ['3', 'Sin arriostre (= luz)']],
+  mt_Lb: [['1.2', 'Ala comprimida arriostrada cada 1,2 m'], ['0', 'Ala comprimida arriostrada en forma continua (tablero atornillado)'], ['2.4', 'Sin arriostre intermedio (= L)']],
   mt_Cb: [['1', 'Momento uniforme o conservador'], ['1.14', 'Carga uniforme, viga simplemente apoyada'], ['1.32', 'Carga puntual al centro'], ['1.67', 'Momento lineal de M a 0']],
-  mt_Lm: [['1.2', 'Distancia entre arriostres que restringen la distorsión'], ['0', 'Sin restricción (usa Lcr)'], ['0.6', 'Revestimiento atornillado cada 0,6 m']],
+  mt_Lm: [['1.2', 'Distancia entre arriostres que restringen la distorsión'], ['0', 'Sin restricciones intermedias (se usa Lcrd, conservador)']],
   mt_a: [['300', 'Tornillos de unión cada 300 mm'], ['600', 'Cada 600 mm'], ['150', 'Cada 150 mm']],
   mt_N: [['0', 'Sin carga axial'], ['500', 'Compresión de 500 kgf (montante)'], ['-500', 'Tracción de 500 kgf (signo negativo)']],
   mt_Mx: [['0', 'Sin momento'], ['30', 'Viento sobre montante: 30 kgf·m'], ['100', 'Viga de piso: 100 kgf·m'], ['-50', 'Momento negativo: comprime el ala inferior']],
   mt_My: [['0', 'Sin momento en el eje débil'], ['5', 'Momento de 5 kgf·m (comprime los bordes de las alas)'], ['-5', 'Momento de 5 kgf·m (comprime el lado del alma)']],
   mt_V: [['0', 'Sin corte'], ['100', 'Corte de 100 kgf'], ['300', 'Corte de 300 kgf']],
-  mt_red: [['0', 'Sin reducción (unión con tornillos fuera de la sección crítica)'], ['10', 'Perforaciones de tornillos en la sección'], ['20', 'Varias perforaciones']],
-  mt_Ush: [['1', 'Carga transmitida a todos los elementos'], ['0.9', 'Unión por el alma con varios tornillos'], ['0.75', 'Unión solo por un elemento (criterio)']],
+  mt_red: [['0', 'Sin perforaciones de la unión en la sección crítica']],
+  mt_Ush: [['1', 'Carga transmitida directamente a todos los elementos (Tabla J6.2-1, 3b)']],
   mt_R: [['0', 'Sin carga concentrada ni reacción'], ['150', 'Reacción de 150 kgf'], ['300', 'Reacción de 300 kgf']],
   mt_Nb: [['40', 'Apoyo sobre solera de 40 mm'], ['90', 'Apoyo sobre montante de 90 mm'], ['25', 'Apoyo mínimo (≥ 19 mm, G5)']],
   mt_MR: [['0', 'Sin momento en el punto de la carga (apoyo extremo)'], ['80', 'Momento de 80 kgf·m sobre apoyo interior']],
-  mt_d: [['4.17', 'N°8'], ['4.83', 'N°10'], ['5.49', 'N°12'], ['6.35', 'N°14 / ¼"']],
-  mt_dw: [['11.1', 'Cabeza lenteja N°8 (≈ 7/16")'], ['10', 'Cabeza hexagonal con golilla N°10'], ['12.7', 'Máximo de J4.4.2 (½")']],
-  mt_Pss: [['4.0', 'N°8 — referencial, usar dato del fabricante'], ['5.3', 'N°10 — referencial'], ['7.3', 'N°12 — referencial'], ['10.2', 'N°14 / ¼" — referencial']],
-  mt_Pts: [['5.3', 'N°8 — referencial, usar dato del fabricante'], ['8.0', 'N°10 — referencial'], ['10.7', 'N°12 — referencial'], ['15.6', 'N°14 / ¼" — referencial']],
+  mt_dt: [['4.17', 'N.º 8'], ['4.83', 'N.º 10'], ['5.49', 'N.º 12'], ['6.35', 'N.º 14 / ¼"']],
   mt_t1: [['0.85', 'Lámina 0,85 mm'], ['1', 'Lámina 1,0 mm'], ['1.6', 'Lámina 1,6 mm'], ['0.5', 'Lámina 0,5 mm']],
   mt_t2: [['0.85', 'Lámina 0,85 mm'], ['1', 'Lámina 1,0 mm'], ['1.6', 'Lámina 1,6 mm'], ['1.7', 'Dos láminas de 0,85 mm']],
   mt_Fu1: [['379.2', 'A653 Gr 40 (Metalcon)'], ['310', 'A653 Gr 33'], ['360', 'A653 Gr 37']],
@@ -49954,17 +50265,30 @@ function mcDatalists(container) {
   });
 }
 
+/* ---------- tabla de verificaciones: CUMPLE / NO CUMPLE / NO VERIFICADO ---------- */
+function mcChkTabla(chk, forPrint) {
+  const n = (v, dd) => v == null || !isFinite(v) ? '—' : (forPrint ? xlsxNum(v, dd) : v.toLocaleString('es-CL', { minimumFractionDigits: dd, maximumFractionDigits: dd }));
+  const fv = (v, u) => u === 'mm' ? n(v, 1) + (forPrint ? '' : ' mm') : u === 'kgf' ? n(v, 1) + (forPrint ? '' : ' kgf') : u === 'kgfm' ? n(v, 2) + (forPrint ? '' : ' kgf·m') : n(v, 3);
+  const est = c => c.fuera ? MC_NV : c.ok ? 'CUMPLE' : 'NO CUMPLE';
+  if (forPrint) return `<table class="xlsx-table xlsx-calc-table"><tbody><tr class="xlsx-hdr-de"><td class="xv-label">Verificación</td><td class="xv-num">Solicitación</td><td class="xv-num">Resistencia</td><td class="xv-num">Razón</td><td class="xv-label">Estado</td></tr>` +
+    chk.map(c => `<tr><td class="xv-label">${esc(c.nom)}${c.fuera ? ' — ' + esc(c.fuera) : ''}</td><td class="xv-num">${c.fuera ? '—' : fv(c.dem, c.u)}</td><td class="xv-num">${c.fuera ? '—' : fv(c.cap, c.u)}</td><td class="xv-num">${c.fuera || c.ratio == null ? '—' : n(c.ratio, 3)}</td><td class="xv-label">${est(c)}</td></tr>`).join('') + '</tbody></table>';
+  return `<table class="results"><tr><th>Verificación</th><th class="num">Solicitación</th><th class="num">Resistencia disponible</th><th class="num">Razón</th><th>Estado</th></tr>` +
+    chk.map(c => `<tr><td>${esc(c.nom)}${c.fuera ? `<br><span class="note">${esc(c.fuera)}</span>` : ''}</td><td class="num">${c.fuera ? '—' : fv(c.dem, c.u)}</td><td class="num">${c.fuera ? '—' : fv(c.cap, c.u)}</td><td class="num">${c.fuera || c.ratio == null ? '—' : fmtPct(c.ratio)}</td><td>${c.fuera ? '<span class="chip warn">No verificado</span>' : chip(c.ok)}</td></tr>`).join('') + '</table>';
+}
+
 /* ---------- interfaz ---------- */
 function renderMetalcon(container) {
   const opt = (arr, sel) => arr.map(([v, t]) => `<option value="${v}"${String(v) === String(sel) ? ' selected' : ''}>${t}</option>`).join('');
   const f = (id, lab, val, extra) => `<div class="field" id="w_${id}"><label>${lab}</label><input type="text" inputmode="decimal" id="${id}" value="${val}"${extra || ''}></div>`;
+  const ftx = (id, lab, val, ph) => `<div class="field" id="w_${id}" style="grid-column:1/-1"><label>${lab}</label><input type="text" id="${id}" value="${esc(val)}" placeholder="${esc(ph || '')}"></div>`;
   const sel = (id, lab, html) => `<div class="field" id="w_${id}"><label>${lab}</label><select id="${id}">${html}</select></div>`;
+  const sub = (id, txt) => `<p class="note" id="w_${id}" style="grid-column:1/-1;margin:.2rem 0 0">${txt}</p>`;
   const perfOpts = MC_LINEAS.map(([l, nl]) => `<optgroup label="${esc(nl)}">${MC_CAT.filter(c => c.lin === l).map(c => `<option value="${c.id}"${c.id === '90CA085' ? ' selected' : ''}>${c.id} — ${esc(c.com)}</option>`).join('')}</optgroup>`).join('') + `<optgroup label="Otro"><option value="CUSTOM">Sección personalizada (dimensiones manuales)</option></optgroup>`;
   const uOpts = MC_CAT.filter(c => c.k === 'U').map(c => [c.id, `${c.id} — ${c.com}`]);
   container.innerHTML = `
     <div class="calc-head">
-      <h1>Verificador de Secciones Metalcon — AISI S100-16</h1>
-      <div class="sub">Perfiles de acero galvanizado conformados en frío Metalcon (Cintac): montantes C, canales U, omegas, ángulos y tirantes, simples o compuestos (doble C espalda con espalda, cajón C dentro de U). Tracción, compresión con pandeo global, local y distorsional, flexión con pandeo lateral-torsional, local y distorsional, corte, abolladura del alma e interacciones, y uniones con tornillos autoperforantes, por el método del ancho efectivo. Las cargas se ingresan ya combinadas (LRFD mayoradas o ASD de servicio), obtenidas del análisis estructural.</div>
+      <h1>Verificador de Secciones Metalcon — AISI S100-16 (R2020)</h1>
+      <div class="sub">Perfiles de acero galvanizado conformados en frío Metalcon (Cintac): montantes C, canales U, omegas, ángulos y tirantes, simples o compuestos (doble C espalda con espalda, cajón C dentro de U). Tracción, compresión con pandeo global, local y distorsional, flexión con pandeo lateral-torsional, local y distorsional, corte, abolladura del alma e interacciones, y uniones con tornillos autoperforantes, por el método del ancho efectivo. Cada verificación aplicable queda CUMPLE, NO CUMPLE o NO VERIFICADO; el elemento solo se declara conforme si todas cumplen. Las cargas se ingresan ya combinadas (LRFD mayoradas o ASD de servicio), obtenidas del análisis estructural.</div>
     </div>
     <div class="panel"><h3>1 · Elemento, método y material</h3><div class="field-grid">
       ${sel('mt_modo', 'Elemento a verificar', opt([['BAR', 'Barra: montante, viga, solera, diagonal o tirante'], ['TOR', 'Unión con tornillos autoperforantes']], 'BAR'))}
@@ -49978,191 +50302,347 @@ function renderMetalcon(container) {
       ${sel('mt_perfil', 'Perfil Metalcon (catálogo Cintac)', perfOpts)}
       ${sel('mt_conf', 'Configuración', opt([['S', 'Perfil simple'], ['2CA', 'Doble C espalda con espalda (jamba o dintel tipo I)'], ['CAU', 'Cajón: C dentro de U (jamba o dintel cerrado)']], 'S'))}
       ${sel('mt_perfU', 'Canal U del cajón', opt(uOpts, '92C085'))}
+      ${sel('mt_cau', 'Trabajo conjunto del cajón', opt([['NO', 'Sin justificar — se bloquean las capacidades del cajón'], ['IND', 'Piezas independientes con reparto por rigidez (C y U unidos por las alas, carga introducida en ambas)']], 'NO'))}
       ${sel('mt_kind', 'Tipo de sección personalizada', opt([['CA', 'C atiesado (montante)'], ['U', 'Canal U'], ['OMA', 'Omega con labios'], ['L', 'Ángulo de alas iguales'], ['PL', 'Pletina o tirante']], 'CA'))}
-      ${f('mt_h', 'h — alto exterior (mm)', 90)}${f('mt_b', 'b — ancho exterior del ala (mm)', 38)}${f('mt_c', 'c — atiesador (labio) exterior (mm)', 12)}${f('mt_d', 'Labio de la omega (mm)', 8)}${f('mt_t', 't — espesor del acero base (mm)', 0.85)}
+      ${f('mt_h', 'h — alto exterior (mm)', 90)}${f('mt_b', 'b — ancho exterior del ala (mm)', 38)}${f('mt_c', 'c — atiesador (labio) exterior (mm)', 12)}${f('mt_d', 'Labio de la omega (mm; 0 = sin labio)', 8)}${f('mt_t', 't — espesor del acero base (mm)', 0.85)}
       ${f('mt_ri', 'Radio interior de plegado ri (mm) — vacío = t', '', ' placeholder="t"')}
-      ${f('mt_dh', 'Perforación del alma: ancho dh (mm; 0 = alma llena)', 0)}
+      ${f('mt_dh', 'Perforación del alma: alto dh (mm; 0 = alma llena)', 0)}
+      ${sel('mt_hForma', 'Forma de la perforación', opt([['NC', 'No circular (punzonado oblongo o rectangular)'], ['C', 'Circular']], 'NC'))}
+      ${f('mt_hLh', 'Largo de la perforación Lh (mm)', '')}${f('mt_hS', 'Separación entre centros de perforaciones (mm)', '')}
+      ${f('mt_hSend', 'Distancia libre del extremo de la barra a la perforación (mm)', '')}
+      ${sel('mt_hRad', 'Radio de las esquinas de la perforación ≥ 2t', opt([['No', 'No declarado'], ['Si', 'Sí (perforación no circular)']], 'No'))}
     </div><div id="mt_props" style="margin-top:.5rem;overflow-x:auto"></div>
       <div id="mt_esqSeccion" style="margin-top:.5rem"></div></div>
 
-    <div class="panel" id="mt_pBar"><h3>3 · Barra: longitudes y solicitaciones</h3><div class="field-grid">
+    <div class="panel" id="mt_pBar"><h3>3 · Barra: longitudes, hipótesis y solicitaciones</h3><div class="field-grid">
       ${f('mt_L', 'Longitud de la barra L (m) — pandeo en torno a x', 2.4)}${f('mt_Kx', 'Factor de longitud efectiva Kx', 1)}
       ${f('mt_Ly', 'Longitud no arriostrada en torno a y, Ly (m)', 1.2)}${f('mt_Ky', 'Factor de longitud efectiva Ky', 1)}
       ${f('mt_Lt', 'Longitud no arriostrada a torsión, Lt (m)', 1.2)}${f('mt_Kt', 'Factor de longitud efectiva Kt', 1)}
-      ${f('mt_Lb', 'Longitud no arriostrada del ala comprimida, Lb (m; 0 = continua)', 1.2)}${f('mt_Cb', 'Factor Cb (F2.1)', 1)}
-      ${f('mt_Lm', 'Distancia entre restricciones al pandeo distorsional Lm (m; 0 = sin restricción)', 1.2)}
+      ${f('mt_Lb', 'Longitud no arriostrada del ala comprimida, Lb (m; 0 = continua)', 1.2)}${f('mt_Cb', 'Factor Cb (F2.1.1)', 1)}
+      ${f('mt_Lm', 'Distancia entre restricciones al pandeo distorsional Lm (m; 0 = sin restricciones intermedias)', 1.2)}
+      ${sel('mt_arr', 'Arriostres que definen Ly, Lt, Lb y Lm', opt([['DIS', 'Diseñados por separado con resistencia y rigidez (C2)'], ['NO', 'No verificados']], 'DIS'))}
+      ${sel('mt_ord', 'Origen de N y M (C1)', opt([['2O', 'Análisis con efectos de segundo orden (análisis directo o momentos amplificados)'], ['1O', 'Análisis de primer orden sin amplificar']], '2O'))}
       ${f('mt_a', 'Separación de los tornillos que unen la doble C, a (mm)', 300)}
+      ${sel('mt_2ext', 'Extremos de la doble C unidos según I1.2 b)', opt([['No', 'No declarado'], ['Si', 'Sí: soldadura ≥ ancho máximo o conectores a ≤ 4d en 1,5 veces el ancho máximo']], 'No'))}
+      ${f('mt_2Vc', 'Resistencia disponible al corte de un conector de unión de las almas (kgf)', '')}
+      ${f('mt_2g', 'g — distancia vertical entre las filas de conexiones de las alas (mm, I1.1)', '')}${f('mt_2Ts', 'Ts — resistencia disponible a tracción de la conexión (kgf, Cap. J)', '')}
+      ${f('mt_2w', 'Carga distribuida de diseño sobre la viga doble C (kgf/m; 0 = sin carga distribuida)', '')}
       ${f('mt_N', 'Carga axial N (kgf; + compresión, − tracción)', 400)}${f('mt_Mx', 'Momento Mx (kgf·m; + comprime el ala superior)', 30)}${f('mt_My', 'Momento My (kgf·m; + comprime los bordes de las alas)', 0)}
       ${f('mt_V', 'Corte en el alma V (kgf)', 60)}
-      ${f('mt_red', 'Reducción de área neta en tracción por perforaciones (%)', 0)}${f('mt_Ush', 'Coeficiente de rezago de corte U (tracción)', 1)}
+      ${sel('mt_uni', 'Unión extrema en tracción (J6.2)', opt([['TOR', 'Con tornillos (Ω 3,00 · φ 0,50)'], ['PER', 'Con pernos (Ω 2,22 · φ 0,65)'], ['SOL', 'Soldada (Ω 2,50 · φ 0,60)'], ['NO', 'No definida en esta planilla']], 'TOR'))}
+      ${f('mt_red', 'Área descontada por perforaciones de la unión en la sección crítica (% de A)', 0)}${f('mt_Ush', 'Factor de rezago de corte Usl (Tabla J6.2-1)', 1)}
+      ${sub('mt_nFcrd', '<b>Pandeo distorsional por análisis numérico</b> (Apéndice 2, 2.2) — solo donde no se aplican las fórmulas de 2.3.1.3 y 2.3.3.3:')}
+      ${f('mt_FcrdP', 'Fcrd en compresión (MPa; vacío = no disponible)', '')}${f('mt_FcrdMx', 'Fcrd en flexión en torno a x (MPa)', '')}${f('mt_FcrdMy', 'Fcrd en flexión en torno a y (MPa)', '')}
+      ${ftx('mt_FcrdF', 'Fuente del análisis de Fcrd (programa, modelo, fecha)', '', 'p. ej. CUFSM 5.x, modelo de línea media, kφ = 0')}
       <p class="note" style="grid-column:1/-1;margin:.2rem 0 0"><b>Abolladura del alma (G5)</b> — reacción en un apoyo o carga concentrada sobre el ala:</p>
       ${f('mt_R', 'Reacción o carga concentrada P (kgf; 0 = se omite)', 0)}${f('mt_Nb', 'Largo de apoyo N (mm)', 40)}
-      ${sel('mt_caso', 'Caso de carga (Tablas G5-2/G5-3)', opt(MC_CASOS, 'EOF'))}
+      ${sel('mt_caso', 'Caso de carga (Tablas G5-1, G5-2, G5-4)', opt(MC_CASOS, 'EOF'))}
       ${sel('mt_fij', 'Ala fijada al apoyo con tornillos', opt([['Si', 'Sí, fijada'], ['No', 'No fijada']], 'Si'))}
+      ${f('mt_dEnd', 'Distancia del borde del apoyo al extremo de la barra (mm)', 0)}
       ${f('mt_MR', 'Momento en el punto de la carga, para H3 (kgf·m)', 0)}
+      ${f('mt_hX', 'Distancia libre entre la perforación y el borde del apoyo x (mm; 0 = dentro del apoyo)', '')}${f('mt_hEnd', 'Distancia del extremo de la barra al borde de la perforación (mm)', '')}
     </div></div>
 
-    <div class="panel" id="mt_pTor"><h3>3 · Unión con tornillos autoperforantes (J4)</h3><div class="field-grid">
+    <div class="panel" id="mt_pTor"><h3>3 · Unión con tornillos autoperforantes (J4, J6.1)</h3><div class="field-grid">
       ${sel('mt_torn', 'Tornillo autoperforante', opt(MC_TORN.map(x => [x.id, x.n]), '10'))}
-      ${f('mt_dt', 'Diámetro nominal d (mm) — vacío = según tornillo', '', ' placeholder="según tornillo"')}${f('mt_dw', 'Diámetro de la cabeza o golilla dw (mm)', 10)}
-      ${f('mt_Pss', 'Resistencia nominal al corte del tornillo Pss (kN, fabricante)', 5.3)}${f('mt_Pts', 'Resistencia nominal a tracción del tornillo Pts (kN, fabricante)', 8.0)}
+      ${f('mt_dt', 'Diámetro nominal d (mm) — vacío = según tornillo', '', ' placeholder="según tornillo"')}
+      ${sel('mt_cab', 'Cabeza y golilla (J4.4.2)', opt([['B', 'b) Cabeza redonda, hexagonal o hexagonal con golilla integral, sin golilla independiente'], ['A', 'a) Con golilla independiente sólida de acero'], ['C', 'c) Con golilla abombada (no sólida)']], 'B'))}
+      ${f('mt_dw', 'dh — diámetro de la cabeza o de la golilla integral (mm, del fabricante)', 10)}
+      ${f('mt_tw', 'tw — espesor de la golilla independiente (mm)', '')}${f('mt_dwg', 'dw — diámetro de la golilla independiente (mm)', '')}
+      ${f('mt_Pss', 'Pnvs — resistencia nominal al corte del tornillo (kN)', 5.3)}${f('mt_Pts', 'Pnts — resistencia nominal a tracción del tornillo (kN)', 8.0)}
+      ${ftx('mt_fuente', 'Fuente documentada de Pnvs y Pnts (ficha técnica del fabricante o ensayo de laboratorio independiente)', '', 'p. ej. fabricante, producto, ficha y fecha')}
       ${f('mt_t1', 'Espesor t1 de la lámina en contacto con la cabeza (mm)', 0.85)}${f('mt_t2', 'Espesor t2 de la lámina no en contacto con la cabeza (mm)', 0.85)}
-      ${f('mt_Fu1', 'Fu de la lámina t1 (MPa)', 379.2)}${f('mt_Fu2', 'Fu de la lámina t2 (MPa)', 379.2)}
-      ${f('mt_nt', 'Número de tornillos de la unión', 2)}${f('mt_Vt', 'Corte total en la unión V (kgf)', 150)}${f('mt_Tt', 'Tracción total en la unión T (kgf)', 0)}
+      ${f('mt_Fu1', 'Fu de la lámina t1 (MPa)', 379.2)}${f('mt_Fu2', 'Fu de la lámina t2 (MPa)', 379.2)}${f('mt_Fy2', 'Fy de la lámina t2 (MPa) — vacío = Fy de la calidad', '', ' placeholder="según calidad"')}
+      ${f('mt_nt', 'Número de tornillos de la unión', 2)}${f('mt_Vt', 'Corte total en la unión V (kgf)', 150)}${f('mt_Tt', 'Tracción total en la unión T (kgf, ≥ 0)', 0)}
       ${f('mt_e', 'Distancia del tornillo al borde en la dirección de la carga e (mm)', 15)}${f('mt_s', 'Espaciamiento entre tornillos s (mm)', 20)}${f('mt_tc', 'Penetración tc en la lámina t2 (mm) — vacío = t2', '', ' placeholder="t2"')}
     </div></div>
 
     <div class="panel"><h3>4 · Resultado</h3><div id="mt_res"></div><div id="mt_av" style="display:grid;gap:.4rem;margin-top:.6rem"></div></div>
     <div class="panel" id="mt_pEsq"><h3>5 · Esquema</h3><div id="mt_esqModo"></div></div>
     <div class="panel"><h3>6 · Detalle del cálculo</h3><div id="mt_det" style="overflow-x:auto"></div></div>
-    <div class="panel"><div class="disclosure">AISI S100-16 (R2020), North American Specification for the Design of Cold-Formed Steel Structural Members, método del ancho efectivo: elementos atiesados (1.1), con perforaciones (1.1.3), no atiesados (1.2) y con atiesador de borde (1.3); tracción (D2, D3); compresión (E2 pandeo por flexión, torsión y flexo-torsión con la ecuación cúbica general, E3 pandeo local, E4 pandeo distorsional con la Sección 2.3.3.3, I1.2 perfiles compuestos); flexión (F2 pandeo lateral-torsional, F3 pandeo local, F4 distorsional); corte (G2.1, G4); abolladura del alma (G5, Tablas G5-2 y G5-3); interacciones (H1.1, H1.2, H2, H3); tornillos autoperforantes (J4.1 a J4.5). Propiedades por línea media con esquinas redondeadas (método lineal), E = 203.400 MPa, G = 78.200 MPa, μ = 0,3. Criterios conservadores: elementos totalmente comprimidos con la tensión máxima, k = 0,43 en elementos no atiesados, sin aporte del revestimiento (kφ = 0) en el pandeo distorsional; el pandeo distorsional se evalúa en montantes C con labio. Catálogo de secciones Metalcon de Cintac (dimensiones nominales); el radio interior de plegado no figura en el catálogo y se asume igual al espesor salvo indicación. Los valores Pss y Pts de los tornillos son referenciales: usar los del fabricante. No calcula deformaciones: se obtienen del análisis estructural.</div></div>
+    <div class="panel"><div class="disclosure">AISI S100-16 (reafirmada en 2020), North American Specification for the Design of Cold-Formed Steel Structural Members, disposiciones para EE. UU. y México, método del ancho efectivo con los límites de la Tabla B4.1-1: Apéndice 1 (1.1, 1.1.1 y 1.1.3 con perforaciones, 1.2.1, 1.3); tracción (D2, D3) y rotura en la unión (J6.2); compresión (E2 con la ecuación cúbica general, E2.2 para ángulos, E3.1, E4 con 2.3.1.3 y 2.3.2.3; I1.2 doble C); flexión (F2.1.1 y F2.1.2, F3.1, F4 con 2.3.3.3 y 2.3.4.3; I1.1 doble C); corte (G2.1, G3); abolladura del alma (G5, Tablas G5-1, G5-2 y G5-4; G6); interacciones (H1.1, H1.2 con P·L/1000 en ángulos, H2, H3); tornillos autoperforantes (J4.1 a J4.5) y rotura por corte hacia el borde (J6.1). Propiedades por línea media con esquinas redondeadas, E = 203.400 MPa, G = 78.200 MPa, μ = 0,3. Criterios conservadores: elementos totalmente comprimidos con la tensión máxima, k = 0,43 en elementos no atiesados, kφ = 0 y β = 1 en el pandeo distorsional, CTF = 1 en F2.1.2. Lo que la norma no cubre con fórmulas cerradas (distorsional de omegas y de flexión en el eje débil, cajón como sección cerrada, flexión de ángulos y pletinas, perforaciones fuera de los límites del Apéndice 1, G3 y G6) queda NO VERIFICADO salvo que se ingrese el dato normativo que lo resuelve. Catálogo de secciones Metalcon de Cintac (dimensiones nominales); el radio interior de plegado no figura en el catálogo y se asume igual al espesor salvo indicación. No calcula deformaciones: se obtienen del análisis estructural.</div></div>
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>`;
   mcDatalists(container);
   const $ = id => document.getElementById(id);
-  const v = id => { const x = parseFloat(String($(id).value).replace(',', '.')); return isNaN(x) ? 0 : x; };
   const vRaw = id => String($(id).value).trim();
   const n = (x, d) => x == null || !isFinite(x) ? '—' : x.toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d });
+  // lectura estricta de datos: vacío, no numérico o fuera de rango → error con mensaje
+  let errs = [];
+  const num = (id, lab, o) => {
+    o = o || {}; const s = vRaw(id).replace(',', '.');
+    if (s === '') { if (o.req) errs.push(`${lab}: ingrese un valor`); return o.def !== undefined ? o.def : null; }
+    const x = Number(s);
+    if (!isFinite(x)) { errs.push(`${lab}: valor no numérico («${vRaw(id)}»)`); return o.def !== undefined ? o.def : null; }
+    if (o.gt != null && !(x > o.gt)) errs.push(`${lab} debe ser mayor que ${String(o.gt).replace('.', ',')} (ingresado ${String(x).replace('.', ',')})`);
+    if (o.min != null && x < o.min) errs.push(`${lab} no puede ser negativo${o.min > 0 ? ' ni menor que ' + o.min : ''} (ingresado ${String(x).replace('.', ',')})`);
+    if (o.max != null && x > o.max) errs.push(`${lab} no puede ser mayor que ${String(o.max).replace('.', ',')} (ingresado ${String(x).replace('.', ',')})`);
+    if (o.int && !Number.isInteger(x)) errs.push(`${lab} debe ser un número entero`);
+    return x;
+  };
   // al cambiar de perfil: canal del cajón y espesores de la unión
   let prevPerfil = $('mt_perfil').value;
   $('mt_perfil').addEventListener('change', () => { const c = MC_CAT.find(x => x.id === $('mt_perfil').value); if (!c || c.id === prevPerfil) return; prevPerfil = c.id;
     if (MC_PAR_U[c.h] && c.k === 'CA') $('mt_perfU').value = MC_PAR_U[c.h];
     $('mt_t1').value = c.t; $('mt_t2').value = c.t; if (c.lin === 'TAB' || c.lin === 'CIE') { if (c.t <= 0.5) $('mt_acero').value = 'G33'; } else if ($('mt_acero').value === 'G33') $('mt_acero').value = 'G40';
-    if (!c.perf) $('mt_dh').value = 0; });
-  $('mt_torn').addEventListener('change', () => { const x = MC_TORN.find(y => y.id === $('mt_torn').value); if (!x) return; $('mt_dw').value = x.dw; $('mt_Pss').value = x.Pss; $('mt_Pts').value = x.Pts; });
+    $('mt_dh').value = 0; });
+  // al cambiar de tornillo, las resistencias del anterior dejan de valer: se borran para ingresar las documentadas
+  $('mt_torn').addEventListener('change', () => { ['mt_Pss', 'mt_Pts', 'mt_fuente'].forEach(id => { $(id).value = ''; }); });
   function material() {
     const a = MC_ACEROS.find(x => x.id === $('mt_acero').value) || MC_ACEROS[0];
-    const Fy = v('mt_FyU') > 0 ? v('mt_FyU') : a.Fy, Fu = v('mt_FuU') > 0 ? v('mt_FuU') : a.Fu;
-    return { a, Fy, Fu, nota: (v('mt_FyU') > 0 || v('mt_FuU') > 0) ? 'Fy o Fu ingresados por el usuario' : '' };
+    const FyU = num('mt_FyU', 'Fy ingresado', { gt: 0 }), FuU = num('mt_FuU', 'Fu ingresado', { gt: 0 });
+    const Fy = FyU != null ? FyU : a.Fy, Fu = FuU != null ? FuU : a.Fu;
+    if (Fu < Fy) errs.push('Fu no puede ser menor que Fy');
+    return { a, Fy, Fu, nota: (FyU != null || FuU != null) ? 'Fy o Fu ingresados por el usuario' : '' };
   }
   function geometria() {
     const id = $('mt_perfil').value, cust = id === 'CUSTOM';
     let g;
-    if (cust) { const k = $('mt_kind').value; g = { id: 'PERSONALIZADO', com: 'Sección personalizada', k, h: v('mt_h'), b: v('mt_b'), c: k === 'CA' ? v('mt_c') : k === 'OMA' ? v('mt_c') : 0, d: v('mt_d'), t: v('mt_t'), lin: 'USR' }; }
-    else g = Object.assign({}, MC_CAT.find(x => x.id === id));
-    g.perf = ['CA', 'U'].includes(g.k) && v('mt_dh') > 0;
-    const conf = g.k === 'CA' && g.c > 0 ? $('mt_conf').value : 'S';
+    if (cust) {
+      const k = $('mt_kind').value, gt = { gt: 0, req: true };
+      g = { id: 'PERSONALIZADO', com: 'Sección personalizada', k, h: ['L', 'PL'].includes(k) ? (k === 'L' ? null : 0) : num('mt_h', 'h', gt), b: num('mt_b', 'b', gt), c: ['CA', 'OMA'].includes(k) ? num('mt_c', k === 'OMA' ? 'Ala de la omega' : 'c', gt) : 0, d: k === 'OMA' ? num('mt_d', 'Labio de la omega', { min: 0, req: true }) : 0, t: num('mt_t', 't', gt), lin: 'USR' };
+      if (k === 'L') g.h = g.b;
+    } else g = Object.assign({}, MC_CAT.find(x => x.id === id));
+    const esCA = g.k === 'CA';
+    const dh = esCA ? num('mt_dh', 'Alto de la perforación dh', { min: 0, req: true }) : 0;
+    g.perf = esCA && dh > 0;
+    if (g.id && /p$/.test(g.id) && !(dh > 0)) errs.push(`El perfil ${g.id} es perforado: ingrese el alto dh y las dimensiones de la perforación según el catálogo Cintac (no se calcula como alma llena)`);
+    const conf = esCA && g.c > 0 ? $('mt_conf').value : 'S';
     const gU = conf === 'CAU' ? Object.assign({}, MC_CAT.find(x => x.id === $('mt_perfU').value)) : null;
-    const ri = vRaw('mt_ri') === '' ? 0 : v('mt_ri');
-    return { g, conf, gU, ri, dh: v('mt_dh'), cust };
+    const ri = vRaw('mt_ri') === '' ? 0 : num('mt_ri', 'Radio interior ri', { gt: 0 });
+    return { g, conf, gU, ri: ri || 0, dh: dh || 0, hForma: $('mt_hForma').value, cust };
+  }
+  // compatibilidad geométrica: tramos rectos positivos, labios y alas posibles
+  function geoCompat(sp, sec) {
+    const g = sp.g, t = g.t, ri = sp.ri > 0 ? sp.ri : t, o = [];
+    if (g.k === 'CA' && g.c > 0 && g.c <= t + ri + 0.5) o.push(`el atiesador c = ${n(g.c, 1)} mm es demasiado corto para formar un labio con ri = ${n(ri, 2)} mm (use canal U)`);
+    if (g.k === 'CA' && 2 * g.c >= g.h) o.push('los labios se traslapan: c debe ser menor que h/2');
+    if (g.k === 'OMA' && g.d > 0 && g.d <= t + ri + 0.5) o.push(`el labio de la omega (${n(g.d, 1)} mm) es demasiado corto para formar un labio con ri = ${n(ri, 2)} mm (use 0 = sin labio)`);
+    if (['CA', 'U'].includes(g.k) && g.b <= t + ri) o.push('el ala es demasiado corta para el espesor y el radio de plegado');
+    if (sp.dh > 0 && sp.dh >= g.h - 2 * (ri + t)) o.push('la perforación es más alta que el tramo recto del alma');
+    if (sec && !(sec.err && sec.err.length)) sec.P.forEach(pz => pz.parts.forEach(p => { if (p.kind === 'flat' && !(p.L > 0.1)) o.push(`el tramo ${mcRolNom(p).toLowerCase()} resulta sin ancho recto: radio o espesor incompatibles con las dimensiones`); }));
+    return [...new Set(o)];
   }
   function nombreSec(sp) {
     const g = sp.g, base = sp.cust ? ({ CA: `C ${g.h}x${g.b}x${g.c}x${g.t}`, U: `U ${g.h}x${g.b}x${g.t}`, OMA: `Omega ${g.b}x${g.h}x${g.c}x${g.d}x${g.t}`, L: `L ${g.b}x${g.b}x${g.t}`, PL: `PL ${g.b}x${g.t}` })[g.k] : `${g.id} (${g.com})`;
     return sp.conf === '2CA' ? `2 × ${base} espalda con espalda` : sp.conf === 'CAU' ? `Cajón ${g.id === 'PERSONALIZADO' ? base : g.id} + ${sp.gU.id}` : base;
   }
-  function propsHtml(sec, m, forPrint) {
+  function propsHtml(sec, forPrint) {
     const rows = [['Área A', n(sec.A / 100, 3), 'cm²'], ['Peso', n(sec.peso, 2), 'kg/m'], ['Ix', n(sec.Ix / 1e4, 2), 'cm⁴'], ['Sx (mín.)', n(sec.Sx / 1e3, 2), 'cm³'], ['rx', n(sec.rx / 10, 2), 'cm'],
       ['Iy', n(sec.Iy / 1e4, 3), 'cm⁴'], ['Sy (mín.)', n(sec.Sy / 1e3, 3), 'cm³'], ['ry', n(sec.ry / 10, 2), 'cm']];
-    if (sec.k !== 'PL') rows.push(['J', n(sec.J / 1e4, 5), 'cm⁴'], ['Cw', sec.cerrada ? '≈ 0' : n(sec.Cw / 1e6, 3), 'cm⁶'], ['xo centro de corte', sec.cerrada || sec.conf === '2CA' ? '0' : n(sec.xo / 10, 2), 'cm'], ['ro', n(sec.ro / 10, 2), 'cm']);
+    if (sec.k !== 'PL' && sec.conf !== 'CAU') rows.push(['J', n(sec.J / 1e4, 5), 'cm⁴'], ['Cw', n(sec.Cw / 1e6, 3), 'cm⁶'], ['xo centro de corte', sec.conf === '2CA' ? '0' : n(sec.xo / 10, 2), 'cm'], ['ro', n(sec.ro / 10, 2), 'cm']);
     if (sec.ae) rows.push(['Ae a Fy', n(sec.ae / 100, 3), 'cm²']); if (sec.sxe) rows.push(['Sxe a Fy', n(sec.sxe / 1e3, 2), 'cm³']);
     if (forPrint) return '<table class="xlsx-table xlsx-calc-table"><tbody>' + rows.map(r => `<tr><td class="xv-label">${r[0]} (${r[2]})</td><td class="xv-num">${r[1]}</td></tr>`).join('') + '</tbody></table>';
     return '<table class="results"><tr>' + rows.map(r => `<th class="num">${r[0]} (${r[2]})</th>`).join('') + '</tr><tr>' + rows.map(r => `<td class="num">${r[1]}</td>`).join('') + '</tr></table>';
   }
-  function avHtml(av) { return av.map(([k, t]) => `<div class="global-verdict ${k === 'bad' ? 'bad' : 'ok'}" style="${k === 'bad' || k === 'ok' ? '' : 'background:var(--surface-alt);color:var(--ink)'}"><span class="label" style="font-size:.85rem;text-transform:none;letter-spacing:0;font-weight:${k === 'info' ? 500 : 700}">${esc(t)}</span></div>`).join(''); }
+  function avHtml(av) { return av.map(([k, t]) => `<div class="global-verdict ${k === 'bad' ? 'bad' : 'ok'}" style="${k === 'bad' || k === 'ok' ? '' : k === 'nv' ? 'background:#FFF4D6;color:#5C4300' : 'background:var(--surface-alt);color:var(--ink)'}"><span class="label" style="font-size:.85rem;text-transform:none;letter-spacing:0;font-weight:${k === 'info' || k === 'uso' ? 500 : 700}">${esc(t)}</span></div>`).join(''); }
   const fK = x => n(x / MC_KGF, 1) + ' kgf', fKm = x => n(x / MC_KGF / 1000, 2) + ' kgf·m', fMPa = x => n(x, 1) + ' MPa';
   function tablaElems(ef, tit) {
     return `<table class="results" style="margin-top:.6rem"><tr><th colspan="8">${esc(tit)}</th></tr><tr><th>Elemento</th><th class="num">w/t</th><th class="num">f (MPa)</th><th class="num">k</th><th class="num">ρ</th><th class="num">ancho efectivo (mm)</th><th class="num">ancho plano (mm)</th><th class="num">RI</th></tr>` +
       ef.det.map(d => `<tr><td>${esc(d.nom)}${d.perf ? ' (perforada)' : ''}</td><td class="num">${n(d.wt, 1)}</td><td class="num">${d.f > 0 ? n(d.f, 1) : 'tracción'}</td><td class="num">${d.k ? n(d.k, 2) : '—'}</td><td class="num">${d.rho != null ? n(d.rho, 3) : '—'}</td><td class="num">${d.f > 0 ? n(d.psi != null ? (d.b1 + d.b2 >= d.wc ? d.p.L : d.b1 + d.b2) : d.be, 1) : '—'}</td><td class="num">${n(d.p.L, 1)}</td><td class="num">${d.RI != null ? n(d.RI, 3) : '—'}</td></tr>`).join('') + '</table>';
   }
+  const T = (tit, rows) => `<table class="results" style="margin-top:.6rem"><tr><th colspan="2">${tit}</th></tr>${rows.filter(Boolean).map(([a, b]) => `<tr><td>${a}</td><td class="num">${b}</td></tr>`).join('')}</table>`;
+  function detBarra(r, inp, sec, metodo) {
+    const L = metodo === 'LRFD', F = (om, ph) => L ? `φ = ${ph}` : `Ω = ${om}`;
+    let det = '';
+    if (r.trac) { const o = r.trac; det += T('Tracción (D2, D3) y rotura en la unión (J6.2)', [
+      ['An = A − perforaciones del alma − área descontada en la unión', n(o.An / 100, 3) + ' cm²'],
+      ['Fluencia Tn = Ag·Fy → disponible (' + F('1,67', '0,90') + ')', `${fK(o.Tn1)} → ${fK(o.T1)}`],
+      ['Rotura Tn = An·Fu (D3) → disponible (' + F('2,00', '0,75') + ')', `${fK(o.Tn2)} → ${fK(o.T2)}`],
+      o.fac ? [`J6.2: Ae = Usl·Ant = ${n(inp.Ush, 3)}·An; Pnt = Fu·Ae → disponible (${F(n(o.fac[0], 2), n(o.fac[1], 2))})`, `${n(o.Ae / 100, 3)} cm² · ${fK(o.Pnt)} → ${fK(o.Pa6)}`] : null]); }
+    if (r.comp) { const c = r.comp, fe = c.fe;
+      det += T(`Compresión (E2, E3${c.dist ? ', E4' : ''}${fe.modif ? ', I1.2' : ''})`, [
+        [`KL/r en torno a x · en torno a y${fe.modif ? ' (modificada, I1.2)' : ''}`, `${n(fe.esbX, 1)} · ${n(fe.esbY, 1)}`],
+        fe.modif ? [`I1.2: (KL/r)o = ${n(fe.modif.lo, 1)}; a = ${n(fe.modif.a, 0)} mm; ri = ${n(fe.modif.ri, 1)} mm; a máx. = ½·ri·(KL/r)o = ${n(fe.modif.aMax, 0)} mm`, n(fe.modif.lm, 1)] : null,
+        ['σex · σey · σt (pandeo elástico)', `${n(fe.sx, 1)} · ${n(fe.sy, 1)} · ${isFinite(fe.st) ? n(fe.st, 1) : '—'} MPa`],
+        [`Fcre (E2) — ${esc(c.modoFe)}`, `<b>${n(c.Fe, 1)} MPa</b>`],
+        ['λc = √(Fy/Fcre) → Fn (E2-2/E2-3)', `${n(c.e2.lc, 3)} → ${fMPa(c.e2.Fn)}`],
+        ['Pne = Ag·Fn (pandeo global)', fK(c.Pne)],
+        ['Ae a Fn · Pn = Ae·Fn ≤ Pne (pandeo local, E3.1)', `${n(c.ae.props.A / 100, 3)} cm² · ${fK(c.Pnl)}`],
+        c.dist ? [`Distorsional (${esc(c.dist.metodo)})${c.dist.Lcr ? `: Lcrd = ${n(c.dist.Lcr, 0)} mm, L = ${n(c.dist.L, 0)} mm` : ''} → Fcrd · λd`, `${fMPa(c.dist.Fd)} · ${n(c.dist.ld, 3)}`] : null,
+        c.dist && c.dist.Pyn ? ['E4.2: Pynet = Anet·Fy · λd1 · λd2', `${fK(c.dist.Pyn)} · ${n(c.dist.l1, 3)} · ${n(c.dist.l2, 3)}`] : null,
+        c.dist ? ['Pnd (E4)', fK(c.Pnd)] : null,
+        [`Pn = mín(Pne, Pnℓ${c.dist ? ', Pnd' : ''}) → disponible (${F('1,80', '0,85')})`, `${fK(c.Pn)} → <b>${fK(c.Pa)}</b>`]]);
+      det += tablaElems(c.ae, `Anchos efectivos en compresión uniforme a Fn = ${n(c.e2.Fn, 1)} MPa`); }
+    if (r.ang) { const a = r.ang; det += T('Ángulo comprimido: momento adicional P·L/1000 en el eje principal menor (E3.1, H1.2)', [
+      ['I mínimo · sentido más desfavorable', `${n(a.am.Imin / 1e4, 4)} cm⁴ · ${a.am.gob.sg > 0 ? '+' : '−'}`],
+      ['My = Sfy·Fy · Mn = mín(My, Se·Fy) (F3.1, sin pandeo lateral-torsional en el eje menor)', `${fKm(a.am.gob.My)} · ${fKm(a.am.gob.Mn)}`],
+      ['M = P·L/1000 · Ma', `${fKm(a.Mimp)} · ${fKm(a.Ma)}`], ['P/Pa + M/Ma', n(a.val, 3)]]); }
+    const flexDet = (o, eje) => {
+      const s = eje === 'x' ? (o.sg > 0 ? 'ala superior comprimida' : 'ala inferior comprimida') : (o.sg > 0 ? 'lado x+ comprimido' : 'lado x− comprimido');
+      let h = T(`Flexión en torno a ${eje} (F2, F3${o.dist ? ', F4' : ''}) — ${s}`, [
+        ['Sf (bruto, fibra comprimida) · My = Sfy·Fy (fibra de primera fluencia)', `${n(o.lt.Sf / 1e3, 3)} cm³ · ${fKm(o.My0)}`],
+        [`Pandeo lateral-torsional: ${esc(o.lt.caso)}${inp.Lb > 0 ? `, Lb = ${n(inp.Lb, 2)} m` : ''} → Fcre`, isFinite(o.lt.Fcre) ? fMPa(o.lt.Fcre) : '∞'],
+        ['Fn (F2.1) · Mne = Sf·Fn ≤ My', `${fMPa(o.Fn)} · ${fKm(o.Mne)}`],
+        [`Se a Fn${o.fl.tensionPrimero ? ' (fluye primero la fibra traccionada)' : ''} · Mn = Se·Fn ≤ Set·Fy (F3.1)`, `${n(o.fl.Se / 1e3, 3)} cm³ · ${fKm(o.Mnl)}`],
+        o.dist ? [`Distorsional (${esc(o.dist.metodo)})${o.dist.Lcr ? `: Lcrd = ${n(o.dist.Lcr, 0)} mm, L = ${n(o.dist.L, 0)} mm` : ''} → Fcrd · λd`, `${fMPa(o.dist.Fd)} · ${n(o.dist.ld, 3)}`] : null,
+        o.dist && o.dist.Myn ? ['F4.2: Mynet = Sfnet·Fy · λd1 · λd2', `${fKm(o.dist.Myn)} · ${n(o.dist.l1, 3)} · ${n(o.dist.l2, 3)}`] : null,
+        o.dist ? ['Mnd (F4)', fKm(o.Mnd)] : null,
+        [`Mn = mín(Mne, Mnℓ${o.dist ? ', Mnd' : ''}) → disponible (${F('1,67', '0,90')})`, `${fKm(o.Mn)} → <b>${fKm(o.Ma)}</b>`],
+        eje === 'x' && o.flo ? ['Mno = F3 con Fn = Fy (para H2 y H3)', fKm(Math.min(o.My0, o.flo.M))] : null]);
+      return h + tablaElems(o.fl.ef, `Anchos efectivos en flexión en torno a ${eje}, fibra comprimida a ${n(o.fl.fc, 1)} MPa`);
+    };
+    if (r.fx && inp.Mx !== 0) det += flexDet(r.fx, 'x');
+    if (r.fy) det += flexDet(r.fy, 'y');
+    if (r.v) det += T(`Corte (G2.1${r.v.almas.some(a => a.c != null) ? ', G3' : ''})`, r.v.almas.map((a, i) => [`Alma ${r.v.almas.length > 1 ? i + 1 : ''}: h = ${n(a.h, 1)} mm, h/t = ${n(a.h / a.tw, 1)}, kv = 5,34, λv = ${n(a.lv, 3)}${a.c != null ? `, c/t = ${n(a.c / a.tw, 1)}, qs = ${n(a.qs, 3)}` : ''} → Vn`, fK(a.Vn)]).concat([[`Disponible (${F('1,60', '0,95')})`, `<b>${fK(r.v.Va)}</b>`]]));
+    if (r.g5 && r.g5.c) { const o = r.g5; det += T(`Abolladura del alma (G5${r.pf ? ', G6' : ''}): Pn = C·t²·Fy·(1 − CR√(R/t))·(1 + CN√(N/t))·(1 − Ch√(h/t)) — ${esc(o.tabla)}`, [
+      [`C ${n(o.c[0], 1)}, CR ${n(o.c[1], 2)}, CN ${n(o.c[2], 2)}, Ch ${n(o.c[3], 3)}; R/t = ${n(o.R / sec.t, 2)} (≤ ${o.c[6]}), N/t = ${n(o.N / sec.t, 1)}, N/h = ${n(o.N / o.h, 2)}, h/t = ${n(o.h / sec.t, 1)}`, fK(o.Pw) + ' por alma'],
+      [`Almas · Rc (G6)`, `${o.nAlmas} · ${n(o.Rc, 3)}`],
+      [`Pn total · disponible (${F(n(o.Om, 2), n(o.phi, 2))})`, `${fK(o.Pn)}${o.Pa != null ? ' · <b>' + fK(o.Pa) + '</b>' : ''}`]]); }
+    if (r.H3) det += T('Interacción abolladura y flexión (H3)', [['Mao (F3 con Fn = Fy) · M en el punto de la carga', `${fKm(r.H3.Mao)} · ${fKm(r.H3.Mr)}`], [`${n(r.H3.a, 2)}·P/Pn + M/Mno ≤ ${n(r.H3.lim, 2)}${L ? '·φ' : '/Ω'}`, `${n(r.H3.val, 3)} ≤ ${n(r.H3.cap, 3)}`]]);
+    if (r.I11) det += T('Doble C en flexión: conexiones (I1.1)', [['m (centro de corte de una C al plano medio del alma) · q de diseño', `${n(r.I11.m1, 1)} mm · ${n(r.I11.q * 1000 / MC_KGF, 1)} kgf/m`], ['smax = mín(L/6; 2·g·Ts/(m·q))', n(r.I11.smax, 0) + ' mm'], r.I11.Tr ? ['Tr = Ps·m/(2g)', fK(r.I11.Tr)] : null]);
+    if (r.H) det += T(`Interacción (${r.H.ec})`, [[r.H.ec === 'H1.2' ? 'P/Pa + Mx/Max + My/May' : 'máx(Mx/Maxt + My/Mayt + T/Ta ; Mx/Max + My/May − T/Ta)', n(r.H.v, 3)]]);
+    return det;
+  }
   function recalc() {
+    errs = [];
     const modo = $('mt_modo').value, metodo = $('mt_metodo').value, m = material(), sp = geometria(), cust = sp.cust;
     $('mt_pBar').hidden = modo !== 'BAR'; $('mt_pTor').hidden = modo !== 'TOR';
     ['mt_kind', 'mt_h', 'mt_b', 'mt_c', 'mt_d', 'mt_t'].forEach(id => $('w_' + id).hidden = !cust);
     if (cust) { const k = $('mt_kind').value; $('w_mt_c').hidden = !['CA', 'OMA'].includes(k); $('w_mt_d').hidden = k !== 'OMA'; $('w_mt_h').hidden = ['L', 'PL'].includes(k);
       $('w_mt_c').querySelector('label').textContent = k === 'OMA' ? 'Ala de la omega (mm)' : 'c — atiesador (labio) exterior (mm)'; $('w_mt_b').querySelector('label').textContent = k === 'OMA' ? 'Ancho de la cresta (mm)' : k === 'PL' ? 'b — ancho de la pletina (mm)' : 'b — ancho exterior del ala (mm)'; }
-    const esCA = sp.g.k === 'CA' && sp.g.c > 0;
-    $('w_mt_conf').hidden = !esCA; $('w_mt_perfU').hidden = !(esCA && $('mt_conf').value === 'CAU');
-    $('w_mt_dh').hidden = !['CA', 'U'].includes(sp.g.k); $('w_mt_a').hidden = sp.conf !== '2CA';
-    $('w_mt_Lm').hidden = !(esCA && sp.conf !== 'CAU');
+    const esCAl = sp.g.k === 'CA' && sp.g.c > 0, conf = sp.conf, perf = sp.dh > 0;
+    const omLab = sp.g.k === 'OMA' && sp.g.d > 0;
+    $('w_mt_conf').hidden = !esCAl; $('w_mt_perfU').hidden = !(esCAl && conf === 'CAU'); $('w_mt_cau').hidden = !(esCAl && conf === 'CAU');
+    $('w_mt_dh').hidden = sp.g.k !== 'CA'; ['mt_hForma', 'mt_hS', 'mt_hSend', 'mt_hX', 'mt_hEnd'].forEach(id => $('w_' + id).hidden = !perf);
+    $('w_mt_hLh').hidden = !perf || $('mt_hForma').value === 'C'; $('w_mt_hRad').hidden = !perf || $('mt_hForma').value === 'C';
+    ['mt_a', 'mt_2ext', 'mt_2Vc', 'mt_2g', 'mt_2Ts', 'mt_2w'].forEach(id => $('w_' + id).hidden = conf !== '2CA');
+    $('w_mt_Lm').hidden = !esCAl;
+    const vP = omLab, vMx = omLab, vMy = omLab || (esCAl && conf !== '2CA');
+    $('w_mt_FcrdP').hidden = !vP; $('w_mt_FcrdMx').hidden = !vMx; $('w_mt_FcrdMy').hidden = !vMy; $('w_mt_FcrdF').hidden = !(vP || vMx || vMy); $('w_mt_nFcrd').hidden = !(vP || vMx || vMy);
+    const cab = $('mt_cab').value; $('w_mt_tw').hidden = cab === 'B'; $('w_mt_dwg').hidden = cab === 'B';
     $('mt_mat').innerHTML = `<table class="results"><tr><th>Acero</th><th class="num">Fy (MPa)</th><th class="num">Fu (MPa)</th><th class="num">Fy (kgf/cm²)</th><th class="num">E (MPa)</th><th class="num">G (MPa)</th></tr><tr><td>${esc(m.a.n)}${m.nota ? ' — ' + esc(m.nota) : ''}</td><td class="num">${n(m.Fy, 1)}</td><td class="num">${n(m.Fu, 1)}</td><td class="num">${n(m.Fy * 10.197, 0)}</td><td class="num">${n(MC_E, 0)}</td><td class="num">${n(MC_G, 0)}</td></tr></table>`;
-    let av = [], chk = [], res = '', det = '', esq = '', datosRows = [], calcHtml = '', okAll = true, svgSec = '';
+    let av = [], chk = [], res = '', det = '', esq = '', datosRows = [], calcHtml = '', svgSec = '', r = null, hip = [];
     const row = (l, val) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${val}</td></tr>`;
     const sname = nombreSec(sp);
-    datosRows.push(row('Elemento verificado', esc($('mt_modo').selectedOptions[0].text)), row('Método', metodo), row('Acero', esc(m.a.n)), row('Fy / Fu / E', `${n(m.Fy, 1)} / ${n(m.Fu, 1)} / ${n(MC_E, 0)} MPa`));
-    const sec = mcSeccion(sp);
-    if (sec.err && sec.err.length) { $('mt_props').innerHTML = `<p class="note">${esc(sec.err.join('; '))}</p>`; $('mt_esqSeccion').innerHTML = ''; }
+    datosRows.push(row('Elemento verificado', esc($('mt_modo').selectedOptions[0].text)), row('Método', metodo), row('Acero', esc(m.a.n) + (m.nota ? ' — ' + esc(m.nota) : '')), row('Fy / Fu / E', `${n(m.Fy, 1)} / ${n(m.Fu, 1)} / ${n(MC_E, 0)} MPa`));
+    const geoErr = errs.length ? [] : null;
+    const sec = errs.length ? { err: ['datos de la sección inválidos'] } : mcSeccion(sp);
+    const okSec0 = sec && !(sec.err && sec.err.length);
+    if (sec.err && sec.err.length && !errs.length) errs.push(...sec.err.map(e => 'Sección: ' + e));
+    if (!errs.length) geoCompat(sp, okSec0 ? sec : null).forEach(e => errs.push('Geometría incompatible: ' + e));
+    const okSec = okSec0 && !errs.length;
+    if (!okSec) { $('mt_props').innerHTML = ''; $('mt_esqSeccion').innerHTML = ''; }
     else {
       try { sec.ae = mcAe(sec, m.Fy).props.A; if (!['PL', 'L'].includes(sec.k)) sec.sxe = mcFlexEf(sec, 'x', 1, m.Fy, m.Fy).Se; } catch (e) {}
-      $('mt_props').innerHTML = propsHtml(sec, m, false) + `<p class="note">Propiedades por línea media con esquinas redondeadas (ri = ${n(sec.g.ri, 2)} mm)${sp.g.peso ? `; peso de catálogo ${n(sp.g.peso, 2)} kg/m` : ''}${sp.conf === 'S' ? '' : '; sección compuesta: suma de las dos piezas'}.${sp.g.lin === 'TAB' ? ' <b>Perfil de tabiquería: uso no estructural</b> (tabiques no soportantes y cargas laterales menores).' : ''}</p>`;
-      datosRows.push(row('Sección', esc(sname)), row('t / ri / perforación del alma', `${n(sec.g.t, 2)} mm / ${n(sec.g.ri, 2)} mm / ${sec.g.dh > 0 ? n(sec.g.dh, 1) + ' mm' : 'sin perforación'}`));
+      $('mt_props').innerHTML = propsHtml(sec, false) + `<p class="note">Propiedades por línea media con esquinas redondeadas (ri = ${n(sec.g.ri, 2)} mm)${sp.g.peso ? `; peso de catálogo ${n(sp.g.peso, 2)} kg/m` : ''}${sp.conf === 'S' ? '' : '; sección compuesta: suma de las dos piezas'}${sp.conf === 'CAU' ? ' (referencial: el cajón no se calcula como sección cerrada)' : ''}.${sp.g.lin === 'TAB' ? ' <b>Perfil de tabiquería: uso no estructural</b> (tabiques no soportantes y cargas laterales menores).' : ''}</p>`;
+      datosRows.push(row('Sección', esc(sname)), row('t / ri / perforación del alma', `${n(sec.g.t, 2)} mm / ${n(sec.g.ri, 2)} mm / ${sec.g.dh > 0 ? `${sp.hForma === 'C' ? 'circular' : 'no circular'}, dh = ${n(sec.g.dh, 1)} mm` : 'sin perforación'}`));
     }
-    const okSec = sec && !(sec.err && sec.err.length);
-    if (modo === 'BAR' && okSec) {
-      const inp = { metodo, mat: m, L: v('mt_L'), Kx: v('mt_Kx') || 1, Ly: v('mt_Ly'), Ky: v('mt_Ky') || 1, Lt: v('mt_Lt'), Kt: v('mt_Kt') || 1, Lb: v('mt_Lb'), Cb: v('mt_Cb') || 1, Lm: v('mt_Lm'), a: v('mt_a') || 300,
-        N: v('mt_N'), Mx: v('mt_Mx'), My: v('mt_My'), V: v('mt_V'), red: v('mt_red'), Ush: v('mt_Ush') || 1, dh: v('mt_dh'), R: v('mt_R'), Nb: v('mt_Nb') || 1, caso: $('mt_caso').value, fij: $('mt_fij').value === 'Si', MR: v('mt_MR') };
-      if (!(inp.Ly > 0)) inp.Ly = inp.L; if (!(inp.Lt > 0)) inp.Lt = inp.L;
-      const r = calcMcBarra(sec, inp); chk = r.chk; av = r.av; okAll = r.ok;
-      if (sp.g.perf === false && /p$/.test(sp.g.id || '')) av.unshift(['info', 'Perfil perforado: ingrese el ancho de la perforación del alma (dh) según el catálogo Cintac; con dh = 0 se calcula como alma llena.']);
-      if (!chk.length) av.push(['info', 'Ingrese al menos una solicitación (N, Mx, My, V o P).']);
-      res = ixChkTabla(chk, false);
-      // esquema: sección efectiva del caso gobernante
-      let efD = null, tit = '';
-      if (r.comp) { efD = r.comp.ae; tit = `Sección efectiva en compresión a Fn = ${n(r.comp.e2.Fn, 1)} MPa`; }
-      else if (r.fx) { efD = r.fx.fl.ef; tit = `Sección efectiva en flexión (Mx) a ${n(r.fx.fl.fc, 1)} MPa`; }
-      else if (r.fy) { efD = r.fy.fl.ef; tit = `Sección efectiva en flexión (My) a ${n(r.fy.fl.fc, 1)} MPa`; }
-      svgSec = mcSvgSeccion(sec, efD, sname, tit);
-      // detalle
-      if (r.trac) det += `<table class="results"><tr><th colspan="2">Tracción (D2, D3)</th></tr><tr><td>An (descontada la perforación del alma y la reducción ingresada) · Ae = U·An</td><td class="num">${n(r.trac.An / 100, 3)} · ${n(r.trac.Ae / 100, 3)} cm²</td></tr><tr><td>Fluencia Tn = Ag·Fy → disponible (${metodo === 'LRFD' ? 'φt = 0,90' : 'Ωt = 1,67'})</td><td class="num">${fK(r.trac.Tn1)} → ${fK(r.trac.T1)}</td></tr><tr><td>Rotura Tn = Ae·Fu → disponible (${metodo === 'LRFD' ? 'φt = 0,75' : 'Ωt = 2,00'})</td><td class="num">${fK(r.trac.Tn2)} → ${fK(r.trac.T2)}</td></tr></table>`;
-      if (r.comp) { const c = r.comp, fe = c.fe;
-        det += `<table class="results" style="margin-top:.6rem"><tr><th colspan="2">Compresión (E2, E3${c.dist ? ', E4' : ''}${fe.modif ? ', I1.2' : ''})</th></tr>
-          <tr><td>KL/r en torno a x · en torno a y${fe.modif ? ' (modificada, I1.2)' : ''}</td><td class="num">${n(fe.esbX, 1)} · ${n(fe.esbY, 1)}</td></tr>
-          ${fe.modif ? `<tr><td>I1.2: (KL/r)o = ${n(fe.modif.lo, 1)}; a = ${n(fe.modif.a, 0)} mm; ri = ${n(fe.modif.ri, 1)} mm; a máx. = L·ri/(2·r) = ${n(fe.modif.aMax, 0)} mm</td><td class="num">${n(fe.modif.lm, 1)}</td></tr>` : ''}
-          <tr><td>σex · σey · σt (pandeo elástico)</td><td class="num">${n(fe.sx, 1)} · ${n(fe.sy, 1)} · ${isFinite(fe.st) ? n(fe.st, 1) : '—'} MPa</td></tr>
-          <tr><td>Fe (menor raíz de la ecuación cúbica general, E2) — ${esc(fe.modo)}</td><td class="num"><b>${n(fe.Fe, 1)} MPa</b></td></tr>
-          <tr><td>λc = √(Fy/Fe) → Fn (E2-2/E2-3)</td><td class="num">${n(c.e2.lc, 3)} → ${fMPa(c.e2.Fn)}</td></tr>
-          <tr><td>Pne = Ag·Fn (pandeo global)</td><td class="num">${fK(c.Pne)}</td></tr>
-          <tr><td>Ae a Fn · Pnℓ = Ae·Fn (pandeo local, E3)</td><td class="num">${n(c.ae.props.A / 100, 3)} cm² · ${fK(c.Pnl)}</td></tr>
-          ${c.dist ? `<tr><td>Distorsional (2.3.3.3): Lcr = ${n(c.dist.Lcr, 0)} mm, L = ${n(c.dist.L, 0)} mm → Fd · λd</td><td class="num">${fMPa(c.dist.Fd)} · ${n(c.dist.ld, 3)}</td></tr><tr><td>Pnd (E4)</td><td class="num">${fK(c.Pnd)}</td></tr>` : ''}
-          <tr><td>Pn = mín(Pne, Pnℓ${c.dist ? ', Pnd' : ''}) → disponible (${metodo === 'LRFD' ? 'φc = 0,85' : 'Ωc = 1,80'})</td><td class="num">${fK(c.Pn)} → <b>${fK(c.Pa)}</b></td></tr></table>`;
-        det += tablaElems(c.ae, `Anchos efectivos en compresión uniforme a Fn = ${n(c.e2.Fn, 1)} MPa`); }
-      if (r.fx) { const o = r.fx;
-        det += `<table class="results" style="margin-top:.6rem"><tr><th colspan="2">Flexión en torno a x (F2, F3${o.dist ? ', F4' : ''}) — ${o.sg > 0 ? 'ala superior comprimida' : 'ala inferior comprimida'}</th></tr>
-          <tr><td>Sf (bruto, fibra comprimida) · My = Sf·Fy</td><td class="num">${n(o.lt.Sf / 1e3, 3)} cm³ · ${fKm(o.My0)}</td></tr>
-          <tr><td>Pandeo lateral-torsional: ${esc(o.lt.caso)}${inp.Lb > 0 ? `, Lb = ${n(inp.Lb, 2)} m, Cb = ${n(inp.Cb, 2)}` : ''} → Fcre</td><td class="num">${isFinite(o.lt.Fcre) ? fMPa(o.lt.Fcre) : '∞'}</td></tr>
-          <tr><td>Fn (F2.1) · Mne = Sf·Fn ≤ My</td><td class="num">${fMPa(o.Fn)} · ${fKm(o.Mne)}</td></tr>
-          <tr><td>Se a Fn (eje neutro a ${n(o.fl.na - sec.ymin, 1)} mm de la fibra inferior${o.fl.tensionPrimero ? '; fluye primero la fibra traccionada' : ''}) · Mnℓ = Se·Fn ≤ Mne</td><td class="num">${n(o.fl.Se / 1e3, 3)} cm³ · ${fKm(o.Mnl)}</td></tr>
-          ${o.dist ? `<tr><td>Distorsional (2.3.3.3, flexión): Lcr = ${n(o.dist.Lcr, 0)} mm, L = ${n(o.dist.L, 0)} mm → Fd · λd</td><td class="num">${fMPa(o.dist.Fd)} · ${n(o.dist.ld, 3)}</td></tr><tr><td>Mnd (F4)</td><td class="num">${fKm(o.Mnd)}</td></tr>` : ''}
-          <tr><td>Mn = mín(Mne, Mnℓ${o.dist ? ', Mnd' : ''}) → disponible (${metodo === 'LRFD' ? 'φb = 0,90' : 'Ωb = 1,67'})</td><td class="num">${fKm(o.Mn)} → <b>${fKm(o.Ma)}</b></td></tr>
-          <tr><td>Mnℓo = Se(Fy)·Fy (para H2 y H3)</td><td class="num">${fKm(Math.min(o.My0, o.flo.M))}</td></tr></table>`;
-        det += tablaElems(o.fl.ef, `Anchos efectivos en flexión en torno a x, fibra comprimida a ${n(o.fl.fc, 1)} MPa`); }
-      if (r.fy) { const o = r.fy; det += `<table class="results" style="margin-top:.6rem"><tr><th colspan="2">Flexión en torno a y (F3) — ${o.sg > 0 ? 'bordes de las alas comprimidos' : 'lado del alma comprimido'}</th></tr><tr><td>Sf · My = Sf·Fy</td><td class="num">${n(o.Sf / 1e3, 3)} cm³ · ${fKm(o.My0)}</td></tr><tr><td>Se a Fy · Mnℓ</td><td class="num">${n(o.fl.Se / 1e3, 3)} cm³ · ${fKm(o.fl.M)}</td></tr><tr><td>Mn → disponible</td><td class="num">${fKm(o.Mn)} → <b>${fKm(o.Ma)}</b></td></tr></table>`; det += tablaElems(o.fl.ef, `Anchos efectivos en flexión en torno a y a ${n(o.fl.fc, 1)} MPa`); }
-      if (r.v) det += `<table class="results" style="margin-top:.6rem"><tr><th colspan="2">Corte (G2.1${r.v.almas.some(a => a.qs < 1) ? ', G4' : ''})</th></tr>${r.v.almas.map((a, i) => `<tr><td>Alma ${r.v.almas.length > 1 ? i + 1 : ''}: h = ${n(a.h, 1)} mm, h/t = ${n(a.h / a.tw, 1)}, kv = 5,34, λv = ${n(a.lv, 3)}${a.qs < 1 ? `, qs = ${n(a.qs, 3)}` : ''} → Vn</td><td class="num">${fK(a.Vn)}</td></tr>`).join('')}<tr><td>Disponible (${metodo === 'LRFD' ? 'φv = 0,95' : 'Ωv = 1,60'})</td><td class="num"><b>${fK(r.v.Va)}</b></td></tr></table>`;
-      if (r.g5) det += `<table class="results" style="margin-top:.6rem"><tr><th colspan="2">Abolladura del alma (G5): Pn = C·t²·Fy·(1 − CR√(R/t))·(1 + CN√(N/t))·(1 − Ch√(h/t))</th></tr>${r.g5.out.map(o => `<tr><td>${esc(o.pz.g.id || 'Pieza')}: C ${n(o.c[0], 1)}, CR ${n(o.c[1], 2)}, CN ${n(o.c[2], 2)}, Ch ${n(o.c[3], 3)}; R/t = ${n(o.pz.g.ri / o.pz.g.t, 2)}, N/t = ${n(inp.Nb / o.pz.g.t, 1)}, h/t = ${n(o.h / o.pz.g.t, 1)}</td><td class="num">${fK(o.Pn)}</td></tr>`).join('')}<tr><td>Disponible (${metodo === 'LRFD' ? 'φw = ' + n(r.g5.phi, 2) : 'Ωw = ' + n(r.g5.Om, 2)})</td><td class="num"><b>${fK(r.g5.Pa)}</b></td></tr></table>`;
-      if (r.H) det += `<table class="results" style="margin-top:.6rem"><tr><th colspan="2">Interacción (${r.H.ec})</th></tr><tr><td>${r.H.ec === 'H1.2' ? 'P/Pa + Mx/Max + My/May' : 'máx(Mx/Maxt + My/Mayt + T/Ta ; Mx/Max + My/May − T/Ta)'}</td><td class="num">${n(r.H.v, 3)}</td></tr></table>`;
-      datosRows.push(row('L / Kx · Ly / Ky · Lt / Kt', `${n(inp.L, 2)} m / ${n(inp.Kx, 2)} · ${n(inp.Ly, 2)} m / ${n(inp.Ky, 2)} · ${n(inp.Lt, 2)} m / ${n(inp.Kt, 2)}`), row('Lb / Cb / Lm', `${n(inp.Lb, 2)} m / ${n(inp.Cb, 2)} / ${n(inp.Lm, 2)} m`),
+    if (modo === 'BAR') {
+      const L = num('mt_L', 'Longitud L', { req: true, gt: 0 }) || 0;
+      const lim = { req: true, gt: 0, max: L || undefined };
+      const inp = { metodo, mat: m, L, Kx: num('mt_Kx', 'Kx', { req: true, gt: 0 }), Ly: num('mt_Ly', 'Ly', lim), Ky: num('mt_Ky', 'Ky', { req: true, gt: 0 }), Lt: num('mt_Lt', 'Lt', lim), Kt: num('mt_Kt', 'Kt', { req: true, gt: 0 }),
+        Lb: num('mt_Lb', 'Lb', { req: true, min: 0, max: L || undefined }), Cb: num('mt_Cb', 'Cb', { req: true, min: 1, max: 5 }), Lm: esCAl ? num('mt_Lm', 'Lm', { req: true, min: 0, max: L || undefined }) : 0,
+        a: sp.conf === '2CA' ? num('mt_a', 'Separación a de los tornillos de la doble C', { req: true, gt: 0 }) : 300,
+        N: num('mt_N', 'N', { req: true }), Mx: num('mt_Mx', 'Mx', { req: true }), My: num('mt_My', 'My', { req: true }), V: num('mt_V', 'V', { req: true }),
+        red: num('mt_red', 'Área descontada en la unión (%)', { req: true, min: 0, max: 99.9 }), Ush: num('mt_Ush', 'Usl', { req: true, gt: 0, max: 1 }), uni: $('mt_uni').value,
+        R: num('mt_R', 'Reacción P', { req: true, min: 0 }), caso: $('mt_caso').value, fij: $('mt_fij').value === 'Si', MR: num('mt_MR', 'Momento en el punto de la carga', { req: true }),
+        ord: $('mt_ord').value, arr: $('mt_arr').value, cau: $('mt_cau').value,
+        FcrdP: num('mt_FcrdP', 'Fcrd en compresión', { gt: 0 }), FcrdMx: num('mt_FcrdMx', 'Fcrd en flexión x', { gt: 0 }), FcrdMy: num('mt_FcrdMy', 'Fcrd en flexión y', { gt: 0 }), fcrdFuente: vRaw('mt_FcrdF'),
+        u2: { ext: $('mt_2ext').value, Vc: sp.conf === '2CA' ? num('mt_2Vc', 'Resistencia del conector', { gt: 0 }) : null, g: sp.conf === '2CA' ? num('mt_2g', 'g', { gt: 0 }) : null, Ts: sp.conf === '2CA' ? num('mt_2Ts', 'Ts', { gt: 0 }) : null, w: sp.conf === '2CA' ? num('mt_2w', 'Carga distribuida', { min: 0 }) : null } };
+      const conR = inp.R > 0;
+      inp.Nb = conR ? num('mt_Nb', 'Largo de apoyo N', { req: true, gt: 0 }) : (num('mt_Nb', 'Largo de apoyo N', { gt: 0 }) || 0);
+      inp.dEnd = conR ? num('mt_dEnd', 'Distancia del borde del apoyo al extremo', { req: true, min: 0 }) : 0;
+      if (!conR && inp.MR) errs.push('Momento en el punto de la carga (H3) sin carga concentrada P: ingrese P o deje M = 0');
+      inp.hp = { s: 0, send: 0, Lh: 0, rad2t: $('mt_hRad').value === 'Si', x: 0, hEnd: 0 };
+      if (perf) {
+        const circ = $('mt_hForma').value === 'C';
+        inp.hp.Lh = circ ? sp.dh : num('mt_hLh', 'Largo de la perforación Lh', { req: true, gt: 0 });
+        inp.hp.s = num('mt_hS', 'Separación entre centros de perforaciones', { req: true, gt: 0 });
+        inp.hp.send = num('mt_hSend', 'Distancia libre del extremo a la perforación', { req: true, min: 0 });
+        if (inp.hp.s != null && inp.hp.Lh != null && inp.hp.s <= inp.hp.Lh) errs.push('La separación entre centros de perforaciones debe ser mayor que su largo');
+        if (conR) { inp.hp.x = num('mt_hX', 'Distancia de la perforación al borde del apoyo x', { req: true, min: 0 }); inp.hp.hEnd = num('mt_hEnd', 'Distancia del extremo al borde de la perforación', { req: true, min: 0 }); }
+      }
+      if ((inp.FcrdP || inp.FcrdMx || inp.FcrdMy) && !inp.fcrdFuente) av.push(['uso', 'Fcrd ingresado sin fuente: indique el programa o el análisis numérico del que proviene; sin fuente no se usa.']);
+      if (okSec && !errs.length) { r = calcMcBarra(sec, inp); chk = r.chk; hip = r.hip; av = av.concat(r.av); (r.errores || []).forEach(e => errs.push(e)); }
+      // datos de entrada
+      datosRows.push(row('L / Kx · Ly / Ky · Lt / Kt', `${n(inp.L, 2)} m / ${n(inp.Kx, 2)} · ${n(inp.Ly, 2)} m / ${n(inp.Ky, 2)} · ${n(inp.Lt, 2)} m / ${n(inp.Kt, 2)}`), row('Lb / Cb / Lm', `${inp.Lb > 0 ? n(inp.Lb, 2) + ' m' : 'continua'} / ${n(inp.Cb, 2)} / ${inp.Lm > 0 ? n(inp.Lm, 2) + ' m' : 'sin restricciones intermedias'}`),
+        row('Arriostramiento · origen de N y M', `${esc($('mt_arr').selectedOptions[0].text)} · ${esc($('mt_ord').selectedOptions[0].text)}`),
         row('N / Mx / My / V', `${n(inp.N, 1)} kgf / ${n(inp.Mx, 1)} kgf·m / ${n(inp.My, 1)} kgf·m / ${n(inp.V, 1)} kgf`));
-      if (inp.R > 0) datosRows.push(row('Abolladura del alma', `P = ${n(inp.R, 1)} kgf, N = ${n(inp.Nb, 0)} mm, ${esc($('mt_caso').selectedOptions[0].text)}, ${inp.fij ? 'fijada' : 'no fijada'}, M = ${n(inp.MR, 1)} kgf·m`));
-      calcHtml = `<div class="xlsx-section">1. PROPIEDADES DE LA SECCIÓN</div>${propsHtml(sec, m, true)}<div class="xlsx-section">2. VERIFICACIONES</div>${ixChkTabla(chk, true)}<div class="xlsx-section">3. DETALLE</div>${det.replace(/class="results"/g, 'class="xlsx-table xlsx-calc-table"')}`;
-      esq = '';
+      if (inp.N < 0) datosRows.push(row('Tracción: unión extrema · área descontada · Usl', `${esc($('mt_uni').selectedOptions[0].text)} · ${n(inp.red, 1)} % · ${n(inp.Ush, 3)}`));
+      if (perf) datosRows.push(row('Perforación: Lh / separación / al extremo / esquinas ≥ 2t', `${n(inp.hp.Lh, 1)} mm / ${n(inp.hp.s, 0)} mm / ${n(inp.hp.send, 0)} mm / ${inp.hp.rad2t ? 'sí' : 'no declarado'}`));
+      if (sp.conf === '2CA') datosRows.push(row('Doble C: a · extremos I1.2 b) · conector · g · Ts · carga distribuida', `${n(inp.a, 0)} mm · ${inp.u2.ext === 'Si' ? 'declarado' : 'no declarado'} · ${inp.u2.Vc ? n(inp.u2.Vc, 1) + ' kgf' : '—'} · ${inp.u2.g ? n(inp.u2.g, 0) + ' mm' : '—'} · ${inp.u2.Ts ? n(inp.u2.Ts, 1) + ' kgf' : '—'} · ${inp.u2.w != null ? n(inp.u2.w, 1) + ' kgf/m' : '—'}`));
+      if (sp.conf === 'CAU') datosRows.push(row('Cajón: trabajo conjunto', esc($('mt_cau').selectedOptions[0].text)));
+      if (inp.FcrdP || inp.FcrdMx || inp.FcrdMy) datosRows.push(row('Fcrd numérico (P / Mx / My) · fuente', `${inp.FcrdP ? n(inp.FcrdP, 1) : '—'} / ${inp.FcrdMx ? n(inp.FcrdMx, 1) : '—'} / ${inp.FcrdMy ? n(inp.FcrdMy, 1) : '—'} MPa · ${esc(inp.fcrdFuente || 'sin fuente')}`));
+      if (inp.R > 0) datosRows.push(row('Abolladura del alma', `P = ${n(inp.R, 1)} kgf, N = ${n(inp.Nb, 0)} mm, ${esc($('mt_caso').selectedOptions[0].text)}, ${inp.fij ? 'fijada' : 'no fijada'}, al extremo ${n(inp.dEnd, 0)} mm, M = ${n(inp.MR, 1)} kgf·m${perf ? `, x = ${n(inp.hp.x, 0)} mm, extremo–perforación ${n(inp.hp.hEnd, 0)} mm` : ''}`));
+      if (r && !errs.length) {
+        res = mcChkTabla(chk, false);
+        let efD = null, tit = '';
+        if (r.comp) { efD = r.comp.ae; tit = `Sección efectiva en compresión a Fn = ${n(r.comp.e2.Fn, 1)} MPa`; }
+        else if (r.fx && inp.Mx !== 0) { efD = r.fx.fl.ef; tit = `Sección efectiva en flexión (Mx) a ${n(r.fx.fl.fc, 1)} MPa`; }
+        else if (r.fy) { efD = r.fy.fl.ef; tit = `Sección efectiva en flexión (My) a ${n(r.fy.fl.fc, 1)} MPa`; }
+        svgSec = mcSvgSeccion(sec, efD, sname, tit);
+        if (r.piezas) r.piezas.forEach(pz => { const d = detBarra(pz.r, pz.inp, pz.sec, metodo); if (d) det += `<h4 style="margin:.8rem 0 .2rem">${esc(pz.nom)} — N ${n(pz.inp.N, 1)} kgf, Mx ${n(pz.inp.Mx, 2)} kgf·m, My ${n(pz.inp.My, 2)} kgf·m, V ${n(pz.inp.V, 1)} kgf (${n(pz.fA * 100, 1)} % de A, ${n(pz.fx * 100, 1)} % de Ix, ${n(pz.fy * 100, 1)} % de Iy)</h4>` + d; });
+        else det = detBarra(r, inp, sec, metodo);
+      }
     } else if (modo === 'TOR') {
       const x = MC_TORN.find(y => y.id === $('mt_torn').value) || MC_TORN[2];
-      const inp = { metodo, d: v('mt_dt') > 0 ? v('mt_dt') : x.d, dw: v('mt_dw') || x.dw, Pss: v('mt_Pss'), Pts: v('mt_Pts'), t1: v('mt_t1'), t2: v('mt_t2'), Fu1: v('mt_Fu1') || m.Fu, Fu2: v('mt_Fu2') || m.Fu,
-        n: Math.max(1, Math.round(v('mt_nt'))), V: v('mt_Vt'), T: v('mt_Tt'), e: v('mt_e'), s: v('mt_s'), tc: v('mt_tc') };
-      if (!(inp.t1 > 0 && inp.t2 > 0 && inp.d > 0)) { res = '<p class="note">Ingrese los espesores y el diámetro del tornillo.</p>'; }
-      else {
-        const r = calcMcTornillos(inp); r.nom = x.n.split(' ')[0]; chk = r.chk; av = r.av; okAll = r.ok; res = ixChkTabla(chk, false);
-        const D = (a, b) => metodo === 'LRFD' ? `φ = ${b}` : `Ω = ${a}`;
-        det = `<table class="results"><tr><th colspan="2">Tornillo ${esc(x.n)} — d = ${n(inp.d, 2)} mm, dw = ${n(Math.min(inp.dw, 12.7), 1)} mm (≤ 12,7 mm)</th></tr>
-          <tr><td>Solicitación por tornillo: Q = V/n · T = T/n</td><td class="num">${fK(r.Q)} · ${fK(r.T)}</td></tr>
-          <tr><td>t2/t1 = ${n(r.r, 2)}: 4,2·√(t2³·d)·Fu2 · 2,7·t1·d·Fu1 · 2,7·t2·d·Fu2</td><td class="num">${fK(r.a1)} · ${fK(r.a2)} · ${fK(r.a3)}</td></tr>
-          <tr><td>Pns (J4.3.1${r.r > 1 && r.r < 2.5 ? ', interpolado' : ''}) → disponible (${D('3,00', '0,50')})</td><td class="num">${fK(r.Pns)} → ${fK(metodo === 'LRFD' ? 0.5 * r.Pns : r.Pns / 3)}</td></tr>
-          <tr><td>Pnv = t·e·Fu (J4.3.2) · Pss del fabricante</td><td class="num">${fK(r.Pnv)} · ${fK(r.Pss)}</td></tr>
-          <tr><td>Pnot = 0,85·tc·d·Fu2 (J4.4.1) · Pnov = 1,5·t1·dw·Fu1 (J4.4.2) · Pts</td><td class="num">${fK(r.Pnot)} · ${fK(r.Pnov)} · ${fK(r.Pts)}</td></tr>
-          ${r.comb ? `<tr><td>J4.5: rango de validez de J4.5.1 / J4.5.2</td><td class="num">${r.comb.okRango ? 'cumple' : 'fuera'} / ${r.comb.okR2 ? 'cumple' : 'fuera'}</td></tr>` : ''}</table>`;
+      const dU = num('mt_dt', 'Diámetro d', { gt: 0 }), cabV = $('mt_cab').value;
+      const inp = { metodo, d: dU != null ? dU : x.d, num: dU != null && Math.abs(dU - x.d) > 1e-6 ? '' : x.id, cab: cabV, dh: num('mt_dw', 'Diámetro de la cabeza dh', { req: true, gt: 0 }),
+        tw: cabV !== 'B' ? num('mt_tw', 'Espesor de la golilla tw', { req: true, gt: 0 }) : 0, dw: cabV !== 'B' ? num('mt_dwg', 'Diámetro de la golilla dw', { req: true, gt: 0 }) : 0,
+        Pss: num('mt_Pss', 'Pnvs', { min: 0 }) || 0, Pts: num('mt_Pts', 'Pnts', { min: 0 }) || 0, fuente: vRaw('mt_fuente'),
+        t1: num('mt_t1', 't1', { req: true, gt: 0 }), t2: num('mt_t2', 't2', { req: true, gt: 0 }), Fu1: num('mt_Fu1', 'Fu1', { gt: 0 }), Fu2: num('mt_Fu2', 'Fu2', { gt: 0 }), Fy2: num('mt_Fy2', 'Fy2', { gt: 0 }),
+        n: num('mt_nt', 'Número de tornillos', { req: true, min: 1, int: true }), V: num('mt_Vt', 'Corte V', { req: true }), T: num('mt_Tt', 'Tracción T', { req: true }),
+        e: num('mt_e', 'Distancia al borde e', { req: true, gt: 0 }), s: 0, tc: num('mt_tc', 'Penetración tc', { gt: 0 }) || 0 };
+      if (inp.T != null && inp.T < 0) errs.push('Tracción T negativa: la compresión sobre el tornillo no es tracción; ingrese T ≥ 0 (la fuerza de contacto no se verifica en J4)');
+      if (inp.n > 1) inp.s = num('mt_s', 'Espaciamiento s', { req: true, gt: 0 });
+      if (inp.Fu1 == null) inp.Fu1 = m.Fu; if (inp.Fu2 == null) inp.Fu2 = m.Fu; if (inp.Fy2 == null) inp.Fy2 = m.Fy;
+      if (inp.Fu2 < inp.Fy2 && !errs.length) errs.push('Fu2 no puede ser menor que Fy2');
+      if (!errs.length) {
+        r = calcMcTornillos(inp); r.nom = x.n.split(' (')[0]; chk = r.chk; hip = r.hip; av = av.concat(r.av); (r.errores || []).forEach(e => errs.push(e));
+        res = mcChkTabla(chk, false);
+        const D = (a, b) => metodo === 'LRFD' ? `φ = ${b}` : `Ω = ${a}`, dsp = v => metodo === 'LRFD' ? 0.5 * v : v / 3;
+        det = T(`Tornillo ${esc(x.n)} — d = ${n(inp.d, 2)} mm${inp.num ? '' : ' (diámetro distinto del nominal: número no identificado)'}`, [
+          ['Solicitación por tornillo: Q = |V|/n · T = T/n', `${fK(r.Q)} · ${fK(r.T)}`],
+          [`t2/t1 = ${n(r.r, 2)}: 4,2·√(t2³·d)·Fu2 · 2,7·t1·d·Fu1 · 2,7·t2·d·Fu2`, `${fK(r.a1)} · ${fK(r.a2)} · ${fK(r.a3)}`],
+          [`Pnv (J4.3.1${r.r > 1 && r.r < 2.5 ? ', interpolado' : ''}) → disponible (${D('3,00', '0,50')})`, `${fK(r.Pnv)} → ${fK(dsp(r.Pnv))}`],
+          [`J6.1: e_net = e − d/2 = ${n(r.enet, 2)} mm; 0,6·Fu·2·t·e_net en t1 · en t2 → disponible (${D('3,00', '0,50')})`, `${fK(dsp(r.Pr1))} · ${fK(dsp(r.Pr2))}`],
+          [`J4.4.2: d'w = ${n(r.dpw, 2)} mm · J4.4.1: tc = ${n(r.tc, 2)} mm`, `Pnov ${fK(r.Pnov)} · Pnot ${fK(r.Pnot)}`],
+          ['Pnvs · Pnts (documentados)', `${r.Pss > 0 ? fK(r.Pss) : '—'} · ${r.Pts > 0 ? fK(r.Pts) : '—'}`],
+          r.comb ? ['J4.5.1: Pnv = 2,7·t1·d·Fu1 · Pnov = 1,5·t1·dw·Fu1 (dw = mayor de cabeza o golilla)', `${fK(r.comb.Pv1)} · ${fK(r.comb.Pov1)}`] : null,
+          r.comb ? ['J4.5.2: Pnv = 4,2·√(t2³·d)·Fu2 · Pnot', `${fK(r.comb.Pv2)} · ${fK(r.Pnot)}`] : null]);
         esq = mcSvgTornillos(inp, r);
-        datosRows.push(row('Tornillo', `${esc(x.n)}; d = ${n(inp.d, 2)} mm; dw = ${n(inp.dw, 1)} mm; Pss = ${n(inp.Pss, 2)} kN; Pts = ${n(inp.Pts, 2)} kN`), row('Láminas', `t1 = ${n(inp.t1, 2)} mm (Fu ${n(inp.Fu1, 1)}) · t2 = ${n(inp.t2, 2)} mm (Fu ${n(inp.Fu2, 1)})`), row('Unión', `${inp.n} tornillos; V = ${n(inp.V, 1)} kgf; T = ${n(inp.T, 1)} kgf; e = ${n(inp.e, 0)} mm; s = ${n(inp.s, 0)} mm`));
-        calcHtml = `<div class="xlsx-section">1. RESISTENCIAS</div>${det.replace(/class="results"/g, 'class="xlsx-table xlsx-calc-table"')}<div class="xlsx-section">2. VERIFICACIONES</div>${ixChkTabla(chk, true)}`;
       }
+      datosRows.push(row('Tornillo', `${esc(x.n)}; d = ${n(inp.d, 2)} mm; ${esc($('mt_cab').selectedOptions[0].text)}; dh = ${n(inp.dh, 2)} mm${cabV !== 'B' ? `; golilla tw = ${n(inp.tw, 2)} mm, dw = ${n(inp.dw, 1)} mm` : ''}`),
+        row('Pnvs / Pnts · fuente', `${n(inp.Pss, 2)} kN / ${n(inp.Pts, 2)} kN · ${esc(inp.fuente || 'sin fuente documentada')}`),
+        row('Láminas', `t1 = ${n(inp.t1, 2)} mm (Fu ${n(inp.Fu1, 1)} MPa) · t2 = ${n(inp.t2, 2)} mm (Fu ${n(inp.Fu2, 1)} MPa, Fy ${n(inp.Fy2, 1)} MPa)`),
+        row('Unión', `${inp.n} tornillo(s); V = ${n(inp.V, 1)} kgf; T = ${n(inp.T, 1)} kgf; e = ${n(inp.e, 1)} mm${inp.n > 1 ? `; s = ${n(inp.s, 1)} mm` : ''}`));
       if (okSec) svgSec = mcSvgSeccion(sec, null, sname);
     }
     if (okSec && !svgSec) svgSec = mcSvgSeccion(sec, null, sname);
     $('mt_esqSeccion').innerHTML = okSec ? svgSec : '';
-    const nNo = chk.filter(c => !c.fuera && c.ok === false).length;
-    if (chk.length) av.push([okAll ? 'ok' : 'bad', okAll ? `Diseño conforme a AISI S100-16: todas las verificaciones cumplen (razón máxima ${fmtPct(Math.max(...chk.filter(c => c.ratio != null && !c.fuera).map(c => c.ratio), 0))}).` : `${nNo} ${nNo === 1 ? 'verificación no cumple' : 'verificaciones no cumplen'}${chk.some(c => c.fuera) ? ' o quedan fuera del alcance de la norma' : ''}: revisar la sección, la configuración o el arriostramiento.`]);
+    // estado global: un único resultado para pantalla y exportaciones
+    const estado = errs.length ? 'DATOS INVÁLIDOS' : mcEstado(chk);
+    const nNo = chk.filter(c => !c.fuera && !c.ok).length, nNV = chk.filter(c => c.fuera).length;
+    const rmax = Math.max(0, ...chk.filter(c => !c.fuera && c.ratio != null).map(c => c.ratio));
+    let veredicto;
+    if (estado === 'DATOS INVÁLIDOS') { res = `<div class="global-verdict bad"><span class="label" style="font-size:.85rem;text-transform:none;letter-spacing:0">Datos inválidos — no se calcula</span></div><ul style="margin:.4rem 0 0 1.1rem">${errs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>`; veredicto = ['bad', 'DATOS INVÁLIDOS: ' + errs.join(' ')]; det = ''; esq = ''; }
+    else if (estado === 'SIN SOLICITACIONES') { veredicto = null; av.push(['uso', 'Ingrese al menos una solicitación (N, Mx, My, V o P; en la unión, V o T).']); }
+    else if (estado === 'CUMPLE') veredicto = ['ok', `CUMPLE — Diseño conforme a AISI S100-16 (${metodo}): todas las verificaciones aplicables cumplen (razón máxima ${fmtPct(rmax)}).`];
+    else if (estado === 'NO CUMPLE') veredicto = ['bad', `NO CUMPLE — ${nNo} ${nNo === 1 ? 'verificación no cumple' : 'verificaciones no cumplen'}${nNV ? ` y ${nNV} ${nNV === 1 ? 'queda' : 'quedan'} NO VERIFICADA${nNV === 1 ? '' : 'S'}` : ''}: revisar la sección, la configuración o el arriostramiento.`];
+    else veredicto = ['nv', `NO VERIFICADO — ${nNV} ${nNV === 1 ? 'verificación aplicable queda' : 'verificaciones aplicables quedan'} fuera del alcance implementado o sin el dato normativo que la resuelve; el elemento no se declara conforme.`];
+    const avTec = av.filter(a => a[0] !== 'uso');
+    hip = [...new Set(hip)];
+    hip.forEach(h => av.push(['info', 'Hipótesis: ' + h]));
+    if (veredicto) av.push(veredicto);
     $('mt_res').innerHTML = res; $('mt_av').innerHTML = avHtml(av); $('mt_det').innerHTML = det;
     $('mt_esqModo').innerHTML = esq; $('mt_pEsq').hidden = !esq;
+    // hojas de impresión (Excel, PDF, Memoria y Revisión salen de aquí); notas de uso solo en la web
     const datos = `<div class="xlsx-title-bar">DATOS DE ENTRADA</div><table class="xlsx-table"><tbody>${datosRows.join('')}</tbody></table>`;
-    const calc = `<div class="xlsx-title-bar">CÁLCULO — AISI S100-16 (${metodo})</div><div style="display:flex;gap:6mm;align-items:center;justify-content:center;padding:.3rem 0">${okSec ? `<div style="width:${esq ? '70mm' : '95mm'}">${svgSec}</div>` : ''}${esq ? `<div style="width:105mm">${esq}</div>` : ''}</div>${calcHtml}<div class="xlsx-desc-row" style="padding:.3rem">${esc(av.map(a => a[1]).join(' '))}</div>`;
-    const resum = `<div class="xlsx-title-bar">RESUMEN</div>${ixChkTabla(chk, true)}<div class="xlsx-desc-row" style="padding:.3rem">${esc((av[av.length - 1] || ['', ''])[1])}</div>`;
+    const hipHtml = hip.length ? `<div class="xlsx-section">HIPÓTESIS DECLARADAS</div><table class="xlsx-table"><tbody>${hip.map(h => `<tr class="xlsx-desc-row"><td colspan="5">${esc(h)}</td></tr>`).join('')}</tbody></table>` : '';
+    const txtTec = avTec.concat(veredicto ? [veredicto] : []).map(a => a[1]).join(' ');
+    const motivo = estado === 'DATOS INVÁLIDOS' ? 'datos inválidos — ' + errs.join(' ')
+      : estado === 'SIN SOLICITACIONES' ? 'no hay solicitaciones que verificar'
+      : nNV ? `${nNV} ${nNV === 1 ? 'verificación queda' : 'verificaciones quedan'} NO VERIFICADA${nNV === 1 ? '' : 'S'} — ` + chk.filter(c => c.fuera).map(c => `${c.nom}: ${c.fuera}`).join(' · ') : '';
+    const barra = motivo ? ` data-calc-bloqueo="${esc(motivo)}"` : '';
+    if (estado === 'DATOS INVÁLIDOS') {
+      const err = `<div class="xlsx-title-bar"${barra}>CÁLCULO</div><div class="xlsx-section">DATOS INVÁLIDOS — NO SE CALCULA</div><table class="xlsx-table"><tbody>${errs.map(e => `<tr class="xlsx-desc-row"><td colspan="5">${esc(e)}</td></tr>`).join('')}</tbody></table>`;
+      xlsxSetPrintSheets('', err, err);
+      return;
+    }
+    calcHtml = modo === 'BAR' && okSec ? `<div class="xlsx-section">1. PROPIEDADES DE LA SECCIÓN</div>${propsHtml(sec, true)}<div class="xlsx-section">2. VERIFICACIONES</div>${mcChkTabla(chk, true)}<div class="xlsx-section">3. DETALLE</div>${det.replace(/class="results"/g, 'class="xlsx-table xlsx-calc-table"')}`
+      : modo === 'TOR' ? `<div class="xlsx-section">1. RESISTENCIAS</div>${det.replace(/class="results"/g, 'class="xlsx-table xlsx-calc-table"')}<div class="xlsx-section">2. VERIFICACIONES</div>${mcChkTabla(chk, true)}` : '';
+    const calc = `<div class="xlsx-title-bar"${barra}>CÁLCULO — AISI S100-16 (R2020), ${metodo}</div><div style="display:flex;gap:6mm;align-items:center;justify-content:center;padding:.3rem 0">${okSec ? `<div style="width:${esq ? '70mm' : '95mm'}">${svgSec}</div>` : ''}${esq ? `<div style="width:105mm">${esq}</div>` : ''}</div>${calcHtml}${hipHtml}<div class="xlsx-desc-row" style="padding:.3rem">${esc(txtTec)}</div>`;
+    const resum = `<div class="xlsx-title-bar"${barra}>RESUMEN</div>${mcChkTabla(chk, true)}${hipHtml}<div class="xlsx-desc-row" style="padding:.3rem">${esc(veredicto ? veredicto[1] : '')}</div>`;
     xlsxSetPrintSheets(datos, calc, resum);
   }
   container.querySelectorAll('input,select').forEach(el => el.addEventListener('input', recalc));
