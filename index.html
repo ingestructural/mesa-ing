@@ -18915,6 +18915,14 @@ function vtValidarBase(inp, e, pend) {
   if (inp.n1Origen === 'delta') {
     if (inp.delta === null || inp.delta === undefined) pend.push('Ingrese δ: desplazamiento lateral (mm) del nivel de la masa bajo una carga lateral igual a su peso, en la dirección más flexible; con él se obtiene n1 = (1/2π)·√(g/δ).');
     else if (!(vtFin(inp.delta) && inp.delta > 0)) e.push('δ — desplazamiento lateral: ingrese un valor numérico mayor que 0 mm.');
+  } else if (inp.n1Origen === 'rigidez' || inp.n1Origen === 'deriva') {
+    const chk = (v, txt) => { if (v === null || v === undefined) { pend.push(`Ingrese ${txt}.`); return false; } if (!(vtFin(v) && v > 0)) { e.push(`${txt}: ingrese un valor numérico mayor que 0.`); return false; } return true; };
+    chk(inp.W, 'W — peso de la masa que vibra (kN)'); chk(inp.F, 'F — fuerza lateral aplicada en el análisis (kN)');
+    if (inp.n1Origen === 'rigidez') chk(inp.Dlat, 'Δ — desplazamiento lateral bajo F (mm)');
+    else {
+      if (!(vtFin(inp.hRef) && inp.hRef > 0)) e.push('Δ = h/180: falta la altura de la estructura (h) para calcular la deriva.');
+      if (!inp.derivaOk) pend.push('Acredite que la estructura cumple Δ ≤ h/180 bajo la fuerza F (análisis elástico de servicio, dirección más flexible): sin esa verificación h/180 no acota el desplazamiento y n1 no queda acreditado.');
+    }
   } else if (inp.n1 === null || inp.n1 === undefined) pend.push('Ingrese n1 del análisis modal (modo fundamental en la dirección más flexible), o elija «Estimación con δ» e ingrese el desplazamiento lateral bajo el peso: G = 0,85 solo es válido si n1 ≥ 1 Hz.');
   else if (!(vtFin(inp.n1) && inp.n1 > 0)) e.push('n1 — frecuencia fundamental: ingrese un valor numérico mayor que 0 Hz, o deje el campo vacío.');
   if (vtFin(inp.n1) && inp.n1 > 0 && inp.n1 < 1) e.push(`FUERA DE ALCANCE — estructura flexible (n1 = ${vtTxt(inp.n1, 2)} Hz < 1 Hz): el factor de ráfaga Gf de estructuras flexibles no está implementado; no se supone G = 0,85.`);
@@ -19069,7 +19077,7 @@ function calcGalponViento(inp) {
     Aproj: Ahast, lateral: latP, casos: franjasCasos(Lx, hLP), alturas: [hc, hc], franjas: true });
 
   const res = vtArmarEstados(dirs, ctx);
-  return { modulo: 'galpon', pendientes: pend, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, GCpi, V: inp.V, Kzt: inp.Kzt, n1: inp.n1, n1Origen: inp.n1Origen, delta: inp.delta,
+  return { modulo: 'galpon', pendientes: pend, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, GCpi, V: inp.V, Kzt: inp.Kzt, n1: inp.n1, n1Origen: inp.n1Origen, delta: inp.delta, W: inp.W, F: inp.F, Dlat: inp.Dlat, hRef: inp.hRef,
     tipoTecho: inp.tipoTecho, cerramiento: inp.cerramiento, Lx, Ly, ha, hc, theta, h, hCriterio: theta <= 10 ? 'θ ≤ 10°: h = altura de cumbrera (3.3)' : 'θ > 10°: h = altura media del techo (3.3)',
     Kh, qh: ctx.qh, dirs: dirs.map(d => ({ k: d.k, txt: d.txt, L: d.L, B: d.B, hL: d.hL, LB: d.LB, CpSota: d.CpSota, Aproj: d.Aproj, franjas: d.franjas, alturas: d.alturas, casos: d.casos.map(c => c.txt) })),
     ...res };
@@ -19119,7 +19127,7 @@ function calcReticuladoViento(inp) {
   const dirs = [{ k: 'N', txt: 'Viento normal a una cara', F: sum('Fn'), M: sum('Mn') }];
   if (hayCuadrada) dirs.push({ k: 'D', txt: 'Viento diagonal (45° respecto de las caras, sección cuadrada)', F: sum('Fd'), M: sum('Md') });
   dirs.forEach(d => { d.cumpleMin = d.F >= Fmin - 1e-9; });
-  return { modulo: 'reticulado', pendientes: pend, avisos, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, V: inp.V, Kzt: inp.Kzt, n1: inp.n1, n1Origen: inp.n1Origen, delta: inp.delta,
+  return { modulo: 'reticulado', pendientes: pend, avisos, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, V: inp.V, Kzt: inp.Kzt, n1: inp.n1, n1Origen: inp.n1Origen, delta: inp.delta, W: inp.W, F: inp.F, Dlat: inp.Dlat, hRef: inp.hRef,
     tramos, AfTot, Fmin, dirs, hayCuadrada, H: T[T.length - 1].z2 };
 }
 
@@ -19176,7 +19184,7 @@ function calcBovedaViento(inp) {
       ] });
   }
   const res = vtArmarEstados(dirs, ctx);
-  return { modulo: 'boveda', pendientes: pend, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, GCpi, V: inp.V, Kzt: inp.Kzt, n1: inp.n1, n1Origen: inp.n1Origen, delta: inp.delta,
+  return { modulo: 'boveda', pendientes: pend, ex, expo: inp.expo, I, Kd: VT_KD, G: VT_G, GCpi, V: inp.V, Kzt: inp.Kzt, n1: inp.n1, n1Origen: inp.n1Origen, delta: inp.delta, W: inp.W, F: inp.F, Dlat: inp.Dlat, hRef: inp.hRef,
     cerramiento: inp.cerramiento, apoyo: inp.apoyo, D, r, ha, Lb: conLb ? Lb : null, rD, hTop, h, Kh, qh: ctx.qh, cp,
     dirs: dirs.map(d => ({ k: d.k, txt: d.txt, L: d.L, B: d.B, hL: d.hL, LB: d.LB, CpSota: d.CpSota, Aproj: d.Aproj, franjas: d.franjas, casos: d.casos.map(c => c.txt), muros: !!d.muroB })),
     ...res };
@@ -19192,7 +19200,14 @@ function vtTabla(cls, head, rows) {
   return `<table class="${cls}">${pr ? '<tbody>' : ''}${h}${rows.map(fila).join('')}${pr ? '</tbody>' : ''}</table>`;
 }
 const vtGTxt = r => !vtFin(r.n1) ? 'G = 0,85 (estructura rígida; n1 sin acreditar)'
-  : `G = 0,85 (estructura rígida, n1 = ${vtTxt(r.n1, 2)} Hz ≥ 1 Hz${r.n1Origen === 'delta' ? `; n1 = (1/2π)·√(g/δ), δ = ${vtTxt(r.delta, 1)} mm, un grado de libertad` : ', análisis modal'})`;
+  : `G = 0,85 (estructura rígida, n1 = ${vtTxt(r.n1, 2)} Hz ≥ 1 Hz${vtN1Txt(r)})`;
+// Origen de n1 (un grado de libertad: δ = desplazamiento bajo carga lateral igual al peso; lineal: δ = Δ·W/F)
+function vtN1Txt(r) {
+  if (r.n1Origen === 'delta') return `; n1 = (1/2π)·√(g/δ), δ = ${vtTxt(r.delta, 1)} mm, un grado de libertad`;
+  if (r.n1Origen === 'rigidez') return `; n1 = (1/2π)·√(g/δ), δ = Δ·W/F = ${vtTxt(r.Dlat, 1)}·${vtTxt(r.W, 1)}/${vtTxt(r.F, 1)} = ${vtTxt(r.delta, 1)} mm, un grado de libertad`;
+  if (r.n1Origen === 'deriva') return `; cota inferior: Δ ≤ h/180 = ${vtTxt(r.hRef * 1000 / 180, 1)} mm bajo F (verificado), δ ≤ Δ·W/F = ${vtTxt(r.delta, 1)} mm, n1 ≥ (1/2π)·√(g/δ), un grado de libertad`;
+  return ', análisis modal';
+}
 function vtFilasBase(r) {
   return [
     ['V — velocidad básica de viento', vtTxt(r.V, 1) + ' m/s'],
@@ -19406,6 +19421,19 @@ function vtEsquemasHtml(r, vista) {
 }
 
 // ---------- Hoja impresa (Excel y PDF salen de aquí) ----------
+function vtN1Filas(state, P, row, t) {
+  const o = state[P + 'N1Origen'];
+  const ori = { modal: 'Análisis modal', delta: 'Un grado de libertad con δ (desplazamiento bajo carga lateral igual al peso)',
+    rigidez: 'Un grado de libertad con la rigidez lateral del análisis: δ = Δ·W/F', deriva: 'Cota inferior con deriva de servicio Δ ≤ h/180 bajo F: δ ≤ (h/180)·W/F' }[o] || 'Análisis modal';
+  const f = [row('n1 — origen', ori)];
+  if (o === 'delta') f.push(row('δ — desplazamiento lateral bajo carga lateral igual al peso (mm)', t(state[P + 'Delta'])));
+  else if (o === 'rigidez' || o === 'deriva') {
+    f.push(row('W — peso de la masa que vibra (kN)', t(state[P + 'W'])), row('F — fuerza lateral aplicada en el análisis (kN)', t(state[P + 'F'])));
+    if (o === 'rigidez') f.push(row('Δ — desplazamiento lateral bajo F (mm)', t(state[P + 'Dlat'])));
+    else f.push(row('Δ ≤ h/180 bajo F — verificado en el análisis de servicio', state[P + 'DerivaOk'] ? 'Sí' : 'No'));
+  } else f.push(row('n1 — frecuencia fundamental (Hz)', t(state[P + 'N1'])));
+  return f;
+}
 const VT_TITULO = { galpon: 'MÓDULO 1 — GALPÓN (TECHO A UNA O DOS AGUAS)', reticulado: 'MÓDULO 2 — TORRE RETICULADA', boveda: 'MÓDULO 3 — CUBIERTA ABOVEDADA' };
 function vientoDatosHtml(state) {
   const row = (l, v) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${v}</td></tr>`;
@@ -19415,8 +19443,7 @@ function vientoDatosHtml(state) {
   const filas = [
     row('V — velocidad básica de viento (m/s)', t(state[P + 'V'])), row('Categoría de exposición', ex(state[P + 'Categoria'])),
     row('Categoría de ocupación', esc(state[P + 'Importancia'] || '—')), row('Kzt — factor topográfico', t(state[P + 'Kzt'])),
-    row('n1 — origen', state[P + 'N1Origen'] === 'delta' ? 'Estimación de un grado de libertad con δ' : 'Análisis modal'),
-    state[P + 'N1Origen'] === 'delta' ? row('δ — desplazamiento lateral bajo carga lateral igual al peso (mm)', t(state[P + 'Delta'])) : row('n1 — frecuencia fundamental (Hz)', t(state[P + 'N1'])),
+    ...vtN1Filas(state, P, row, t),
     row('Presiones usadas con las combinaciones de NCh3171', state[P + 'Comb'] ? 'Sí' : 'No')];
   if (m === 'galpon') filas.push(row('Tipo de cerramiento', esc(state.gCerramiento)), row('Tipo de techo', esc(state.gTipoTecho)),
     row('Lx — dimensión paralela a la cumbrera (m)', t(state.gLx)), row('Ly — dimensión normal a la cumbrera (m)', t(state.gLy)),
@@ -19474,23 +19501,27 @@ function renderViento(container) {
           <div class="field"><label>Categoría de exposición</label><select id="${p}_categoria">${optExpo}</select></div>
           <div class="field"><label>Categoría de ocupación (importancia)</label><select id="${p}_importancia">${optImp}</select></div>
           <div class="field"><label>Kzt — factor topográfico</label><input type="text" inputmode="decimal" id="${p}_Kzt" value="${valIn(state[p + 'Kzt'])}"></div>
-          <div class="field"><label>n1 — cómo se obtiene la frecuencia fundamental</label><select id="${p}_n1Origen"><option value="modal">Análisis modal (ingresar n1)</option><option value="delta">Estimación con δ: n1 = (1/2π)·√(g/δ)</option></select></div>
+          <div class="field"><label>n1 — cómo se obtiene la frecuencia fundamental</label><select id="${p}_n1Origen"><option value="delta" selected>Estimación con δ: n1 = (1/2π)·√(g/δ)</option><option value="modal">Análisis modal (ingresar n1)</option><option value="rigidez">Rigidez lateral del análisis: δ = Δ·W/F</option><option value="deriva">Cota con deriva de servicio Δ ≤ h/180 bajo F</option></select></div>
           <div class="field" id="${p}_n1Box"><label>n1 — frecuencia fundamental, modo de la dirección más flexible (Hz)</label><input type="text" inputmode="decimal" id="${p}_n1" value="" placeholder="del modelo (RAM, SAP…)"></div>
           <div class="field" id="${p}_deltaBox" style="display:none"><label>δ — desplazamiento lateral del nivel de la masa bajo carga lateral igual a su peso (mm)</label><input type="text" inputmode="decimal" id="${p}_delta" value=""></div>
-          <div class="field" id="${p}_n1Res" style="display:none"><label>n1 estimado (Hz)</label><input type="text" id="${p}_n1Calc" value="" readonly tabindex="-1"></div>`;
+          <div class="field" id="${p}_WBox" style="display:none"><label>W — peso de la masa que vibra (kN): peso propio y cargas permanentes del mismo marco o conjunto al que se aplica F</label><input type="text" inputmode="decimal" id="${p}_W" value=""></div>
+          <div class="field" id="${p}_FBox" style="display:none"><label>F — fuerza lateral total aplicada en el análisis elástico (kN)</label><input type="text" inputmode="decimal" id="${p}_F" value=""></div>
+          <div class="field" id="${p}_DlatBox" style="display:none"><label>Δ — desplazamiento lateral bajo F, en el nivel de la masa (mm)</label><input type="text" inputmode="decimal" id="${p}_Dlat" value=""></div>
+          <div class="field" id="${p}_derivaBox" style="display:none"><label>Δ = h/180 (mm), h = altura máxima de la estructura</label><input type="text" id="${p}_hDeriva" value="" readonly tabindex="-1"></div>
+          <label id="${p}_derivaOkBox" style="display:none;gap:.5rem;align-items:flex-start;margin:.4rem 0"><input type="checkbox" id="${p}_derivaOk"><span>La estructura cumple Δ ≤ h/180 bajo F (verificado en el análisis elástico de servicio)</span></label>
+          <div class="field" id="${p}_n1Res" style="display:none"><label>n1 estimado (Hz) — rígida si n1 ≥ 1 Hz</label><input type="text" id="${p}_n1Calc" value="" readonly tabindex="-1"></div>`;
   const comb = p => `<label style="display:flex;gap:.5rem;align-items:flex-start;margin:.6rem 0"><input type="checkbox" id="${p}_comb"><span>Las presiones se usarán en las combinaciones de carga de NCh3171 (condición para aplicar Kd = 0,85).</span></label>`;
   const panelesRes = p => `
       <div id="${p}_errores"></div>
       <div class="panel"><h3>3 · PARÁMETROS Y COEFICIENTES</h3><div id="${p}_param"></div></div>
       <div class="panel"><h3>4 · PRESIONES Y FUERZAS POR ESTADO DE CARGA</h3><div id="${p}_estados"></div></div>
-      <div class="panel"><h3>5 · ESQUEMAS DE LOS ESTADOS DE CARGA</h3>
-        <div class="field-grid"><div class="field"><label>Vista del esquema</label><select id="${p}_vista"><option value="estados">Completo — un esquema por estado de carga</option><option value="simple">Simplificado — presión y succión máximas por superficie</option></select></div></div>
-        <div id="${p}_figuras"></div></div>
-      <div class="panel"><h3>6 · NOTAS</h3><div id="${p}_notas"></div></div>`;
+      <div class="panel" id="${p}_simplePanel"><h3>5 · ESQUEMA SIMPLIFICADO — UNA CARGA POR SUPERFICIE (kgf/m²)</h3><div id="${p}_figsimple"></div></div>
+      <div class="panel"><h3>6 · ESQUEMAS DE LOS ESTADOS DE CARGA</h3><div id="${p}_figuras"></div></div>
+      <div class="panel"><h3>7 · NOTAS</h3><div id="${p}_notas"></div></div>`;
 
   container.innerHTML = `
     <div class="calc-head">
-      <h1>Cargas de Viento</h1>
+      <h1>Cargas de Viento — NCh432.Of2010</h1>
       <div class="sub">Presiones y fuerzas de viento NCh432.Of2010 (procedimiento analítico, SPRFV): galpones, torres reticuladas y bóvedas.</div>
     </div>
     <div class="panel">
@@ -19504,7 +19535,7 @@ function renderViento(container) {
           </select>
         </div>
       </div>
-      <p class="note">n1: use la frecuencia del modo fundamental en la dirección más flexible obtenida del modelo (RAM Elements, SAP2000, etc.). Sin modelo, elija «Estimación con δ»: aplique en el modelo una carga lateral igual al peso concentrado en el nivel de la masa (techo o cúspide) y lea el desplazamiento δ en ese nivel; n1 = (1/2π)·√(g/δ) es exacta para un grado de libertad. Con n1 vacío o sin confirmar el uso de NCh3171 el cálculo se muestra como preliminar y no se permite imprimir ni exportar. Estructuras flexibles (n1 &lt; 1 Hz) y techos libres (cerramiento abierto) quedan fuera de alcance.</p>
+      <p class="note">n1: por defecto se estima con δ: aplique en el modelo una carga lateral igual al peso concentrado en el nivel de la masa (techo o cúspide) y lea el desplazamiento δ en ese nivel; n1 = (1/2π)·√(g/δ) es exacta para un grado de libertad. Si tiene análisis modal, elija «Análisis modal» e ingrese la frecuencia del modo fundamental en la dirección más flexible (RAM Elements, SAP2000, etc.). «Rigidez lateral del análisis» usa cualquier análisis elástico ya hecho (por ejemplo, el de viento de servicio): con la fuerza lateral F, el desplazamiento Δ que produce y el peso W de la misma masa, δ = Δ·W/F. «Cota con deriva h/180» reemplaza Δ por el límite h/180 cuando ya verificó que la estructura lo cumple bajo F; da un n1 mínimo (conservador). h/180 no es un límite de NCh432: es el criterio de deriva de servicio que usted adopte. Con n1 vacío o sin confirmar el uso de NCh3171 el cálculo se muestra como preliminar y no se permite imprimir ni exportar. Estructuras flexibles (n1 &lt; 1 Hz) y techos libres (cerramiento abierto) quedan fuera de alcance.</p>
     </div>
 
     <div id="vt_galpon">
@@ -19572,19 +19603,33 @@ function renderViento(container) {
 
   const $ = id => document.getElementById(id);
   const numOpt = id => { const s = $(id).value.trim(); return s === '' ? null : vtNum(s); };
-  const leerComunes = p => {
+  const leerComunes = (p, hRef) => {
     state[p + 'V'] = vtNum($(p + '_V').value); state[p + 'Categoria'] = $(p + '_categoria').value;
     state[p + 'Importancia'] = $(p + '_importancia').value; state[p + 'Kzt'] = vtNum($(p + '_Kzt').value);
-    const orig = state[p + 'N1Origen'] = $(p + '_n1Origen').value === 'delta' ? 'delta' : 'modal';
-    state[p + 'Delta'] = numOpt(p + '_delta'); state[p + 'Comb'] = $(p + '_comb').checked;
-    const d = state[p + 'Delta'];
-    // Un grado de libertad: δ = W/k = m·g/k → ω = √(g/δ), n1 = ω/2π (δ en m)
-    const n1d = orig === 'delta' && vtFin(d) && d > 0 ? Math.sqrt(9.81 / (d / 1000)) / (2 * Math.PI) : null;
-    state[p + 'N1'] = orig === 'delta' ? n1d : numOpt(p + '_n1');
-    $(p + '_n1Box').style.display = orig === 'delta' ? 'none' : '';
-    $(p + '_deltaBox').style.display = $(p + '_n1Res').style.display = orig === 'delta' ? '' : 'none';
-    $(p + '_n1Calc').value = n1d === null ? '' : vtTxt(n1d, 2) + (n1d >= 1 ? ' ≥ 1 Hz: rígida' : ' < 1 Hz: flexible');
-    return { V: state[p + 'V'], expo: state[p + 'Categoria'], importancia: state[p + 'Importancia'], Kzt: state[p + 'Kzt'], n1: state[p + 'N1'], n1Origen: orig, delta: d, comb3171: state[p + 'Comb'] };
+    const ov = $(p + '_n1Origen').value;
+    const orig = state[p + 'N1Origen'] = ['delta', 'rigidez', 'deriva'].includes(ov) ? ov : 'modal';
+    state[p + 'Comb'] = $(p + '_comb').checked;
+    state[p + 'W'] = numOpt(p + '_W'); state[p + 'F'] = numOpt(p + '_F'); state[p + 'Dlat'] = numOpt(p + '_Dlat');
+    state[p + 'DerivaOk'] = $(p + '_derivaOk').checked;
+    const W = state[p + 'W'], F = state[p + 'F'], ok = v => vtFin(v) && v > 0;
+    const hOk = ok(hRef);
+    // δ = desplazamiento bajo carga lateral igual al peso. Análisis lineal: δ = Δ·W/F.
+    // Con Δ ≤ h/180 bajo F (verificado), δ ≤ (h/180)·W/F y el n1 resultante es una cota inferior.
+    let d = null;
+    if (orig === 'delta') d = numOpt(p + '_delta');
+    else if (orig === 'rigidez') d = ok(W) && ok(F) && ok(state[p + 'Dlat']) ? state[p + 'Dlat'] * W / F : null;
+    else if (orig === 'deriva') d = ok(W) && ok(F) && hOk ? hRef * 1000 / 180 * W / F : null;
+    state[p + 'Delta'] = numOpt(p + '_delta');
+    const n1d = orig !== 'modal' && vtFin(d) && d > 0 && (orig !== 'deriva' || state[p + 'DerivaOk']) ? Math.sqrt(9.81 / (d / 1000)) / (2 * Math.PI) : null;
+    state[p + 'N1'] = orig === 'modal' ? numOpt(p + '_n1') : n1d;
+    const vis = (id, v) => { $(p + id).style.display = v ? '' : 'none'; };
+    vis('_n1Box', orig === 'modal'); vis('_deltaBox', orig === 'delta'); vis('_n1Res', orig !== 'modal');
+    vis('_WBox', orig === 'rigidez' || orig === 'deriva'); vis('_FBox', orig === 'rigidez' || orig === 'deriva');
+    vis('_DlatBox', orig === 'rigidez'); vis('_derivaBox', orig === 'deriva'); $(p + '_derivaOkBox').style.display = orig === 'deriva' ? 'flex' : 'none';
+    $(p + '_hDeriva').value = hOk ? vtTxt(hRef * 1000 / 180, 1) : '';
+    $(p + '_n1Calc').value = n1d === null ? '' : (orig === 'deriva' ? '≥ ' : '') + vtTxt(n1d, 2);
+    return { V: state[p + 'V'], expo: state[p + 'Categoria'], importancia: state[p + 'Importancia'], Kzt: state[p + 'Kzt'], n1: state[p + 'N1'], n1Origen: orig,
+      delta: orig === 'modal' ? null : d, W, F, Dlat: state[p + 'Dlat'], hRef, derivaOk: state[p + 'DerivaOk'], comb3171: state[p + 'Comb'] };
   };
   const sinRes = '<p class="note">Sin resultados: corregir los datos indicados arriba.</p>';
   function mostrar(p, r) {
@@ -19592,6 +19637,7 @@ function renderViento(container) {
       $(p + '_errores').innerHTML = `<div class="panel"><div class="global-verdict bad"><span class="label">DATOS INVÁLIDOS O FUERA DE ALCANCE — no se calcula ni se permite imprimir o exportar</span></div><ul class="note">${r.errores.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>`;
       ['_param', '_estados', '_notas'].forEach(s => { $(p + s).innerHTML = sinRes; });
       $(p + '_figuras').innerHTML = '';
+      if ($(p + '_figsimple')) $(p + '_figsimple').innerHTML = '';
       return;
     }
     $(p + '_errores').innerHTML = r.pendientes.length
@@ -19600,7 +19646,8 @@ function renderViento(container) {
     const bl = b => `<div style="margin:.4rem 0 .9rem"><div style="font-weight:600;margin-bottom:.3rem">${b.t}</div><div style="overflow-x:auto">${b.html}</div></div>`;
     $(p + '_param').innerHTML = B.filter(b => b.param).map(bl).join('');
     $(p + '_estados').innerHTML = B.filter(b => !b.param).map(bl).join('');
-    $(p + '_figuras').innerHTML = vtEsquemasHtml(r, $(p + '_vista') ? $(p + '_vista').value : 'estados');
+    if ($(p + '_figsimple')) $(p + '_figsimple').innerHTML = vtEsquemasHtml(r, 'simple');
+    $(p + '_figuras').innerHTML = vtEsquemasHtml(r, 'estados');
     $(p + '_notas').innerHTML = `<ul class="note">${vtNotas(r).map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
   }
   const activo = () => res[state.modulo];
@@ -19614,7 +19661,7 @@ function renderViento(container) {
   $('vt_modulo').addEventListener('change', switchModuloViento);
 
   function recalcGalpon() {
-    const c = leerComunes('g');
+    const c = leerComunes('g', vtNum($('g_hCumbrera').value));
     state.gCerramiento = $('g_cerramiento').value; state.gTipoTecho = $('g_tipoTecho').value;
     ['Lx', 'Ly', 'hAlero', 'hCumbrera'].forEach(k => { state['g' + k[0].toUpperCase() + k.slice(1)] = vtNum($('g_' + k).value); });
     res.galpon = calcGalponViento({ ...c, cerramiento: state.gCerramiento, tipoTecho: state.gTipoTecho, Lx: state.gLx, Ly: state.gLy, hAlero: state.gHAlero, hCumbrera: state.gHCumbrera });
@@ -19656,8 +19703,9 @@ function renderViento(container) {
     });
   }
   function recalcReticulado() {
-    const c = leerComunes('r');
     leerTramos();
+    const zs = state.tramos.map(t => t.z2).filter(vtFin);
+    const c = leerComunes('r', zs.length ? Math.max(...zs) : null);
     res.reticulado = calcReticuladoViento({ ...c, tramos: state.tramos.map(t => ({ ...t })) });
     mostrar('r', res.reticulado);
     if (state.modulo === 'reticulado') imprimir();
@@ -19671,7 +19719,7 @@ function renderViento(container) {
   });
 
   function recalcBoveda() {
-    const c = leerComunes('b');
+    const c = leerComunes('b', ($('b_apoyo').value === 'elevada' ? vtNum($('b_hArranque').value) : 0) + vtNum($('b_r').value));
     state.bCerramiento = $('b_cerramiento').value; state.bApoyo = $('b_apoyo').value;
     state.bD = vtNum($('b_D').value); state.bR = vtNum($('b_r').value); state.bHArranque = vtNum($('b_hArranque').value); state.bLb = numOpt('b_Lb');
     res.boveda = calcBovedaViento({ ...c, cerramiento: state.bCerramiento, apoyo: state.bApoyo, D: state.bD, r: state.bR, hArranque: state.bHArranque, Lb: state.bLb });
@@ -19685,10 +19733,9 @@ function renderViento(container) {
   };
 
   const enlazar = (ids, fn) => ids.forEach(id => { const el = $(id); el.addEventListener('input', fn); el.addEventListener('change', fn); });
-  const com = p => ['_V', '_categoria', '_importancia', '_Kzt', '_n1Origen', '_n1', '_delta', '_comb'].map(s => p + s);
+  const com = p => ['_V', '_categoria', '_importancia', '_Kzt', '_n1Origen', '_n1', '_delta', '_W', '_F', '_Dlat', '_derivaOk', '_comb'].map(s => p + s);
   enlazar(com('g').concat(['g_cerramiento', 'g_tipoTecho', 'g_Lx', 'g_Ly', 'g_hAlero', 'g_hCumbrera']), recalcGalpon);
   enlazar(com('r'), recalcReticulado);
-  enlazar(['g_vista'], recalcGalpon); enlazar(['b_vista'], recalcBoveda);
   enlazar(com('b').concat(['b_cerramiento', 'b_apoyo', 'b_D', 'b_r', 'b_hArranque', 'b_Lb']), recalcBoveda);
 
   renderTramosTable();
