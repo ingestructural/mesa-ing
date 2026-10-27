@@ -18838,6 +18838,11 @@ const VT_EXPO = {
   C: { alpha: 9.5, zg: 274.32, txt: 'C — terreno abierto con obstrucciones dispersas' },
   D: { alpha: 11.5, zg: 213.36, txt: 'D — áreas planas sin obstrucciones y superficies de agua' }
 };
+// NCh432.Of2010 Tabla 6 — velocidad básica de viento por latitud sur
+const VT_V_TABLA6 = [
+  { k: 'z1', lat: '17° 29′ – 27°', V: 30 }, { k: 'z2', lat: '27° – 35°', V: 35 }, { k: 'z3', lat: '35° – 42°', V: 40 },
+  { k: 'z4', lat: '42° – 50°', V: 50 }, { k: 'z5', lat: '50° – 56° 32′', V: 55 }
+];
 const VT_ZMIN = 4.6;                 // Tabla 9, Caso 2
 const VT_KD = 0.85, VT_G = 0.85;     // Kd: edificios (SPRFV), techos abovedados y torres reticuladas; G: estructura rígida
 const VT_PMIN = 480;                 // Pa — mínimo 5.2.1
@@ -19482,7 +19487,7 @@ function vientoDatosHtml(state) {
   const ex = k => VT_EXPO[k] ? esc(VT_EXPO[k].txt) : '—';
   const m = state.modulo, P = { galpon: 'g', reticulado: 'r', boveda: 'b' }[m];
   const filas = [
-    row('V — velocidad básica de viento (m/s)', t(state[P + 'V'])), row('Categoría de exposición', ex(state[P + 'Categoria'])),
+    row('V — velocidad básica de viento (m/s)', t(state[P + 'V']) + (VT_V_TABLA6.find(z => z.k === state[P + 'Vzona']) ? ` (NCh432 Tabla 6, latitud ${VT_V_TABLA6.find(z => z.k === state[P + 'Vzona']).lat})` : ' (ingreso manual)')), row('Categoría de exposición', ex(state[P + 'Categoria'])),
     row('Categoría de ocupación', esc(state[P + 'Importancia'] || '—')), row('Kzt — factor topográfico', t(state[P + 'Kzt'])),
     ...vtN1Filas(state, P, row, t),
     row('Presiones usadas con las combinaciones de NCh3171', state[P + 'Comb'] ? 'Sí' : 'No')];
@@ -19540,6 +19545,7 @@ function renderViento(container) {
   const optCerr = sel + Object.keys(VT_GCPI).map(c => `<option value="${c}">${c}${VT_GCPI[c] === null ? ' (techos libres: fuera de alcance)' : ' — GCpi = ±' + vtTxt(VT_GCPI[c], 2)}</option>`).join('');
   const valIn = v => vtFin(v) ? v : '';
   const comunes = p => `
+          <div class="field"><label>V — velocidad básica (NCh432 Tabla 6, latitud sur)</label><select id="${p}_Vzona">${VT_V_TABLA6.map(z => `<option value="${z.k}">${z.lat} → ${z.V} m/s</option>`).join('')}<option value="manual">Ingreso manual</option></select></div>
           <div class="field"><label>V — velocidad básica de viento (m/s)</label><input type="text" inputmode="decimal" id="${p}_V" value="${valIn(state[p === 'g' ? 'gV' : p + 'V'])}"></div>
           <div class="field"><label>Categoría de exposición</label><select id="${p}_categoria">${optExpo}</select></div>
           <div class="field"><label>Categoría de ocupación (importancia)</label><select id="${p}_importancia">${optImp}</select></div>
@@ -19644,6 +19650,8 @@ function renderViento(container) {
   [['g_categoria', 'gCategoria'], ['g_importancia', 'gImportancia'], ['g_cerramiento', 'gCerramiento'], ['g_tipoTecho', 'gTipoTecho'],
    ['r_categoria', 'rCategoria'], ['r_importancia', 'rImportancia'],
    ['b_categoria', 'bCategoria'], ['b_importancia', 'bImportancia'], ['b_cerramiento', 'bCerramiento'], ['b_apoyo', 'bApoyo']].forEach(([id, k]) => { document.getElementById(id).value = state[k]; });
+  // Zona de V (Tabla 6): la que coincide con el V inicial; si no coincide, ingreso manual
+  ['g', 'r', 'b'].forEach(p => { const z = VT_V_TABLA6.find(z => z.V === state[p + 'V']); document.getElementById(p + '_Vzona').value = z ? z.k : 'manual'; });
 
   const $ = id => document.getElementById(id);
   const numOpt = id => { const s = $(id).value.trim(); return s === '' ? null : vtNum(s); };
@@ -19654,6 +19662,10 @@ function renderViento(container) {
     return $(p + '_n1Origen').value === 'deriva' ? calc(leerComunes(p, hRef, r0.errores ? null : vtFViento(r0), bMin)) : r0;
   };
   const leerComunes = (p, hRef, Fauto, bMin) => {
+    const zv = VT_V_TABLA6.find(z => z.k === $(p + '_Vzona').value);
+    state[p + 'Vzona'] = zv ? zv.k : 'manual';
+    if (zv) $(p + '_V').value = String(zv.V);
+    $(p + '_V').readOnly = !!zv;
     state[p + 'V'] = vtNum($(p + '_V').value); state[p + 'Categoria'] = $(p + '_categoria').value;
     state[p + 'Importancia'] = $(p + '_importancia').value; state[p + 'Kzt'] = vtNum($(p + '_Kzt').value);
     const ov = $(p + '_n1Origen').value;
@@ -19782,7 +19794,7 @@ function renderViento(container) {
   };
 
   const enlazar = (ids, fn) => ids.forEach(id => { const el = $(id); el.addEventListener('input', fn); el.addEventListener('change', fn); });
-  const com = p => ['_V', '_categoria', '_importancia', '_Kzt', '_n1Origen', '_n1', '_delta', '_W', '_F', '_Dlat', '_derivaOk', '_comb'].map(s => p + s);
+  const com = p => ['_Vzona', '_V', '_categoria', '_importancia', '_Kzt', '_n1Origen', '_n1', '_delta', '_W', '_F', '_Dlat', '_derivaOk', '_comb'].map(s => p + s);
   enlazar(com('g').concat(['g_cerramiento', 'g_tipoTecho', 'g_Lx', 'g_Ly', 'g_hAlero', 'g_hCumbrera']), recalcGalpon);
   enlazar(com('r'), recalcReticulado);
   enlazar(com('b').concat(['b_cerramiento', 'b_apoyo', 'b_D', 'b_r', 'b_hArranque', 'b_Lb']), recalcBoveda);
