@@ -18917,11 +18917,13 @@ function vtValidarBase(inp, e, pend) {
     else if (!(vtFin(inp.delta) && inp.delta > 0)) e.push('δ — desplazamiento lateral: ingrese un valor numérico mayor que 0 mm.');
   } else if (inp.n1Origen === 'rigidez' || inp.n1Origen === 'deriva') {
     const chk = (v, txt) => { if (v === null || v === undefined) { pend.push(`Ingrese ${txt}.`); return false; } if (!(vtFin(v) && v > 0)) { e.push(`${txt}: ingrese un valor numérico mayor que 0.`); return false; } return true; };
-    chk(inp.W, 'W — peso de la masa que vibra (kN)'); chk(inp.F, 'F — fuerza lateral aplicada en el análisis (kN)');
+    chk(inp.W, 'W — peso de la masa que vibra (kN)');
+    if (inp.n1Origen === 'rigidez') chk(inp.F, 'F — fuerza lateral aplicada en el análisis (kN)');
+    else if (!(vtFin(inp.F) && inp.F > 0)) pend.push('F — resultante de viento: complete la geometría para obtenerla (cota h/180).');
     if (inp.n1Origen === 'rigidez') chk(inp.Dlat, 'Δ — desplazamiento lateral bajo F (mm)');
     else {
       if (!(vtFin(inp.hRef) && inp.hRef > 0)) e.push('Δ = h/180: falta la altura de la estructura (h) para calcular la deriva.');
-      if (!inp.derivaOk) pend.push('Acredite que la estructura cumple Δ ≤ h/180 bajo la fuerza F (análisis elástico de servicio, dirección más flexible): sin esa verificación h/180 no acota el desplazamiento y n1 no queda acreditado.');
+      if (!inp.derivaOk) pend.push('Acredite que la estructura cumple Δ ≤ h/180 bajo esta carga de viento (análisis elástico, dirección más flexible): sin esa verificación h/180 no acota el desplazamiento y n1 no queda acreditado.');
     }
   } else if (inp.n1 === null || inp.n1 === undefined) pend.push('Ingrese n1 del análisis modal (modo fundamental en la dirección más flexible), o elija «Estimación con δ» e ingrese el desplazamiento lateral bajo el peso: G = 0,85 solo es válido si n1 ≥ 1 Hz.');
   else if (!(vtFin(inp.n1) && inp.n1 > 0)) e.push('n1 — frecuencia fundamental: ingrese un valor numérico mayor que 0 Hz, o deje el campo vacío.');
@@ -19201,11 +19203,24 @@ function vtTabla(cls, head, rows) {
 }
 const vtGTxt = r => !vtFin(r.n1) ? 'G = 0,85 (estructura rígida; n1 sin acreditar)'
   : `G = 0,85 (estructura rígida, n1 = ${vtTxt(r.n1, 2)} Hz ≥ 1 Hz${vtN1Txt(r)})`;
+// F para la cota h/180 (kN): por dirección, la mayor resultante horizontal entre sus estados (incluye el mínimo 5.2.1);
+// se toma la menor entre direcciones → δ mayor → n1 menor (conservador).
+function vtFViento(r) {
+  if (!r) return null;
+  let porDir;
+  if (r.modulo === 'reticulado') porDir = (r.dirs || []).map(d => Math.max(d.F, r.Fmin));
+  else {
+    const ks = [...new Set((r.estados || []).map(e => e.dir))];
+    porDir = ks.map(k => Math.max(...r.estados.filter(e => e.dir === k && vtFin(e.Fx)).map(e => e.Fx)));
+  }
+  porDir = porDir.filter(v => vtFin(v) && v > 0);
+  return porDir.length ? Math.min(...porDir) / 1000 : null;
+}
 // Origen de n1 (un grado de libertad: δ = desplazamiento bajo carga lateral igual al peso; lineal: δ = Δ·W/F)
 function vtN1Txt(r) {
   if (r.n1Origen === 'delta') return `; n1 = (1/2π)·√(g/δ), δ = ${vtTxt(r.delta, 1)} mm, un grado de libertad`;
   if (r.n1Origen === 'rigidez') return `; n1 = (1/2π)·√(g/δ), δ = Δ·W/F = ${vtTxt(r.Dlat, 1)}·${vtTxt(r.W, 1)}/${vtTxt(r.F, 1)} = ${vtTxt(r.delta, 1)} mm, un grado de libertad`;
-  if (r.n1Origen === 'deriva') return `; cota inferior: Δ ≤ h/180 = ${vtTxt(r.hRef * 1000 / 180, 1)} mm bajo F (verificado), δ ≤ Δ·W/F = ${vtTxt(r.delta, 1)} mm, n1 ≥ (1/2π)·√(g/δ), un grado de libertad`;
+  if (r.n1Origen === 'deriva') return `; cota inferior: Δ ≤ h/180 = ${vtTxt(r.hRef * 1000 / 180, 1)} mm bajo F = ${vtTxt(r.F, 1)} kN (resultante de viento, verificado), δ ≤ Δ·W/F = ${vtTxt(r.delta, 1)} mm, n1 ≥ (1/2π)·√(g/δ), un grado de libertad`;
   return ', análisis modal';
 }
 function vtFilasBase(r) {
@@ -19401,21 +19416,33 @@ const VT_KGF = 9.807;
 function vtEstadoSimplificado(r, k) {
   const ests = r.estados.filter(e => e.dir === k && !e.minimo);
   if (!ests.length) return null;
-  const gob = vals => vals.reduce((a, v) => Math.abs(v) > Math.abs(a) ? v : a, 0);
+  const gob = vals => vals.filter(vtFin).reduce((a, v) => Math.abs(v) > Math.abs(a) ? v : a, 0);
   const una = p => ({ p, lbl: vtSig(p / VT_KGF, 1) });
-  const sup = ests[0].sup.map((sp, j) => sp.bandas
-    ? { ...sp, bandas: [{ z1: 0, z2: sp.bandas[sp.bandas.length - 1].z2, ...una(gob(ests.flatMap(e => e.sup[j].bandas.map(b => b.p)))) }] }
-    : { ...sp, ...una(gob(ests.map(e => e.sup[j].p))) });
+  // Techo: una carga por agua. Dos aguas (galpón normal a la cumbrera) y bóveda normal al eje: agua de barlovento
+  // [0, L/2] y de sotavento [L/2, L]; resto (una agua, viento paralelo): una sola carga. Cada agua toma la más
+  // desfavorable de los tramos/franjas que la tocan, en todos los estados de la dirección.
+  const L = vtGeoDir(r, k).L;
+  const dosAguas = (r.modulo === 'galpon' && k === 'N') || (r.modulo === 'boveda' && k !== 'P');
+  const aguas = dosAguas ? [{ nombre: 'Agua de barlovento', x1: 0, x2: L / 2 }, { nombre: 'Agua de sotavento', x1: L / 2, x2: L }] : [{ nombre: 'Techo', x1: 0, x2: L }];
+  const pTecho = (a) => gob(ests.flatMap(e => e.sup.filter(sp => sp.tipo === 'techo' && sp.x1 < a.x2 - 1e-9 && sp.x2 > a.x1 + 1e-9).map(sp => sp.p)));
+  const sup = [];
+  ests[0].sup.forEach((sp, j) => {
+    if (sp.tipo === 'techo') return;
+    sup.push(sp.bandas
+      ? { ...sp, bandas: [{ z1: 0, z2: sp.bandas[sp.bandas.length - 1].z2, ...una(gob(ests.flatMap(e => e.sup[j].bandas.map(b => b.p)))) }] }
+      : { ...sp, ...una(gob(ests.map(e => e.sup[j].p))) });
+  });
+  aguas.forEach((a, i) => sup.push({ k: 'ts' + i, tipo: 'techo', nombre: a.nombre, x1: a.x1, x2: a.x2, ...una(pTecho(a)) }));
   const m = r.estados.find(e => e.dir === k && e.minimo);
   return { id: 'Simplificado', dir: k, dirTxt: ests[0].dirTxt, GCpi: null, sup, Fx: null, Fz: null, kgf: true,
-    casoTxt: `Carga más desfavorable por superficie de ${ests.map(e => e.id).join(', ')}${m ? ' · mínimo 5.2.1: ' + m.id : ''}` };
+    casoTxt: `Envolvente por superficie de ${ests.map(e => e.id).join(', ')}${m ? ' · mínimo 5.2.1: ' + m.id : ''}` };
 }
 function vtEsquemasHtml(r, vista) {
   if (r.modulo === 'reticulado') return vtSvgTorre(r);
   if (vista === 'simple') {
     const ks = [...new Set(r.estados.map(e => e.dir))];
     return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">${ks.map(k => vtEstadoSimplificado(r, k)).filter(Boolean).map(e => `<div>${vtSvgEstado(r, e)}</div>`).join('')}</div>`
-      + `<p class="note">Esquema simplificado: una sola carga por superficie, en kgf/m², igual a la más desfavorable (mayor valor absoluto, con su signo) entre todos los estados de esa dirección; en el muro de barlovento, la de la franja de altura que rige. Es un resumen del sistema principal (SPRFV): para el marco use los estados completos, que no mezclan signos de GCpi entre superficies. No reemplaza las presiones de componentes y revestimientos (costaneras, planchas, fijaciones), que esta planilla no calcula.</p>`;
+      + `<p class="note">Esquema simplificado (envolvente para diseño): una sola carga por superficie, en kgf/m² — muro de barlovento, muro de sotavento, agua de barlovento y agua de sotavento (techo único en una agua o viento paralelo) —, igual a la más desfavorable (mayor valor absoluto, con su signo) entre todos los estados, franjas de altura y franjas de techo de esa dirección. Es un resumen del sistema principal (SPRFV): para el marco use los estados completos, que no mezclan signos de GCpi entre superficies. No reemplaza las presiones de componentes y revestimientos (costaneras, planchas, fijaciones), que esta planilla no calcula.</p>`;
   }
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">${r.estados.filter(e => e.Aproj !== null || !e.minimo).map(e => `<div>${vtSvgEstado(r, e)}</div>`).join('')}</div>`;
 }
@@ -19424,13 +19451,13 @@ function vtEsquemasHtml(r, vista) {
 function vtN1Filas(state, P, row, t) {
   const o = state[P + 'N1Origen'];
   const ori = { modal: 'Análisis modal', delta: 'Un grado de libertad con δ (desplazamiento bajo carga lateral igual al peso)',
-    rigidez: 'Un grado de libertad con la rigidez lateral del análisis: δ = Δ·W/F', deriva: 'Cota inferior con deriva de servicio Δ ≤ h/180 bajo F: δ ≤ (h/180)·W/F' }[o] || 'Análisis modal';
+    rigidez: 'Un grado de libertad con la rigidez lateral del análisis: δ = Δ·W/F', deriva: 'Cota inferior con deriva Δ ≤ h/180 bajo la resultante de viento F: δ ≤ (h/180)·W/F' }[o] || 'Análisis modal';
   const f = [row('n1 — origen', ori)];
   if (o === 'delta') f.push(row('δ — desplazamiento lateral bajo carga lateral igual al peso (mm)', t(state[P + 'Delta'])));
   else if (o === 'rigidez' || o === 'deriva') {
-    f.push(row('W — peso de la masa que vibra (kN)', t(state[P + 'W'])), row('F — fuerza lateral aplicada en el análisis (kN)', t(state[P + 'F'])));
-    if (o === 'rigidez') f.push(row('Δ — desplazamiento lateral bajo F (mm)', t(state[P + 'Dlat'])));
-    else f.push(row('Δ ≤ h/180 bajo F — verificado en el análisis de servicio', state[P + 'DerivaOk'] ? 'Sí' : 'No'));
+    f.push(row('W — peso de la masa que vibra (kN)', t(state[P + 'W'])));
+    if (o === 'rigidez') f.push(row('F — fuerza lateral aplicada en el análisis (kN)', t(state[P + 'F'])), row('Δ — desplazamiento lateral bajo F (mm)', t(state[P + 'Dlat'])));
+    else f.push(row('F — resultante horizontal de viento, menor entre direcciones (kN)', vtFin(state[P + 'Fauto']) ? vtTxt(state[P + 'Fauto'], 1) : '—'), row('Δ ≤ h/180 bajo F — verificado en el análisis elástico', state[P + 'DerivaOk'] ? 'Sí' : 'No'));
   } else f.push(row('n1 — frecuencia fundamental (Hz)', t(state[P + 'N1'])));
   return f;
 }
@@ -19501,14 +19528,15 @@ function renderViento(container) {
           <div class="field"><label>Categoría de exposición</label><select id="${p}_categoria">${optExpo}</select></div>
           <div class="field"><label>Categoría de ocupación (importancia)</label><select id="${p}_importancia">${optImp}</select></div>
           <div class="field"><label>Kzt — factor topográfico</label><input type="text" inputmode="decimal" id="${p}_Kzt" value="${valIn(state[p + 'Kzt'])}"></div>
-          <div class="field"><label>n1 — cómo se obtiene la frecuencia fundamental</label><select id="${p}_n1Origen"><option value="delta" selected>Estimación con δ: n1 = (1/2π)·√(g/δ)</option><option value="modal">Análisis modal (ingresar n1)</option><option value="rigidez">Rigidez lateral del análisis: δ = Δ·W/F</option><option value="deriva">Cota con deriva de servicio Δ ≤ h/180 bajo F</option></select></div>
+          <div class="field"><label>n1 — cómo se obtiene la frecuencia fundamental</label><select id="${p}_n1Origen"><option value="deriva" selected>Cota con deriva de servicio Δ ≤ h/180 bajo el viento</option><option value="delta">Estimación con δ: n1 = (1/2π)·√(g/δ)</option><option value="rigidez">Rigidez lateral del análisis: δ = Δ·W/F</option><option value="modal">Análisis modal (ingresar n1)</option></select></div>
           <div class="field" id="${p}_n1Box"><label>n1 — frecuencia fundamental, modo de la dirección más flexible (Hz)</label><input type="text" inputmode="decimal" id="${p}_n1" value="" placeholder="del modelo (RAM, SAP…)"></div>
           <div class="field" id="${p}_deltaBox" style="display:none"><label>δ — desplazamiento lateral del nivel de la masa bajo carga lateral igual a su peso (mm)</label><input type="text" inputmode="decimal" id="${p}_delta" value=""></div>
-          <div class="field" id="${p}_WBox" style="display:none"><label>W — peso de la masa que vibra (kN): peso propio y cargas permanentes del mismo marco o conjunto al que se aplica F</label><input type="text" inputmode="decimal" id="${p}_W" value=""></div>
+          <div class="field" id="${p}_WBox" style="display:none"><label>W — peso de la masa que vibra (kN): peso propio y cargas permanentes de techo y muros (estructura completa)</label><input type="text" inputmode="decimal" id="${p}_W" value=""></div>
           <div class="field" id="${p}_FBox" style="display:none"><label>F — fuerza lateral total aplicada en el análisis elástico (kN)</label><input type="text" inputmode="decimal" id="${p}_F" value=""></div>
+          <div class="field" id="${p}_FautoBox" style="display:none"><label>F — resultante horizontal de viento de este cálculo (kN), la menor entre direcciones</label><input type="text" id="${p}_Fauto" value="" readonly tabindex="-1"></div>
           <div class="field" id="${p}_DlatBox" style="display:none"><label>Δ — desplazamiento lateral bajo F, en el nivel de la masa (mm)</label><input type="text" inputmode="decimal" id="${p}_Dlat" value=""></div>
           <div class="field" id="${p}_derivaBox" style="display:none"><label>Δ = h/180 (mm), h = altura máxima de la estructura</label><input type="text" id="${p}_hDeriva" value="" readonly tabindex="-1"></div>
-          <label id="${p}_derivaOkBox" style="display:none;gap:.5rem;align-items:flex-start;margin:.4rem 0"><input type="checkbox" id="${p}_derivaOk"><span>La estructura cumple Δ ≤ h/180 bajo F (verificado en el análisis elástico de servicio)</span></label>
+          <label id="${p}_derivaOkBox" style="display:none;gap:.5rem;align-items:flex-start;margin:.4rem 0"><input type="checkbox" id="${p}_derivaOk"><span>La estructura cumple Δ ≤ h/180 bajo esta carga de viento (verificado en el análisis elástico)</span></label>
           <div class="field" id="${p}_n1Res" style="display:none"><label>n1 estimado (Hz) — rígida si n1 ≥ 1 Hz</label><input type="text" id="${p}_n1Calc" value="" readonly tabindex="-1"></div>`;
   const comb = p => `<label style="display:flex;gap:.5rem;align-items:flex-start;margin:.6rem 0"><input type="checkbox" id="${p}_comb"><span>Las presiones se usarán en las combinaciones de carga de NCh3171 (condición para aplicar Kd = 0,85).</span></label>`;
   const panelesRes = p => `
@@ -19535,7 +19563,7 @@ function renderViento(container) {
           </select>
         </div>
       </div>
-      <p class="note">n1: por defecto se estima con δ: aplique en el modelo una carga lateral igual al peso concentrado en el nivel de la masa (techo o cúspide) y lea el desplazamiento δ en ese nivel; n1 = (1/2π)·√(g/δ) es exacta para un grado de libertad. Si tiene análisis modal, elija «Análisis modal» e ingrese la frecuencia del modo fundamental en la dirección más flexible (RAM Elements, SAP2000, etc.). «Rigidez lateral del análisis» usa cualquier análisis elástico ya hecho (por ejemplo, el de viento de servicio): con la fuerza lateral F, el desplazamiento Δ que produce y el peso W de la misma masa, δ = Δ·W/F. «Cota con deriva h/180» reemplaza Δ por el límite h/180 cuando ya verificó que la estructura lo cumple bajo F; da un n1 mínimo (conservador). h/180 no es un límite de NCh432: es el criterio de deriva de servicio que usted adopte. Con n1 vacío o sin confirmar el uso de NCh3171 el cálculo se muestra como preliminar y no se permite imprimir ni exportar. Estructuras flexibles (n1 &lt; 1 Hz) y techos libres (cerramiento abierto) quedan fuera de alcance.</p>
+      <p class="note">n1: por defecto se acota con la deriva h/180: ingrese W (peso de techo y muros) y confirme que la estructura cumple Δ ≤ h/180 bajo el viento de este cálculo; F se toma de la resultante de viento y n1 ≥ (1/2π)·√(g·F·180/(h·W)). Con «Estimación con δ» aplique en el modelo una carga lateral igual al peso concentrado en el nivel de la masa (techo o cúspide) y lea el desplazamiento δ en ese nivel; n1 = (1/2π)·√(g/δ) es exacta para un grado de libertad. Si tiene análisis modal, elija «Análisis modal» e ingrese la frecuencia del modo fundamental en la dirección más flexible (RAM Elements, SAP2000, etc.). «Rigidez lateral del análisis» usa cualquier análisis elástico ya hecho (por ejemplo, el de viento de servicio): con la fuerza lateral F, el desplazamiento Δ que produce y el peso W de la misma masa, δ = Δ·W/F. La cota con h/180 da un n1 mínimo (conservador). h/180 no es un límite de NCh432: es el criterio de deriva de servicio que usted adopte. Con n1 vacío o sin confirmar el uso de NCh3171 el cálculo se muestra como preliminar y no se permite imprimir ni exportar. Estructuras flexibles (n1 &lt; 1 Hz) y techos libres (cerramiento abierto) quedan fuera de alcance.</p>
     </div>
 
     <div id="vt_galpon">
@@ -19603,7 +19631,13 @@ function renderViento(container) {
 
   const $ = id => document.getElementById(id);
   const numOpt = id => { const s = $(id).value.trim(); return s === '' ? null : vtNum(s); };
-  const leerComunes = (p, hRef) => {
+  // Cota h/180: F es la resultante horizontal de viento que entrega este mismo cálculo (las presiones no dependen de n1),
+  // por eso se calcula una vez, se obtiene F y se recalcula con n1.
+  const conFViento = (p, hRef, calc) => {
+    const r0 = calc(leerComunes(p, hRef, null));
+    return $(p + '_n1Origen').value === 'deriva' ? calc(leerComunes(p, hRef, r0.errores ? null : vtFViento(r0))) : r0;
+  };
+  const leerComunes = (p, hRef, Fauto) => {
     state[p + 'V'] = vtNum($(p + '_V').value); state[p + 'Categoria'] = $(p + '_categoria').value;
     state[p + 'Importancia'] = $(p + '_importancia').value; state[p + 'Kzt'] = vtNum($(p + '_Kzt').value);
     const ov = $(p + '_n1Origen').value;
@@ -19611,7 +19645,8 @@ function renderViento(container) {
     state[p + 'Comb'] = $(p + '_comb').checked;
     state[p + 'W'] = numOpt(p + '_W'); state[p + 'F'] = numOpt(p + '_F'); state[p + 'Dlat'] = numOpt(p + '_Dlat');
     state[p + 'DerivaOk'] = $(p + '_derivaOk').checked;
-    const W = state[p + 'W'], F = state[p + 'F'], ok = v => vtFin(v) && v > 0;
+    state[p + 'Fauto'] = vtFin(Fauto) ? Fauto : null;
+    const W = state[p + 'W'], F = orig === 'deriva' ? state[p + 'Fauto'] : state[p + 'F'], ok = v => vtFin(v) && v > 0;
     const hOk = ok(hRef);
     // δ = desplazamiento bajo carga lateral igual al peso. Análisis lineal: δ = Δ·W/F.
     // Con Δ ≤ h/180 bajo F (verificado), δ ≤ (h/180)·W/F y el n1 resultante es una cota inferior.
@@ -19624,7 +19659,8 @@ function renderViento(container) {
     state[p + 'N1'] = orig === 'modal' ? numOpt(p + '_n1') : n1d;
     const vis = (id, v) => { $(p + id).style.display = v ? '' : 'none'; };
     vis('_n1Box', orig === 'modal'); vis('_deltaBox', orig === 'delta'); vis('_n1Res', orig !== 'modal');
-    vis('_WBox', orig === 'rigidez' || orig === 'deriva'); vis('_FBox', orig === 'rigidez' || orig === 'deriva');
+    vis('_WBox', orig === 'rigidez' || orig === 'deriva'); vis('_FBox', orig === 'rigidez'); vis('_FautoBox', orig === 'deriva');
+    $(p + '_Fauto').value = ok(F) && orig === 'deriva' ? vtTxt(F, 1) : '';
     vis('_DlatBox', orig === 'rigidez'); vis('_derivaBox', orig === 'deriva'); $(p + '_derivaOkBox').style.display = orig === 'deriva' ? 'flex' : 'none';
     $(p + '_hDeriva').value = hOk ? vtTxt(hRef * 1000 / 180, 1) : '';
     $(p + '_n1Calc').value = n1d === null ? '' : (orig === 'deriva' ? '≥ ' : '') + vtTxt(n1d, 2);
@@ -19661,10 +19697,9 @@ function renderViento(container) {
   $('vt_modulo').addEventListener('change', switchModuloViento);
 
   function recalcGalpon() {
-    const c = leerComunes('g', vtNum($('g_hCumbrera').value));
     state.gCerramiento = $('g_cerramiento').value; state.gTipoTecho = $('g_tipoTecho').value;
     ['Lx', 'Ly', 'hAlero', 'hCumbrera'].forEach(k => { state['g' + k[0].toUpperCase() + k.slice(1)] = vtNum($('g_' + k).value); });
-    res.galpon = calcGalponViento({ ...c, cerramiento: state.gCerramiento, tipoTecho: state.gTipoTecho, Lx: state.gLx, Ly: state.gLy, hAlero: state.gHAlero, hCumbrera: state.gHCumbrera });
+    res.galpon = conFViento('g', vtNum($('g_hCumbrera').value), c => calcGalponViento({ ...c, cerramiento: state.gCerramiento, tipoTecho: state.gTipoTecho, Lx: state.gLx, Ly: state.gLy, hAlero: state.gHAlero, hCumbrera: state.gHCumbrera }));
     mostrar('g', res.galpon);
     if (state.modulo === 'galpon') imprimir();
   }
@@ -19705,8 +19740,7 @@ function renderViento(container) {
   function recalcReticulado() {
     leerTramos();
     const zs = state.tramos.map(t => t.z2).filter(vtFin);
-    const c = leerComunes('r', zs.length ? Math.max(...zs) : null);
-    res.reticulado = calcReticuladoViento({ ...c, tramos: state.tramos.map(t => ({ ...t })) });
+    res.reticulado = conFViento('r', zs.length ? Math.max(...zs) : null, c => calcReticuladoViento({ ...c, tramos: state.tramos.map(t => ({ ...t })) }));
     mostrar('r', res.reticulado);
     if (state.modulo === 'reticulado') imprimir();
   }
@@ -19719,10 +19753,9 @@ function renderViento(container) {
   });
 
   function recalcBoveda() {
-    const c = leerComunes('b', ($('b_apoyo').value === 'elevada' ? vtNum($('b_hArranque').value) : 0) + vtNum($('b_r').value));
     state.bCerramiento = $('b_cerramiento').value; state.bApoyo = $('b_apoyo').value;
     state.bD = vtNum($('b_D').value); state.bR = vtNum($('b_r').value); state.bHArranque = vtNum($('b_hArranque').value); state.bLb = numOpt('b_Lb');
-    res.boveda = calcBovedaViento({ ...c, cerramiento: state.bCerramiento, apoyo: state.bApoyo, D: state.bD, r: state.bR, hArranque: state.bHArranque, Lb: state.bLb });
+    res.boveda = conFViento('b', (state.bApoyo === 'elevada' ? state.bHArranque : 0) + state.bR, c => calcBovedaViento({ ...c, cerramiento: state.bCerramiento, apoyo: state.bApoyo, D: state.bD, r: state.bR, hArranque: state.bHArranque, Lb: state.bLb }));
     mostrar('b', res.boveda);
     if (state.modulo === 'boveda') imprimir();
   }
