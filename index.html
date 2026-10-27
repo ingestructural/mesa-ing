@@ -18839,9 +18839,11 @@ const VT_EXPO = {
   D: { alpha: 11.5, zg: 213.36, txt: 'D — áreas planas sin obstrucciones y superficies de agua' }
 };
 // NCh432.Of2010 Tabla 6 — velocidad básica de viento por latitud sur
+// (ciudades de referencia dentro de cada franja, para la lista; la hoja impresa cita la latitud)
 const VT_V_TABLA6 = [
-  { k: 'z1', lat: '17° 29′ – 27°', V: 30 }, { k: 'z2', lat: '27° – 35°', V: 35 }, { k: 'z3', lat: '35° – 42°', V: 40 },
-  { k: 'z4', lat: '42° – 50°', V: 50 }, { k: 'z5', lat: '50° – 56° 32′', V: 55 }
+  { k: 'z1', lat: '17° 29′ – 27°', ciu: 'Arica – Chañaral', V: 30 }, { k: 'z2', lat: '27° – 35°', ciu: 'Copiapó – Curicó', V: 35 },
+  { k: 'z3', lat: '35° – 42°', ciu: 'Talca – Puerto Montt', V: 40 }, { k: 'z4', lat: '42° – 50°', ciu: 'Castro – Villa O\'Higgins', V: 50 },
+  { k: 'z5', lat: '50° – 56° 32′', ciu: 'Puerto Natales – Cabo de Hornos', V: 55 }
 ];
 const VT_ZMIN = 4.6;                 // Tabla 9, Caso 2
 const VT_KD = 0.85, VT_G = 0.85;     // Kd: edificios (SPRFV), techos abovedados y torres reticuladas; G: estructura rígida
@@ -19487,7 +19489,7 @@ function vientoDatosHtml(state) {
   const ex = k => VT_EXPO[k] ? esc(VT_EXPO[k].txt) : '—';
   const m = state.modulo, P = { galpon: 'g', reticulado: 'r', boveda: 'b' }[m];
   const filas = [
-    row('V — velocidad básica de viento (m/s)', t(state[P + 'V']) + (VT_V_TABLA6.find(z => z.k === state[P + 'Vzona']) ? ` (NCh432 Tabla 6, latitud ${VT_V_TABLA6.find(z => z.k === state[P + 'Vzona']).lat})` : ' (ingreso manual)')), row('Categoría de exposición', ex(state[P + 'Categoria'])),
+    row('V — velocidad básica de viento (m/s)', t(state[P + 'V']) + (VT_V_TABLA6.find(z => z.k === state[P + 'Vzona']) ? ` (NCh432 Tabla 6, ${VT_V_TABLA6.find(z => z.k === state[P + 'Vzona']).ciu}, latitud sur ${VT_V_TABLA6.find(z => z.k === state[P + 'Vzona']).lat})` : ' (ingreso manual)')), row('Categoría de exposición', ex(state[P + 'Categoria'])),
     row('Categoría de ocupación', esc(state[P + 'Importancia'] || '—')), row('Kzt — factor topográfico', t(state[P + 'Kzt'])),
     ...vtN1Filas(state, P, row, t),
     row('Presiones usadas con las combinaciones de NCh3171', state[P + 'Comb'] ? 'Sí' : 'No')];
@@ -19545,7 +19547,7 @@ function renderViento(container) {
   const optCerr = sel + Object.keys(VT_GCPI).map(c => `<option value="${c}">${c}${VT_GCPI[c] === null ? ' (techos libres: fuera de alcance)' : ' — GCpi = ±' + vtTxt(VT_GCPI[c], 2)}</option>`).join('');
   const valIn = v => vtFin(v) ? v : '';
   const comunes = p => `
-          <div class="field"><label>V — velocidad básica (NCh432 Tabla 6, latitud sur)</label><select id="${p}_Vzona">${VT_V_TABLA6.map(z => `<option value="${z.k}">${z.lat} → ${z.V} m/s</option>`).join('')}<option value="manual">Ingreso manual</option></select></div>
+          <div class="field"><label>V — velocidad básica (NCh432 Tabla 6, zona del país)</label><select id="${p}_Vzona">${VT_V_TABLA6.map(z => `<option value="${z.k}">${z.ciu} → ${z.V} m/s</option>`).join('')}<option value="manual">Ingreso manual</option></select></div>
           <div class="field"><label>V — velocidad básica de viento (m/s)</label><input type="text" inputmode="decimal" id="${p}_V" value="${valIn(state[p === 'g' ? 'gV' : p + 'V'])}"></div>
           <div class="field"><label>Categoría de exposición</label><select id="${p}_categoria">${optExpo}</select></div>
           <div class="field"><label>Categoría de ocupación (importancia)</label><select id="${p}_importancia">${optImp}</select></div>
@@ -19585,6 +19587,7 @@ function renderViento(container) {
           </select>
         </div>
       </div>
+      <p class="note">V: las zonas de la Tabla 6 se definen por latitud sur (límites 27°, 35°, 42° y 50°); las ciudades de la lista son referencias dentro de cada franja. Cerca de un límite (Caldera–Copiapó, Curicó–Talca, Chiloé, sur de Aysén) verifique la latitud del sitio.</p>
       <p class="note">n1: por defecto se usa el criterio simple del Comentario C6.2 de ASCE 7-02 (base de NCh432): si la altura es menor que 4 veces la menor dimensión en planta (en torres, el ancho de la base), la estructura se considera rígida (n1 ≥ 1 Hz) y G = 0,85, salvo que haya razones para suponer n1 &lt; 1 Hz; no requiere datos del modelo. Si no se cumple, elija otra opción. Con la cota h/180: ingrese W (peso de techo y muros) y confirme que la estructura cumple Δ ≤ h/180 bajo el viento de este cálculo; F se toma de la resultante de viento y n1 ≥ (1/2π)·√(g·F·180/(h·W)). Con «Estimación con δ» aplique en el modelo una carga lateral igual al peso concentrado en el nivel de la masa (techo o cúspide) y lea el desplazamiento δ en ese nivel; n1 = (1/2π)·√(g/δ) es exacta para un grado de libertad. Si tiene análisis modal, elija «Análisis modal» e ingrese la frecuencia del modo fundamental en la dirección más flexible (RAM Elements, SAP2000, etc.). «Rigidez lateral del análisis» usa cualquier análisis elástico ya hecho (por ejemplo, el de viento de servicio): con la fuerza lateral F, el desplazamiento Δ que produce y el peso W de la misma masa, δ = Δ·W/F. La cota con h/180 da un n1 mínimo (conservador). h/180 no es un límite de NCh432: es el criterio de deriva de servicio que usted adopte. Con n1 vacío o sin confirmar el uso de NCh3171 el cálculo se muestra como preliminar y no se permite imprimir ni exportar. Estructuras flexibles (n1 &lt; 1 Hz) y techos libres (cerramiento abierto) quedan fuera de alcance.</p>
     </div>
 
