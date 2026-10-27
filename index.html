@@ -19356,6 +19356,7 @@ function vtSvgEstado(r, st) {
   const X = x => x0 + x * s, Y = z => yb - z * s;
   const pTodas = st.sup.flatMap(sp => sp.bandas ? sp.bandas.map(b => b.p) : [sp.p]).filter(vtFin);
   const pMax = Math.max(1, ...pTodas.map(Math.abs), st.minimo ? VT_PMIN : 0);
+  const fsP = st.kgf ? 14 : 9, fsD = st.kgf ? 13 : 9.5;   // esquema simplificado: presiones y cotas más grandes
   return ESQ.svg(m => {
     let o = '';
     // flecha normal a la superficie: + hacia la superficie, − alejándose (succión)
@@ -19364,8 +19365,8 @@ function vtSvgEstado(r, st) {
       let t = '';
       if (p >= 0) t += ESQ.arrow(m, px + nx * (gap + len), py + ny * (gap + len), Math.atan2(-ny, -nx) * 180 / Math.PI, len, '', {});
       else t += ESQ.arrow(m, px + nx * gap, py + ny * gap, Math.atan2(ny, nx) * 180 / Math.PI, len, '', {});
-      const hz = Math.abs(nx) > 0.7, dl = hz ? 4 : 12;   // muros: texto alineado al extremo de la flecha
-      if (lbl) t += ESQ.note(px + nx * (gap + len + dl + extra), py + ny * (gap + len + dl + extra) + 3, lbl, { fontSize: 9, color: 'var(--ink)', anchor: hz ? (nx > 0 ? 'start' : 'end') : 'middle' });
+      const hz = Math.abs(nx) > 0.7, dl = hz ? 4 : (st.kgf ? 15 : 12);   // muros: texto alineado al extremo de la flecha
+      if (lbl) t += ESQ.note(px + nx * (gap + len + dl + extra), py + ny * (gap + len + dl + extra) + 3, lbl, { fontSize: fsP, color: 'var(--ink)', anchor: hz ? (nx > 0 ? 'start' : 'end') : 'middle' });
       return t;
     };
     // contorno
@@ -19397,8 +19398,8 @@ function vtSvgEstado(r, st) {
     if (lat) pie.push(`Muros laterales: ${lat.lbl || vtSig(lat.p, 0)} ${st.kgf ? 'kgf/m²' : 'Pa'}`);
     if (vtFin(st.Fx)) pie.push(`Fx = ${vtKN(st.Fx)} kN`);
     if (vtFin(st.Fz) && !st.minimo) pie.push(`Fz = ${vtKN(st.Fz)} kN (+ hacia abajo)`);
-    o += ESQ.dim(m, X(0), yb + 16, X(g.L), yb + 16, `L = ${vtTxt(g.L, 2)} m`, { labelOffset: -4, fontSize: 9.5 });
-    o += ESQ.note(W / 2 + 20, yb + 44, pie.join(' · '), { fontSize: 9.5, color: 'var(--ink)' });
+    o += ESQ.dim(m, X(0), yb + (st.kgf ? 22 : 16), X(g.L), yb + (st.kgf ? 22 : 16), `L = ${vtTxt(g.L, 2)} m`, { labelOffset: -4, fontSize: fsD });
+    o += ESQ.note(W / 2 + 20, yb + (st.kgf ? 52 : 46), pie.join(' · '), { fontSize: fsD, color: 'var(--ink)' });
     return o;
   }, { viewBox: `0 0 ${W + 40} ${Hs}`, maxWidth: 520, aria: `Esquema del estado de carga ${st.id}: presiones de viento por superficie` });
 }
@@ -19460,7 +19461,7 @@ function vtEsquemasHtml(r, vista) {
   if (vista === 'simple') {
     const ks = [...new Set(r.estados.map(e => e.dir))];
     const sims = ks.map(k => vtEstadoSimplificado(r, k)).filter(Boolean);
-    return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">${sims.map(e => `<div>${vtSvgEstado(r, e)}</div>`).join('')}</div>`
+    return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:12px">${sims.map(e => `<div>${vtSvgEstado(r, e)}</div>`).join('')}</div>`
       + `<div style="overflow-x:auto;margin-top:.6rem">${vtTablaSimple(r, 'results')}</div>`
       + `<p class="note">Esquema simplificado (envolvente para diseño): una sola carga por superficie, en kgf/m² — muro de barlovento, muro de sotavento, agua de barlovento y agua de sotavento (techo único en una agua o viento paralelo) —, igual a la más desfavorable (mayor valor absoluto, con su signo) entre todos los estados, franjas de altura y franjas de techo de esa dirección. Es un resumen del sistema principal (SPRFV): para el marco use los estados completos, que no mezclan signos de GCpi entre superficies. No reemplaza las presiones de componentes y revestimientos (costaneras, planchas, fijaciones), que esta planilla no calcula.</p>`;
   }
