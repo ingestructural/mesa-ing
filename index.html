@@ -21326,6 +21326,123 @@ function mtSvgPlantaMem(inp) {
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto;display:block;margin:0 auto" role="img" aria-label="Planta de la barrera entre transformadores">${g}</svg>`;
 }
 
+// Esquemas por caso (planta, corte o elevación) con las cotas medidas y su estado. Colores fijos sobre fondo
+// blanco: el mismo SVG sirve en pantalla (tema claro u oscuro) y en la memoria impresa. Dibujos sin escala.
+const MT_COL = { 'CUMPLE':'#1E7A46', 'NO CUMPLE':'#B3261E', 'NO VERIFICADO':'#b07800', 'NO APLICA':'#57636F' };
+function mtEsquemas(inp, r) {
+  const v = id => { const x = mtNum(inp[id]); return x == null || Number.isNaN(x) ? null : x; };
+  const f = x => x == null ? '—' : mtF(x);
+  const fila = pre => (r.filas || []).find(x => x.param.indexOf(pre) === 0);
+  const col = pre => { const x = fila(pre); return x ? MT_COL[x.estado] : '#57636F'; };
+  const exi = pre => { const x = fila(pre); return x ? x.exig : ''; };
+  const svg = (W, H, g, aria) => `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto;display:block;margin:0 auto;border-radius:4px" role="img" aria-label="${aria}"><rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>${g}</svg>`;
+  const T = (x, y, t, o) => { o = o || {}; return `<text x="${x}" y="${y}" font-size="${o.fs || 10}" text-anchor="${o.a || 'middle'}"${o.b ? ' font-weight="700"' : ''} fill="${o.c || '#182430'}">${esc(t)}</text>`; };
+  const box = (x, y, w, h, t, o) => { o = o || {}; return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${o.rx || 2}" fill="${o.fill || '#e3edf9'}" stroke="${o.st || '#2a78d6'}" stroke-width="${o.sw || 1.4}"/>` + (t ? T(x + w / 2, y + h / 2 + 4, t, { b: true, fs: o.fs || 10.5 }) : ''); };
+  // Cota horizontal o vertical con flechas cortas y rótulo.
+  const cH = (x1, x2, y, t, c, up) => `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${c}" stroke-width="1.3"/><line x1="${x1}" y1="${y - 5}" x2="${x1}" y2="${y + 5}" stroke="${c}"/><line x1="${x2}" y1="${y - 5}" x2="${x2}" y2="${y + 5}" stroke="${c}"/>` + T((x1 + x2) / 2, up === false ? y + 14 : y - 5, t, { c, fs: 9.5, b: true });
+  const cV = (x, y1, y2, t, c, izq) => `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="${c}" stroke-width="1.3"/><line x1="${x - 5}" y1="${y1}" x2="${x + 5}" y2="${y1}" stroke="${c}"/><line x1="${x - 5}" y1="${y2}" x2="${x + 5}" y2="${y2}" stroke="${c}"/>` + T(izq ? x - 6 : x + 6, (y1 + y2) / 2 + 3, t, { c, fs: 9.5, b: true, a: izq ? 'end' : 'start' });
+  const muro = (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#cfd6e0" stroke="#182430" stroke-width="1.3"/>`;
+  const nota = (W, H, t) => T(W / 2, H - 8, t, { fs: 9, c: '#57636F' });
+  const lbl = (pre, val) => `${val} · ${exi(pre) || 'sin exigencia'}`;
+  const out = [];
+  const caso = r.caso;
+
+  if (caso === '1' || caso === '11') {
+    const W = 640, H = 250;
+    const dE = v(caso === '1' ? 'mt_dEdif1' : 'mt_dEdif') != null ? v(caso === '1' ? 'mt_dEdif1' : 'mt_dEdif') : v('mt_dEdif');
+    let g = box(20, 50, 130, 140, 'EDIFICIO', { fill:'#eef0f3', st:'#57636F' }) + box(300, 85, 110, 70, 'TRAFO A');
+    if (caso === '1' && inp.mt_hayEdif === 'no') g += T(85, 205, 'no existe', { fs: 9, c: '#57636F' });
+    else g += cH(150, 300, 120, `d = ${f(dE)} m`, col('Separación libre a edificación')) + T(225, 210, `exigencia a edificación: ${exi('Separación libre a edificación') || '—'}`, { fs: 9, c: col('Separación libre a edificación') });
+    if (caso === '1' && inp.mt_hayTrafo === 'si') g += box(540, 85, 80, 70, 'TRAFO B') + cH(410, 540, 120, `${f(v('mt_dTrafo'))} m`, col('Separación libre a otro'), false) + T(475, 75, exi('Separación libre a otro') || '—', { fs: 9, c: col('Separación libre a otro') });
+    if (caso === '11' && fila('Separación libre a edificación') && /F120/.test(exi('Separación libre a edificación'))) g += `<line x1="150" y1="50" x2="150" y2="190" stroke="#B3261E" stroke-width="4"/>` + T(158, 45, 'pared del edificio F120 (§5.5)', { a: 'start', fs: 9, c: '#B3261E' });
+    g += nota(W, H, 'Planta. Separación horizontal libre entre proyecciones más próximas del equipo completo y el edificio o equipo vecino.');
+    out.push({ svg: svg(W, H, g, 'Planta de separaciones'), cap: caso === '1' ? 'Planta: separaciones medidas a edificación y a otro transformador (RPTD 08 §5.1 y §5.4)' : 'Planta: separación medida a edificación y distancia de la Tabla N°1 (RPTD 08 §§5.4–5.5)' });
+  }
+  if (caso === '2') {
+    const W = 640, H = 230, Lm = v('mt_Lmuro'), Lr = v('mt_Lreq');
+    let g = box(20, 40, 130, 150, 'EDIFICIO', { fill:'#eef0f3', st:'#57636F' }) + muro(250, 50, 14, 130) + box(380, 80, 120, 70, 'TRAFO');
+    g += cV(236, 50, 180, `L = ${f(Lm)} m`, col('Longitud de la barrera'), true);
+    g += T(257, 42, `barrera ${exi('Resistencia al fuego de la barrera') || 'F120'}`, { fs: 9.5, b: true, c: col('Resistencia al fuego de la barrera') });
+    g += T(257, 200, Lr != null ? `longitud exigida por el estudio ≥ ${f(Lr)} m` : 'longitud: según estudio de protección contra incendio aprobado', { fs: 9, c: col('Longitud de la barrera') });
+    g += nota(W, H, 'Planta. La barrera cubre la fachada, aberturas y cubierta expuestas que identifica el estudio.');
+    out.push({ svg: svg(W, H, g, 'Planta de la barrera frente al edificio'), cap: 'Planta: barrera entre transformador y edificio (RPTD 08 §§5.2–5.3)' });
+  }
+  if (caso === '3') { const p = mtSvgPlantaMem(inp); if (p) out.push({ svg: p, cap: 'Planta: envolvente de las líneas de visión en el plano del muro y prolongación medida en cada extremo (RPTD 08 §5.3)' }); }
+  if (['2','3','4','5'].indexOf(caso) >= 0 || (caso === '8' && inp.mt_cf8 === 'si')) { const e = mtSvgElevMem(inp); if (e) out.push({ svg: e, cap: 'Elevación: cota superior de depósito y conservador referida al apoyo del muro y coronación mínima (RPTD 08 §5.3)' }); }
+  if (caso === '6') {
+    const W = 640, H = 270, hM = v('mt_hMuro'), e = v('mt_esp6');
+    let g = box(40, 80, 150, 90, 'TRAFO A') + muro(313, 40, 14, 170) + box(450, 80, 150, 90, 'TRAFO B');
+    g += cH(190, 313, 125, `${f(v('mt_p6a'))} m · ≥ 1,00`, col('Equipo A, pasillo equipo-muro: ancho'));
+    g += cH(327, 450, 125, `${f(v('mt_p6b'))} m · ≥ 1,00`, col('Equipo B, pasillo equipo-muro: ancho'));
+    g += T(320, 30, `muro h = ${f(hM)} m (≥ 2,50) · e = ${f(e)} m`, { b: true, fs: 10, c: col('Altura del muro entre transformadores') });
+    g += T(320, 228, `altura libre piso-cielo de los pasillos: A ${f(v('mt_p6ah'))} m · B ${f(v('mt_p6bh'))} m (≥ 3,00)`, { fs: 9.5, c: '#182430' });
+    g += nota(W, H, 'Planta. Muro separador entre transformadores en edificio de uso general (RIC 13 §§9.4, 9.6 y 6.4.8).');
+    out.push({ svg: svg(W, H, g, 'Planta del muro entre transformadores'), cap: 'Planta: muro separador y pasillos equipo-muro (RIC 13 §9.6 y §6.4.8)' });
+  }
+  if (caso === '7') {
+    const W = 640, H = 330, reg = inp.mt_reg7, F = id => v(id) == null ? '—' : (reg === 'RIC' ? 'RF' : 'F') + mtF(v(id), 0);
+    const x0 = 60, x1 = 580, yT = 50, yF = 280;
+    let g = `<rect x="${x0}" y="${yT}" width="${x1 - x0}" height="${yF - yT}" fill="none" stroke="#182430" stroke-width="9"/>`;
+    g += `<line x1="${x1}" y1="${yF - 95}" x2="${x1}" y2="${yF - 4}" stroke="#ffffff" stroke-width="11"/><line x1="${x1 - 4}" y1="${yF - 95}" x2="${x1 + 4}" y2="${yF - 95}" stroke="#182430" stroke-width="2"/>`;
+    g += box(250, 170, 170, 110, 'TRAFO');
+    g += T(320, yT - 10, `cierre superior ${F('mt_F7t')}`, { b: true, fs: 10, c: col('Resistencia al fuego — cierre superior') });
+    g += T(x0 + 12, yT + 24, `muros ${F('mt_F7m')}`, { b: true, fs: 9.5, a: 'start', c: col('Resistencia al fuego — muros') });
+    g += T(x1 - 12, yF - 100, `puerta ${F('mt_F7p')}`, { b: true, fs: 9.5, a: 'end', c: col('Resistencia al fuego — puertas') });
+    if (reg === 'RIC') {
+      g += cH(x0 + 5, 250, 220, `${f(v('mt_p7a'))} m · ≥ 1,00`, col('Espacio equipo-muro: ancho'));
+      g += cV(150, yT + 5, yF, `${f(v('mt_p7h'))} m · ≥ 3,00`, col('Espacio equipo-muro: altura'));
+      g += T(x1 - 10, yF - 40, `${f(v('mt_puA'))} × ${f(v('mt_puH'))} m`, { fs: 9.5, a: 'end', b: true, c: col('Puerta de acceso: alto') });
+      if (inp.mt_vent === 'natural') g += `<rect x="${x0 - 5}" y="${yF - 30}" width="10" height="18" fill="#9ccbf2"/><rect x="${x1 - 5}" y="${yT + 12}" width="10" height="18" fill="#9ccbf2"/>` + T(x0 + 10, yF - 34, `admisión ${f(v('mt_Aadm'))} m²`, { fs: 9, a: 'start', c: col('Superficie libre de ventilación') }) + T(x1 - 10, yT + 44, `evacuación ${f(v('mt_Aevac'))} m²`, { fs: 9, a: 'end', c: col('Superficie libre de ventilación') });
+      if (inp.mt_vent === 'forzada') g += T(x1 - 10, yT + 24, `Q = ${f(v('mt_Q'))} m³/h`, { fs: 9.5, a: 'end', b: true, c: col('Caudal de ventilación') });
+    }
+    if (fila('Capacidad de los fosos') || fila('Capacidad del foso')) g += `<rect x="245" y="${yF + 3}" width="180" height="16" fill="none" stroke="#b44a1c" stroke-dasharray="4 3"/>` + T(335, yF + 30, `foso ${f(v(reg === 'RIC' ? 'mt_vFoso' : 'mt_vFosoR'))} L · ${exi('Capacidad de los fosos') || exi('Capacidad del foso')}`, { fs: 9, c: col(fila('Capacidad de los fosos') ? 'Capacidad de los fosos' : 'Capacidad del foso') });
+    out.push({ svg: svg(W, H + 10, g, 'Corte de la sala eléctrica'), cap: `Corte: recinto cerrado, resistencia al fuego del conjunto, espacios de trabajo, acceso y ventilación (${reg === 'RPTD' ? 'RPTD 08 §5.5' : 'RIC 02 §5.4 · RIC 13 §§6.4.8, 8'})` });
+  }
+  if (caso === '8') {
+    const W = 640, H = 330, x0 = 170, x1 = 470, y0 = 40, y1 = 270;
+    let g = muro(x0 - 12, y0 - 12, 12, y1 - y0 + 12) + muro(x0 - 12, y0 - 12, x1 - x0 + 24, 12) + muro(x1, y0 - 12, 12, y1 - y0 + 12);
+    g += `<line x1="${x0}" y1="${y1}" x2="${x1}" y2="${y1}" stroke="#182430" stroke-width="2" stroke-dasharray="8 5"/>` + T((x0 + x1) / 2, y1 + 14, 'cuarto cierre: puerta o reja', { fs: 9, c: '#57636F' });
+    const ex0 = 270, ex1 = 370, ey0 = 110, ey1 = 200;
+    g += box(ex0, ey0, ex1 - ex0, ey1 - ey0, 'TRAFO');
+    g += cH(x0, ex0, 155, `${f(v('mt_d8a'))} m`, col('Separación a el muro izquierdo'));
+    g += cH(ex1, x1, 155, `${f(v('mt_d8c'))} m`, col('Separación a el muro derecho'));
+    g += cV(320, y0, ey0, `${f(v('mt_d8b'))} m`, col('Separación a el muro del fondo'));
+    g += cV(320, ey1, y1, `${f(v('mt_d8d'))} m`, col('Separación a el cuarto cierre'));
+    g += T(x1 + 20, 120, `ancho interior ${f(v('mt_anchoInt'))} m`, { a: 'start', fs: 9.5, b: true, c: col('Ancho interior') }) + T(x1 + 20, 134, exi('Ancho interior'), { a: 'start', fs: 9, c: '#57636F' });
+    g += T(x1 + 20, 160, `fondo interior ${f(v('mt_fondoInt'))} m`, { a: 'start', fs: 9.5, b: true, c: col('Fondo interior') }) + T(x1 + 20, 174, exi('Fondo interior'), { a: 'start', fs: 9, c: '#57636F' });
+    g += T(x0 - 20, 150, `altura ${f(v('mt_h8'))} m`, { a: 'end', fs: 9.5, b: true, c: col('Altura de los tres muros') }) + T(x0 - 20, 164, exi('Altura de los tres muros'), { a: 'end', fs: 9, c: '#57636F' });
+    g += nota(W, H, 'Planta en U. Retiros ≥ 1,50 m desde la proyección de cualquier punto del equipo (RIC 13 §7.2.6).');
+    out.push({ svg: svg(W, H, g, 'Planta del recinto en U'), cap: 'Planta: recinto de tres muros con cuarto cierre, retiros y dimensiones interiores (RIC 13 §7.2.6)' });
+  }
+  if (caso === '9') {
+    const W = 640, H = 280, yG = 220, h = v('mt_h9'), hs = Math.min(150, (h || 2) * 60);
+    let g = `<line x1="20" y1="${yG}" x2="${W - 20}" y2="${yG}" stroke="#182430" stroke-width="2"/>`;
+    g += `<line x1="200" y1="${yG}" x2="200" y2="${yG - hs}" stroke="#182430" stroke-width="4"/>`;
+    for (let k = 0; k < 8; k++) g += `<line x1="140" y1="${yG - k * hs / 8}" x2="200" y2="${yG - k * hs / 8}" stroke="#7f8fa6"/>`;
+    g += `<line x1="140" y1="${yG}" x2="140" y2="${yG - hs}" stroke="#182430" stroke-width="2"/>`;
+    g += cV(120, yG, yG - hs, `h = ${f(h)} m`, col('Altura del cierr'), true) + T(114, yG - hs / 2 + 17, exi('Altura del cierr'), { fs: 9, c: '#57636F', a: 'end' });
+    g += box(360, yG - 110, 150, 110, 'EQUIPO') + `<rect x="350" y="${yG}" width="170" height="10" fill="#cfd6e0" stroke="#182430"/>`;
+    g += cH(200, 360, yG - 60, `${f(v('mt_d9'))} m · ${exi('Separación a la proyección') || exi('Retiro del cierro') || '≥ 1,50'}`, col(fila('Separación a la proyección') ? 'Separación a la proyección' : 'Retiro del cierro'));
+    if (inp.mt_reg9 === 'RIC') {
+      g += `<rect x="40" y="${yG}" width="${W - 80}" height="6" fill="#d9c9a3"/>` + cH(140 - Math.min(80, (v('mt_gravExt') || 1) * 70), 140, yG + 22, `gravilla ${f(v('mt_gravExt'))} m fuera del cierre`, col('Extensión de la gravilla'), false);
+      if (inp.mt_reja9 === 'si') g += T(140, yG - hs - 8, `malla ${f(v('mt_malla9'))} mm · alambre ${f(v('mt_alam9'))} mm · hueco ${f(v('mt_hueco9'))} m`, { fs: 9, c: '#182430', a: 'start' });
+    }
+    out.push({ svg: svg(W, H, g, 'Elevación del cierre perimetral'), cap: `Elevación: cierre perimetral, altura y retiro al equipo (${inp.mt_reg9 === 'RPTD' ? 'RPTD 10 §§5.3.2 y 5.7' : 'RIC 13 §§7.2.5–7.2.15'})` });
+  }
+  if (caso === '10') {
+    const W = 640, H = 230, e = v('mt_esp10');
+    const reqs = [['Mínimo de la función', fila('Espesor mínimo prescrito')], ['Solución acreditada', fila('Espesor de la solución')], ['Cálculo estructural', fila('Espesor necesario')]]
+      .map(([t, x]) => { const m = x && /([\d.,]+) m/.exec(x.exig); return { t, req: m ? mtNum(m[1].replace(/\./g, '').replace(',', '.')) : null, c: x ? MT_COL[x.estado] : '#57636F' }; });
+    const max = Math.max(0.25, e || 0, ...reqs.map(q => q.req || 0)) * 1.15, sx = x => 260 + x / max * 340;
+    let g = `<rect x="40" y="30" width="${Math.max(18, Math.min(150, (e || 0.1) * 500))}" height="160" fill="#cfd6e0" stroke="#182430" stroke-width="1.4"/>`;
+    g += T(40 + Math.max(18, Math.min(150, (e || 0.1) * 500)) / 2, 205, `e = ${f(e)} m`, { b: true });
+    reqs.forEach((q, i) => { const y = 50 + i * 45; g += T(255, y + 12, q.t, { a: 'end', fs: 9.5 }); g += q.req != null ? `<rect x="260" y="${y}" width="${sx(q.req) - 260}" height="16" fill="${q.c}" opacity=".85"/>` + T(sx(q.req) + 4, y + 12, `${f(q.req)} m`, { a: 'start', fs: 9.5 }) : T(262, y + 12, 'sin dato: no verificado', { a: 'start', fs: 9, c: '#b07800' }); });
+    if (e != null) g += `<line x1="${sx(e)}" y1="40" x2="${sx(e)}" y2="190" stroke="#182430" stroke-dasharray="5 3"/>` + T(sx(e), 200, 'espesor medido', { fs: 9 });
+    out.push({ svg: svg(W, H, g, 'Espesor del muro'), cap: 'Corte del muro y comparación del espesor medido con el mínimo de la función, la solución acreditada y el cálculo estructural' });
+  }
+  return out;
+}
+
 function mtMemoriaHtml(inp, r, meta) {
   const N = MEM_N;
   const cls = e => e === MT_ST.OK ? 'ok' : (e === MT_ST.NC ? 'bad' : '');
@@ -21334,14 +21451,10 @@ function mtMemoriaHtml(inp, r, meta) {
   const ids = (r.usados || []).filter(id => id !== 'mt_caso');
   const grupos = [];
   r.filas.forEach(f => { let g = grupos.find(x => x.g === f.grupo); if (!g) { g = { g: f.grupo, filas: [] }; grupos.push(g); } g.filas.push(f); });
-  const elev = ['2','3','4','5'].indexOf(r.caso) >= 0 || (r.caso === '8' && inp.mt_cf8 === 'si') ? mtSvgElevMem(inp) : '';
-  const planta = r.caso === '3' ? mtSvgPlantaMem(inp) : '';
   const barras = r.filas.filter(f => f.cmp && f.cmp.tipo === 'min' && f.cmp.req > 0).map(f => ({ label: f.param, v: f.cmp.v / f.cmp.req * 100, color: f.estado === MT_ST.OK ? '#1E7A46' : (f.estado === MT_ST.NC ? '#B3261E' : '#eda100') }));
   const pend = r.filas.filter(f => f.estado === MT_ST.NC || f.estado === MT_ST.NV);
   const nc = r.filas.filter(f => f.estado === MT_ST.NC), nv = r.filas.filter(f => f.estado === MT_ST.NV);
-  let fig = '';
-  if (elev) fig += `<div class="keep"><div class="fig">${elev}</div>${MEM_F('Elevación: cota superior de depósito y conservador referida al apoyo del muro y coronación mínima (RPTD 08 §5.3)')}</div>`;
-  if (planta) fig += `<div class="keep"><div class="fig">${planta}</div>${MEM_F('Planta: envolvente de las líneas de visión en el plano del muro y prolongación medida en cada extremo (RPTD 08 §5.3)')}</div>`;
+  let fig = mtEsquemas(inp, r).map(x => `<div class="keep"><div class="fig">${x.svg}</div>${MEM_F(x.cap + '. Dibujo sin escala; cotas en color según su estado')}</div>`).join('');
   if (barras.length) fig += `<div class="keep"><div class="fig">${memBarras(barras, 'Valor medido como % del mínimo exigido (100 % = mínimo)', [{ v: 100, label: 'mínimo exigido' }])}</div>${MEM_F('Relación entre el valor medido y el mínimo exigido para los parámetros con mínimo numérico (verde: cumple; rojo: no cumple)')}</div>`;
   const conclusion = r.global === MT_ST.OK
     ? `<p>Con los datos y antecedentes ingresados, <b>todos los parámetros verificados para el ${esc(r.casoTxt)} cumplen</b> los mínimos de los pliegos SEC aplicables y los criterios de la guía de referencia.</p>`
@@ -21506,7 +21619,7 @@ function renderMurosTrafo(container) {
       <div id="mt_tabla"></div>
     </div>
     <div class="panel" id="mt_esqPanel">
-      <h3 class="lbl-left">I · ESQUEMA — CORONACIÓN DEL MURO</h3>
+      <h3 class="lbl-left">I · ESQUEMA DEL CASO</h3>
       <div id="mt_esquema"></div>
     </div>
     ${memPanelHtml('mti', 'J', 'MEMORIA DE VERIFICACIÓN (INFORME)', 'Ej: Subestación unitaria de 2.500 kVA en aceite mineral, a la intemperie, junto a la fachada norte de la nave de proceso...')}
@@ -21541,7 +21654,7 @@ function renderMurosTrafo(container) {
     // Caso 3: siempre dos equipos.
     if (caso === '3') ['mt_consB', 'mt_hDepB', 'mt_desB'].concat(val('mt_consB') === 'si' ? ['mt_hConsB'] : []).forEach(id => { document.getElementById(id).closest('.field').style.display = ''; });
     const esq = ['2','3','4','5'].indexOf(caso) >= 0 || (caso === '8' && val('mt_cf8') === 'si');
-    document.getElementById('mt_esqPanel').style.display = esq ? '' : 'none';
+    document.getElementById('mt_esqPanel').style.display = esq || caso ? '' : 'none';
     // Campo de acreditación del panel E: no aplica al caso 10 (tiene el suyo).
   }
 
@@ -21571,7 +21684,11 @@ function renderMurosTrafo(container) {
     h += '</table>';
     h += `<p class="note">${r.criterios.map(esc).join('<br>')}</p>`;
     document.getElementById('mt_tabla').innerHTML = h;
-    document.getElementById('mt_esquema').innerHTML = document.getElementById('mt_esqPanel').style.display === 'none' ? '' : svgCoronacionTrafo(inp, r);
+    // Elevación de coronación (tema de la app) y esquemas acotados del caso (fondo blanco, sin escala).
+    const esqs = mtEsquemas(inp, r).filter(x => !/^Elevación: cota superior/.test(x.cap));
+    const elevApp = ['2','3','4','5'].indexOf(inp.mt_caso) >= 0 || (inp.mt_caso === '8' && inp.mt_cf8 === 'si');
+    document.getElementById('mt_esquema').innerHTML = (elevApp ? svgCoronacionTrafo(inp, r) : '') +
+      esqs.map(x => `<div style="margin-top:.8rem">${x.svg}<p class="note" style="text-align:center;margin:.3rem 0 0">${esc(x.cap)}. Sin escala; cotas en verde (cumple), rojo (no cumple) u ocre (sin verificar).</p></div>`).join('');
     buildPrintSheetsMurosTrafo(inp, r);
   }
 
