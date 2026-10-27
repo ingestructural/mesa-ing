@@ -18821,9 +18821,9 @@ function renderMadera(container) {
    `pendientes`. En ambos casos la hoja impresa queda marcada con data-calc-bloqueo (calcBloqueoExport). */
 
 // Tablas de la versión anterior: las usa «Chimenea Cilíndrica de Acero» (no se modifican en esta revisión).
+// NCh432.Of2010 (= ASCE 7-02/05 Tabla 6-2/6-3): solo exposiciones B, C y D; SPRFV de otras estructuras → Caso 2, zmín = 4,6 m (15 ft).
 const TABLA1_EXPO_VIENTO = {
-  'A (Grandes ciudades)': {alpha:5, zg:457.2, zmin:18.3},
-  'B (Áreas urbanas)': {alpha:7, zg:365.76, zmin:9.1},
+  'B (Áreas urbanas)': {alpha:7, zg:365.76, zmin:4.6},
   'C (Terreno abierto)': {alpha:9.5, zg:274.32, zmin:4.6},
   'D (Planos)': {alpha:11.5, zg:213.36, zmin:4.6}
 };
@@ -46123,7 +46123,7 @@ function chimeneaDatosHtml(state, r) {
     <div class="xlsx-section">C. VIENTO — NCh432.Of2010, MÉTODO ANALÍTICO</div>
     <table class="xlsx-table"><tbody>
       ${row('V — velocidad básica del viento (m/s)', xlsxNum(r.V, 1))}
-      ${row('Categoría de exposición (Tabla 1)', esc(r.expo))}
+      ${row('Categoría de exposición (NCh432.Of2010, Caso 2: zmín = 4,6 m)', esc(r.expo))}
       ${row('Categoría de importancia (Tabla 2)', esc(r.impW) + ' — I = ' + xlsxNum(r.Iw, 2))}
       ${row('Kzt — factor topográfico', xlsxNum(r.Kzt, 2))}
       ${row('Superficie de la chimenea', { lisa: 'Moderadamente lisa', rugosa: "Rugosa (D′/D ≈ 0,02)", muyRugosa: "Muy rugosa (D′/D ≈ 0,08)" }[r.rugosidad])}
@@ -46362,7 +46362,7 @@ function renderChimeneaAcero(container) {
       <h3>2 · Viento — NCh432.Of2010, método analítico</h3>
       <div class="field-grid">
         <div class="field"><label>V — velocidad básica del viento (m/s)</label><input type="text" inputmode="decimal" step="1" id="ch2_V" value="${state.V}" list="dl_ch2_V"><datalist id="dl_ch2_V"><option value="30">30 m/s</option><option value="35">35 m/s</option><option value="40">40 m/s</option><option value="45">45 m/s</option></datalist></div>
-        <div class="field"><label>Categoría de exposición (Tabla 1)</label><select id="ch2_expo">${Object.keys(TABLA1_EXPO_VIENTO).map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('')}</select></div>
+        <div class="field"><label>Categoría de exposición</label><select id="ch2_expo">${Object.keys(TABLA1_EXPO_VIENTO).map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('')}</select></div>
         <div class="field"><label>Categoría de importancia (Tabla 2)</label><select id="ch2_impW">${Object.keys(TABLA2_IMPORTANCIA_VIENTO).map(k => `<option value="${esc(k)}">${esc(k)} — I = ${fmt2(TABLA2_IMPORTANCIA_VIENTO[k])}</option>`).join('')}</select></div>
         <div class="field"><label>Kzt — factor topográfico</label><input type="text" inputmode="decimal" id="ch2_Kzt" value="${state.Kzt}"></div>
         <div class="field"><label>Superficie de la chimenea</label><select id="ch2_rugosidad"><option value="lisa">Moderadamente lisa</option><option value="rugosa">Rugosa (D′/D ≈ 0,02)</option><option value="muyRugosa">Muy rugosa (D′/D ≈ 0,08)</option></select></div>
