@@ -52530,16 +52530,30 @@ route();
   var srcs = [], lastHtml = '';
   function fuentes(){
     var main = document.getElementById('mainView'); if (!main) return [];
-    return Array.prototype.filter.call(main.querySelectorAll('[id*="_esq"],[id$="_plot"],[id$="_diagrama"],#ch_seccion,#ah_figura'), function(el){ return el.querySelector('svg') && el.offsetParent !== null; });
+    return Array.prototype.filter.call(main.querySelectorAll('[id*="_esq"],[id$="_plot"],[id$="_diagrama"],[id$="_figsimple"],[id^="pc_svg"],#ch_seccion,#ah_figura'), function(el){ return el.querySelector('svg') && el.offsetParent !== null; });
+  }
+  // Pantallas de escritorio angostas (≈1280–1490 px): se angosta la columna de la planilla, sin bajar de 700 px,
+  // para dejar 280 px (o 240 px) al esquema arriba a la derecha. Solo en pantalla; la impresión no cambia.
+  var ESQ_W = 280, MAIN_MIN = 700, MAIN_MAX = 920, anchoSt = document.createElement('style'), anchoCss = '';
+  document.head.appendChild(anchoSt);
+  function ajustarAncho(){
+    var main = document.getElementById('mainView'), css = '';
+    if (main && srcs.length && location.hash && window.innerWidth > 820) {
+      var r = main.getBoundingClientRect(), disp = window.innerWidth - r.left - ESQ_W - 40;
+      if (disp < MAIN_MIN) disp += ESQ_W - 240; // esquema angosto (240 px) antes que botón
+      if (disp < MAIN_MAX && disp >= MAIN_MIN) css = '@media screen{html body main.view{max-width:' + Math.floor(disp) + 'px}}';
+    }
+    if (css !== anchoCss) { anchoCss = css; anchoSt.textContent = css; }
   }
   function colocar(){
     var main = document.getElementById('mainView');
-    if (!main || !srcs.length || !document.documentElement.classList.contains('tool-open') && !location.hash) { box.style.display = 'none'; btn.style.display = 'none'; return; }
+    if (!main || !srcs.length || !document.documentElement.classList.contains('tool-open') && !location.hash) { box.style.display = 'none'; btn.style.display = 'none'; if (anchoCss) { anchoCss = ''; anchoSt.textContent = ''; } return; }
+    ajustarAncho();
     var r = main.getBoundingClientRect(), left = Math.round(r.right + 20), w = window.innerWidth - left - 20;
     if (w < 240) { // sin espacio libre a la derecha: botón flotante que abre el esquema encima
       btn.style.display = 'block'; btn.textContent = abierto ? '✕ Cerrar esquema' : '📐 Ver esquema';
       var pa = document.querySelector('.print-actions'), bb = 18;
-      if (pa && getComputedStyle(pa).position === 'fixed' && getComputedStyle(pa).display !== 'none') { var pr = pa.getBoundingClientRect(); if (pr.height) bb = Math.max(18, Math.round(window.innerHeight - pr.top + 10)); }
+      if (pa && getComputedStyle(pa).position === 'fixed' && getComputedStyle(pa).display !== 'none') { var pr = pa.getBoundingClientRect(); if (pr.height && pr.top > window.innerHeight / 2) bb = Math.max(18, Math.round(window.innerHeight - pr.top + 10)); } // solo si la barra de botones está abajo (teléfono)
       btn.style.bottom = bb + 'px';
       if (!abierto) { box.style.display = 'none'; return; }
       var ow = Math.min(window.innerWidth - 36, 900);
