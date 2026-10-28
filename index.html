@@ -2101,7 +2101,7 @@ const TOOLS = [
     desc:'Estudio encadenado para edificios de acero: densidad de carga combustible media y puntual por barrido de 2×2 m (NCh 1916 / NCh 1993), tipo de edificio por las Tablas 1, 2 y 3 del Art. 4.3.4 OGUC y condiciones del Art. 4.3.5, exigencia F calculada y adoptada por elemento (Art. 4.3.3; reducciones solo con excepción documentada), masividad, temperatura del acero y temperatura crítica (EN 1993-1-2, clase 4 a 350 °C), espesor de protección según la referencia que cubre al elemento (Listado ED17-2025 e informes de ensayo) y lista de chequeo para asimilación (Art. 4.3.2, NCh 3684/1-2:2022).',
     tag:'OGUC 4.3.2-4.3.5 · NCh1916 · NCh1993 · NCh3684 · EN 1993-1-2', calc:'estudioFuego' },
   { id:'muros-transformadores', cat:'Estudios contra el fuego', name:'Muros y Separaciones de Transformadores — Verificación en Terreno', file:null,
-    desc:'Verificación de datos de terreno de transformadores, salas eléctricas y cierres según los 11 casos de la guía de ING y su anexo: separaciones a edificios y entre equipos, barreras cortafuego F120/F180 (longitud, coronación sobre depósito y conservador, desnivel), muros interiores, salas cerradas (RF, pasillos, puertas, retiro y ventilación), recintos en U, cercos, espesores y distancias a partes energizadas; contención de aceite (fosos RIC 13 §8.8, RPTD 10 §5.8.3), vía de escape (§9.5), clase K > 300 °C, base y gravilla. Estatus CUMPLE / NO CUMPLE / NO VERIFICADO por parámetro y memoria de verificación imprimible con cálculos, figuras y conclusión.',
+    desc:'Verificación de datos de terreno de transformadores, salas eléctricas y cierres según los 11 casos de la guía de ING y su anexo: separaciones a edificios y entre equipos, barreras cortafuego F120/F180 (longitud, coronación sobre depósito y conservador, desnivel), muros interiores, salas cerradas (RF, pasillos, puertas, retiro y ventilación), recintos en U, cercos, espesores y distancias a partes energizadas; contención de aceite (fosos RIC 13 §8.8, umbral con volumen retenido §8.9, RPTD 10 §5.8.3), vía de escape (§9.5), clase K > 300 °C, ventilación reglamentaria y térmica, base y gravilla. Valida el alcance de cada pliego (RIC 13 hasta 23 kV, remisiones al DS 109) y las exigencias del fabricante por lado. Estatus CUMPLE / NO CUMPLE / NO VERIFICADO / FUERA DE ALCANCE por parámetro con el origen de cada exigencia, alternativas de corrección recalculadas y memoria de verificación imprimible.',
     tag:'RPTD 08 · RPTD 10 · RIC 13 · RIC 02', calc:'murosTrafo' },
   { id:'sismo-nch2369', cat:'Cargas', name:'Fuerzas Sísmicas NCh2369.Of2003 (Industrial)', file:'Fuerzas_Sismicas_Metodo_Estatico_NCh2369_1.xlsx',
     desc:'Coeficiente sísmico horizontal, corte basal, distribución en altura y acción sísmica vertical según el método estático de NCh2369.Of2003.',
@@ -20425,8 +20425,9 @@ function renderSismo(container) {
      §8.16 rejillas a ≥0,20 m del piso exterior, malla 5–15 mm; §9.1–9.2 aislante seco o clase K (IEC 61039);
      §9.4 muros 0,20 m albañilería con enlucido / 0,10 m H.A.; §9.6 muro entre transformadores ≥2,50 m.
      Tabla 13.2 (distancias a elementos de protección) transcrita en MT_T132.
-   - RIC N°02 (junio 2021), contrastado con transcripción secundaria: §5.4.2 Tabla 2.1 0,90/1,20/1,50 m;
-     §5.4.3 1,50 m; §5.4.4 acceso 0,80 × 2,20 m; §5.4.9.2 RF 120; §5.4.9.3 aislante seco o clase K.
+   - RIC N°02 (junio 2021), contrastado el 28-10-2026 con el PDF oficial SEC: §2 tableros de instalaciones de consumo;
+     §5.4.2 Tabla N°2.1 (0–1.000 V) 0,90/1,20/1,50 m; §5.4.3 1,50 m; §5.4.4 acceso 0,80 × 2,20 m; §5.4.9.2 RF 120;
+     §5.4.9.3 aislante seco o clase K (T° de ignición > 300 °C).
    Agregados el 27-10-2026 tras cotejar de nuevo los textos SEC (no estaban en la guía):
    - RIC 13 §7.2.3 base de concreto ≥0,25 m; §7.2.15 gravilla ≥0,05 m hasta 1 m fuera del cierre; §7.2.16
      drenaje; §8.5 puertas y protecciones de ventilación incombustibles; §8.8 fosos colectores para el aceite
@@ -20440,10 +20441,24 @@ function renderSismo(container) {
    - Observaciones a la guía en MT_OBS_GUIA (se imprimen como anexo de la memoria).
    Diferencias de numeración con la guía: la malla del cerco está en RIC 13 §7.2.5, la puerta en §8.6, las 20
    renovaciones/h en §8.10 y las rejillas en §8.16 (la guía cita los rangos 7.2.5–7.2.10 y 8.3–8.16).
+   Revisión del 28-10-2026 (alcance y remisiones, contrastado con los §2 de cada pliego):
+   - RIC 13 §2: transformadores hasta 23.000 V en instalaciones de consumo; complementario de RIC 02 y del DS 109/2017.
+     §§6.3.1, 7.1.1 y 8.1 remiten a las disposiciones constructivas del DS 109/2017 (subestaciones intemperie, aéreas e
+     interiores): con esa remisión declarada, las cotas RPTD se informan como «exigencia por remisión». RPTD 08 §2:
+     centrales, S/E de transmisión y edificaciones con instalaciones DS 109; §5.4 restringido a centrales y S/E de
+     transmisión. RPTD 10 §2: producción y transformación.
+   - RIC 13 §§8.8–8.9: el umbral es alternativa solo si no es posible construir fosos y debe retener el aceite del
+     transformador de mayor potencia (mínimo 0,10 m); evacuación sin contaminar ni usar el alcantarillado.
    Criterios:
-   - Estados por fila: CUMPLE / NO CUMPLE / NO VERIFICADO / NO APLICA. Dato de terreno o antecedente no
-     ingresado → NO VERIFICADO (nunca se supone cero). Estado global: NO CUMPLE si alguna fila no cumple;
-     si no, NO VERIFICADO si alguna fila queda sin verificar; CUMPLE solo con todas las filas verificadas.
+   - Estados por fila: CUMPLE / NO CUMPLE / NO VERIFICADO / FUERA DE ALCANCE / NO APLICA. Dato de terreno o
+     antecedente no ingresado → NO VERIFICADO (nunca se supone cero; un selector vacío no equivale a «no»). Disposición
+     que no rige por régimen, tensión o condición de aplicación → FUERA DE ALCANCE. Estado global: NO CUMPLE >
+     FUERA DE ALCANCE > NO VERIFICADO > CUMPLE. Cada fila declara el origen de su exigencia (MT_TIPO); las exigencias
+     de fabricante, estudios o memorias requieren identificar el documento.
+   - Alternativas (mtAlternativas): cada fila NO CUMPLE propone modificación, valor objetivo factible, fundamento y
+     condiciones; se recalcula el caso completo con la modificación. Nunca se informan como «cumple».
+   - Selectores con valor fuera de catálogo → dato inválido. Fuera del alcance: verificación estructural (flexión,
+     corte, estabilidad, conexiones, fundación), sobrepresión, cálculo térmico y coordinación de aislamiento.
    - Datos con formato inválido → { errores }: la hoja impresa queda con data-calc-bloqueo y se bloquean
      impresión, PDF, Memoria y Revisión (calcBloqueoExport). Un informe NO VERIFICADO sí se emite: es el
      estatus de cumplimiento que se informa.
@@ -20553,9 +20568,36 @@ const MT_LBL = {
   mt_hab:'¿El transformador está en un nivel por encima o contiguo a sitios de habitación?', mt_fosoR:'¿Tiene canales recolectores y foso de aceite?', mt_vFosoR:'Capacidad útil del foso [L]',
   mt_casaMaq:'¿El transformador está dentro de la casa de máquinas de una central?', mt_celdaAE:'¿Cel\u00ADda con muros y puertas antiexplosión, extinción automática y renovación de aire?',
 };
+// Campos agregados en la revisión del 28-10-2026 (alcance, fabricante por lado, ventilación térmica, contención de aceite, respaldos).
+Object.assign(MT_LBL, {
+  mt_kV:'Tensión nominal primaria [kV]',
+  mt_remis:'Aplicación de los pliegos RPTD en una instalación de consumo',
+  mt_cierreRIC:'¿El muro es también cierre de protección (RIC 13 §7.2.6) o cierro exterior (RPTD 10 §5.3.2)?',
+  mt_fabMin:'Espacio libre mínimo exigido por el fabricante, todos los lados [m]',
+  mt_refFab:'Documento del fabricante (manual, plano dimensional, N° y revisión)',
+  mt_fab8a:'Fabricante: espacio mínimo al lado izquierdo [m]', mt_fab8b:'Fabricante: espacio mínimo al fondo [m]',
+  mt_fab8c:'Fabricante: espacio mínimo al lado derecho [m]', mt_fab8d:'Fabricante: espacio mínimo al cuarto cierre (frente) [m]',
+  mt_refEst:'Estudio de incendio o de carga combustible que fija exigencias (identificación)',
+  mt_refEstr:'Memoria estructural del muro (identificación)',
+  mt_refCA:'Documento de coordinación de aislamiento (identificación)',
+  mt_dReq9:'Retiro exigido por la coordinación de aislamiento documentada (RPTD 10 §5.7.1 → RPTD 05) [m]',
+  mt_foso:'Contención del aceite (RIC 13 §§8.8–8.9)', mt_fosoTipo:'Disposición de los fosos',
+  mt_vFoso:'Capacidad útil neta del foso o estanque (descontada grava, agua acumulada y volumen ocupado) [L]',
+  mt_fosoImp:'¿Está documentado que no es posible construir fosos colectores (condición del §8.9)?',
+  mt_Apiso:'Superficie de piso que retiene el aceite tras el umbral (descontadas bases y equipos) [m²]',
+  mt_disp:'¿El aceite se evacúa sin contaminar el ambiente ni napas y sin usar el alcantarillado?',
+  mt_L7:'Recinto: largo interior [m]', mt_B7:'Recinto: ancho interior [m]', mt_H7:'Recinto: altura interior piso-cielo [m]',
+  mt_acc7:'¿La puerta es también acceso a espacio de trabajo con partes energizadas (RIC 02 §5.4.4)?',
+  mt_bt7:'¿Hay tableros con partes energizadas descubiertas que requieran trabajo bajo tensión (RIC 02 §5.4.2)?',
+  mt_bt7T:'Condición del espacio de trabajo BT (RIC 02 Tabla N°2.1 o §5.4.3)', mt_bt7a:'Espacio de trabajo BT: profundidad libre medida [m]',
+  mt_Aterm:'Superficie libre requerida por el cálculo térmico (pérdidas del equipo) [m²]', mt_Qterm:'Caudal requerido por el cálculo térmico (pérdidas del equipo) [m³/h]',
+  mt_refTerm:'Cálculo térmico o dato del fabricante que respalda la exigencia (identificación)',
+  mt_sumKVA:'Suma de potencias de los transformadores del recinto, incluido el verificado [kVA]',
+});
 const MT_SINO = { 'si':'Sí', 'no':'No' };
 const MT_OPC = {
   mt_caso: MT_CASOS, mt_ambito: MT_AMBITO, mt_aislante: MT_AISLANTE,
+  mt_remis: { 'remision':'Por remisión de RIC 13 §§6.3.1, 7.1.1 u 8.1 al DS 109/2017 (declarada por el proyectista)', 'criterio':'Como criterio conservador, sin exigencia expresa', 'no':'No se aplican' },
   mt_origen: { 'terreno':'Medición en terreno', 'fabricante':'Plano dimensional del fabricante', 'estimado':'Estimado o sin respaldo' },
   mt_pas2: { 'ninguno':'Sin función de pasillo', 'rptd10':'Forma un espacio exterior RPTD 10 §5.7.4', 'ric':'Forma un pasillo RIC 13 equipo-muro' },
   mt_cfg3: { 'alineados':'Alineados, de igual ancho y sin salientes', 'desplazados':'Desplazados, girados o de ancho diferente' },
@@ -20567,10 +20609,19 @@ const MT_OPC = {
   mt_reg9: { 'RIC':'RIC 13 (instalación de consumo)', 'RPTD':'RPTD 10 (régimen DS 109)' },
   mt_fun10: { 'cierreExt':'Muro de edificio usado como cierre exterior (RIC 13 §7.2.11)', 'aceite94':'Subestación con transformadores en aceite (RIC 13 §9.4)', 'sep96':'Separación entre transformadores (RIC 13 §9.6)', 'barrera':'Barrera F120, F180 u otra por RPTD 08' },
   mt_pasT: Object.fromEntries(Object.entries(MT_PASILLOS).map(([k, v]) => [k, v.t])),
+  mt_bt7T: Object.fromEntries(Object.entries(MT_PASILLOS).filter(([, v]) => v.bt).map(([k, v]) => [k, v.t])),
   mt_kVt: Object.assign(Object.fromEntries(Object.keys(MT_T132).map(k => [k, k + ' kV'])), { 'otra':'Otra tensión (no tabulada)' }),
-  mt_prot: { 'celda':'Caja o cel\u00ADda metálica', 'barrera':'Barrera' }, mt_ubic: { 'interior':'Interior', 'exterior':'Intemperie' },
+  mt_prot: { 'celda':'Caja o cel­da metálica', 'barrera':'Barrera' }, mt_ubic: { 'interior':'Interior', 'exterior':'Intemperie' },
+  mt_foso: { 'si':'Fosos colectores bajo los transformadores (§8.8)', 'ducto':'Ductos de salida a estanque o foso exterior por falta de espacio (§8.8)', 'no':'Sin fosos: umbral en la puerta (§8.9)' },
+  mt_fosoTipo: { 'comun':'Foso común a los transformadores del recinto', 'indiv':'Un foso por transformador' },
 };
-const MT_ST = { OK:'CUMPLE', NC:'NO CUMPLE', NV:'NO VERIFICADO', NA:'NO APLICA' };
+// Campos de texto libre (identificación de documentos): no tienen catálogo.
+const MT_TXT = ['mt_refF', 'mt_refFab', 'mt_refEst', 'mt_refEstr', 'mt_refCA', 'mt_refTerm'];
+const MT_ST = { OK:'CUMPLE', NC:'NO CUMPLE', NV:'NO VERIFICADO', NA:'NO APLICA', FA:'FUERA DE ALCANCE' };
+// Origen de cada exigencia (columna «Origen» del informe).
+const MT_TIPO = { N:'Exigencia normativa', R:'Exigencia normativa por remisión', C:'Criterio conservador', G:'Criterio de la guía', E:'Antecedente externo', D:'Control de datos' };
+// Clasificaciones F normalizadas (OGUC art. 4.3.3; NCh 935/1) para proponer alternativas.
+const MT_CLASES_F = [15, 30, 60, 90, 120, 150, 180];
 function mtNum(v) {
   const s = String(v == null ? '' : v).trim().replace(',', '.');
   if (s === '') return null;
@@ -20579,6 +20630,9 @@ function mtNum(v) {
 }
 const mtF = (v, d) => (v == null || !isFinite(v)) ? '—' : v.toLocaleString('es-CL', { minimumFractionDigits: d == null ? 2 : d, maximumFractionDigits: d == null ? 2 : d });
 const mtM = v => v == null ? 'sin dato' : mtF(v) + ' m';
+// Redondeos hacia arriba para los valores objetivo de las alternativas (módulo constructivo declarado en cada una).
+const mtUp = (x, p) => Math.ceil(x / p - 1e-9) * p;
+const mtR = (x, d) => Number(x.toFixed(d));
 // Texto legible del valor de un campo de selección.
 function mtOpcTxt(id, v) {
   if (v == null || v === '') return 'sin dato';
@@ -20586,88 +20640,182 @@ function mtOpcTxt(id, v) {
   return (MT_OPC[id] && MT_OPC[id][v]) || v;
 }
 
-// inp: { id → valor tal como está en el campo }. Devuelve { errores } o el informe completo.
-function calcMurosTrafo(inp) {
+// Condiciones que acompañan a cada tipo de alternativa: lo que la modificación no acredita por sí sola.
+const MT_COND = {
+  altura: ['Verificar estabilidad, flexión, corte, conexiones y fundación del muro con la nueva altura (no se calculan en este módulo).', 'Mantener la resistencia al fuego acreditada en la parte agregada.', 'Si el muro delimita un recinto, revisar de nuevo ventilación, acceso y retiro del equipo.'],
+  espesor: ['Acreditar la resistencia al fuego de la solución con el nuevo espesor (OGUC art. 4.3.2).', 'Verificar la estructura del muro con el nuevo espesor (fuera del alcance de este módulo).'],
+  fuego: ['Acreditar la clasificación con ensayo, certificación o Listado Oficial (OGUC art. 4.3.2).', 'Mantener la clasificación en juntas, pasadas, puertas y cierre superior.'],
+  separacion: ['Relocalizar el equipo obliga a medir de nuevo todas las separaciones, retiros y pasillos.', 'Revisar fundación, canalizaciones y acceso del equipo en la nueva posición.'],
+  pasillo: ['Reubicar equipos o muros obliga a medir de nuevo las demás separaciones.', 'Confirmar la exigencia con el documento del fabricante.'],
+  recinto: ['Ampliar el recinto modifica muros, ventilación y acceso: verificarlos de nuevo.', 'Verificar la estructura de los muros desplazados (fuera del alcance de este módulo).'],
+  vent: ['La superficie o el caudal reglamentario no acredita la disipación de las pérdidas del equipo: confirmar con el cálculo térmico.', 'Rejillas a ≥ 0,20 m del piso exterior, malla de 5 a 15 mm (RIC 13 §8.16) y bocas alejadas de puertas y combustibles (§8.12).', 'Una abertura nueva en un muro resistente al fuego debe mantener la clasificación del recinto.'],
+  foso: ['Dimensionar con los litros de placa; impermeabilizar y evacuar sin usar el alcantarillado (RIC 13 §8.9).'],
+  puerta: ['La puerta debe abrir hacia afuera y tener cerradura que abra desde el interior sin llave (RIC 13 §8.6; RIC 02 §5.4.4).', 'Mantener la resistencia al fuego del vano y del marco.'],
+  cierre: ['La altura se mide también desde el terreno exterior accesible.', 'Estabilidad y fundación del cierre fuera del alcance de este módulo.'],
+  doc: ['Acreditar en terreno o con el documento correspondiente.'],
+};
+
+// inp: { id → valor tal como está en el campo }. Devuelve { errores } o el informe completo, sin alternativas.
+function mtCalcBase(inp) {
   const errores = [], filas = [], usados = [];
   const usa = id => { if (usados.indexOf(id) < 0) usados.push(id); };
-  const s = id => { usa(id); return inp[id] == null ? '' : String(inp[id]).trim(); };
+  const lbl = id => MT_LBL[id] || id;
+  // Selección o texto. Un valor fuera del catálogo del campo es un dato inválido (no se ignora ni se toma como vacío).
+  const s = id => {
+    usa(id);
+    const v = inp[id] == null ? '' : String(inp[id]).trim();
+    if (v && MT_TXT.indexOf(id) < 0) {
+      const cat = MT_OPC[id] || MT_SINO;
+      if (!Object.prototype.hasOwnProperty.call(cat, v)) { errores.push(`${lbl(id)}: valor «${v}» no reconocido; seleccione una opción de la lista.`); return ''; }
+    }
+    return v;
+  };
   const n = (id, opt) => {
     usa(id);
     const v = mtNum(inp[id]);
     if (v === null) return null;
-    if (Number.isNaN(v)) { errores.push(`${MT_LBL[id] || id}: debe ser un número.`); return null; }
-    if (!(opt && opt.neg) && v < 0) { errores.push(`${MT_LBL[id] || id}: no puede ser negativo.`); return null; }
-    if (opt && opt.pos && v <= 0) { errores.push(`${MT_LBL[id] || id}: debe ser mayor que 0.`); return null; }
-    if (opt && opt.max != null && v > opt.max) { errores.push(`${MT_LBL[id] || id}: ${mtF(v)} excede el rango admisible (máx. ${opt.max}).`); return null; }
+    if (Number.isNaN(v)) { errores.push(`${lbl(id)}: debe ser un número.`); return null; }
+    if (!(opt && opt.neg) && v < 0) { errores.push(`${lbl(id)}: no puede ser negativo.`); return null; }
+    if (opt && opt.pos && v <= 0) { errores.push(`${lbl(id)}: debe ser mayor que 0.`); return null; }
+    if (opt && opt.max != null && v > opt.max) { errores.push(`${lbl(id)}: ${mtF(v)} excede el rango admisible (máx. ${opt.max}).`); return null; }
     return v;
   };
+  const POS = { pos: true };
   let grupo = '';
   // cmp: última comparación numérica (stMin/stMax) evaluada para la fila; la usa el gráfico de la memoria.
   let ultCmp = null;
-  const add = (param, terreno, exig, ref, estado, obs) => { filas.push({ grupo, param, terreno, exig, ref, estado, obs: obs || '', cmp: ultCmp }); ultCmp = null; };
-  // Cálculos explícitos (fórmula con valores sustituidos) para la memoria.
   const calc = [];
   const eq = (t, e) => calc.push({ grupo, t, e });
-  // Comparaciones contra un mínimo / máximo. val null → NO VERIFICADO.
   const stMin = (v, req) => { ultCmp = v != null && req != null ? { v, req, tipo:'min' } : null; return v == null || req == null ? MT_ST.NV : (v >= req - 1e-9 ? MT_ST.OK : MT_ST.NC); };
   const stMax = (v, req) => { ultCmp = v != null && req != null ? { v, req, tipo:'max' } : null; return v == null || req == null ? MT_ST.NV : (v <= req + 1e-9 ? MT_ST.OK : MT_ST.NC); };
   const falta = (v, req) => v != null && req != null && v < req - 1e-9 ? `Falta ${mtF(req - v)} m para el mínimo.` : '';
-  const siNo = (v, okTxt, ref, param, nvObs, ncObs) => add(param, mtOpcTxt('', v), okTxt, ref, v === 'si' ? MT_ST.OK : (v === 'no' ? MT_ST.NC : MT_ST.NV), v === 'si' ? '' : (v === 'no' ? (ncObs || '') : (nvObs || 'Dato no informado.')));
+  // Alternativa de corrección asociada a una fila que no cumple.
+  const ALT = (cambios, mod, obj, cond, extra) => Object.assign({ cambios, mod, obj, cond: MT_COND[cond] || cond || [] }, extra || {});
+  // Antecedente que respalda una exigencia externa: devuelve el texto del faltante o ''.
+  const docFalta = (id, que) => s(id) ? '' : que;
 
+  // Catálogos: todo campo de selección presente se valida, se use o no en el caso (rótulos «¿…?» = Sí/No).
+  Object.keys(inp).forEach(id => {
+    const v = inp[id] == null ? '' : String(inp[id]).trim();
+    const cat = MT_OPC[id] || (/^¿/.test(MT_LBL[id] || '') ? MT_SINO : null);
+    if (v && cat && !Object.prototype.hasOwnProperty.call(cat, v)) errores.push(`${lbl(id)}: valor «${v}» no reconocido; seleccione una opción de la lista.`);
+  });
   const caso = s('mt_caso');
-  if (!MT_CASOS[caso]) return { errores: ['Seleccione el caso de la guía que corresponde a la instalación.'], usados };
+  if (!MT_CASOS[caso]) return { errores: errores.length ? errores.filter((e, i) => errores.indexOf(e) === i) : ['Seleccione el caso de la guía que corresponde a la instalación.'], usados };
 
-  // ---------- A. Antecedentes comunes ----------
+  // ---------- A. Antecedentes comunes y alcance ----------
   const ambito = s('mt_ambito');
-  const P = n('mt_P', { pos: true });
+  const P = n('mt_P', POS);
+  const kV = n('mt_kV', POS);
   const aisl = s('mt_aislante');
   const ficha = s('mt_ficha');
   const altitud = n('mt_altitud', { neg: true });
+  const litros = n('mt_litros');
+  const enAceite = () => aisl === 'mineral' || aisl === 'claseK' || aisl === 'liquidoNA';
+  if (litros === 0 && enAceite()) errores.push(`${lbl('mt_litros')}: 0 L es incompatible con un aislante líquido.`);
+  const regCaso = caso === '7' ? s('mt_reg7') : (caso === '9' ? s('mt_reg9') : MT_REG_CASO[caso]);
+  const remis = ambito === 'RIC' ? s('mt_remis') : '';
+
+  // Alcance de cada pliego según el régimen, la tensión y las remisiones expresas.
+  // RIC 13 §2: subestaciones y salas con transformadores hasta 23.000 V en instalaciones de consumo; complementario de RIC 02
+  // y del DS 109/2017. RIC 13 §§6.3.1, 7.1.1 y 8.1 remiten a las disposiciones constructivas del DS 109/2017 (pliegos RPTD).
+  // RIC 02 §2: tableros de instalaciones de consumo. RPTD 08 §2: centrales, subestaciones de transmisión y edificaciones con
+  // instalaciones del DS 109. RPTD 10 §2: instalaciones de producción y transformación.
+  function alcanceDe(ref) {
+    const m = /^(RIC 13|RIC 02|RPTD 08|RPTD 10)/.exec(ref || '');
+    if (!m) return null;
+    const pl = m[1];
+    if (pl === 'RIC 13' || pl === 'RIC 02') {
+      if (!ambito) return { st: MT_ST.NV, obs: 'Régimen no informado: no se confirma el alcance del pliego.' };
+      if (ambito === 'RPTD') return { st: MT_ST.FA, obs: `${pl} §2 rige instalaciones de consumo; en el régimen DS 109 no se aplica su cota.` };
+      if (pl === 'RIC 13') {
+        if (kV == null) return { st: MT_ST.NV, obs: 'Tensión nominal no informada: RIC 13 §2 rige transformadores hasta 23.000 V.' };
+        if (kV > 23 + 1e-9) return { st: MT_ST.FA, obs: `RIC 13 §2 rige transformadores hasta 23.000 V; ${mtF(kV, 1)} kV queda fuera de su alcance (rige el DS 109/2017 y sus pliegos con coordinación de aislamiento).` };
+      }
+      return null;
+    }
+    if (!ambito) return { st: MT_ST.NV, obs: 'Régimen no informado: no se confirma el alcance del pliego.' };
+    if (ambito === 'RPTD') return null;
+    if (remis === 'remision') return { tipo: 'R' };
+    if (remis === 'criterio') return { tipo: 'C' };
+    if (remis === 'no') return { st: MT_ST.FA, obs: `${pl} rige instalaciones del DS 109; en esta instalación de consumo se declaró que no se aplica.` };
+    return { st: MT_ST.NV, obs: `Instalación de consumo: indicar si ${pl} se aplica por remisión de RIC 13 (§§6.3.1, 7.1.1, 8.1 → DS 109/2017) o como criterio.` };
+  }
+  // o: { tipo, alt, doc } — doc = antecedente que falta para respaldar una exigencia externa.
+  const add = (param, terreno, exig, ref, estado, obs, o) => {
+    o = o || {}; obs = obs || '';
+    let tipo = o.tipo || (/^(RIC|RPTD|OGUC)/.test(ref) ? 'N' : 'G');
+    const a = alcanceDe(ref);
+    if (a) {
+      if (a.st === MT_ST.FA && estado !== MT_ST.NA) { estado = MT_ST.FA; obs = a.obs + (obs ? ' ' + obs : ''); }
+      else if (a.st === MT_ST.NV && (estado === MT_ST.OK || estado === MT_ST.NC)) { estado = MT_ST.NV; obs = a.obs + (obs ? ' ' + obs : ''); }
+      if (a.tipo && tipo === 'N') tipo = a.tipo;
+    }
+    if (o.doc && estado === MT_ST.OK) { estado = MT_ST.NV; obs = `Exigencia de antecedente externo: falta identificar ${o.doc}.` + (obs ? ' ' + obs : ''); }
+    filas.push({ grupo, param, terreno, exig, ref, estado, obs, tipo, cmp: ultCmp, alt: estado === MT_ST.NC && o.alt ? o.alt : null });
+    ultCmp = null;
+  };
+  const siNo = (v, okTxt, ref, param, nvObs, ncObs, o) => add(param, mtOpcTxt('', v), okTxt, ref, v === 'si' ? MT_ST.OK : (v === 'no' ? MT_ST.NC : MT_ST.NV),
+    v === 'si' ? '' : (v === 'no' ? (ncObs || '') : (nvObs || 'Dato no informado.')), Object.assign({ alt: ALT({}, okTxt, 'Sí', 'doc', { sino: true }) }, o || {}));
+
   grupo = 'Antecedentes y alcance';
   add('Placa y ficha del equipo (kVA, tensiones, aislante, litros, conservador)', mtOpcTxt('', ficha), 'Revisadas', 'Guía, «Antecedentes que cierran las dimensiones»',
-    ficha === 'si' ? MT_ST.OK : MT_ST.NV, ficha === 'si' ? '' : 'Sin placa ni ficha específica no se acreditan kVA, aislante ni litros; los litros no se infieren a partir de los kVA.');
-  const regCaso = caso === '7' ? s('mt_reg7') : (caso === '9' ? s('mt_reg9') : MT_REG_CASO[caso]);
-  if (regCaso) {
-    if (!ambito) add('Régimen de la instalación', 'sin dato', MT_AMBITO[regCaso], 'Guía, «Selección obligatoria antes de usar las cotas»', MT_ST.NV, 'Identificar la función de la instalación (consumo o régimen DS 109) antes de usar las cotas del caso.');
-    else if (ambito !== regCaso) add('Régimen de la instalación', MT_AMBITO[ambito], MT_AMBITO[regCaso], 'Guía, «Selección obligatoria antes de usar las cotas»', MT_ST.NV,
-      `El caso seleccionado corresponde a ${regCaso === 'RIC' ? 'los pliegos RIC' : 'los pliegos RPTD'}; sus cotas no se trasladan a otro régimen. Seleccionar el caso del régimen aplicable.`);
-  } else if (!ambito) {
-    add('Régimen de la instalación', 'sin dato', 'Consumo (RIC) o DS 109 (RPTD)', 'Guía, «Selección obligatoria antes de usar las cotas»', MT_ST.NV, 'Identificar la función de la instalación antes de usar las cotas.');
+    ficha === 'si' ? MT_ST.OK : MT_ST.NV, ficha === 'si' ? '' : 'Sin placa ni ficha específica no se acreditan kVA, aislante ni litros; los litros no se infieren a partir de los kVA.', { tipo: 'E' });
+  if (!ambito) add('Régimen de la instalación', 'sin dato', 'Consumo (RIC) o DS 109 (RPTD)', 'Guía, «Selección obligatoria antes de usar las cotas»', MT_ST.NV, 'Identificar la función de la instalación antes de usar las cotas.', { tipo: 'D' });
+  if (ambito === 'RIC') add('Tensión nominal dentro del alcance de RIC 13', kV == null ? 'sin dato' : `${mtF(kV, 1)} kV`, '≤ 23 kV (23.000 V)', 'RIC 13 §2',
+    kV == null ? MT_ST.NV : MT_ST.OK, kV == null ? 'Tomar la tensión de la placa del transformador.' : '');
+  if (regCaso && ambito && ambito !== regCaso) {
+    if (regCaso === 'RIC') add('Régimen que presupone el caso', MT_AMBITO[ambito], MT_AMBITO.RIC, 'RIC 13 §2 · RIC 02 §2', MT_ST.FA, 'El caso aplica pliegos de consumo; en el régimen DS 109 seleccionar el caso RPTD que corresponda.');
+    else add('Aplicación de los pliegos RPTD en instalación de consumo', mtOpcTxt('mt_remis', remis), 'Remisión expresa o criterio declarado', 'Remisión: RIC 13 §§6.3.1, 7.1.1 y 8.1 → DS 109/2017',
+      remis === 'remision' || remis === 'criterio' ? MT_ST.NA : (remis === 'no' ? MT_ST.FA : MT_ST.NV),
+      remis === 'remision' ? 'Las exigencias RPTD se informan como exigencia por remisión; RPTD 08 §5.4 (Tabla N°1) sigue restringido a centrales y subestaciones de transmisión.'
+        : (remis === 'criterio' ? 'Las exigencias RPTD se informan como criterio conservador, no como exigencia normativa.'
+        : (remis === 'no' ? 'El caso se basa en pliegos RPTD que se declararon no aplicables: seleccionar un caso RIC.' : 'Indicar si los pliegos RPTD se aplican por remisión, como criterio o no se aplican.')), { tipo: 'D' });
   }
+  if (regCaso === 'RIC' && ambito === 'RIC' && P == null) add('Potencia nominal del transformador', 'sin dato', 'Placa del equipo', 'Guía, «Antecedentes que cierran las dimensiones»', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
+
   const necesitaManual = ['2','3','6','7','8'].indexOf(caso) >= 0 || s('mt_anexo') === 'si';
   let fab = null;
   if (necesitaManual) {
     const manual = s('mt_manual');
     fab = n('mt_fabMin');
-    add('Exigencias del fabricante (enfriamiento, retiro, pasillos)', manual === 'si' ? 'Revisadas' + (fab != null ? ` — espacio mínimo ${mtM(fab)}` : '') : mtOpcTxt('', manual), 'Manual o plano dimensional revisado',
-      'Guía casos 2, 3 y anexo', manual === 'si' ? MT_ST.OK : MT_ST.NV, manual === 'si' ? '' : 'Sin el manual del fabricante no queda acreditada la separación definitiva; prevalece la mayor exigencia entre la norma y el fabricante.');
+    const doc = manual === 'si' ? docFalta('mt_refFab', 'el documento del fabricante') : '';
+    add('Exigencias del fabricante (enfriamiento, retiro, pasillos)', manual === 'si' ? 'Revisadas' + (fab != null ? ` — espacio mínimo ${mtM(fab)}` : '') + (inp.mt_refFab ? ` — ${String(inp.mt_refFab).trim()}` : '') : mtOpcTxt('', manual),
+      'Manual o plano dimensional revisado e identificado', 'Guía casos 2, 3 y anexo',
+      manual === 'si' ? (fab == null || doc ? MT_ST.NV : MT_ST.OK) : MT_ST.NV,
+      manual === 'si' ? (fab == null ? 'Indicar el espacio libre mínimo del manual (0 si el manual no fija uno adicional).' : (doc ? 'Identificar el manual o plano (N° y revisión) que fija el espacio mínimo.' : ''))
+        : 'Sin el manual del fabricante no queda acreditada la separación definitiva; prevalece la mayor exigencia entre la norma y el fabricante.', { tipo: 'E' });
   }
   const conFab = req => fab != null && fab > req ? fab : req;
 
   // ---------- Bloques reutilizables ----------
   // Resistencia al fuego de una barrera: F requerido = máx(Fmin, estudio).
   function bloqueFuego(Fmin, refF, etiqueta) {
-    const F = n('mt_Fbarrera'), Fe = n('mt_Festudio'), est = s('mt_estudioCC'), acr = s('mt_acredF'); s('mt_refF');
-    const req = Math.max(Fmin, Fe || 0);
-    add(etiqueta || 'Resistencia al fuego de la barrera', F == null ? 'sin dato' : `F${mtF(F, 0)}`, `≥ F${mtF(req, 0)}` + (Fe != null && Fe > Fmin ? ' (estudio)' : ''), refF,
-      stMin(F, req), F == null ? 'Indicar la clasificación acreditada de la solución.' : (F < req ? `La clasificación F${mtF(F, 0)} es menor que la exigida.` : ''));
+    const F = n('mt_Fbarrera'), Fe = n('mt_Festudio', POS), est = s('mt_estudioCC'), acr = s('mt_acredF'); s('mt_refF');
+    const req = Math.max(Fmin, Fe || 0), porEst = Fe != null && Fe > Fmin;
+    const Fobj = MT_CLASES_F.find(c => c >= req) || req;
+    add(etiqueta || 'Resistencia al fuego de la barrera', F == null ? 'sin dato' : `F${mtF(F, 0)}`, `≥ F${mtF(req, 0)}` + (porEst ? ' (estudio)' : ''), refF,
+      stMin(F, req), F == null ? 'Indicar la clasificación acreditada de la solución.' : (F < req ? `La clasificación F${mtF(F, 0)} es menor que la exigida.` : ''),
+      { tipo: porEst ? 'E' : undefined, doc: porEst ? docFalta('mt_refEst', 'el estudio de carga combustible') : '', alt: ALT({ mt_Fbarrera: Fobj }, 'Reemplazar o revestir la barrera por una solución de clasificación mayor', `F${Fobj}`, 'fuego') });
     siNo(est, 'Diseño validado por estudio de carga combustible', refF + ' · OGUC · NCh1916', 'Estudio de carga combustible',
       `${refF} exige validar el diseño con estudio de carga combustible; adoptar la mayor clasificación que resulte del estudio.`, `Sin estudio no se acredita la clasificación exigida (${refF}).`);
     add('Acreditación de la resistencia al fuego', acr === 'si' ? 'Acreditada' + (inp.mt_refF ? ` — ${String(inp.mt_refF).trim()}` : '') : mtOpcTxt('', acr),
-      'Solución identificada por informe, certificación o respaldo admisible', 'Guía caso 10 · OGUC art. 4.3.2', acr === 'si' ? MT_ST.OK : MT_ST.NV,
-      acr === 'si' ? '' : 'Una clasificación declarada sin respaldo no es verificable; 0,10 m de hormigón no es certificación automática F120.');
+      'Solución identificada por informe, certificación o respaldo admisible', 'OGUC art. 4.3.2 · Guía caso 10', acr === 'si' ? (String(inp.mt_refF || '').trim() ? MT_ST.OK : MT_ST.NV) : MT_ST.NV,
+      acr === 'si' ? (String(inp.mt_refF || '').trim() ? '' : 'Identificar el documento que acredita la resistencia al fuego.') : 'Una clasificación declarada sin respaldo no es verificable; 0,10 m de hormigón no es certificación automática F120.');
   }
   // Coronación: sobrepaso de 0,30 m sobre la mayor cota de depósito y conservador (corregida por desnivel)
   // y exigencias concurrentes. hId: campo con la altura medida del muro.
   function bloqueCoronacion(hId, opts) {
     opts = opts || {};
     const origen = s('mt_origen');
-    const hM = n(hId);
+    const hM = n(hId, POS);
     const eqs = [['A', 'mt_consA', 'mt_hDepA', 'mt_hConsA', 'mt_desA']];
-    if (opts.dos || s('mt_dosEq') === 'si') eqs.push(['B', 'mt_consB', 'mt_hDepB', 'mt_hConsB', 'mt_desB']);
+    const dos = opts.dos ? 'si' : s('mt_dosEq');
+    if (dos === 'si') eqs.push(['B', 'mt_consB', 'mt_hDepB', 'mt_hConsB', 'mt_desB']);
     let top = null; const faltan = [], detalle = [];
+    if (!dos) faltan.push('si hay un segundo equipo junto al muro');
     eqs.forEach(([k, cId, dId, hcId, deId]) => {
-      const cons = s(cId), hd = n(dId), hc = cons === 'si' ? n(hcId) : null, de = n(deId, { neg: true });
+      const cons = s(cId), hd = n(dId, POS), hc = cons === 'si' ? n(hcId, POS) : null, de = n(deId, { neg: true });
       if (!cons) faltan.push(`si el equipo ${k} tiene conservador`);
       if (hd == null) faltan.push(`cota del depósito del equipo ${k}`);
       if (cons === 'si' && hc == null) faltan.push(`cota del conservador del equipo ${k}`);
@@ -20678,155 +20826,215 @@ function calcMurosTrafo(inp) {
         top = top == null ? t : Math.max(top, t);
       }
     });
-    const req = faltan.length || top == null ? null : top + 0.30;
+    // Con datos faltantes la exigencia queda abierta, pero una altura menor que la ya calculada no cumple.
+    const reqParcial = top == null ? null : top + 0.30;
+    const req = faltan.length ? null : reqParcial;
     const okOrigen = origen === 'terreno' || origen === 'fabricante';
     let st = stMin(hM, req), obs = '';
-    if (faltan.length) obs = 'Falta: ' + faltan.join('; ') + '. No se selecciona una altura por potencia.';
+    if (faltan.length) { obs = 'Falta: ' + faltan.join('; ') + '. No se selecciona una altura por potencia.'; if (hM != null && reqParcial != null && hM < reqParcial - 1e-9) st = MT_ST.NC; }
     else if (!okOrigen) { st = st === MT_ST.NC ? MT_ST.NC : MT_ST.NV; obs = 'Cotas sin respaldo: se requiere plano dimensional del fabricante o medición en terreno de depósito y conservador con cotas de apoyo.'; }
     else obs = falta(hM, req);
     if (detalle.length) obs = (obs ? obs + ' ' : '') + 'Cota superior desde el apoyo del muro — ' + detalle.join(' · ') + '.';
     if (detalle.length) eq('Cota superior de cada equipo desde el apoyo del muro: z = máx(depósito; conservador) + desnivel', detalle.join(' ; '));
     if (req != null) eq('Coronación mínima por sobrepaso (RPTD 08 §5.3)', `H_min = ${mtF(top)} + 0,30 = ${mtF(req)} m` + (hM != null ? ` ; H_medida = ${mtF(hM)} m → ${hM >= req - 1e-9 ? 'H_medida ≥ H_min' : 'H_medida < H_min'}` : ''));
     if (opts.caso4 && eqs.some(e => inp[e[1]] === 'no')) obs += ' Equipo sin conservador: corresponde el caso 5 (se toma la cota del depósito).';
-    add('Coronación del muro: sobrepaso sobre depósito y conservador', mtM(hM), req == null ? '≥ cota superior + 0,30 m' : `≥ ${mtF(req)} m (${mtF(top)} + 0,30)`, 'RPTD 08 §5.3 · Guía casos 4 y 5', st, obs);
-    if (opts.cierre) bloqueCierreMuro(hM);
-    if (opts.ric96 && s('mt_ric96') === 'si') add('Altura del muro entre transformadores', mtM(hM), '≥ 2,50 m', 'RIC 13 §9.6', stMin(hM, 2.50), falta(hM, 2.50));
+    const hObj = reqParcial == null ? null : mtUp(reqParcial, 0.05);
+    add('Coronación del muro: sobrepaso sobre depósito y conservador', mtM(hM), req == null ? '≥ cota superior + 0,30 m' : `≥ ${mtF(req)} m (${mtF(top)} + 0,30)`, 'RPTD 08 §5.3 · Guía casos 4 y 5', st, obs,
+      { alt: hObj == null ? null : ALT({ [hId]: hObj }, 'Recrecer el muro', `${mtF(hObj)} m desde su apoyo (mínimo ${mtF(reqParcial)} m, redondeado a 0,05 m)`, 'altura') });
+    if (opts.cierre) bloqueCierreMuro(hM, hId);
+    if (opts.ric96) {
+      const r96 = ambito === 'RIC' ? s('mt_ric96') : (s('mt_ric96') || 'no');
+      if (r96 === 'si') add('Altura del muro entre transformadores', mtM(hM), '≥ 2,50 m', 'RIC 13 §9.6', stMin(hM, 2.50), falta(hM, 2.50), { alt: ALT({ [hId]: 2.50 }, 'Recrecer el muro', '2,50 m', 'altura') });
+      else if (!r96) add('Muro entre transformadores en edificio (RIC 13 §9.6)', 'sin dato', 'Indicar si rige', 'RIC 13 §9.6', MT_ST.NV, 'Si el muro separa transformadores de una subestación en edificio, exige 2,50 m.', { tipo: 'D' });
+    }
     if (opts.estudio) {
-      const he = n('mt_hEstudio');
-      if (he != null) add('Coronación exigida por el estudio de incendio', mtM(hM), `≥ ${mtF(he)} m`, 'RPTD 08 §5.2 · Guía caso 4', stMin(hM, he), falta(hM, he));
+      const he = n('mt_hEstudio', POS);
+      if (he != null) add('Coronación exigida por el estudio de incendio', mtM(hM), `≥ ${mtF(he)} m`, 'RPTD 08 §5.2 · estudio de incendio', stMin(hM, he), falta(hM, he),
+        { tipo: 'E', doc: docFalta('mt_refEst', 'el estudio de incendio'), alt: ALT({ [hId]: mtUp(he, 0.05) }, 'Recrecer el muro', `${mtF(mtUp(he, 0.05))} m`, 'altura') });
     }
     return { top, req };
   }
-  // Muro que además es cierre de protección RIC 13 (§7.2.6).
-  function bloqueCierreMuro(hM) {
+  // Muro que además es cierre de protección (RIC 13 §7.2.6) o cierro exterior (RPTD 10 §5.3.2 b).
+  function bloqueCierreMuro(hM, hId) {
     const c = s('mt_cierreRIC');
     if (c === 'no') return;
-    if (c !== 'si') { add('Función de cierre RIC 13 del muro', 'sin dato', 'Indicar si el muro es también cierre', 'RIC 13 §7.2.6', MT_ST.NV, 'Si el muro es cierre, rigen además 2,00/2,50 m de altura y 1,50 m de retiro.'); return; }
+    if (c !== 'si') { add('Función de cierre del muro', 'sin dato', 'Indicar si el muro es también cierre', ambito === 'RPTD' ? 'RPTD 10 §5.3.2' : 'RIC 13 §7.2.6', MT_ST.NV, 'Si el muro es cierre, rigen además su altura y su retiro al equipo.', { tipo: 'D' }); return; }
+    if (ambito === 'RPTD') {
+      add('Altura del cierro exterior (muro con función de cierro)', mtM(hM), '≥ 2,00 m', 'RPTD 10 §5.3.2 b)', stMin(hM, 2.00), falta(hM, 2.00), { alt: ALT({ [hId]: 2.00 }, 'Recrecer el muro', '2,00 m', 'altura') });
+      const d = n('mt_dCierre'), dr = n('mt_dReq9', POS);
+      add('Retiro del cierro a partes energizadas', mtM(d), dr == null ? 'Según coordinación de aislamiento (RPTD 10 §5.7.1)' : `≥ ${mtF(dr)} m (coordinación de aislamiento)`, 'RPTD 10 §5.7.1',
+        dr == null ? MT_ST.NV : stMin(d, dr), dr == null ? 'Sin el retiro documentado no se verifica; no sustituir por el retiro RIC de 1,50 m.' : falta(d, dr),
+        { tipo: 'E', doc: dr != null ? docFalta('mt_refCA', 'la coordinación de aislamiento') : '', alt: dr == null ? null : ALT({ mt_dCierre: mtUp(dr, 0.05) }, 'Desplazar el cierro o el equipo', `${mtF(mtUp(dr, 0.05))} m`, 'separacion') });
+      return;
+    }
     const pub = s('mt_pub'), hReq = pub === 'si' ? 2.50 : 2.00;
-    add('Altura del cierre (muro con función de cierre)', mtM(hM), pub ? `≥ ${mtF(hReq)} m` : '≥ 2,00 m; 2,50 m junto a sitio público', 'RIC 13 §7.2.6', pub ? stMin(hM, hReq) : MT_ST.NV, pub ? falta(hM, hReq) : 'Indicar si colinda con sitio público.');
+    add('Altura del cierre (muro con función de cierre)', mtM(hM), pub ? `≥ ${mtF(hReq)} m` : '≥ 2,00 m; 2,50 m junto a sitio público', 'RIC 13 §7.2.6', pub ? stMin(hM, hReq) : (hM != null && hM < 2.00 - 1e-9 ? MT_ST.NC : MT_ST.NV),
+      pub ? falta(hM, hReq) : 'Indicar si colinda con sitio público.', { alt: ALT({ [hId]: hReq }, 'Recrecer el muro', `${mtF(hReq)} m`, 'altura') });
     if (pub === 'si') siNo(s('mt_antiesc'), 'Protección contra escalamiento', 'RIC 13 §7.2.6', 'Protección contra escalamiento (sitio público)');
     const d = n('mt_dCierre');
-    add('Separación del cierre a la proyección de cualquier punto del equipo', mtM(d), '≥ 1,50 m', 'RIC 13 §7.2.6', stMin(d, 1.50), d == null ? 'Medir desde la proyección de cualquier punto del equipo, incluidos salientes; no solo desde el tanque.' : falta(d, 1.50));
+    add('Separación del cierre a la proyección de cualquier punto del equipo', mtM(d), '≥ 1,50 m', 'RIC 13 §7.2.6', stMin(d, 1.50), d == null ? 'Medir desde la proyección de cualquier punto del equipo, incluidos salientes; no solo desde el tanque.' : falta(d, 1.50),
+      { alt: ALT({ mt_dCierre: 1.50 }, 'Desplazar el muro o el equipo', '1,50 m', 'separacion') });
     const ext = s('mt_extAlto');
-    if (ext === 'si') { const he = n('mt_hExt'); add('Altura del cierre medida desde el terreno exterior accesible', mtM(he), pub ? `≥ ${mtF(hReq)} m` : '≥ 2,00 m; 2,50 m junto a sitio público', 'RIC 13 §7.2.6 · Guía caso 5', pub ? stMin(he, hReq) : MT_ST.NV, falta(he, hReq)); }
-    else if (ext !== 'no') add('Altura del cierre desde el terreno exterior', 'sin dato', 'Indicar si el terreno exterior es más alto', 'Guía caso 5', MT_ST.NV, 'No basta la altura medida desde el interior si el exterior accesible está más alto.');
+    if (ext === 'si') { const he = n('mt_hExt', POS); add('Altura del cierre medida desde el terreno exterior accesible', mtM(he), pub ? `≥ ${mtF(hReq)} m` : '≥ 2,00 m; 2,50 m junto a sitio público', 'RIC 13 §7.2.6 · Guía caso 5', pub ? stMin(he, hReq) : MT_ST.NV, falta(he, hReq),
+      { alt: he == null ? null : ALT({ mt_hExt: hReq, [hId]: hM != null ? mtR(hM + hReq - he, 2) : null }, 'Recrecer el muro', `${mtF(hReq)} m desde el terreno exterior`, 'altura') }); }
+    else if (ext !== 'no') add('Altura del cierre desde el terreno exterior', 'sin dato', 'Indicar si el terreno exterior es más alto', 'Guía caso 5', MT_ST.NV, 'No basta la altura medida desde el interior si el exterior accesible está más alto.', { tipo: 'D' });
   }
   // Espacio de circulación (pasillo) con ancho y altura libres.
   function bloquePasillo(nombre, p, aId, hId) {
-    const a = n(aId), h = hId ? n(hId) : null, req = conFab(p.a);
-    add(`${nombre}: ancho libre`, mtM(a), `≥ ${mtF(req)} m` + (req > p.a ? ' (fabricante)' : ''), p.ref + (req > p.a ? ' · fabricante' : ''), stMin(a, req), falta(a, req));
-    if (p.h != null) add(`${nombre}: altura libre`, mtM(h), `≥ ${mtF(p.h)} m`, p.ref, stMin(h, p.h), falta(h, p.h) || (p.ref.indexOf('RIC 13') === 0 ? 'Altura libre piso-cielo; no confundir con la altura de la barrera.' : ''));
+    const a = n(aId), h = hId ? n(hId, POS) : null, req = conFab(p.a), porFab = req > p.a;
+    add(`${nombre}: ancho libre`, mtM(a), `≥ ${mtF(req)} m` + (porFab ? ' (fabricante)' : ''), p.ref + (porFab ? ' · fabricante' : ''), stMin(a, req), falta(a, req),
+      { tipo: porFab ? 'E' : undefined, alt: ALT({ [aId]: mtUp(req, 0.05) }, 'Ampliar el espacio libre', `${mtF(mtUp(req, 0.05))} m`, 'pasillo') });
+    if (p.h != null) add(`${nombre}: altura libre`, mtM(h), `≥ ${mtF(p.h)} m`, p.ref, stMin(h, p.h), falta(h, p.h) || (p.ref.indexOf('RIC 13') === 0 ? 'Altura libre piso-cielo; no confundir con la altura de la barrera.' : ''),
+      { alt: ALT({ [hId]: p.h }, 'Aumentar la altura libre (cielo o canalizaciones)', `${mtF(p.h)} m`, 'recinto') });
   }
   const aislanteFila = (refs) => {
     const ok = aisl === 'seco' || aisl === 'claseK';
     add('Aislante del equipo instalado en el recinto', aisl ? MT_AISLANTE[aisl] : 'sin dato', 'Seco o líquido clase K (IEC 61039)', refs,
       ok ? MT_ST.OK : (aisl === 'mineral' ? MT_ST.NC : MT_ST.NV),
-      aisl === 'mineral' ? 'El aceite mineral común no se habilita solo agregando un muro.' : (aisl === 'liquidoNA' ? 'Un aceite vegetal o «clase K» debe acreditar esa clase; el nombre comercial no basta.' : (ok ? '' : 'Dato no informado.')));
+      aisl === 'mineral' ? 'El aceite mineral común no se habilita solo agregando un muro.' : (aisl === 'liquidoNA' ? 'Un aceite vegetal o «clase K» debe acreditar esa clase; el nombre comercial no basta.' : (ok ? '' : 'Dato no informado.')),
+      { alt: ALT({ mt_aislante: 'seco' }, 'Reemplazar el equipo por uno seco o con líquido clase K acreditado', 'Seco o clase K (> 300 °C)', ['Reemplazo del equipo: verificar de nuevo todas las cotas del caso con el nuevo equipo.', 'Con líquido clase K, acreditar la temperatura de ignición con la ficha.']) });
     if (aisl === 'claseK') {
-      // RIC 13 §9.1: «aislantes con T° de ignición superior a 300 °C» (desigualdad estricta).
-      const ti = n('mt_tIgn');
-      add('Temperatura de ignición del líquido clase K', ti == null ? 'sin dato' : `${mtF(ti, 0)} °C`, '> 300 °C', 'RIC 13 §9.1 (IEC 61039)',
-        ti == null ? MT_ST.NV : (ti > 300 ? MT_ST.OK : MT_ST.NC), ti == null ? 'Tomar el valor de la ficha técnica o certificado del líquido.' : '');
+      // RIC 13 §9.1 y RIC 02 §5.4.9.3: «aislantes con T° de ignición superior a 300 °C» (desigualdad estricta).
+      const ti = n('mt_tIgn', POS);
+      add('Temperatura de ignición del líquido clase K', ti == null ? 'sin dato' : `${mtF(ti, 0)} °C`, '> 300 °C', 'RIC 13 §9.1 · RIC 02 §5.4.9.3 (IEC 61039)',
+        ti == null ? MT_ST.NV : (ti > 300 ? MT_ST.OK : MT_ST.NC), ti == null ? 'Tomar el valor de la ficha técnica o certificado del líquido.' : (ti > 300 ? '' : 'Debe ser estrictamente mayor que 300 °C.'));
     }
   };
-  const enAceite = () => aisl === 'mineral' || aisl === 'claseK' || aisl === 'liquidoNA';
-  // RIC 13 §§8.8–8.9: fosos colectores (aceite del de mayor potencia + 30 % del de los demás) o umbral ≥ 0,10 m.
+  // RIC 13 §§8.8–8.9: fosos colectores (aceite del de mayor potencia + 30 % del de los demás), ductos a estanque exterior,
+  // o, solo si no es posible construir fosos, umbral que retenga el aceite del de mayor potencia (mínimo 0,10 m).
   function bloqueFosoRIC() {
-    if (!aisl) { add('Contención del aceite', 'sin dato', 'Fosos colectores o umbral', 'RIC 13 §§8.8–8.9', MT_ST.NV, 'Aislante no informado.'); return; }
+    if (!aisl) { add('Contención del aceite', 'sin dato', 'Fosos colectores o umbral', 'RIC 13 §§8.8–8.9', MT_ST.NV, 'Aislante no informado.', { tipo: 'D' }); return; }
     if (!enAceite()) return;
     const f = s('mt_foso');
-    if (f === 'si') {
-      const vM = n('mt_vMax'), vO = n('mt_vOtros'), vF = n('mt_vFoso');
-      const req = vM == null || vO == null ? null : vM + 0.30 * vO;
-      if (req != null) eq('Capacidad mínima de los fosos colectores (RIC 13 §8.8)', `V_min = V_mayor + 0,30 × ΣV_demás = ${mtF(vM, 0)} + 0,30 × ${mtF(vO, 0)} = ${mtF(req, 0)} L`);
-      add('Capacidad de los fosos colectores', vF == null ? 'sin dato' : `${mtF(vF, 0)} L`, req == null ? 'aceite del de mayor potencia + 30 % del de los demás' : `≥ ${mtF(req, 0)} L`, 'RIC 13 §8.8', stMin(vF, req),
-        req == null ? 'Indicar los litros de placa del transformador de mayor potencia y la suma de los demás (0 si hay uno solo).' : '');
+    const vM = n('mt_vMax', POS), vO = n('mt_vOtros');
+    if (vM != null && vO != null && litros != null && vM + vO < litros - 1e-9) errores.push(`${lbl('mt_vMax')} + ${lbl('mt_vOtros')}: ${mtF(vM + vO, 0)} L es menor que el aceite del equipo verificado (${mtF(litros, 0)} L).`);
+    if (f === 'si' || f === 'ducto') {
+      const tipoF = f === 'si' ? s('mt_fosoTipo') : 'comun', vF = n('mt_vFoso');
+      let req = null, txt = '', obs = '';
+      if (tipoF === 'indiv') {
+        req = litros; txt = 'aceite del respectivo transformador';
+        if (req != null) eq('Capacidad mínima del foso individual (RIC 13 §8.8)', `V_min = V_equipo = ${mtF(req, 0)} L`);
+        obs = req == null ? 'Indicar los litros de placa del equipo.' : 'Cada foso individual debe contener el aceite de su transformador; verificar los demás fosos con sus litros.';
+      } else if (tipoF === 'comun') {
+        req = vM == null || vO == null ? null : vM + 0.30 * vO; txt = 'aceite del de mayor potencia + 30 % del de los demás';
+        if (req != null) eq(`Capacidad mínima ${f === 'ducto' ? 'del estanque o foso exterior' : 'de los fosos colectores'} (RIC 13 §8.8)`, `V_min = V_mayor + 0,30 × ΣV_demás = ${mtF(vM, 0)} + 0,30 × ${mtF(vO, 0)} = ${mtF(req, 0)} L`);
+        obs = req == null ? 'Indicar los litros de placa del transformador de mayor potencia y la suma de los demás (0 si hay uno solo).' : '';
+      } else obs = 'Indicar si el foso es común o uno por transformador.';
+      if (f === 'ducto') obs = 'El §8.8 admite ductos a un estanque o foso exterior por falta de espacio sin fijar su capacidad: se exige la de los fosos (criterio conservador). ' + obs;
+      add(f === 'ducto' ? 'Capacidad del estanque o foso exterior' : 'Capacidad útil neta de los fosos colectores', vF == null ? 'sin dato' : `${mtF(vF, 0)} L`, req == null ? txt || 'según litros de placa' : `≥ ${mtF(req, 0)} L`,
+        'RIC 13 §8.8', stMin(vF, req), obs, { tipo: f === 'ducto' ? 'C' : undefined, alt: req == null ? null : ALT({ mt_vFoso: Math.ceil(req) }, 'Ampliar el foso', `${mtF(Math.ceil(req), 0)} L útiles netos`, 'foso') });
+      if (f === 'ducto') siNo(s('mt_disp'), 'Sin contaminar ambiente ni napas; no por alcantarillado', 'RIC 13 §8.9', 'Disposición del aceite conducido al exterior', '', 'Se prohíbe evacuar el aceite por el alcantarillado.', { tipo: 'C' });
     } else if (f === 'no') {
-      const u = n('mt_umbral');
-      add('Umbral de la puerta (sin fosos)', mtM(u), '≥ 0,10 m', 'RIC 13 §8.9', stMin(u, 0.10), falta(u, 0.10) || 'El umbral debe impedir la salida del aceite.');
-    } else add('Fosos colectores de aceite', 'sin dato', 'Fosos colectores o umbral ≥ 0,10 m', 'RIC 13 §§8.8–8.9', MT_ST.NV, 'Dato no informado.');
+      // Alternativa del §8.9: procede solo si no es posible construir los fosos del §8.8.
+      siNo(s('mt_fosoImp'), 'Imposibilidad documentada de construir fosos', 'RIC 13 §8.9', 'Condición para usar el umbral en vez de fosos', 'Documentar por qué no es posible construir los fosos del §8.8.',
+        'El umbral es alternativa solo cuando no es posible construir fosos: corresponde foso colector (§8.8).', { alt: ALT({ mt_foso: 'si' }, 'Construir foso colector (§8.8)', 'Foso con la capacidad del §8.8', 'foso') });
+      const u = n('mt_umbral'), A = n('mt_Apiso', POS);
+      add('Altura del umbral de la puerta (mínimo absoluto)', mtM(u), '≥ 0,10 m', 'RIC 13 §8.9', stMin(u, 0.10), falta(u, 0.10), { alt: ALT({ mt_umbral: 0.10 }, 'Elevar el umbral', '0,10 m', 'foso') });
+      const Vret = u != null && A != null ? A * u * 1000 : null;
+      const hReq = vM != null && A != null ? Math.max(0.10, vM / (A * 1000)) : null;
+      if (Vret != null) eq('Volumen retenido por el umbral (RIC 13 §8.9)', `V_ret = A_piso × h_umbral = ${mtF(A)} m² × ${mtF(u)} m × 1.000 = ${mtF(Vret, 0)} L` + (vM != null ? ` ; V_mayor = ${mtF(vM, 0)} L` : ''));
+      if (hReq != null) eq('Altura del umbral necesaria para retener el aceite del de mayor potencia', `h_req = máx(0,10; ${mtF(vM, 0)} / (${mtF(A)} × 1.000)) = ${mtF(hReq, 3)} m`);
+      add('Aceite retenido por el umbral', Vret == null ? 'sin dato' : `${mtF(Vret, 0)} L`, vM == null ? 'aceite del transformador de mayor potencia' : `≥ ${mtF(vM, 0)} L (transformador de mayor potencia)`, 'RIC 13 §8.9', stMin(Vret, vM),
+        Vret == null || vM == null ? 'Indicar la superficie de piso que retiene el aceite y los litros del transformador de mayor potencia: 0,10 m por sí solos no acreditan la contención.' : '',
+        { alt: hReq == null ? null : ALT({ mt_umbral: mtUp(hReq, 0.01) }, 'Elevar el umbral', `${mtF(mtUp(hReq, 0.01))} m`, ['Un umbral alto dificulta el acceso: verificar la puerta y la vía de escape.', 'Impermeabilizar piso y muros hasta la altura del umbral.']) });
+      siNo(s('mt_disp'), 'Sin contaminar ambiente ni napas; no por alcantarillado', 'RIC 13 §8.9', 'Evacuación del aceite retenido', '', 'Se prohíbe evacuar el aceite por el alcantarillado.');
+    } else add('Contención del aceite', 'sin dato', 'Fosos colectores, ductos a estanque exterior o umbral', 'RIC 13 §§8.8–8.9', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
   }
   // RIC 13 §9.5: subestaciones con transformadores en aceite dentro de edificios de uso general.
   function bloqueEscape() {
     if (!enAceite()) return;
     siNo(s('mt_accExt'), 'Accesible desde el exterior', 'RIC 13 §9.5', 'Acceso al recinto desde el exterior del edificio');
     const e = n('mt_esc');
-    add('Vía de escape desde el recinto hasta el exterior', mtM(e), '< 10,00 m', 'RIC 13 §9.5', e == null ? MT_ST.NV : (e < 10 ? MT_ST.OK : MT_ST.NC), e != null && e >= 10 ? 'La distancia debe ser inferior a 10 m.' : '');
+    add('Vía de escape desde el recinto hasta el exterior', mtM(e), '< 10,00 m', 'RIC 13 §9.5', e == null ? MT_ST.NV : (e < 10 ? MT_ST.OK : MT_ST.NC), e != null && e >= 10 ? 'La distancia debe ser inferior a 10 m.' : '',
+      { alt: ALT({ mt_esc: 9.95 }, 'Acortar la vía de escape (nuevo acceso al exterior)', '< 10,00 m', ['Un nuevo vano en el recinto debe mantener la resistencia al fuego.']) });
     const it = s('mt_escInt');
-    add('Interferencia con las salidas del edificio', mtOpcTxt('', it), 'No interfiere', 'RIC 13 §9.5', it === 'no' ? MT_ST.OK : (it === 'si' ? MT_ST.NC : MT_ST.NV), it ? '' : 'Dato no informado.');
+    add('Interferencia con las salidas del edificio', mtOpcTxt('', it), 'No interfiere', 'RIC 13 §9.5', it === 'no' ? MT_ST.OK : (it === 'si' ? MT_ST.NC : MT_ST.NV), it ? '' : 'Dato no informado.',
+      { alt: ALT({ mt_escInt: 'no' }, 'Separar la vía de escape del recinto de las salidas del edificio', 'Sin interferencia', 'doc') });
   }
   // RIC 13 §§7.2.3, 7.2.15 y 7.2.16: subestaciones a la intemperie a nivel de suelo.
   function bloqueBaseGravilla() {
     const b = n('mt_base'), g = n('mt_grav'), ge = n('mt_gravExt');
-    add('Espesor de la base de concreto del equipo', mtM(b), '≥ 0,25 m', 'RIC 13 §7.2.3', stMin(b, 0.25), falta(b, 0.25));
-    add('Espesor de la capa de gravilla', mtM(g), '≥ 0,05 m', 'RIC 13 §7.2.15', stMin(g, 0.05), falta(g, 0.05));
-    add('Extensión de la gravilla fuera del cierre', mtM(ge), '≥ 1,00 m en todas las direcciones libres', 'RIC 13 §7.2.15', stMin(ge, 1.00), falta(ge, 1.00));
+    add('Espesor de la base de concreto del equipo', mtM(b), '≥ 0,25 m', 'RIC 13 §7.2.3', stMin(b, 0.25), falta(b, 0.25), { alt: ALT({ mt_base: 0.25 }, 'Recrecer la base', '0,25 m', ['Verificar la base como fundación del equipo (fuera del alcance).']) });
+    add('Espesor de la capa de gravilla', mtM(g), '≥ 0,05 m', 'RIC 13 §7.2.15', stMin(g, 0.05), falta(g, 0.05), { alt: ALT({ mt_grav: 0.05 }, 'Completar la gravilla', '0,05 m', []) });
+    add('Extensión de la gravilla fuera del cierre', mtM(ge), '≥ 1,00 m en todas las direcciones libres', 'RIC 13 §7.2.15', stMin(ge, 1.00), falta(ge, 1.00), { alt: ALT({ mt_gravExt: 1.00 }, 'Extender la gravilla', '1,00 m', []) });
     siNo(s('mt_dren'), 'Drenaje eficiente', 'RIC 13 §7.2.16', 'Drenaje del recinto');
   }
-  // RPTD 10 §5.8.3 b) y d): transformadores de poder refrigerados en aceite (régimen DS 109).
+  // RPTD 10 §5.8.3 b) y d): transformadores de poder refrigerados en aceite (régimen DS 109 o por remisión).
   function bloqueRPTD10Aceite() {
-    if (ambito !== 'RPTD' || !enAceite()) return;
+    if (!enAceite()) return;
     const h = s('mt_hab');
-    add('Ubicación respecto de sitios de habitación', h === 'si' ? 'Sobre o contiguo' : (h === 'no' ? 'No está sobre ni contiguo' : 'sin dato'), 'No sobre ni contiguo a sitios de habitación', 'RPTD 10 §5.8.3 b)',
-      h === 'no' ? MT_ST.OK : (h === 'si' ? MT_ST.NC : MT_ST.NV), h ? '' : 'Dato no informado.');
+    add('Ubicación respecto de sitios de habitación', h === 'si' ? 'Sobre o contiguo' : (h === 'no' ? 'No está sobre ni contiguo' : 'sin dato'), 'No sobre ni contiguo a sitios de habitación u ocupación permanente', 'RPTD 10 §5.8.3 b)',
+      h === 'no' ? MT_ST.OK : (h === 'si' ? MT_ST.NC : MT_ST.NV), h ? '' : 'Dato no informado.', { alt: ALT({ mt_hab: 'no' }, 'Reubicar el transformador o usar un equipo seco', 'No sobre ni contiguo', 'separacion') });
     const f = s('mt_fosoR');
     if (f === 'si') {
-      const vF = n('mt_vFosoR'), L = n('mt_litros');
-      add('Capacidad del foso de aceite', vF == null ? 'sin dato' : `${mtF(vF, 0)} L`, L == null ? 'acorde a los litros del transformador' : `≥ ${mtF(L, 0)} L (litros del equipo)`, 'RPTD 10 §5.8.3 d)', stMin(vF, L),
-        'El pliego exige capacidad «acorde a la cantidad de litros de aceite» sin fijar porcentaje; se verifica contra el volumen de aceite del equipo. Agua de lluvia o de extinción no está incluida.');
-    } else add('Canales recolectores y foso de aceite', mtOpcTxt('', f), 'Existen', 'RPTD 10 §5.8.3 d)', f === 'no' ? MT_ST.NC : MT_ST.NV, f ? '' : 'Dato no informado.');
+      const vF = n('mt_vFosoR');
+      add('Capacidad del foso de aceite', vF == null ? 'sin dato' : `${mtF(vF, 0)} L`, litros == null ? 'acorde a los litros del transformador' : `≥ ${mtF(litros, 0)} L (litros del equipo)`, 'RPTD 10 §5.8.3 d)', stMin(vF, litros),
+        (litros == null ? 'Indicar los litros de placa. ' : '') + 'El pliego exige capacidad «acorde a la cantidad de litros de aceite» sin fijar porcentaje; se verifica contra el volumen de aceite del equipo. Agua de lluvia o de extinción no está incluida.',
+        { alt: litros == null ? null : ALT({ mt_vFosoR: Math.ceil(litros) }, 'Ampliar el foso', `${mtF(Math.ceil(litros), 0)} L útiles netos`, 'foso') });
+    } else add('Canales recolectores y foso de aceite', mtOpcTxt('', f), 'Existen', 'RPTD 10 §5.8.3 d)', f === 'no' ? MT_ST.NC : MT_ST.NV, f ? '' : 'Dato no informado.',
+      { alt: ALT({ mt_fosoR: 'si' }, 'Construir canales recolectores y foso', 'Capacidad acorde a los litros de placa', 'foso') });
   }
-  // RPTD 08 §5.4, Tabla N°1 (aceite < 7.600 L). Devuelve { req, txt } o { nv: motivo }.
+  // RPTD 08 §5.4, Tabla N°1 (aceite < 7.600 L). Devuelve { req, txt } o { nv: motivo } o { fa: motivo }.
   function tabla54() {
-    const central = s('mt_central'), litros = n('mt_litros');
-    if (ambito !== 'RPTD' || central !== 'si') return { nv: 'La Tabla N°1 del §5.4 aplica solo a centrales de generación y subestaciones de transmisión.' };
-    if (aisl === 'seco') return { nv: 'Equipo seco: fuera de la condición de la tabla; no extrapolar 9 m.' };
+    const central = s('mt_central');
+    if (!ambito) return { nv: 'Régimen no informado.' };
+    if (ambito === 'RIC') return { fa: 'RPTD 08 §5.4 rige solo en centrales de generación y subestaciones de transmisión; no se aplica a una instalación de consumo ni por remisión.' };
+    if (!central) return { nv: 'Indicar si es central de generación o subestación de transmisión.' };
+    if (central === 'no') return { fa: 'La Tabla N°1 del §5.4 aplica solo a centrales de generación y subestaciones de transmisión.' };
     if (!aisl) return { nv: 'Aislante no informado.' };
+    if (aisl === 'seco') return { fa: 'Equipo seco: fuera de la condición de la tabla (transformadores con aceite); no extrapolar 9 m.' };
     if (litros == null) return { nv: 'Volumen de aceite no informado (placa o ficha del equipo).' };
-    if (litros >= 7600) return { nv: '7.600 L o más: fuera de la condición de la tabla; no extrapolar 9 m. Comprobar §5.1 si aplica y completar el diseño de incendio.' };
+    if (litros >= 7600) return { fa: '7.600 L o más: fuera de la condición de la tabla; no extrapolar 9 m. Comprobar §5.1 si aplica y completar el diseño de incendio.' };
     if (ficha !== 'si') return { nv: 'Los litros deben provenir de la placa o ficha del equipo; no se infieren a partir de los kVA.' };
     if (P == null) return { nv: 'Potencia nominal no informada.' };
-    eq('Selección en la Tabla N°1 (RPTD 08 §5.4)', `Central o S/E de transmisión; aceite ${mtF(litros, 0)} L < 7.600 L; P = ${mtF(P, 0)} kVA → ` + (P <= 75 ? '≤ 75 kVA → 3,00 m' : (P <= 333 ? '76–333 kVA → 6,00 m' : '> 333 kVA → 9,00 m')));
+    eq('Selección en la Tabla N°1 (RPTD 08 §5.4)', `Central o S/E de transmisión; aceite ${mtF(litros, 0)} L < 7.600 L; P = ${mtF(P, 0)} kVA → ` + (P <= 75 ? '≤ 75 kVA → 3,00 m' : (P < 76 ? '75–76 kVA → 6,00 m (criterio conservador)' : (P <= 333 ? '76–333 kVA → 6,00 m' : '> 333 kVA → 9,00 m'))));
     if (P <= 75) return { req: 3.00, txt: '75 kVA o menos' };
-    if (P < 76) return { req: 6.00, txt: 'mayor de 75 y menor de 76 kVA (criterio conservador de la guía; el texto tabula desde 76 kVA)' };
+    if (P < 76) return { req: 6.00, txt: 'mayor de 75 y menor de 76 kVA (criterio conservador de la guía; el texto tabula desde 76 kVA)', tipo: 'C' };
     if (P <= 333) return { req: 6.00, txt: '76 a 333 kVA' };
     return { req: 9.00, txt: 'más de 333 kVA' };
   }
+  // RPTD 08 §5.1 (nuevas subestaciones, > 10 MVA).
+  function req51() {
+    const nueva = s('mt_nueva');
+    if (!ambito) return { nv: 'Régimen no informado.' };
+    if (!nueva) return { nv: 'Indicar si es una subestación nueva.' };
+    if (nueva === 'no') return { fa: 'El §5.1 rige solo para nuevas subestaciones.' };
+    if (P == null) return { nv: 'Potencia no informada.' };
+    if (P <= 10000) return { fa: 'Potencia ≤ 10 MVA: el §5.1 no fija distancia (no es distancia cero).' };
+    return { req: 6.00 };
+  }
+  const relocar = (id, req, extraCond) => ALT({ [id]: mtUp(req, 0.05) }, 'Aumentar la separación (reubicar equipo)', `${mtF(mtUp(req, 0.05))} m libres`, MT_COND.separacion.concat(extraCond || []));
 
   // ---------- Casos ----------
   if (caso === '1') {
     grupo = 'Caso 1 — Separación sin barrera';
-    const nueva = s('mt_nueva');
-    const a51 = ambito === 'RPTD' && nueva === 'si' && P != null && P > 10000;
-    const t54 = tabla54();
+    const r51 = req51(), t54 = tabla54();
     const hayE = s('mt_hayEdif'), hayT = s('mt_hayTrafo');
-    let motivo51 = '';
-    if (ambito === 'RIC') motivo51 = 'En consumo no rige RPTD 08 §5.1: aplicar RIC y sus remisiones. No interpretar como distancia cero.';
-    else if (ambito !== 'RPTD') motivo51 = 'Régimen no informado.';
-    else if (nueva !== 'si') motivo51 = nueva === 'no' ? 'El §5.1 rige solo para nuevas subestaciones.' : 'Indicar si es una subestación nueva.';
-    else if (P == null) motivo51 = 'Potencia no informada.';
-    else if (P <= 10000) motivo51 = 'Potencia ≤ 10 MVA: el §5.1 no fija distancia. No interpretar como distancia cero.';
+    const barrera = ['Alternativa sin reubicar: barrera F120 validada por estudio de carga combustible (RPTD 08 §5.2) con coronación y longitud del §5.3; se evalúa con los casos 2 o 3, no en este.'];
     if (hayE === 'si') {
       const d = n('mt_dEdif');
-      const reqs = [];
-      if (a51) reqs.push([6.00, 'RPTD 08 §5.1']);
-      if (t54.req != null) reqs.push([t54.req, 'RPTD 08 §5.4, Tabla N°1']);
+      const fuentes = [[r51, 'RPTD 08 §5.1'], [t54, 'RPTD 08 §5.4, Tabla N°1']];
+      const reqs = fuentes.filter(f => f[0].req != null), nvs = fuentes.filter(f => f[0].nv), fas = fuentes.filter(f => f[0].fa);
       if (reqs.length) {
-        const req = Math.max(...reqs.map(r => r[0]));
-        if (reqs.length > 1) eq('Requisitos concurrentes a edificación', `d_min = máx(${reqs.map(r => mtF(r[0])).join('; ')}) = ${mtF(req)} m`);
-        const st = stMin(d, req);
-        add('Separación libre a edificación', mtM(d), `≥ ${mtF(req)} m`, reqs.map(r => r[1]).join(' · ') + ' · Guía casos 1 y 11', st,
-          (reqs.length > 1 ? 'Concurren §5.1 y §5.4: se adopta el más exigente. ' : '') + (st === MT_ST.NC ? 'No se declara conformidad por distancia: examinar barrera y validación de incendio (casos 2 a 5); la alternativa del §5.2 no se traslada automáticamente.' : ''));
-      } else add('Separación libre a edificación', mtM(d), 'Sin distancia normativa determinada', 'RPTD 08 §§5.1 y 5.4', MT_ST.NV, motivo51 + (t54.nv && ambito === 'RPTD' ? ' §5.4: ' + t54.nv : ''));
-    } else if (hayE !== 'no') add('Edificación frente al transformador', 'sin dato', 'Indicar si existe', 'Guía caso 1', MT_ST.NV, 'Dato no informado.');
+        const req = Math.max(...reqs.map(r => r[0].req));
+        if (reqs.length > 1) eq('Requisitos concurrentes a edificación', `d_min = máx(${reqs.map(r => mtF(r[0].req)).join('; ')}) = ${mtF(req)} m`);
+        let st = stMin(d, req), obs = '';
+        if (nvs.length && st === MT_ST.OK) { st = MT_ST.NV; obs = 'Queda pendiente otra exigencia concurrente: ' + nvs.map(f => f[1] + ': ' + f[0].nv).join(' '); }
+        if (reqs.length > 1) obs = 'Concurren §5.1 y §5.4: se adopta el más exigente. ' + obs;
+        if (st === MT_ST.NC) obs += 'No se declara conformidad por distancia.';
+        add('Separación libre a edificación', mtM(d), `≥ ${mtF(req)} m`, reqs.map(r => r[1]).join(' · ') + ' · Guía casos 1 y 11', st, obs,
+          { tipo: reqs.some(r => r[0].tipo === 'C') ? 'C' : undefined, alt: relocar('mt_dEdif', req, barrera) });
+      } else if (nvs.length) add('Separación libre a edificación', mtM(d), 'Exigencia no determinada', 'RPTD 08 §§5.1 y 5.4', MT_ST.NV, nvs.concat(fas).map(f => f[1] + ': ' + (f[0].nv || f[0].fa)).join(' '));
+      else add('Separación libre a edificación', mtM(d), 'Sin distancia en RPTD 08 §§5.1 y 5.4 para esta condición', 'RPTD 08 §§5.1 y 5.4', MT_ST.FA, fas.map(f => f[1] + ': ' + f[0].fa).join(' ') + ' Determinar la exigencia aplicable por otro medio (estudio de incendio).');
+    } else if (hayE !== 'no') add('Edificación frente al transformador', 'sin dato', 'Indicar si existe', 'Guía caso 1', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
     if (hayT === 'si') {
       const d = n('mt_dTrafo');
-      if (a51) add('Separación libre a otro transformador del mismo tipo', mtM(d), '≥ 9,00 m', 'RPTD 08 §5.1', stMin(d, 9.00), d != null && d < 9 ? 'No se declara conformidad por distancia: corresponde barrera cortafuego (caso 3).' : '');
-      else add('Separación libre a otro transformador del mismo tipo', mtM(d), 'Sin distancia normativa determinada', 'RPTD 08 §5.1', MT_ST.NV, motivo51);
-    } else if (hayT !== 'no') add('Otro transformador del mismo tipo', 'sin dato', 'Indicar si existe', 'Guía caso 1', MT_ST.NV, 'Dato no informado.');
+      if (r51.req != null) add('Separación libre a otro transformador del mismo tipo', mtM(d), '≥ 9,00 m', 'RPTD 08 §5.1', stMin(d, 9.00), d != null && d < 9 ? 'No se declara conformidad por distancia.' : '', { alt: relocar('mt_dTrafo', 9.00, barrera) });
+      else add('Separación libre a otro transformador del mismo tipo', mtM(d), r51.nv ? 'Exigencia no determinada' : 'Sin distancia en RPTD 08 §5.1 para esta condición', 'RPTD 08 §5.1', r51.nv ? MT_ST.NV : MT_ST.FA, r51.nv || r51.fa);
+    } else if (hayT !== 'no') add('Otro transformador del mismo tipo', 'sin dato', 'Indicar si existe', 'Guía caso 1', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
     if (hayE === 'no' && hayT === 'no') add('Exposiciones a edificio o a otro transformador', 'No existen', '—', 'Guía caso 1', MT_ST.NA, '');
   }
-  if (['1','2','3','4','5','11'].indexOf(caso) >= 0 && ambito === 'RPTD') { grupo = 'Transformador en aceite — ubicación y foso (RPTD 10 §5.8.3)'; bloqueRPTD10Aceite(); }
+  if (['1','2','3','4','5','11'].indexOf(caso) >= 0 && (ambito === 'RPTD' || remis === 'remision' || remis === 'criterio')) { grupo = 'Transformador en aceite — ubicación y foso (RPTD 10 §5.8.3)'; bloqueRPTD10Aceite(); }
   if (caso === '2') {
     grupo = 'Caso 2 — Barrera transformador-edificio';
     bloqueFuego(120, 'RPTD 08 §5.2');
@@ -20836,10 +21044,11 @@ function calcMurosTrafo(inp) {
     const pas = s('mt_pas2');
     if (pas === 'rptd10') bloquePasillo('Espacio exterior junto a la barrera', MT_PASILLOS.rptd10, 'mt_pas2a', 'mt_pas2h');
     else if (pas === 'ric') bloquePasillo('Pasillo equipo-muro', MT_PASILLOS.ric1, 'mt_pas2a', 'mt_pas2h');
-    else if (pas !== 'ninguno') add('Función de la barrera respecto de la circulación', 'sin dato', 'Indicar si forma pasillo', 'RPTD 10 §5.7.4 · RIC 13 §6.4.8', MT_ST.NV, 'Dato no informado.');
-    const Lr = n('mt_Lreq'), Lm = n('mt_Lmuro');
-    add('Longitud de la barrera frente al edificio', mtM(Lm), Lr == null ? 'Según estudio de protección contra incendio aprobado' : `≥ ${mtF(Lr)} m (estudio aprobado)`, 'RPTD 08 §5.3 · Guía caso 2',
-      Lr == null ? MT_ST.NV : stMin(Lm, Lr), Lr == null ? 'El §5.3 no da una longitud universal frente a edificios: la fija el estudio aprobado (fachada, aberturas y cubierta expuestas). Sin ese plano no se acredita el largo.' : falta(Lm, Lr));
+    else if (pas !== 'ninguno') add('Función de la barrera respecto de la circulación', 'sin dato', 'Indicar si forma pasillo', 'Guía caso 2', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
+    const Lr = n('mt_Lreq', POS), Lm = n('mt_Lmuro');
+    add('Longitud de la barrera frente al edificio', mtM(Lm), Lr == null ? 'Según estudio de protección contra incendio aprobado' : `≥ ${mtF(Lr)} m (estudio aprobado)`, 'RPTD 08 §5.3 · estudio de protección contra incendio',
+      Lr == null ? MT_ST.NV : stMin(Lm, Lr), Lr == null ? 'El §5.3 no da una longitud universal frente a edificios: la fija el estudio aprobado (fachada, aberturas y cubierta expuestas). Sin ese plano no se acredita el largo.' : falta(Lm, Lr),
+      { tipo: 'E', doc: Lr != null ? docFalta('mt_refEst', 'el estudio de protección contra incendio') : '', alt: Lr == null ? null : ALT({ mt_Lmuro: mtUp(Lr, 0.05) }, 'Prolongar la barrera', `${mtF(mtUp(Lr, 0.05))} m`, 'altura') });
   }
   if (caso === '3') {
     grupo = 'Caso 3 — Barrera entre transformadores';
@@ -20848,29 +21057,32 @@ function calcMurosTrafo(inp) {
     bloqueCoronacion('mt_hMuro', { dos: true, estudio: true });
     grupo = 'Caso 3 — Longitud en planta';
     const nfpa = s('mt_nfpa');
-    if (nfpa === 'si') add('Longitud de la barrera (alternativa NFPA 850)', 'Alternativa declarada', 'Verificación documentada según NFPA 850', 'RPTD 08 §5.3', MT_ST.NV, 'La guía no reproduce las tablas NFPA 850: adjuntar la verificación documentada.');
+    if (nfpa === 'si') add('Longitud de la barrera (alternativa NFPA 850)', 'Alternativa declarada', 'Verificación documentada según NFPA 850', 'RPTD 08 §5.3', MT_ST.NV, 'La guía no reproduce las tablas NFPA 850: adjuntar la verificación documentada.', { tipo: 'E' });
     else {
-      const cfg = s('mt_cfg3'), w = n('mt_w3'), lev = s('mt_levant3'), e1 = n('mt_e1'), e2 = n('mt_e2');
+      if (!nfpa) add('Método para la longitud de la barrera', 'sin dato', '0,60 m más allá de la línea de visión o NFPA 850', 'RPTD 08 §5.3', MT_ST.NV, 'Indicar si se usa la alternativa NFPA 850; mientras tanto se compara con 0,60 m.', { tipo: 'D' });
+      const cfg = s('mt_cfg3'), w = n('mt_w3', POS), lev = s('mt_levant3'), e1 = n('mt_e1', { neg: true }), e2 = n('mt_e2', { neg: true });
       const wOk = w != null && (cfg === 'alineados' || (cfg === 'desplazados' && lev === 'si'));
       let wObs = '';
       if (!cfg) wObs = 'Indicar la disposición de los equipos.';
       else if (w == null) wObs = 'Falta la envolvente en el plano del muro.';
       else if (cfg === 'desplazados' && lev !== 'si') wObs = 'Equipos desplazados, girados o de ancho diferente: no usar el ancho del tanque; la envolvente debe salir del levantamiento de las líneas de visión de los equipos completos.';
-      [['extremo 1', e1], ['extremo 2', e2]].forEach(([k, e]) => {
+      [['extremo 1', e1, 'mt_e1'], ['extremo 2', e2, 'mt_e2']].forEach(([k, e, id]) => {
         const st = wOk ? stMin(e, 0.60) : (e != null && e < 0.60 - 1e-9 ? MT_ST.NC : MT_ST.NV);
-        add(`Prolongación de la barrera más allá de la línea de visión, ${k}`, mtM(e), '≥ 0,60 m', 'RPTD 08 §5.3 · Guía caso 3', st, wOk ? falta(e, 0.60) : wObs);
+        add(`Prolongación de la barrera más allá de la línea de visión, ${k}`, mtM(e), '≥ 0,60 m', 'RPTD 08 §5.3 · Guía caso 3', st, wOk ? falta(e, 0.60) : wObs,
+          { alt: ALT({ [id]: 0.60 }, `Prolongar la barrera en el ${k}`, '0,60 m más allá de la envolvente', 'altura') });
       });
       if (wOk) eq('Longitud mínima de la barrera (RPTD 08 §5.3)', `L_min = envolvente + 2 × 0,60 = ${mtF(w)} + 1,20 = ${mtF(w + 1.20)} m` + (e1 != null && e2 != null ? ` ; L_medida = ${mtF(w)} + ${mtF(e1)} + ${mtF(e2)} = ${mtF(w + e1 + e2)} m` : ''));
-      if (wOk) add('Longitud total de la barrera', e1 != null && e2 != null ? mtM(w + e1 + e2) : 'sin dato', `≥ ${mtF(w + 1.20)} m (${mtF(w)} + 1,20)`, 'Guía caso 3',
+      if (wOk) add('Longitud total de la barrera', e1 != null && e2 != null ? mtM(w + e1 + e2) : 'sin dato', `≥ ${mtF(w + 1.20)} m (${mtF(w)} + 1,20)`, 'RPTD 08 §5.3 · Guía caso 3',
         e1 != null && e2 != null ? stMin(w + e1 + e2, w + 1.20) : MT_ST.NV, 'Envolvente + prolongaciones medidas en cada extremo.');
     }
     grupo = 'Caso 3 — Espacio libre a cada lado';
     [['Lado 1', 'mt_lado1', 'mt_ancho1'], ['Lado 2', 'mt_lado2', 'mt_ancho2']].forEach(([k, tId, aId]) => {
       const t = s(tId), L = MT_LADO3[t];
-      if (!L) { add(`${k} del muro: espacio libre`, 'sin dato', 'Indicar la función del lado', 'Guía caso 3', MT_ST.NV, 'Dato no informado.'); return; }
+      if (!L) { add(`${k} del muro: espacio libre`, 'sin dato', 'Indicar la función del lado', 'Guía caso 3', MT_ST.NV, 'Dato no informado.', { tipo: 'D' }); return; }
       if (L.a == null) { add(`${k} del muro`, L.t, '—', 'Guía caso 3', MT_ST.NA, ''); return; }
       const a = n(aId), req = conFab(L.a);
-      add(`${k} del muro: espacio libre (${L.t.toLowerCase()})`, mtM(a), `≥ ${mtF(req)} m` + (req > L.a ? ' (fabricante)' : ''), L.ref, stMin(a, req), falta(a, req));
+      add(`${k} del muro: espacio libre (${L.t.toLowerCase()})`, mtM(a), `≥ ${mtF(req)} m` + (req > L.a ? ' (fabricante)' : ''), L.ref, stMin(a, req), falta(a, req),
+        { tipo: req > L.a ? 'E' : undefined, alt: ALT({ [aId]: mtUp(req, 0.05) }, 'Ampliar el espacio libre', `${mtF(mtUp(req, 0.05))} m`, 'pasillo') });
     });
   }
   if (caso === '4' || caso === '5') {
@@ -20879,12 +21091,14 @@ function calcMurosTrafo(inp) {
   }
   if (caso === '6') {
     grupo = 'Caso 6 — Muro entre transformadores';
-    const hM = n('mt_hMuro');
-    add('Altura del muro entre transformadores', mtM(hM), '≥ 2,50 m', 'RIC 13 §9.6', stMin(hM, 2.50), falta(hM, 2.50) || 'Mínimo de §9.6 para subestaciones en edificios; no es altura universal de una barrera exterior.');
-    const mat = s('mt_mat6'), e = n('mt_esp6');
+    const hM = n('mt_hMuro', POS);
+    add('Altura del muro entre transformadores', mtM(hM), '≥ 2,50 m', 'RIC 13 §9.6', stMin(hM, 2.50), falta(hM, 2.50) || 'Mínimo de §9.6 para subestaciones en edificios; no es altura universal de una barrera exterior.',
+      { alt: ALT({ mt_hMuro: 2.50 }, 'Recrecer el muro', '2,50 m', 'altura') });
+    const mat = s('mt_mat6'), e = n('mt_esp6', POS);
     const eReq = mat === 'albanileria' ? 0.20 : (mat === 'hormigon' ? 0.10 : null);
     add('Espesor del muro (características similares a §9.4)', mtM(e), mat === 'albanileria' ? '≥ 0,20 m incluido el enlucido' : (mat === 'hormigon' ? '≥ 0,10 m' : 'Albañilería 0,20 m / H.A. 0,10 m'),
-      'RIC 13 §§9.4 y 9.6', eReq == null ? MT_ST.NV : stMin(e, eReq), eReq == null ? (mat === 'otro' ? 'El pliego no fija espesor para otro material.' : 'Indicar el material.') : falta(e, eReq));
+      'RIC 13 §§9.4 y 9.6', eReq == null ? MT_ST.NV : stMin(e, eReq), eReq == null ? (mat === 'otro' ? 'El pliego no fija espesor para otro material.' : 'Indicar el material.') : falta(e, eReq),
+      { alt: eReq == null ? null : ALT({ mt_esp6: eReq }, 'Engrosar el muro', `${mtF(eReq)} m`, 'espesor') });
     grupo = 'Caso 6 — Pasillos equipo-muro';
     bloquePasillo('Equipo A, pasillo equipo-muro', MT_PASILLOS.ric1, 'mt_p6a', 'mt_p6ah');
     bloquePasillo('Equipo B, pasillo equipo-muro', MT_PASILLOS.ric1, 'mt_p6b', 'mt_p6bh');
@@ -20909,102 +21123,181 @@ function calcMurosTrafo(inp) {
           aisl ? MT_ST.NA : MT_ST.NV, aisl ? 'Equipo no seco: se verifican las barreras exigidas por el §5.5.' : 'Aislante no informado.');
         if (sup === 'si') { Freq = 60; refF = 'RPTD 08 §5.5 (con supresión automática)'; }
         else if (sup === 'no') { Freq = 180; refF = 'RPTD 08 §5.5'; }
-        else add('Supresión automática de incendio', 'sin dato', 'Define F180 o F60', 'RPTD 08 §5.5', MT_ST.NV, 'Indicar si existe supresión automática.');
+        else add('Supresión automática de incendio', 'sin dato', 'Define F180 o F60', 'RPTD 08 §5.5', MT_ST.NV, 'Indicar si existe supresión automática.', { tipo: 'D' });
       }
       const cm = s('mt_casaMaq');
       if (cm === 'si') {
-        if (P == null) add('Transformador en casa de máquinas', 'sin dato', '≥ 100 kVA: cel\u00ADda antiexplosión con extinción automática', 'RPTD 10 §5.2.1 f)', MT_ST.NV, 'Potencia no informada.');
-        else if (P >= 100) siNo(s('mt_celdaAE'), 'Cel\u00ADda con muros y puertas antiexplosión, extinción automática y renovación de aire', 'RPTD 10 §5.2.1 f)', `Transformador de ${mtF(P, 0)} kVA en casa de máquinas`, '', 'Para 100 kVA o más dentro de la casa de máquinas se exige esta cel\u00ADda; una clasificación F no acredita resistencia a sobrepresión.');
-      } else if (cm !== 'no') add('Ubicación en casa de máquinas', 'sin dato', 'Indicar', 'RPTD 10 §5.2.1 f)', MT_ST.NV, 'Dato no informado.');
-    } else add('Régimen de la sala', 'sin dato', 'RIC 02 / RIC 13 o RPTD 08 §5.5', 'Guía caso 7', MT_ST.NV, 'Seleccionar el régimen de la sala.');
+        if (P == null) add('Transformador en casa de máquinas', 'sin dato', '≥ 100 kVA: cel­da antiexplosión con extinción automática', 'RPTD 10 §5.2.1 f)', MT_ST.NV, 'Potencia no informada.');
+        else if (P >= 100) siNo(s('mt_celdaAE'), 'Cel­da con muros y puertas antiexplosión, extinción automática y renovación de aire', 'RPTD 10 §5.2.1 f)', `Transformador de ${mtF(P, 0)} kVA en casa de máquinas`, '', 'Para 100 kVA o más dentro de la casa de máquinas se exige esta cel­da; una clasificación F no acredita resistencia a sobrepresión.');
+      } else if (cm !== 'no') add('Ubicación en casa de máquinas', 'sin dato', 'Indicar', 'RPTD 10 §5.2.1 f)', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
+    } else add('Régimen de la sala', 'sin dato', 'RIC 02 / RIC 13 o RPTD 08 §5.5', 'Guía caso 7', MT_ST.NV, 'Seleccionar el régimen de la sala.', { tipo: 'D' });
     if (Freq != null) eq('Resistencia al fuego exigida al recinto', reg === 'RIC' ? 'Sala eléctrica: RF 120 (RIC 02 §5.4.9.2)' : (Freq === 60 ? 'Equipo no seco con supresión automática: F60 (RPTD 08 §5.5)' : 'Equipo no seco sin supresión automática: F180 (RPTD 08 §5.5)'));
     if (Freq != null) {
       [['Muros del recinto', 'mt_F7m'], ['Cierre superior', 'mt_F7t'], ['Puertas y pasos', 'mt_F7p']].forEach(([k, id]) => {
         const F = n(id);
         add(`Resistencia al fuego — ${k.toLowerCase()}`, F == null ? 'sin dato' : `F${mtF(F, 0)}`, `≥ ${reg === 'RIC' ? 'RF' : 'F'}${Freq}`, refF, stMin(F, Freq),
-          F == null ? 'La resistencia debe mantenerse en el conjunto, incluidos puertas y pasos.' : '');
+          F == null ? 'La resistencia debe mantenerse en el conjunto, incluidos puertas y pasos.' : '', { alt: ALT({ [id]: Freq }, `Reemplazar o revestir: ${k.toLowerCase()}`, `${reg === 'RIC' ? 'RF' : 'F'}${Freq}`, 'fuego') });
       });
-      const acr = s('mt_acredF'); s('mt_refF');
-      add('Acreditación de la resistencia al fuego', acr === 'si' ? 'Acreditada' + (inp.mt_refF ? ` — ${String(inp.mt_refF).trim()}` : '') : mtOpcTxt('', acr), 'Solución identificada por informe, certificación o respaldo admisible',
-        'Guía caso 10 · OGUC art. 4.3.2', acr === 'si' ? MT_ST.OK : MT_ST.NV, acr === 'si' ? '' : 'Una clasificación declarada sin respaldo no es verificable.');
+      const acr = s('mt_acredF'), rf = String(inp.mt_refF || '').trim(); s('mt_refF');
+      add('Acreditación de la resistencia al fuego', acr === 'si' ? 'Acreditada' + (rf ? ` — ${rf}` : '') : mtOpcTxt('', acr), 'Solución identificada por informe, certificación o respaldo admisible',
+        'OGUC art. 4.3.2 · Guía caso 10', acr === 'si' && rf ? MT_ST.OK : MT_ST.NV, acr === 'si' ? (rf ? '' : 'Identificar el documento que acredita la resistencia al fuego.') : 'Una clasificación declarada sin respaldo no es verificable.');
     }
+    let H7 = null;
     if (reg === 'RIC') {
+      grupo = 'Caso 7 — Recinto';
+      const L7 = n('mt_L7', POS), B7 = n('mt_B7', POS); H7 = n('mt_H7', POS);
+      if (L7 == null || B7 == null || H7 == null) add('Dimensiones interiores del recinto', [L7, B7, H7].map(x => x == null ? '—' : mtF(x)).join(' × ') + ' m', 'Largo, ancho y altura medidos', 'Guía caso 7', MT_ST.NV, 'Las dimensiones fijan el volumen ventilado y permiten comprobar la coherencia de las demás medidas.', { tipo: 'D' });
+      [['mt_p7h', 'altura libre del espacio equipo-muro'], ['mt_p7eh', 'altura libre del espacio entre equipos'], ['mt_puH', 'alto de la puerta'], ['mt_apH', 'alto de la apertura de retiro']].forEach(([id, t]) => {
+        const x = mtNum(inp[id]); if (H7 != null && x != null && !Number.isNaN(x) && x > H7 + 1e-9) errores.push(`${lbl(id)}: ${mtF(x)} m es mayor que la altura interior del recinto (${mtF(H7)} m); revisar ${t}.`);
+      });
       grupo = 'Caso 7 — Espacios de trabajo y acceso';
       bloquePasillo('Espacio equipo-muro', MT_PASILLOS.ric1, 'mt_p7a', 'mt_p7h');
       const enf = s('mt_enf7');
       if (enf === 'si') bloquePasillo('Espacio entre equipos', MT_PASILLOS.ric2, 'mt_p7ea', 'mt_p7eh');
-      else if (enf !== 'no') add('Equipos enfrentados', 'sin dato', 'Indicar si existen', 'RIC 13 §6.4.8', MT_ST.NV, 'Dato no informado.');
-      const acc = s('mt_acc7'), pa = n('mt_puA'), ph = n('mt_puH'), hReq = acc === 'si' ? 2.20 : 2.10, refP = acc === 'si' ? 'RIC 02 §5.4.4' : 'RIC 13 §8.6';
-      add('Puerta de acceso: ancho libre', mtM(pa), '≥ 0,80 m', refP, stMin(pa, 0.80), falta(pa, 0.80));
-      add('Puerta de acceso: alto libre', mtM(ph), `≥ ${mtF(hReq)} m`, refP, stMin(ph, hReq), falta(ph, hReq) || (acc ? '' : 'Si es también acceso a espacio de trabajo RIC 02 se exigen 2,20 m.'));
-    }
-    if (reg === 'RIC') {
+      else if (enf !== 'no') add('Equipos enfrentados', 'sin dato', 'Indicar si existen', 'RIC 13 §6.4.8', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
+      // RIC 02 §5.4.2 / §5.4.3 (remitido por RIC 13 §6.4.9): necesario aunque el anexo esté desactivado.
+      const bt = s('mt_bt7');
+      if (bt === 'si') {
+        const bT = s('mt_bt7T'), p = MT_PASILLOS[bT];
+        if (p && p.bt) bloquePasillo(`Espacio de trabajo BT (${p.t.replace(/^BT[: ]*/, '')})`, p, 'mt_bt7a', null);
+        else add('Espacio de trabajo BT', 'sin dato', 'Seleccionar la condición de la Tabla N°2.1 o §5.4.3', 'RIC 02 §5.4.2', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
+      } else if (bt !== 'no') add('Tableros con partes energizadas descubiertas', 'sin dato', 'Indicar si existen', 'RIC 02 §5.4.2 · RIC 13 §6.4.9', MT_ST.NV, 'Si existen, rige el espacio de trabajo de RIC 02 §5.4.2.', { tipo: 'D' });
+      // Puerta: RIC 13 §8.6 (0,80 × 2,10 m) o, si da acceso a espacio de trabajo, RIC 02 §5.4.4 (0,80 × 2,20 m).
+      const acc = s('mt_acc7'), pa = n('mt_puA', POS), ph = n('mt_puH', POS);
+      const refP = acc === 'si' ? 'RIC 02 §5.4.4' : (acc === 'no' ? 'RIC 13 §8.6' : 'RIC 13 §8.6 · RIC 02 §5.4.4');
+      if (!acc) add('Clasificación del acceso', 'sin dato', 'Puerta de servicio (§8.6) o acceso a espacio de trabajo (§5.4.4)', 'RIC 02 §5.4.4 · RIC 13 §8.6', MT_ST.NV,
+        bt === 'si' ? 'Hay tableros con partes energizadas descubiertas: si la puerta da acceso a su espacio de trabajo, exige 2,20 m.' : 'Pendiente: define si la altura mínima es 2,10 m o 2,20 m. Un campo vacío no equivale a «no».', { tipo: 'D' });
+      add('Puerta de acceso: ancho libre', mtM(pa), '≥ 0,80 m', refP, stMin(pa, 0.80), falta(pa, 0.80), { alt: ALT({ mt_puA: 0.80 }, 'Ampliar el vano de la puerta', '0,80 m', 'puerta') });
+      let stH, exH;
+      if (acc) { const hReq = acc === 'si' ? 2.20 : 2.10; stH = stMin(ph, hReq); exH = `≥ ${mtF(hReq)} m`; }
+      else { stH = ph == null ? MT_ST.NV : (ph >= 2.20 - 1e-9 ? MT_ST.OK : (ph < 2.10 - 1e-9 ? MT_ST.NC : MT_ST.NV)); ultCmp = ph != null ? { v: ph, req: 2.10, tipo: 'min' } : null; exH = '≥ 2,10 m (§8.6) o ≥ 2,20 m (§5.4.4) según clasificación'; }
+      const hObj = acc === 'no' ? 2.10 : 2.20;
+      add('Puerta de acceso: alto libre', mtM(ph), exH, refP, stH, falta(ph, acc === 'si' ? 2.20 : 2.10) || (!acc && stH === MT_ST.NV ? 'Cumple 2,10 m pero no 2,20 m: depende de la clasificación pendiente del acceso.' : ''),
+        { alt: ALT({ mt_puH: hObj }, 'Aumentar el alto libre del vano', `${mtF(hObj)} m`, MT_COND.puerta.concat(H7 != null && hObj > H7 ? ['El alto objetivo supera la altura interior del recinto: requiere modificar la losa o el cielo.'] : [])) });
       siNo(s('mt_pInc'), 'Material incombustible', 'RIC 13 §8.5', 'Puertas y protecciones de las aberturas de ventilación');
       grupo = 'Caso 7 — Contención de aceite';
       bloqueFosoRIC();
       const ed = s('mt_edif7');
       if (ed === 'si') { grupo = 'Caso 7 — Edificio de uso general (RIC 13 §9)'; bloqueEscape(); }
-      else if (ed !== 'no' && enAceite()) add('Sala dentro de edificio de uso general', 'sin dato', 'Indicar', 'RIC 13 §9.5', MT_ST.NV, 'Si lo está y el equipo es en aceite, rige además el §9.5.');
+      else if (ed !== 'no' && enAceite()) add('Sala dentro de edificio de uso general', 'sin dato', 'Indicar', 'RIC 13 §9.5', MT_ST.NV, 'Si lo está y el equipo es en aceite, rige además el §9.5.', { tipo: 'D' });
     }
     if (reg === 'RPTD') { grupo = 'Caso 7 — Transformador en aceite (RPTD 10 §5.8.3)'; bloqueRPTD10Aceite(); }
     if (reg) {
       grupo = 'Caso 7 — Retiro del equipo';
-      const aa = n('mt_apA'), ah = n('mt_apH'), ta = n('mt_trA'), th = n('mt_trH');
-      [['ancho', aa, ta], ['alto', ah, th]].forEach(([k, ap, tr]) => {
-        add(`Apertura de retiro: ${k} libre`, mtM(ap), tr == null ? 'Mayor que la envolvente de transporte (fabricante)' : `> ${mtF(tr)} m (envolvente de transporte)`, 'Guía caso 7',
-          ap == null || tr == null ? MT_ST.NV : (ap > tr ? MT_ST.OK : MT_ST.NC), tr == null ? 'Falta la envolvente de transporte del fabricante.' : '');
+      const aa = n('mt_apA', POS), ah = n('mt_apH', POS), ta = n('mt_trA', POS), th = n('mt_trH', POS);
+      [['ancho', aa, ta, 'mt_apA'], ['alto', ah, th, 'mt_apH']].forEach(([k, ap, tr, id]) => {
+        add(`Apertura de retiro: ${k} libre`, mtM(ap), tr == null ? 'Mayor que la envolvente de transporte (fabricante)' : `> ${mtF(tr)} m (envolvente de transporte)`, 'Guía caso 7 · RIC 13 §8.6 (puerta de materiales)',
+          ap == null || tr == null ? MT_ST.NV : (ap > tr ? MT_ST.OK : MT_ST.NC), tr == null ? 'Falta la envolvente de transporte del fabricante.' : '',
+          { tipo: 'E', doc: tr != null ? docFalta('mt_refFab', 'el plano del fabricante') : '', alt: tr == null ? null : ALT({ [id]: mtUp(tr + 0.01, 0.05) }, `Ampliar la apertura de retiro (${k})`, `> ${mtF(tr)} m → ${mtF(mtUp(tr + 0.01, 0.05))} m`, ['Holgura de maniobra según el procedimiento de montaje del fabricante.'].concat(MT_COND.recinto)) });
       });
     }
     if (reg === 'RIC') {
-      grupo = 'Caso 7 — Ventilación';
+      grupo = 'Caso 7 — Ventilación: mínimo reglamentario';
       const v = s('mt_vent');
+      const sk = n('mt_sumKVA', POS);
+      if (sk != null && P != null && sk < P - 1e-9) errores.push(`${lbl('mt_sumKVA')}: ${mtF(sk, 0)} kVA es menor que la potencia del equipo verificado (${mtF(P, 0)} kVA).`);
       if (v === 'natural') {
-        const sk = n('mt_sumKVA'), kva = sk != null ? sk : P, Aa = n('mt_Aadm'), Ae = n('mt_Aevac');
+        const kva = sk != null ? sk : P, Aa = n('mt_Aadm'), Ae = n('mt_Aevac');
         const Areq = kva == null ? null : Math.max(0.10, 0.002 * kva);
         const At = Aa != null && Ae != null ? Aa + Ae : null;
         if (Areq != null) eq('Superficie libre mínima de ventilación natural (RIC 13 §8.10)', `A_min = máx(0,10; 20 cm²/kVA × ${mtF(kva, 0)} kVA) = máx(0,10; ${mtF(0.002 * kva, 3)}) = ${mtF(Areq)} m²` + (At != null ? ` ; A_neta = ${mtF(Aa)} + ${mtF(Ae)} = ${mtF(At)} m²` : ''));
+        const aObj = Areq == null ? null : mtUp(Areq / 2, 0.01);
         add('Superficie libre de ventilación natural', At == null ? 'sin dato' : `${mtF(At)} m² (${mtF(Aa)} adm. + ${mtF(Ae)} evac.)`,
           Areq == null ? '20 cm²/kVA, mínimo 0,10 m²' : `≥ ${mtF(Areq)} m² = máx(0,10; 0,002 × ${mtF(kva, 0)} kVA)`, 'RIC 13 §8.10', stMin(At, Areq),
-          'Superficie libre neta, descontada la rejilla (§8.16), tomada como total del recinto repartido entre admisión y evacuación (§8.13: áreas en lo posible iguales); no se duplica el área sin criterio de cálculo.');
+          (sk == null && P != null ? 'Suma de potencias no informada: se usa solo la del equipo verificado; confirmar que no hay otros transformadores. ' : '') + 'Superficie libre neta, descontada la rejilla, tomada como total del recinto repartido entre admisión y evacuación (§8.13); interpretación declarada.',
+          { alt: aObj == null ? null : ALT({ mt_Aadm: Math.max(Aa || 0, aObj), mt_Aevac: Math.max(Ae || 0, aObj) }, 'Ampliar las bocas de admisión y evacuación', `${mtF(aObj)} m² netos cada una`, 'vent') });
+        if (Aa != null && Ae != null && (Aa <= 0 || Ae <= 0)) add('Bocas de admisión y de evacuación', `${mtF(Aa)} / ${mtF(Ae)} m²`, 'Ambas existen, en lo posible de igual área', 'RIC 13 §8.13', MT_ST.NC,
+          'La ventilación natural requiere bocas de admisión y de evacuación que renueven todo el aire del recinto.', { alt: aObj == null ? null : ALT({ mt_Aadm: Math.max(Aa, aObj), mt_Aevac: Math.max(Ae, aObj) }, 'Abrir la boca faltante', `${mtF(aObj)} m²`, 'vent') });
       } else if (v === 'forzada') {
-        const vol = n('mt_vol'), Q = n('mt_Q'), Qreq = vol == null ? null : 20 * vol;
+        const volIn = n('mt_vol', POS), Q = n('mt_Q'), L7 = mtNum(inp.mt_L7), B7 = mtNum(inp.mt_B7);
+        const Vg = L7 > 0 && B7 > 0 && H7 != null ? L7 * B7 * H7 : null;
+        if (Vg != null) eq('Volumen interior por dimensiones', `V = ${mtF(L7)} × ${mtF(B7)} × ${mtF(H7)} = ${mtF(Vg, 1)} m³`);
+        if (Vg != null && volIn != null && Math.abs(volIn - Vg) > 0.05 * Vg) add('Coherencia del volumen ingresado con las dimensiones', `${mtF(volIn, 1)} m³`, `≈ ${mtF(Vg, 1)} m³ (L × B × H, ± 5 %)`, 'Control de datos', MT_ST.NV,
+          'El volumen no corresponde a las dimensiones del recinto: revisar la medición. Se usa el mayor de ambos para el caudal.', { tipo: 'D' });
+        const vol = volIn != null && Vg != null ? Math.max(volIn, Vg) : (volIn != null ? volIn : Vg);
+        const Qreq = vol == null ? null : 20 * vol;
         if (Qreq != null) eq('Caudal mínimo de ventilación forzada (RIC 13 §8.10)', `Q_min = 20 renovaciones/h × ${mtF(vol, 1)} m³ = ${mtF(Qreq, 0)} m³/h`);
-        add('Caudal de ventilación forzada', Q == null ? 'sin dato' : `${mtF(Q, 0)} m³/h`, Qreq == null ? '≥ 20 renovaciones/h del volumen' : `≥ ${mtF(Qreq, 0)} m³/h (20 × ${mtF(vol, 1)} m³)`, 'RIC 13 §8.10',
-          Q == null || Qreq == null ? MT_ST.NV : (Q >= Qreq - 1e-9 ? MT_ST.OK : MT_ST.NC), 'Además debe cubrir la necesidad térmica del equipo según el fabricante.');
-      } else add('Tipo de ventilación', 'sin dato', 'Natural o forzada', 'RIC 13 §8.10', MT_ST.NV, 'Dato no informado.');
-      const hr = n('mt_hRej'), ma = n('mt_malla');
-      add('Altura de las aberturas sobre el piso exterior', mtM(hr), '≥ 0,20 m', 'RIC 13 §8.16', stMin(hr, 0.20), falta(hr, 0.20));
-      add('Abertura de la malla de las rejillas', ma == null ? 'sin dato' : `${mtF(ma, 1)} mm`, 'entre 5 y 15 mm', 'RIC 13 §8.16', ma == null ? MT_ST.NV : (ma >= 5 && ma <= 15 ? MT_ST.OK : MT_ST.NC), '');
+        add('Caudal de ventilación forzada', Q == null ? 'sin dato' : `${mtF(Q, 0)} m³/h`, Qreq == null ? '≥ 20 renovaciones/h del volumen total' : `≥ ${mtF(Qreq, 0)} m³/h (20 × ${mtF(vol, 1)} m³)`, 'RIC 13 §8.10',
+          stMin(Q, Qreq), vol == null ? 'Indicar el volumen interior o las dimensiones del recinto.' : '', { alt: Qreq == null ? null : ALT({ mt_Q: Math.ceil(Qreq) }, 'Instalar ventilador de mayor caudal', `${mtF(Math.ceil(Qreq), 0)} m³/h`, 'vent') });
+      } else add('Tipo de ventilación', 'sin dato', 'Natural o forzada', 'RIC 13 §8.10', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
+      const hr = n('mt_hRej'), ma = n('mt_malla', POS);
+      add('Altura de las aberturas sobre el piso exterior', mtM(hr), '≥ 0,20 m', 'RIC 13 §8.16', stMin(hr, 0.20), falta(hr, 0.20), { alt: ALT({ mt_hRej: 0.20 }, 'Elevar las rejillas', '0,20 m', 'vent') });
+      add('Abertura de la malla de las rejillas', ma == null ? 'sin dato' : `${mtF(ma, 1)} mm`, 'entre 5 y 15 mm', 'RIC 13 §8.16', ma == null ? MT_ST.NV : (ma >= 5 && ma <= 15 ? MT_ST.OK : MT_ST.NC), '',
+        { alt: ALT({ mt_malla: ma != null && ma < 5 ? 5 : 15 }, 'Cambiar la malla de las rejillas', ma != null && ma < 5 ? '5 mm' : '15 mm', ['Una malla más fina reduce el área libre neta: recalcular la superficie de ventilación.']) });
+      // Suficiencia térmica: exigencia distinta del mínimo reglamentario; la fija el fabricante o un cálculo térmico.
+      grupo = 'Caso 7 — Ventilación: suficiencia térmica';
+      const docT = docFalta('mt_refTerm', 'el cálculo térmico');
+      if (v === 'natural') {
+        const a1 = mtNum(inp.mt_Aadm), a2 = mtNum(inp.mt_Aevac), At = a1 != null && a2 != null ? a1 + a2 : NaN, Ar = n('mt_Aterm', POS);
+        add('Superficie libre frente a la necesidad térmica del equipo', isFinite(At) ? `${mtF(At)} m²` : 'sin dato', Ar == null ? 'Según cálculo térmico con las pérdidas del equipo' : `≥ ${mtF(Ar)} m² (cálculo térmico)`, 'Fabricante · cálculo térmico',
+          Ar == null || !isFinite(At) ? MT_ST.NV : stMin(At, Ar), Ar == null ? 'Cumplir 20 cm²/kVA (§8.10) no acredita la disipación de las pérdidas del equipo: ingresar el requerimiento del cálculo térmico.' : '',
+          { tipo: 'E', doc: Ar != null ? docT : '', alt: Ar == null ? null : ALT({ mt_Aadm: mtUp(Ar / 2, 0.01), mt_Aevac: mtUp(Ar / 2, 0.01) }, 'Ampliar las bocas de ventilación', `${mtF(mtUp(Ar / 2, 0.01))} m² cada una`, 'vent') });
+      } else if (v === 'forzada') {
+        const Q = mtNum(inp.mt_Q), Qr = n('mt_Qterm', POS);
+        add('Caudal frente a la necesidad térmica del equipo', Q != null && !Number.isNaN(Q) ? `${mtF(Q, 0)} m³/h` : 'sin dato', Qr == null ? 'Según cálculo térmico con las pérdidas del equipo' : `≥ ${mtF(Qr, 0)} m³/h (cálculo térmico)`, 'Fabricante · cálculo térmico',
+          Qr == null || Q == null || Number.isNaN(Q) ? MT_ST.NV : stMin(Q, Qr), Qr == null ? 'Cumplir 20 renovaciones/h (§8.10) no acredita la disipación de las pérdidas del equipo: ingresar el caudal del cálculo térmico.' : '',
+          { tipo: 'E', doc: Qr != null ? docT : '', alt: Qr == null ? null : ALT({ mt_Q: Math.ceil(Qr) }, 'Instalar ventilador de mayor caudal', `${mtF(Math.ceil(Qr), 0)} m³/h`, 'vent') });
+      }
     }
   }
   if (caso === '8') {
     grupo = 'Caso 8 — Retiros a los muros de cierre';
-    [['izquierdo', 'mt_d8a'], ['del fondo', 'mt_d8b'], ['derecho', 'mt_d8c'], ['cuarto cierre', 'mt_d8d']].forEach(([k, id]) => {
-      const d = n(id);
-      add(`Separación a ${k === 'cuarto cierre' ? 'el cuarto cierre' : 'el muro ' + k}`, mtM(d), '≥ 1,50 m', 'RIC 13 §7.2.6', stMin(d, 1.50), d == null ? 'Medir desde la proyección de cualquier punto del equipo, incluidos salientes.' : falta(d, 1.50));
+    const aE = n('mt_anchoEq', POS), fE = n('mt_fondoEq', POS), aI = n('mt_anchoInt', POS), fI = n('mt_fondoInt', POS);
+    if (aE != null && aI != null && aI < aE) errores.push(`${lbl('mt_anchoInt')}: ${mtF(aI)} m es menor que el ancho del equipo (${mtF(aE)} m).`);
+    if (fE != null && fI != null && fI < fE) errores.push(`${lbl('mt_fondoInt')}: ${mtF(fI)} m es menor que el fondo del equipo (${mtF(fE)} m).`);
+    // Exigencia por lado = máx(RIC 13 §7.2.6 1,50 m; fabricante general; fabricante del lado).
+    const lados = [['izquierdo', 'mt_d8a', 'mt_fab8a', 'mt_anchoInt'], ['del fondo', 'mt_d8b', 'mt_fab8b', 'mt_fondoInt'], ['derecho', 'mt_d8c', 'mt_fab8c', 'mt_anchoInt'], ['cuarto cierre', 'mt_d8d', 'mt_fab8d', 'mt_fondoInt']];
+    const docFab = docFalta('mt_refFab', 'el documento del fabricante');
+    const R = {};
+    lados.forEach(([k, id, fId, dimId]) => {
+      const d = n(id), fl = n(fId), req = Math.max(1.50, fab || 0, fl || 0), porFab = req > 1.50 + 1e-9;
+      R[id] = { d, req };
+      const dimV = mtNum(inp[dimId]);
+      const obj = mtUp(req, 0.05);
+      add(`Separación ${k === 'cuarto cierre' ? 'al cuarto cierre' : 'al muro ' + k}`, mtM(d), `≥ ${mtF(req)} m` + (porFab ? ' (fabricante)' : ''), 'RIC 13 §7.2.6' + (porFab ? ' · fabricante' : ''), stMin(d, req),
+        d == null ? 'Medir desde la proyección de cualquier punto del equipo, incluidos salientes, hasta la cara interior del muro.' : falta(d, req),
+        { tipo: porFab ? 'E' : undefined, doc: porFab ? docFab : '', alt: ALT(Object.assign({ [id]: obj }, d != null && dimV > 0 ? { [dimId]: mtR(dimV + obj - d, 2) } : {}), `Desplazar el ${k === 'cuarto cierre' ? 'cuarto cierre' : 'muro ' + k} hacia afuera`, `${mtF(obj)} m de retiro` + (d != null && dimV > 0 ? `; ${dimId === 'mt_anchoInt' ? 'ancho' : 'fondo'} interior ${mtF(dimV + obj - d)} m` : ''), 'recinto') });
     });
+    grupo = 'Caso 8 — Dimensiones interiores';
+    const rA = aE == null ? null : aE + R.mt_d8a.req + R.mt_d8c.req, rF = fE == null ? null : fE + R.mt_d8b.req + R.mt_d8d.req;
+    if (rA != null) eq('Ancho interior mínimo', `B_min = ${mtF(aE)} + ${mtF(R.mt_d8a.req)} + ${mtF(R.mt_d8c.req)} = ${mtF(rA)} m`);
+    if (rF != null) eq('Fondo interior mínimo', `F_min = ${mtF(fE)} + ${mtF(R.mt_d8b.req)} + ${mtF(R.mt_d8d.req)} = ${mtF(rF)} m`);
+    // Coherencia: dimensión interior = equipo + retiros medidos (tolerancia de lectura 0,05 m, criterio del programa).
+    const coh = (t, dim, eqd, d1, d2) => {
+      if (dim == null || eqd == null || d1 == null || d2 == null) return true;
+      const sum = eqd + d1 + d2, ok = Math.abs(dim - sum) <= 0.05 + 1e-9;
+      eq(`Coherencia del ${t} interior`, `${mtF(eqd)} + ${mtF(d1)} + ${mtF(d2)} = ${mtF(sum)} m ; medido ${mtF(dim)} m`);
+      add(`Coherencia: ${t} interior = equipo + retiros`, mtM(dim), `${mtF(sum)} m ± 0,05 (${mtF(eqd)} + ${mtF(d1)} + ${mtF(d2)})`, 'Control de datos', ok ? MT_ST.OK : MT_ST.NV,
+        ok ? '' : 'Las medidas no cierran: revisar retiros, dimensiones del equipo o dimensión interior antes de usar el resultado.', { tipo: 'D' });
+      return ok;
+    };
+    const cA = coh('ancho', aI, aE, R.mt_d8a.d, R.mt_d8c.d), cF = coh('fondo', fI, fE, R.mt_d8b.d, R.mt_d8d.d);
+    // Sin alternativa propia: con medidas coherentes, el ancho o fondo insuficiente proviene de un retiro insuficiente (fila de retiros).
+    const dimRow = (t, v, req, base, rq1, rq2, ok) => {
+      let st = stMin(v, req); if (!ok && st === MT_ST.OK) st = MT_ST.NV;
+      add(`${t} interior del recinto`, mtM(v), req == null ? `${t.toLowerCase()} del equipo + retiros exigidos` : `≥ ${mtF(req)} m (${mtF(base)} + ${mtF(rq1)} + ${mtF(rq2)})`, 'RIC 13 §7.2.6 · Guía caso 8',
+        st, base == null ? `Falta el ${t.toLowerCase()} completo del equipo.` : (falta(v, req) + (ok ? '' : ' Medidas incoherentes.')).trim(),
+        { tipo: rq1 > 1.5 || rq2 > 1.5 ? 'E' : undefined });
+    };
+    dimRow('Ancho', aI, rA, aE, R.mt_d8a.req, R.mt_d8c.req, cA);
+    dimRow('Fondo', fI, rF, fE, R.mt_d8b.req, R.mt_d8d.req, cF);
     grupo = 'Caso 8 — Altura y acceso';
-    const h = n('mt_h8'), pub = s('mt_pub8'), hReq = pub === 'si' ? 2.50 : 2.00;
-    add('Altura de los tres muros y del cuarto cierre', mtM(h), pub ? `≥ ${mtF(hReq)} m` : '≥ 2,00 m; 2,50 m junto a sitio público', 'RIC 13 §7.2.6', pub ? stMin(h, hReq) : MT_ST.NV, pub ? falta(h, hReq) : 'Indicar si colinda con sitio público.');
+    const h = n('mt_h8', POS), pub = s('mt_pub8'), hReq = pub === 'si' ? 2.50 : 2.00;
+    add('Altura de los tres muros y del cuarto cierre', mtM(h), pub ? `≥ ${mtF(hReq)} m` : '≥ 2,00 m; 2,50 m junto a sitio público', 'RIC 13 §7.2.6', pub ? stMin(h, hReq) : (h != null && h < 2 - 1e-9 ? MT_ST.NC : MT_ST.NV),
+      pub ? falta(h, hReq) : 'Indicar si colinda con sitio público.', { alt: ALT({ mt_h8: hReq }, 'Recrecer muros y cuarto cierre', `${mtF(hReq)} m`, 'altura') });
     if (pub === 'si') siNo(s('mt_anti8'), 'Protección contra escalamiento', 'RIC 13 §7.2.6', 'Protección contra escalamiento (sitio público)');
     siNo(s('mt_cuarto8'), 'Impide el acceso no autorizado', 'RIC 13 §7.2.4', 'Cuarto lado: puerta o reja de cierre', '', 'El cuarto lado debe impedir el acceso de personas no calificadas.');
     const cf = s('mt_cf8');
     if (cf === 'si') { grupo = 'Caso 8 — Coronación cortafuego'; bloqueCoronacion('mt_h8', {}); }
-    else if (cf !== 'no') add('Función cortafuego de los muros', 'sin dato', 'Indicar si rige RPTD 08 §5.3', 'Guía caso 8', MT_ST.NV, 'Si cumplen función cortafuego, prevalece la mayor altura entre el cierre y el sobrepaso de 0,30 m.');
-    grupo = 'Caso 8 — Dimensiones interiores';
-    const aE = n('mt_anchoEq'), fE = n('mt_fondoEq'), aI = n('mt_anchoInt'), fI = n('mt_fondoInt');
-    const rA = aE == null ? null : aE + 3.00, rF = fE == null ? null : fE + 3.00;
-    if (rA != null) eq('Ancho interior mínimo (dos retiros de 1,50 m)', `B_min = ${mtF(aE)} + 2 × 1,50 = ${mtF(rA)} m`);
-    if (rF != null) eq('Fondo interior mínimo (dos retiros de 1,50 m)', `F_min = ${mtF(fE)} + 2 × 1,50 = ${mtF(rF)} m`);
-    add('Ancho interior del recinto', mtM(aI), rA == null ? 'ancho del equipo + 3,00 m' : `≥ ${mtF(rA)} m (${mtF(aE)} + 3,00)`, 'Guía caso 8 (dos retiros de 1,50 m, RIC 13 §7.2.6)', stMin(aI, rA), aE == null ? 'Falta el ancho completo del equipo.' : falta(aI, rA));
-    add('Fondo interior hasta el cuarto cierre', mtM(fI), rF == null ? 'fondo del equipo + 3,00 m' : `≥ ${mtF(rF)} m (${mtF(fE)} + 3,00)`, 'Guía caso 8 (dos retiros de 1,50 m, RIC 13 §7.2.6)', stMin(fI, rF), fE == null ? 'Falta el fondo completo del equipo.' : falta(fI, rF));
+    else if (cf !== 'no') add('Función cortafuego de los muros', 'sin dato', 'Indicar si rige RPTD 08 §5.3', 'Guía caso 8', MT_ST.NV, 'Si cumplen función cortafuego, prevalece la mayor altura entre el cierre y el sobrepaso de 0,30 m.', { tipo: 'D' });
     grupo = 'Caso 8 — Lado abierto y enfriamiento';
     const ab = s('mt_abierto8');
     if (ab === 'con') add('Exposición en la dirección abierta', MT_OPC.mt_abierto8.con, 'Separación o barrera según casos 1, 2 y 11', 'Guía caso 8', MT_ST.NV, 'La U no protege en la dirección abierta: verificar con el caso 1, 2 u 11 que corresponda.');
     else if (ab === 'sin') add('Exposición en la dirección abierta', MT_OPC.mt_abierto8.sin, '—', 'Guía caso 8', MT_ST.NA, '');
-    else add('Exposición en la dirección abierta', 'sin dato', 'Indicar si existe', 'Guía caso 8', MT_ST.NV, 'Dato no informado.');
+    else add('Exposición en la dirección abierta', 'sin dato', 'Indicar si existe', 'Guía caso 8', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
     const en = s('mt_enfr8');
-    add('Refrigeración del equipo', mtOpcTxt('', en), 'Acreditada con manual y cálculo térmico', 'Guía caso 8', en === 'si' ? MT_ST.OK : MT_ST.NV, en === 'si' ? '' : 'El retiro de 1,50 m no garantiza la disipación.');
+    add('Refrigeración del equipo', mtOpcTxt('', en), 'Acreditada con manual y cálculo térmico', 'Fabricante · cálculo térmico', en === 'si' ? MT_ST.OK : MT_ST.NV, en === 'si' ? '' : 'El retiro de 1,50 m no garantiza la disipación.',
+      { tipo: 'E', doc: en === 'si' ? docFalta('mt_refTerm', 'el cálculo térmico') : '' });
     grupo = 'Caso 8 — Base, gravilla y drenaje';
     bloqueBaseGravilla();
   }
@@ -21012,71 +21305,78 @@ function calcMurosTrafo(inp) {
     const reg = s('mt_reg9');
     grupo = 'Caso 9 — Cierre perimetral';
     if (reg === 'RIC') {
-      const h = n('mt_h9'), pub = s('mt_pub9'), hReq = pub === 'si' ? 2.50 : 2.00;
-      add('Altura del cierre', mtM(h), pub ? `≥ ${mtF(hReq)} m` : '≥ 2,00 m; 2,50 m junto a sitio público', 'RIC 13 §7.2.6', pub ? stMin(h, hReq) : MT_ST.NV,
-        [pub ? falta(h, hReq) : 'Indicar si colinda con sitio público.', 'El cerco controla el acceso; no adquiere función cortafuego por su altura.'].filter(Boolean).join(' '));
+      const h = n('mt_h9', POS), pub = s('mt_pub9'), hReq = pub === 'si' ? 2.50 : 2.00;
+      add('Altura del cierre', mtM(h), pub ? `≥ ${mtF(hReq)} m` : '≥ 2,00 m; 2,50 m junto a sitio público', 'RIC 13 §7.2.6', pub ? stMin(h, hReq) : (h != null && h < 2 - 1e-9 ? MT_ST.NC : MT_ST.NV),
+        [pub ? falta(h, hReq) : 'Indicar si colinda con sitio público.', 'El cerco controla el acceso; no adquiere función cortafuego por su altura.'].filter(Boolean).join(' '), { alt: ALT({ mt_h9: hReq }, 'Recrecer el cierre', `${mtF(hReq)} m`, 'cierre') });
       if (pub === 'si') siNo(s('mt_anti9'), 'Protección contra escalamiento', 'RIC 13 §7.2.6', 'Protección contra escalamiento (sitio público)');
       const d = n('mt_d9');
-      add('Separación a la proyección de cualquier punto del equipo', mtM(d), '≥ 1,50 m', 'RIC 13 §7.2.6', stMin(d, 1.50), falta(d, 1.50));
+      add('Separación a la proyección de cualquier punto del equipo', mtM(d), '≥ 1,50 m', 'RIC 13 §7.2.6', stMin(d, 1.50), falta(d, 1.50), { alt: ALT({ mt_d9: 1.50 }, 'Desplazar el cierre', '1,50 m', 'separacion') });
       const reja = s('mt_reja9');
       if (reja === 'si') {
         grupo = 'Caso 9 — Reja metálica y puesta a tierra';
-        const ma = n('mt_malla9'), al = n('mt_alam9'), hu = n('mt_hueco9');
-        add('Abertura de la malla', ma == null ? 'sin dato' : `${mtF(ma, 0)} mm`, '≤ 50 mm', 'RIC 13 §7.2.5', stMax(ma, 50), '');
-        add('Diámetro del alambre de acero galvanizado', al == null ? 'sin dato' : `${mtF(al, 1)} mm`, '≥ 3 mm (o resistencia y corrosión equivalentes)', 'RIC 13 §7.2.5', stMin(al, 3), '');
-        add('Hueco inferior entre reja y suelo', mtM(hu), '≤ 0,05 m', 'RIC 13 §7.2.9', stMax(hu, 0.05), '');
-        const per = n('mt_perim9', { pos: true }), np = n('mt_nPT9');
-        if (np != null && !Number.isInteger(np)) errores.push(`${MT_LBL.mt_nPT9}: debe ser un número entero.`);
+        const ma = n('mt_malla9', POS), al = n('mt_alam9', POS), hu = n('mt_hueco9');
+        add('Abertura de la malla', ma == null ? 'sin dato' : `${mtF(ma, 0)} mm`, '≤ 50 mm', 'RIC 13 §7.2.5', stMax(ma, 50), '', { alt: ALT({ mt_malla9: 50 }, 'Reemplazar la malla', '≤ 50 mm', 'cierre') });
+        add('Diámetro del alambre de acero galvanizado', al == null ? 'sin dato' : `${mtF(al, 1)} mm`, '≥ 3 mm (o resistencia y corrosión equivalentes)', 'RIC 13 §7.2.5', stMin(al, 3), '', { alt: ALT({ mt_alam9: 3 }, 'Reemplazar la malla', 'alambre ≥ 3 mm', 'cierre') });
+        add('Hueco inferior entre reja y suelo', mtM(hu), '≤ 0,05 m', 'RIC 13 §7.2.9', stMax(hu, 0.05), '', { alt: ALT({ mt_hueco9: 0.05 }, 'Cerrar el hueco inferior (sobrecimiento o prolongar la malla)', '≤ 0,05 m', []) });
+        const per = n('mt_perim9', POS), np = n('mt_nPT9');
+        if (np != null && !Number.isInteger(np)) errores.push(`${lbl('mt_nPT9')}: debe ser un número entero.`);
         const npReq = per == null ? null : Math.max(2, Math.ceil(per / 15 - 1e-9));
         if (npReq != null) eq('Conexiones a tierra del cierre metálico (RIC 13 §7.2.10)', `n_min = máx(2; ⌈${mtF(per, 1)} / 15⌉) = ${npReq}`);
         add('Conexiones a tierra del cierre metálico', np == null ? 'sin dato' : mtF(np, 0), npReq == null ? 'una cada 15 m de perímetro, mínimo dos' : `≥ ${npReq} (perímetro ${mtF(per, 1)} m / 15 m; mínimo 2)`, 'RIC 13 §7.2.10',
-          np == null || npReq == null ? MT_ST.NV : (np >= npReq ? MT_ST.OK : MT_ST.NC), 'Cumplir además RIC 06.');
-      } else if (reja !== 'no') add('Tipo de cierre', 'sin dato', 'Indicar si es reja metálica', 'RIC 13 §7.2.5', MT_ST.NV, 'Dato no informado.');
+          np == null || npReq == null ? MT_ST.NV : (np >= npReq ? MT_ST.OK : MT_ST.NC), 'Cumplir además RIC 06.', { alt: npReq == null ? null : ALT({ mt_nPT9: npReq }, 'Agregar conexiones a tierra', `${npReq} conexiones`, ['Diseño de la conexión según RIC 06 §7.']) });
+      } else if (reja !== 'no') add('Tipo de cierre', 'sin dato', 'Indicar si es reja metálica', 'RIC 13 §7.2.5', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
       grupo = 'Caso 9 — Base, gravilla y drenaje';
       bloqueBaseGravilla();
     } else if (reg === 'RPTD') {
-      const h = n('mt_h9'), d = n('mt_d9'), dr = n('mt_dReq9');
-      add('Altura del cierro exterior', mtM(h), '≥ 2,00 m', 'RPTD 10 §5.3.2', stMin(h, 2.00), falta(h, 2.00));
-      add('Retiro del cierro a partes energizadas', mtM(d), dr == null ? 'Según §5.7 y coordinación de aislamiento' : `≥ ${mtF(dr)} m (coordinación de aislamiento)`, 'RPTD 10 §5.7',
-        dr == null ? MT_ST.NV : stMin(d, dr), dr == null ? 'Sin el retiro documentado por coordinación de aislamiento no se verifica; no sustituir por el retiro RIC.' : falta(d, dr));
-    } else add('Régimen del cierre', 'sin dato', 'RIC 13 o RPTD 10', 'Guía caso 9', MT_ST.NV, 'Seleccionar el régimen del cierre.');
+      const h = n('mt_h9', POS), d = n('mt_d9'), dr = n('mt_dReq9', POS);
+      add('Altura del cierro exterior', mtM(h), '≥ 2,00 m', 'RPTD 10 §5.3.2 b)', stMin(h, 2.00), falta(h, 2.00), { alt: ALT({ mt_h9: 2.00 }, 'Recrecer el cierro', '2,00 m', 'cierre') });
+      add('Retiro del cierro a partes energizadas', mtM(d), dr == null ? 'Según coordinación de aislamiento (RPTD 10 §5.7.1 → RPTD 05 §5.5)' : `≥ ${mtF(dr)} m (coordinación de aislamiento)`, 'RPTD 10 §5.7.1',
+        dr == null ? MT_ST.NV : stMin(d, dr), dr == null ? 'Sin el retiro documentado por coordinación de aislamiento no se verifica; no sustituir por el retiro RIC.' : falta(d, dr),
+        { tipo: 'E', doc: dr != null ? docFalta('mt_refCA', 'la coordinación de aislamiento') : '', alt: dr == null ? null : ALT({ mt_d9: mtUp(dr, 0.05) }, 'Desplazar el cierro', `${mtF(mtUp(dr, 0.05))} m`, 'separacion') });
+    } else add('Régimen del cierre', 'sin dato', 'RIC 13 o RPTD 10', 'Guía caso 9', MT_ST.NV, 'Seleccionar el régimen del cierre.', { tipo: 'D' });
   }
   if (caso === '10') {
-    grupo = 'Caso 10 — Espesor del muro';
-    const fun = s('mt_fun10'), mat = s('mt_mat10'), e = n('mt_esp10'), eF = n('mt_espF10'), eE = n('mt_espE10');
+    grupo = 'Caso 10 — Espesor del muro (comparación de espesores)';
+    const fun = s('mt_fun10'), mat = s('mt_mat10'), e = n('mt_esp10', POS), eF = n('mt_espF10', POS), eE = n('mt_espE10', POS);
     const MIN = { cierreExt: { albanileria: 0.15, hormigon: 0.10, ref: 'RIC 13 §7.2.11' }, aceite94: { albanileria: 0.20, hormigon: 0.10, ref: 'RIC 13 §9.4' }, sep96: { albanileria: 0.20, hormigon: 0.10, ref: 'RIC 13 §§9.4 y 9.6' } };
-    if (!fun) add('Función o ubicación del muro', 'sin dato', 'Seleccionar', 'Guía caso 10', MT_ST.NV, 'Dato no informado.');
-    else if (fun === 'barrera') add('Espesor mínimo prescrito', mtM(e), 'Sin espesor universal en el pliego', 'RPTD 08 §§5.2 y 5.5', MT_ST.NA, 'El espesor lo fijan la solución acreditada y el cálculo estructural (filas siguientes).');
+    if (!fun) add('Función o ubicación del muro', 'sin dato', 'Seleccionar', 'Guía caso 10', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
+    else if (fun === 'barrera') add('Espesor mínimo prescrito', mtM(e), 'Sin espesor universal en el pliego', 'RPTD 08 §§5.2 y 5.5', MT_ST.NA, 'El espesor lo fijan la solución acreditada y la memoria estructural (filas siguientes).');
     else {
-      const m = MIN[fun], req = m[mat];
+      const m = MIN[fun], req = mat ? m[mat] : null;
       add('Espesor mínimo prescrito para la función', mtM(e), req == null ? (mat === 'otro' ? 'Sin mínimo para otro material' : 'Seleccionar material') : `≥ ${mtF(req)} m${mat === 'albanileria' && fun !== 'cierreExt' ? ' incluido el enlucido' : ''}`, m.ref,
-        req == null ? MT_ST.NV : stMin(e, req), req == null ? 'El pliego fija espesores solo para albañilería y hormigón armado.' : falta(e, req));
+        req == null ? MT_ST.NV : stMin(e, req), req == null ? 'El pliego fija espesores solo para albañilería y hormigón armado.' : falta(e, req),
+        { alt: req == null ? null : ALT({ mt_esp10: req }, 'Engrosar el muro', `${mtF(req)} m`, 'espesor') });
     }
-    add('Espesor de la solución con resistencia al fuego acreditada', mtM(e), eF == null ? 'Según informe o certificación de la configuración real' : `≥ ${mtF(eF)} m`, 'Guía caso 10 · OGUC art. 4.3.2',
-      eF == null ? MT_ST.NV : stMin(e, eF), eF == null ? 'Sin solución acreditada no se selecciona el espesor a partir de los kVA; un mínimo prescrito no acredita resistencia al fuego.' : falta(e, eF));
-    add('Espesor necesario por cálculo estructural', mtM(e), eE == null ? 'Según memoria estructural (sismo, viento, estabilidad)' : `≥ ${mtF(eE)} m`, 'Guía caso 10',
-      eE == null ? MT_ST.NV : stMin(e, eE), eE == null ? 'Falta la memoria estructural del muro.' : falta(e, eE));
+    add('Espesor frente a la solución con resistencia al fuego acreditada', mtM(e), eF == null ? 'Según informe o certificación de la configuración real' : `≥ ${mtF(eF)} m`, 'OGUC art. 4.3.2 · Guía caso 10',
+      eF == null ? MT_ST.NV : stMin(e, eF), eF == null ? 'Sin solución acreditada no se selecciona el espesor a partir de los kVA; un mínimo prescrito no acredita resistencia al fuego.' : falta(e, eF),
+      { tipo: 'E', doc: eF != null ? docFalta('mt_refF', 'el informe o certificado de resistencia al fuego') : '', alt: eF == null ? null : ALT({ mt_esp10: mtUp(eF, 0.01) }, 'Engrosar el muro según la solución acreditada', `${mtF(mtUp(eF, 0.01))} m`, 'espesor') });
+    add('Espesor frente al requerido por la memoria estructural', mtM(e), eE == null ? 'Según memoria estructural (sismo, viento, estabilidad)' : `≥ ${mtF(eE)} m`, 'Memoria estructural · Guía caso 10',
+      eE == null ? MT_ST.NV : stMin(e, eE), (eE == null ? 'Falta el espesor de la memoria estructural. ' : falta(e, eE) + ' ') + 'Es una comparación de espesores: la flexión, el corte, la estabilidad, las conexiones y la fundación del muro no se verifican en este módulo.',
+      { tipo: 'E', doc: eE != null ? docFalta('mt_refEstr', 'la memoria estructural') : '', alt: eE == null ? null : ALT({ mt_esp10: mtUp(eE, 0.01) }, 'Engrosar el muro según la memoria estructural', `${mtF(mtUp(eE, 0.01))} m`, 'espesor') });
     if (fun === 'cierreExt') {
       const ab = s('mt_abert10');
-      add('Aberturas entre edificio y subestación', mtOpcTxt('', ab), 'No se admiten', 'RIC 13 §7.2.12', ab === 'no' ? MT_ST.OK : (ab === 'si' ? MT_ST.NC : MT_ST.NV), ab ? '' : 'Dato no informado.');
+      add('Aberturas entre edificio y subestación', mtOpcTxt('', ab), 'No se admiten', 'RIC 13 §7.2.12', ab === 'no' ? MT_ST.OK : (ab === 'si' ? MT_ST.NC : MT_ST.NV), ab ? '' : 'Dato no informado.',
+        { alt: ALT({ mt_abert10: 'no' }, 'Cerrar las aberturas con solución de igual resistencia al fuego que el muro', 'Sin aberturas', 'fuego') });
       const dv = s('mt_div10');
-      if (dv === 'si') { const acr = s('mt_acredF'); s('mt_refF');
-        add('Muro divisorio con otra propiedad: tipo cortafuego', acr === 'si' ? 'Acreditado' + (inp.mt_refF ? ` — ${String(inp.mt_refF).trim()}` : '') : mtOpcTxt('', acr), 'Tipo cortafuego con resistencia acreditada', 'RIC 13 §7.2.12 · OGUC art. 4.3.2', acr === 'si' ? MT_ST.OK : MT_ST.NV, acr === 'si' ? '' : 'Acreditar la solución cortafuego.'); }
-      else if (dv !== 'no') add('Muro divisorio con otra propiedad', 'sin dato', 'Indicar', 'RIC 13 §7.2.12', MT_ST.NV, 'Dato no informado.');
+      if (dv === 'si') { const acr = s('mt_acredF'), rf = String(inp.mt_refF || '').trim(); s('mt_refF');
+        add('Muro divisorio con otra propiedad: tipo cortafuego', acr === 'si' ? 'Acreditado' + (rf ? ` — ${rf}` : '') : mtOpcTxt('', acr), 'Tipo cortafuego con resistencia acreditada', 'RIC 13 §7.2.12 · OGUC art. 4.3.2', acr === 'si' && rf ? MT_ST.OK : MT_ST.NV, acr === 'si' ? (rf ? '' : 'Identificar el documento.') : 'Acreditar la solución cortafuego.'); }
+      else if (dv !== 'no') add('Muro divisorio con otra propiedad', 'sin dato', 'Indicar', 'RIC 13 §7.2.12', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
     }
   }
   if (caso === '11') {
     grupo = 'Caso 11 — Separación por potencia y aceite';
     const t = tabla54(), d = n('mt_dEdif');
-    if (t.req == null) add('Separación libre a edificación', mtM(d), 'Tabla N°1: 3,00 / 6,00 / 9,00 m', 'RPTD 08 §5.4', MT_ST.NV, t.nv);
-    else if (d != null && d >= t.req - 1e-9) add('Separación libre a edificación', mtM(d), `≥ ${mtF(t.req)} m (${t.txt}, aceite < 7.600 L)`, 'RPTD 08 §5.4, Tabla N°1', MT_ST.OK, '');
-    else if (d == null) add('Separación libre a edificación', 'sin dato', `≥ ${mtF(t.req)} m (${t.txt}, aceite < 7.600 L)`, 'RPTD 08 §5.4, Tabla N°1', MT_ST.NV, 'Dato no informado.');
+    const relEd = t.req == null ? null : relocar('mt_dEdif', t.req, ['Alternativa sin reubicar: paredes del edificio ≥ F120 validadas por estudio de carga combustible (§5.5).']);
+    if (t.req == null) add('Separación libre a edificación', mtM(d), 'Tabla N°1: 3,00 / 6,00 / 9,00 m', 'RPTD 08 §5.4', t.fa ? MT_ST.FA : MT_ST.NV, t.fa || t.nv);
+    else if (d != null && d >= t.req - 1e-9) add('Separación libre a edificación', mtM(d), `≥ ${mtF(t.req)} m (${t.txt}, aceite < 7.600 L)`, 'RPTD 08 §5.4, Tabla N°1', MT_ST.OK, '', { tipo: t.tipo });
+    else if (d == null) add('Separación libre a edificación', 'sin dato', `≥ ${mtF(t.req)} m (${t.txt}, aceite < 7.600 L)`, 'RPTD 08 §5.4, Tabla N°1', MT_ST.NV, 'Dato no informado.', { tipo: t.tipo });
     else {
       // Distancia menor: el §5.5 exige muros del edificio de al menos F120 validados por estudio de carga combustible.
-      const F = n('mt_Fbarrera'), est = s('mt_estudioCC'), acr = s('mt_acredF'); s('mt_refF');
-      const alt = F == null || !est || !acr ? MT_ST.NV : (F < 120 || est === 'no' ? MT_ST.NC : (acr === 'si' ? MT_ST.OK : MT_ST.NV));
+      const F = mtNum(inp.mt_Fbarrera), est = s('mt_estudioCC'), acr = s('mt_acredF'), rf = String(inp.mt_refF || '').trim();
+      const alt = F == null || Number.isNaN(F) || !est || !acr ? MT_ST.NV : (F < 120 || est === 'no' ? MT_ST.NC : (acr === 'si' && rf ? MT_ST.OK : MT_ST.NV));
       add('Separación libre a edificación', mtM(d), `≥ ${mtF(t.req)} m (${t.txt}, aceite < 7.600 L) o paredes del edificio ≥ F120 validadas`, 'RPTD 08 §§5.4–5.5', alt,
-        `Distancia ${mtF(d)} m menor que ${mtF(t.req)} m de la tabla. ` + (alt === MT_ST.OK ? 'Se acredita la condición del §5.5 (paredes del edificio F120 validadas por estudio de carga combustible).' : 'Corresponde acreditar paredes del edificio de al menos F120 validadas por estudio de carga combustible (§5.5); un muro independiente no la reemplaza sin respaldo del proyecto.'));
+        `Distancia ${mtF(d)} m menor que ${mtF(t.req)} m de la tabla. ` + (alt === MT_ST.OK ? 'Se acredita la condición del §5.5 (paredes del edificio F120 validadas por estudio de carga combustible).' : 'Corresponde acreditar paredes del edificio de al menos F120 validadas por estudio de carga combustible (§5.5); un muro independiente no la reemplaza sin respaldo del proyecto.'),
+        { tipo: t.tipo, alt: relEd });
       grupo = 'Caso 11 — Paredes del edificio (§5.5)';
       bloqueFuego(120, 'RPTD 08 §5.5', 'Resistencia al fuego de las paredes del edificio');
     }
@@ -21086,50 +21386,114 @@ function calcMurosTrafo(inp) {
   if (s('mt_anexo') === 'si') {
     grupo = 'Anexo — Espacios de circulación y trabajo';
     const pt = s('mt_pasT'), p = MT_PASILLOS[pt];
-    if (!p) add('Tipo de espacio', 'sin dato', 'Seleccionar', 'Guía, anexo A', MT_ST.NV, 'Dato no informado.');
+    if (!p) add('Tipo de espacio', 'sin dato', 'Seleccionar', 'Guía, anexo A', MT_ST.NV, 'Dato no informado.', { tipo: 'D' });
     else {
       bloquePasillo(p.t, p, 'mt_pasA', p.h != null ? 'mt_pasH' : null);
-      const hv = pt === 'rptd10' ? n('mt_hViva') : null;
+      const hv = pt === 'rptd10' ? n('mt_hViva', POS) : null;
       if (hv != null) {
-        // Solo si existen partes con tensión no protegidas sobre el espacio (se informa su altura).
-        const U = n('mt_kV'), req = U == null ? null : 3.00 + 0.01 * U;
-        if (req != null) eq('Altura mínima de partes con tensión no protegidas sobre accesos (RPTD 10 §5.7.4)', `h_min = 3,00 m + 0,01 m/kV × ${mtF(U, 1)} kV = ${mtF(req)} m`);
+        const req = kV == null ? null : 3.00 + 0.01 * kV;
+        if (req != null) eq('Altura mínima de partes con tensión no protegidas sobre accesos (RPTD 10 §5.7.4)', `h_min = 3,00 m + 0,01 m/kV × ${mtF(kV, 1)} kV = ${mtF(req)} m`);
         add('Partes con tensión no protegidas sobre el espacio', mtM(hv), req == null ? '≥ 3 m + 1 cm por kV de tensión nominal' : `≥ ${mtF(req)} m`, 'RPTD 10 §5.7.4', stMin(hv, req),
-          U == null ? 'Indicar la tensión nominal en el panel A.' : falta(hv, req));
+          kV == null ? 'Indicar la tensión nominal en el panel A.' : falta(hv, req), { alt: req == null ? null : ALT({ mt_hViva: mtUp(req, 0.05) }, 'Elevar las partes con tensión o protegerlas', `${mtF(mtUp(req, 0.05))} m`, ['Revisar distancias de aislamiento con la nueva disposición (RPTD 05).']) });
       }
       if (p.bt) {
-        const aa = n('mt_accA'), ah = n('mt_accH');
-        add('Acceso al espacio de trabajo BT: ancho', mtM(aa), '≥ 0,80 m', 'RIC 02 §5.4.4', stMin(aa, 0.80), falta(aa, 0.80));
-        add('Acceso al espacio de trabajo BT: alto', mtM(ah), '≥ 2,20 m', 'RIC 02 §5.4.4', stMin(ah, 2.20), falta(ah, 2.20));
+        const aa = n('mt_accA', POS), ah = n('mt_accH', POS);
+        add('Acceso al espacio de trabajo BT: ancho', mtM(aa), '≥ 0,80 m', 'RIC 02 §5.4.4', stMin(aa, 0.80), falta(aa, 0.80), { alt: ALT({ mt_accA: 0.80 }, 'Ampliar el acceso', '0,80 m', 'puerta') });
+        add('Acceso al espacio de trabajo BT: alto', mtM(ah), '≥ 2,20 m', 'RIC 02 §5.4.4', stMin(ah, 2.20), falta(ah, 2.20), { alt: ALT({ mt_accH: 2.20 }, 'Aumentar el alto del acceso', '2,20 m', 'puerta') });
       }
     }
     if (s('mt_t132') === 'si') {
       grupo = 'Anexo — Distancia a partes energizadas';
       const kv = s('mt_kVt'), pr = s('mt_prot'), ub = s('mt_ubic'), dv = n('mt_dViva');
       const T = MT_T132[kv];
-      let req = null, nv = '', col = '';
-      if (ambito && ambito !== 'RIC') nv = 'Instalación fuera de RIC: requiere coordinación de aislamiento documentada; no aplicar estas cifras.';
-      else if (altitud == null) nv = 'Indicar la altitud: sobre 1.000 m s.n.m. la tabla no aplica.';
-      else if (altitud > 1000) nv = 'Sobre 1.000 m s.n.m.: requiere coordinación de aislamiento documentada; no interpolar.';
-      else if (kv === 'otra') nv = 'Tensión no tabulada: requiere coordinación de aislamiento documentada; no interpolar.';
+      let req = null, nv = '', fa = '', col = '';
+      if (altitud == null) nv = 'Indicar la altitud: sobre 1.000 m s.n.m. la tabla no aplica.';
+      else if (altitud > 1000) fa = 'Sobre 1.000 m s.n.m.: la tabla no aplica; requiere coordinación de aislamiento documentada; no interpolar.';
+      else if (kv === 'otra') fa = 'Tensión no tabulada: requiere coordinación de aislamiento documentada; no interpolar.';
       else if (!T) nv = 'Seleccionar la tensión nominal.';
-      else if (pr === 'celda') { req = T.celda; col = 'caja o cel\u00ADda metálica'; }
+      else if (kV != null && Math.abs(Number(kv.replace(',', '.')) - kV) > 1e-6) nv = `La tensión tabulada (${kv} kV) no coincide con la tensión nominal del panel A (${mtF(kV, 1)} kV).`;
+      else if (pr === 'celda') { req = T.celda; col = 'caja o cel­da metálica'; }
       else if (pr === 'barrera') {
-        const hb = n('mt_hBarr');
+        const hb = n('mt_hBarr', POS);
         if (!ub) nv = 'Indicar si es interior o intemperie.';
         else if (hb == null) nv = 'Indicar la altura de la barrera.';
         else { const alta = hb > 1.60 + 1e-9; req = (alta ? T.alta : T.baja)[ub === 'interior' ? 0 : 1]; col = `barrera ${alta ? '> 1,60 m' : '< 1,60 m'}, ${ub === 'interior' ? 'interior' : 'intemperie'}` + (Math.abs(hb - 1.60) < 1e-9 ? ' (altura igual a 1,60 m: la tabla no tiene esa fila; se exige superar 1,60 m para usar la columna mayor)' : ''); }
       } else nv = 'Seleccionar el elemento de protección.';
       add('Distancia de la parte energizada al elemento protector', dv == null ? 'sin dato' : `${mtF(dv, 0)} mm`, req == null ? 'RIC 13, Tabla 13.2' : `≥ ${mtF(req, 0)} mm (${kv} kV, ${col})`, 'RIC 13 Tabla 13.2',
-        req == null ? MT_ST.NV : (dv == null ? MT_ST.NV : (dv >= req ? MT_ST.OK : MT_ST.NC)), nv || 'Medir desde la parte energizada, no desde el tanque; BIL especial requiere coordinación de aislamiento.');
+        fa ? MT_ST.FA : (req == null ? MT_ST.NV : (dv == null ? MT_ST.NV : (dv >= req ? MT_ST.OK : MT_ST.NC))), fa || nv || 'Medir desde la parte energizada, no desde el tanque; BIL especial requiere coordinación de aislamiento.',
+        { alt: req == null ? null : ALT({ mt_dViva: req }, 'Desplazar el elemento protector', `${mtF(req, 0)} mm`, ['Revisar que el pasillo y los espacios de trabajo se mantengan con la nueva posición.']) });
     }
   }
 
-  if (errores.length) return { errores, usados };
-  const cuenta = { CUMPLE: 0, 'NO CUMPLE': 0, 'NO VERIFICADO': 0, 'NO APLICA': 0 };
+  const errs = errores.filter((e, i) => errores.indexOf(e) === i);
+  if (errs.length) return { errores: errs, usados };
+  const cuenta = { CUMPLE: 0, 'NO CUMPLE': 0, 'NO VERIFICADO': 0, 'NO APLICA': 0, 'FUERA DE ALCANCE': 0 };
   filas.forEach(f => { cuenta[f.estado]++; });
-  const global = cuenta['NO CUMPLE'] ? MT_ST.NC : (cuenta['NO VERIFICADO'] ? MT_ST.NV : MT_ST.OK);
-  return { caso, casoTxt: MT_CASOS[caso], regimen: MT_REGIMEN, filas, calc, cuenta, global, criterios: mtCriterios(caso), usados };
+  // Precedencia: NO CUMPLE > FUERA DE ALCANCE > NO VERIFICADO > CUMPLE. CUMPLE exige al menos una fila verificada.
+  const global = cuenta['NO CUMPLE'] ? MT_ST.NC : (cuenta['FUERA DE ALCANCE'] ? MT_ST.FA : (cuenta['NO VERIFICADO'] || !cuenta.CUMPLE ? MT_ST.NV : MT_ST.OK));
+  return { caso, casoTxt: MT_CASOS[caso], regimen: MT_REGIMEN, filas, calc, cuenta, global, criterios: mtCriterios(caso), fueraAlcance: mtFueraAlcance(caso), usados };
+}
+
+// Valor de campo para una alternativa: números con coma decimal, como se ingresan en pantalla.
+const mtValCampo = v => typeof v === 'number' ? String(mtR(v, 3)).replace('.', ',') : v;
+// Alternativas de corrección: por cada fila NO CUMPLE con propuesta, se aplica la modificación a una copia de los datos y
+// se recalcula todo el caso. Una alternativa nunca se informa como «cumple»: queda CONDICIONADA a lo que no acredita.
+function mtAlternativas(inp, r) {
+  const out = [];
+  r.filas.forEach(f => {
+    if (f.estado !== MT_ST.NC || !f.alt) return;
+    const a = f.alt, cambios = Object.fromEntries(Object.entries(a.cambios || {}).filter(([, v]) => v != null));
+    const inp2 = Object.assign({}, inp);
+    Object.entries(cambios).forEach(([k, v]) => { inp2[k] = mtValCampo(v); });
+    const r2 = Object.keys(cambios).length ? mtCalcBase(inp2) : null;
+    let filaTras = null, nuevasNC = [], restantesNC = 0, nv = 0, globalTras = null;
+    if (r2 && !r2.errores) {
+      const g = r2.filas.find(x => x.grupo === f.grupo && x.param === f.param);
+      filaTras = g ? g.estado : null;
+      const ncAntes = r.filas.filter(x => x.estado === MT_ST.NC).map(x => x.grupo + '|' + x.param);
+      nuevasNC = r2.filas.filter(x => x.estado === MT_ST.NC && ncAntes.indexOf(x.grupo + '|' + x.param) < 0).map(x => x.param);
+      restantesNC = r2.filas.filter(x => x.estado === MT_ST.NC).length;
+      nv = r2.filas.filter(x => x.estado === MT_ST.NV || x.estado === MT_ST.FA).length;
+      globalTras = r2.global;
+    }
+    const cond = (a.cond || []).slice();
+    if (nv) cond.push(`Quedan ${nv} parámetro(s) sin verificar o fuera de alcance en el caso recalculado.`);
+    if (nuevasNC.length) cond.push('La modificación provoca nuevos incumplimientos: ' + nuevasNC.join('; ') + '.');
+    if (filaTras === MT_ST.NV || filaTras === MT_ST.FA) cond.unshift(`Tras la modificación la fila queda ${filaTras}: completar el antecedente que falta.`);
+    const resultado = !r2 ? 'NO EVALUADA (acción sin valor numérico: acreditar en terreno)'
+      : (r2.errores ? 'NO EVALUADA (la modificación produce datos inválidos)'
+      : (filaTras && filaTras !== MT_ST.NC ? (cond.length ? 'CONDICIONADA' : 'RESUELVE LA FILA') : `NO RESUELVE (la fila queda ${filaTras || 'sin evaluar'})`));
+    out.push({ grupo: f.grupo, param: f.param, ref: f.ref, mod: a.mod, obj: a.obj, cambios, fundamento: `${f.ref} — exigencia ${f.exig}`, cond, resultado,
+      filaTras, globalTras, restantesNC, nuevasNC });
+  });
+  // Conjunto: se aplican sucesivamente las alternativas numéricas sobre el caso recalculado hasta que no quede ninguna fila
+  // NO CUMPLE corregible (cada paso parte del resultado anterior, de modo que las medidas dependientes se mantienen coherentes).
+  if (out.filter(a => Object.keys(a.cambios).length).length > 1) {
+    let cur = Object.assign({}, inp), rc = r; const tot = {}, pasos = [];
+    for (let k = 0; k < 40 && rc && !rc.errores; k++) {
+      const f = rc.filas.find(x => x.estado === MT_ST.NC && x.alt && Object.values(x.alt.cambios || {}).some(v => v != null) && pasos.indexOf(x.grupo + '|' + x.param) < 0);
+      if (!f) break;
+      pasos.push(f.grupo + '|' + f.param);
+      Object.entries(f.alt.cambios).forEach(([id, v]) => { if (v != null) { cur[id] = mtValCampo(v); tot[id] = v; } });
+      rc = mtCalcBase(cur);
+    }
+    if (rc && !rc.errores) {
+      const quedan = rc.filas.filter(x => x.estado === MT_ST.NC).map(x => x.param);
+      const nv = rc.filas.filter(x => x.estado === MT_ST.NV || x.estado === MT_ST.FA).length;
+      const cond = ['Aplica las condiciones de cada alternativa individual.'];
+      if (quedan.length) cond.push('Quedan sin corregir: ' + quedan.join('; ') + '.');
+      if (nv) cond.push(`Quedan ${nv} parámetro(s) sin verificar o fuera de alcance.`);
+      out.push({ grupo: 'Conjunto', param: 'Conjunto de alternativas numéricas', ref: '', mod: `${pasos.length} modificaciones aplicadas sucesivamente`, obj: 'Ver valores', cambios: tot,
+        fundamento: 'Recálculo del caso completo con todas las modificaciones', cond, resultado: quedan.length ? 'NO RESUELVE TODO' : 'CONDICIONADA', filaTras: null, globalTras: rc.global, restantesNC: quedan.length, nuevasNC: [] });
+    }
+  }
+  return out;
+}
+function calcMurosTrafo(inp) {
+  const r = mtCalcBase(inp);
+  if (r.errores) return r;
+  r.alternativas = mtAlternativas(inp, r);
+  return r;
 }
 
 // Criterios de aplicación de la guía que acompañan al informe (no son instrucciones de uso del programa).
@@ -21148,9 +21512,25 @@ function mtCriterios(caso) {
   return c;
 }
 
-const mtCuentaTxt = c => `Parámetros que cumplen: ${c.CUMPLE} · que no cumplen: ${c['NO CUMPLE']} · sin verificar: ${c['NO VERIFICADO']} · que no aplican: ${c['NO APLICA']}`;
-const MT_CHIP = { 'CUMPLE':'ok', 'NO CUMPLE':'bad', 'NO VERIFICADO':'warn', 'NO APLICA':'neutral' };
+// Verificaciones que este módulo no realiza: se declaran en pantalla, hoja impresa y memoria.
+function mtFueraAlcance(caso) {
+  const l = [
+    'Capacidad estructural de muros, barreras y cierres: flexión, corte, estabilidad (volcamiento y deslizamiento), conexiones, anclajes y fundación. El módulo compara alturas y espesores con mínimos y con el espesor que fija la memoria estructural; no calcula resistencia.',
+    'Cargas de explosión o sobrepresión: una clasificación F no acredita resistencia a sobrepresión.',
+    'Cálculo térmico del transformador y del recinto: se compara con el requerimiento que se ingresa desde el fabricante o desde un cálculo térmico identificado.',
+    'Coordinación de aislamiento y distancias eléctricas fuera de RIC 13 Tabla 13.2 (sobre 1.000 m s.n.m., tensiones no tabuladas o régimen DS 109).',
+    'Lectura de planos: las medidas se ingresan desde terreno o desde documentos del fabricante.',
+  ];
+  if (caso === '3') l.push('Alternativa NFPA 850 para la longitud de la barrera: sus tablas no se reproducen.');
+  return l;
+}
+const mtCuentaTxt = c => `Parámetros que cumplen: ${c.CUMPLE} · que no cumplen: ${c['NO CUMPLE']} · fuera de alcance: ${c['FUERA DE ALCANCE'] || 0} · sin verificar: ${c['NO VERIFICADO']} · que no aplican: ${c['NO APLICA']}`;
+const MT_CHIP = { 'CUMPLE':'ok', 'NO CUMPLE':'bad', 'NO VERIFICADO':'warn', 'NO APLICA':'neutral', 'FUERA DE ALCANCE':'warn' };
 const MT_XCLS = { 'CUMPLE':'xlsx-ok', 'NO CUMPLE':'xlsx-bad' };
+const mtTipoTxt = t => MT_TIPO[t] || '';
+// Texto de cada alternativa (pantalla, hoja impresa y memoria salen de r.alternativas).
+const mtAltCambios = a => Object.entries(a.cambios).map(([k, v]) => `${MT_LBL[k] || k}: ${typeof v === 'number' ? mtF(v, Math.abs(v) >= 100 ? 0 : 2) : mtOpcTxt(k, v)}`).join('; ');
+const mtAltRes = a => a.resultado + (a.globalTras ? ` — estado global recalculado: ${a.globalTras}` : '');
 function mtMeta() {
   const pm = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META) ? PROYECTO_META : {};
   return { proyecto: pm.proyecto || '____________________', elemento: pm.calculo || '____________________' };
@@ -21183,25 +21563,30 @@ function mtCalculoHtml(r, opts) {
   const resumen = !!(opts && opts.resumen);
   let h = `<div class="xlsx-title-bar">CÁLCULO — VERIFICACIÓN DE CUMPLIMIENTO</div>`;
   h += `<div class="xlsx-section">1. RÉGIMEN NORMATIVO Y CASO</div><table class="xlsx-table"><tbody>
-    <tr><td class="xv-label">Régimen normativo</td><td colspan="4">${esc(r.regimen)}</td></tr>
-    <tr><td class="xv-label">Caso verificado</td><td colspan="4">${esc(r.casoTxt)}</td></tr></tbody></table>`;
+    <tr><td class="xv-label">Régimen normativo</td><td colspan="5">${esc(r.regimen)}</td></tr>
+    <tr><td class="xv-label">Caso verificado</td><td colspan="5">${esc(r.casoTxt)}</td></tr></tbody></table>`;
   const grupos = [];
   r.filas.forEach(f => { let g = grupos.find(x => x.g === f.grupo); if (!g) { g = { g: f.grupo, filas: [] }; grupos.push(g); } g.filas.push(f); });
   grupos.forEach((g, i) => {
     h += `<div class="xlsx-section">${i + 2}. ${esc(g.g.toUpperCase())}</div><table class="xlsx-table xlsx-calc-table"><tbody>
-      <tr class="xlsx-hdr-de"><td>Parámetro</td><td>Valor en terreno</td><td>Exigencia</td><td>Referencia</td><td>Estado</td>${resumen ? '' : '<td>Observación</td>'}</tr>
-      ${g.filas.map(f => `<tr class="xlsx-estado"><td class="xv-label">${esc(f.param)}</td><td style="text-align:center">${esc(f.terreno)}</td><td style="text-align:center">${esc(f.exig)}</td><td style="font-size:.85em">${esc(f.ref)}</td>` +
+      <tr class="xlsx-hdr-de"><td>Parámetro</td><td>Valor en terreno</td><td>Exigencia</td><td>Referencia</td><td>Origen</td><td>Estado</td>${resumen ? '' : '<td>Observación</td>'}</tr>
+      ${g.filas.map(f => `<tr class="xlsx-estado"><td class="xv-label">${esc(f.param)}</td><td style="text-align:center">${esc(f.terreno)}</td><td style="text-align:center">${esc(f.exig)}</td><td style="font-size:.85em">${esc(f.ref)}</td><td style="font-size:.85em">${esc(mtTipoTxt(f.tipo))}</td>` +
         `<td style="text-align:center"><span class="${MT_XCLS[f.estado] || 'xlsx-na'}">${f.estado}</span></td>${resumen ? '' : `<td style="font-size:.85em">${esc(f.obs)}</td>`}</tr>`).join('')}
     </tbody></table>`;
   });
-  const n = grupos.length + 2, c = r.cuenta;
+  let n = grupos.length + 2; const c = r.cuenta;
   h += `<div class="xlsx-section" style="margin-top:.8rem">${n}. ESTADO GLOBAL DE CUMPLIMIENTO</div><table class="xlsx-table xlsx-calc-table"><tbody>
     <tr class="xlsx-estado xlsx-estado-global"><td class="xv-label">ESTADO GLOBAL</td><td style="text-align:center"><span class="${MT_XCLS[r.global] || 'xlsx-na'}">${r.global}</span></td>
-    <td colspan="3">${mtCuentaTxt(c)}</td></tr></tbody></table>`;
-  const pend = r.filas.filter(f => f.estado === 'NO CUMPLE' || f.estado === 'NO VERIFICADO');
-  if (pend.length) h += `<div class="xlsx-section">${n + 1}. PARÁMETROS QUE IMPIDEN DECLARAR CONFORMIDAD</div><table class="xlsx-table"><tbody>${pend.map(f =>
-    `<tr><td class="xv-label">${esc(f.param)}</td><td colspan="4">${f.estado === 'NO CUMPLE' ? 'Incumple' : 'Sin verificar'} — exigencia: ${esc(f.exig)}${f.obs ? '. ' + esc(f.obs) : ''}</td></tr>`).join('')}</tbody></table>`;
-  h += `<div class="xlsx-section">${n + (pend.length ? 2 : 1)}. CRITERIOS DE APLICACIÓN</div><table class="xlsx-table"><tbody>${r.criterios.map((t, i) => `<tr><td class="xv-label">Criterio ${i + 1}</td><td colspan="4">${esc(t)}</td></tr>`).join('')}</tbody></table>`;
+    <td colspan="4">${mtCuentaTxt(c)}</td></tr></tbody></table>`;
+  const pend = r.filas.filter(f => f.estado === MT_ST.NC || f.estado === MT_ST.NV || f.estado === MT_ST.FA);
+  if (pend.length) h += `<div class="xlsx-section">${++n}. PARÁMETROS QUE IMPIDEN DECLARAR CONFORMIDAD</div><table class="xlsx-table"><tbody>${pend.map(f =>
+    `<tr><td class="xv-label">${esc(f.param)}</td><td colspan="5">${f.estado === MT_ST.NC ? 'Incumple' : (f.estado === MT_ST.FA ? 'Fuera de alcance' : 'Sin verificar')} — exigencia: ${esc(f.exig)}${f.obs ? '. ' + esc(f.obs) : ''}</td></tr>`).join('')}</tbody></table>`;
+  const alts = r.alternativas || [];
+  if (alts.length) h += `<div class="xlsx-section">${++n}. ALTERNATIVAS DE CORRECCIÓN (RECALCULADAS; NINGUNA ACREDITA CONFORMIDAD POR SÍ SOLA)</div><table class="xlsx-table"><tbody>
+    <tr class="xlsx-hdr-de"><td>Parámetro</td><td>Modificación</td><td>Valor objetivo</td><td>Fundamento</td><td>Resultado</td>${resumen ? '' : '<td>Condiciones pendientes</td>'}</tr>
+    ${alts.map(a => `<tr><td class="xv-label">${esc(a.param)}</td><td>${esc(a.mod)}</td><td>${esc(a.obj)}</td><td style="font-size:.85em">${esc(a.fundamento)}</td><td>${esc(mtAltRes(a))}</td>${resumen ? '' : `<td style="font-size:.85em">${esc(a.cond.join(' '))}</td>`}</tr>`).join('')}</tbody></table>`;
+  h += `<div class="xlsx-section">${++n}. VERIFICACIONES FUERA DEL ALCANCE DE ESTE MÓDULO</div><table class="xlsx-table"><tbody>${(r.fueraAlcance || []).map((t, i) => `<tr><td class="xv-label">Exclusión ${i + 1}</td><td colspan="5">${esc(t)}</td></tr>`).join('')}</tbody></table>`;
+  h += `<div class="xlsx-section">${++n}. CRITERIOS DE APLICACIÓN</div><table class="xlsx-table"><tbody>${r.criterios.map((t, i) => `<tr><td class="xv-label">Criterio ${i + 1}</td><td colspan="5">${esc(t)}</td></tr>`).join('')}</tbody></table>`;
   return h;
 }
 function buildPrintSheetsMurosTrafo(inp, r) {
@@ -21257,8 +21642,8 @@ function svgCoronacionTrafo(inp, r) {
 const MT_FUENTES = [
   ['SEC — Pliego Técnico Normativo RPTD N°08 «Protección contra incendios», Res. Ex. N°33.277 (10-09-2020): §§5.1–5.5.', 'https://www.sec.cl/sitio-web/wp-content/uploads/2020/09/Pliego-T%C3%A9cnico-Normativo-RPTD-N%C2%B008-Proteccion-contra-incendios.pdf'],
   ['SEC — Pliego Técnico Normativo RPTD N°10 «Centrales de producción y subestaciones», Res. Ex. N°33.277 (10-09-2020): §§5.2.1 f), 5.3.2, 5.7.4 y 5.8.3.', 'https://www.sec.cl/sitio-web/wp-content/uploads/2020/09/Pliego-T%C3%A9cnico-Normativo-RPTD-N%C2%B010-Centrales-de-producci%C3%B3n.pdf'],
-  ['SEC — Pliego Técnico Normativo RIC N°13 «Subestaciones y salas eléctricas», Res. Ex. N°33.877 (30-12-2020): §§6.4, 7.2, 8, 9, 10 y Tabla 13.2.', 'https://www.sec.cl/sitio-web/wp-content/uploads/2021/01/RIC-N13-Subestaciones-y-Salas-Electricas.pdf'],
-  ['SEC — Pliego Técnico Normativo RIC N°02 «Tableros eléctricos» (versión publicada en junio de 2021): §5.4.', 'https://www.sec.cl/sitio-web/wp-content/uploads/2021/06/RIC-N02-Tableros-Electricos-170621-2.pdf'],
+  ['SEC — Pliego Técnico Normativo RIC N°13 «Subestaciones y salas eléctricas», Res. Ex. N°33.877 (30-12-2020): §2 (alcance hasta 23.000 V), §§6.3.1, 6.4, 7.1.1, 7.2, 8, 9, 10 y Tabla 13.2.', 'https://www.sec.cl/sitio-web/wp-content/uploads/2021/01/RIC-N13-Subestaciones-y-Salas-Electricas.pdf'],
+  ['SEC — Pliego Técnico Normativo RIC N°02 «Tableros eléctricos» (versión publicada en junio de 2021): §2 y §5.4 (cotejado el 28-10-2026).', 'https://www.sec.cl/sitio-web/wp-content/uploads/2021/06/RIC-N02-Tableros-Electricos-170621-2.pdf'],
   ['OGUC, Título 4, Capítulo 3, art. 4.3.2 (acreditación de la resistencia al fuego), texto vigente en la Biblioteca del Congreso Nacional.', 'https://www.bcn.cl/leychile/navegar?idNorma=8201'],
 ];
 const MT_FUENTES_CIT = [
@@ -21272,6 +21657,8 @@ const MT_OBS_GUIA = [
   'Caso 7 y anexo: RIC 02 §5.4.9.3 exige aislante seco o líquido clase K a los equipos eléctricos de la sala, no solo al transformador.',
   'RIC 13 §9.1 define la clase K como aislante con temperatura de ignición superior a 300 °C; la guía no da la cifra. Se agrega su verificación con la ficha del líquido.',
   'La guía omite requisitos numéricos de RIC 13 que inciden en el riesgo de incendio: §8.8 fosos colectores (aceite del transformador de mayor potencia + 30 % del de los demás), §8.9 umbral ≥ 0,10 m sin fosos, §8.5 puertas incombustibles, §9.5 acceso desde el exterior y vía de escape < 10 m, §7.2.3 base de concreto ≥ 0,25 m y §7.2.15 gravilla ≥ 0,05 m hasta 1 m fuera del cierre. Se agregan.',
+  'La guía trata RIC y RPTD como regímenes excluyentes. RIC 13 §2 limita su alcance a transformadores de hasta 23.000 V y §§6.3.1, 7.1.1 y 8.1 remiten a las disposiciones constructivas del DS 109/2017: la verificación informa FUERA DE ALCANCE sobre 23 kV y admite las cotas RPTD en consumo solo como remisión o criterio declarado.',
+  'RIC 13 §8.9: el umbral de 0,10 m es un mínimo; debe impedir la salida del aceite del transformador de mayor potencia y procede solo si no es posible construir los fosos del §8.8. Se verifica el volumen retenido.',
   'La guía omite RPTD 10 §5.2.1 f) (≥ 100 kVA dentro de la casa de máquinas: cel\u00ADda con muros y puertas antiexplosión, extinción automática y renovación de aire), §5.7.4 segundo párrafo (partes con tensión no protegidas sobre accesos a ≥ 3 m + 1 cm por kV) y §5.8.3 b) y d) (no sobre ni contiguo a sitios de habitación; canales recolectores y foso). Se agregan.',
   'Caso 11, fila «mayor de 75 y menor de 76 kVA → 6,00 m»: es un criterio conservador propio de la guía; la Tabla N°1 de RPTD 08 no tiene esa fila. Se informa como tal.',
   'Numeración: la malla y el alambre del cerco están en RIC 13 §7.2.5, el hueco inferior en §7.2.9, la puerta de 0,80 × 2,10 m en §8.6 y las rejillas en §8.16. La guía cita rangos de numerales.',
@@ -21300,6 +21687,7 @@ function mtSvgElevMem(inp) {
   ok.forEach((e, i) => {
     const w = 150, x = i === 0 ? xw + tw + 60 : xw - 60 - w, yb = Y(e.s);
     if (Math.abs(e.s) > 1e-9) g += `<line x1="${x - 8}" y1="${yb}" x2="${x + w + 8}" y2="${yb}" stroke="#57636F" stroke-width="1.4"/><text x="${x + w / 2}" y="${yb + 13}" font-size="9" text-anchor="middle" fill="#57636F">base ${e.s > 0 ? '+' : '−'}${f(Math.abs(e.s))} m</text>`;
+    if (inp['mt_des' + e.k] == null || String(inp['mt_des' + e.k]).trim() === '') g += `<text x="${x + w / 2}" y="${y0 + 28}" font-size="9" text-anchor="middle" fill="#b07800">desnivel sin dato: dibujado a nivel, no verificado</text>`;
     g += `<rect x="${x}" y="${Y(e.s + e.d)}" width="${w}" height="${e.d * sc}" fill="#e3edf9" stroke="#2a78d6" stroke-width="1.4"/>`;
     g += `<text x="${x + w / 2}" y="${Y(e.s + e.d / 2)}" font-size="10" font-weight="700" text-anchor="middle" fill="#182430">DEPÓSITO ${e.k} · ${f(e.d)} m</text>`;
     if (e.c && e.h != null && e.h > e.d) g += `<rect x="${x + w * 0.55}" y="${Y(e.s + e.h)}" width="${w * 0.4}" height="${(e.h - e.d) * sc}" rx="6" fill="#fde9dc" stroke="#eb6834"/><text x="${x + w * 0.75}" y="${Y(e.s + e.h) - 4}" font-size="9" text-anchor="middle" fill="#b44a1c">conservador ${f(e.h)} m</text>`;
@@ -21328,7 +21716,7 @@ function mtSvgPlantaMem(inp) {
 
 // Esquemas por caso (planta, corte o elevación) con las cotas medidas y su estado. Colores fijos sobre fondo
 // blanco: el mismo SVG sirve en pantalla (tema claro u oscuro) y en la memoria impresa. Dibujos sin escala.
-const MT_COL = { 'CUMPLE':'#1E7A46', 'NO CUMPLE':'#B3261E', 'NO VERIFICADO':'#b07800', 'NO APLICA':'#57636F' };
+const MT_COL = { 'CUMPLE':'#1E7A46', 'NO CUMPLE':'#B3261E', 'NO VERIFICADO':'#b07800', 'NO APLICA':'#57636F', 'FUERA DE ALCANCE':'#7a4fa0' };
 function mtEsquemas(inp, r) {
   const v = id => { const x = mtNum(inp[id]); return x == null || Number.isNaN(x) ? null : x; };
   const f = x => x == null ? '—' : mtF(x);
@@ -21395,24 +21783,38 @@ function mtEsquemas(inp, r) {
       if (inp.mt_vent === 'natural') g += `<rect x="${x0 - 5}" y="${yF - 30}" width="10" height="18" fill="#9ccbf2"/><rect x="${x1 - 5}" y="${yT + 12}" width="10" height="18" fill="#9ccbf2"/>` + T(x0 + 10, yF - 34, `admisión ${f(v('mt_Aadm'))} m²`, { fs: 9, a: 'start', c: col('Superficie libre de ventilación') }) + T(x1 - 10, yT + 44, `evacuación ${f(v('mt_Aevac'))} m²`, { fs: 9, a: 'end', c: col('Superficie libre de ventilación') });
       if (inp.mt_vent === 'forzada') g += T(x1 - 10, yT + 24, `Q = ${f(v('mt_Q'))} m³/h`, { fs: 9.5, a: 'end', b: true, c: col('Caudal de ventilación') });
     }
-    if (fila('Capacidad de los fosos') || fila('Capacidad del foso')) g += `<rect x="245" y="${yF + 3}" width="180" height="16" fill="none" stroke="#b44a1c" stroke-dasharray="4 3"/>` + T(335, yF + 30, `foso ${f(v(reg === 'RIC' ? 'mt_vFoso' : 'mt_vFosoR'))} L · ${exi('Capacidad de los fosos') || exi('Capacidad del foso')}`, { fs: 9, c: col(fila('Capacidad de los fosos') ? 'Capacidad de los fosos' : 'Capacidad del foso') });
-    out.push({ svg: svg(W, H + 10, g, 'Corte de la sala eléctrica'), cap: `Corte: recinto cerrado, resistencia al fuego del conjunto, espacios de trabajo, acceso y ventilación (${reg === 'RPTD' ? 'RPTD 08 §5.5' : 'RIC 02 §5.4 · RIC 13 §§6.4.8, 8'})` });
+    const fosoF = fila('Capacidad útil neta de los fosos') || fila('Capacidad del estanque') || fila('Capacidad del foso');
+    if (fosoF) g += `<rect x="245" y="${yF + 3}" width="180" height="16" fill="none" stroke="#b44a1c" stroke-dasharray="4 3"/>` + T(335, yF + 30, `foso ${f(v(reg === 'RIC' ? 'mt_vFoso' : 'mt_vFosoR'))} L · ${fosoF.exig}`, { fs: 9, c: MT_COL[fosoF.estado] });
+    const umb = fila('Aceite retenido por el umbral');
+    if (umb) g += `<rect x="${x1 - 14}" y="${yF - 10}" width="18" height="10" fill="#b44a1c"/>` + T(x1 - 20, yF + 30, `umbral ${f(v('mt_umbral'))} m · retiene ${umb.terreno} · ${umb.exig}`, { fs: 9, a: 'end', c: MT_COL[umb.estado] });
+    if (reg === 'RIC') g += T(x0 + 12, yT + 40, `recinto ${f(v('mt_L7'))} × ${f(v('mt_B7'))} × ${f(v('mt_H7'))} m (largo × ancho × alto)`, { fs: 9, a: 'start', c: '#57636F' });
+    out.push({ svg: svg(W, H + 10, g, 'Corte de la sala eléctrica'), cap: `Corte: recinto cerrado, resistencia al fuego del conjunto, espacios de trabajo, acceso, contención de aceite y ventilación (${reg === 'RPTD' ? 'RPTD 08 §5.5' : 'RIC 02 §5.4 · RIC 13 §§6.4.8, 8'}). Espacios medidos desde la proyección del equipo a la cara del muro; alturas libres piso-cielo` });
   }
   if (caso === '8') {
-    const W = 640, H = 330, x0 = 170, x1 = 470, y0 = 40, y1 = 270;
-    let g = muro(x0 - 12, y0 - 12, 12, y1 - y0 + 12) + muro(x0 - 12, y0 - 12, x1 - x0 + 24, 12) + muro(x1, y0 - 12, 12, y1 - y0 + 12);
-    g += `<line x1="${x0}" y1="${y1}" x2="${x1}" y2="${y1}" stroke="#182430" stroke-width="2" stroke-dasharray="8 5"/>` + T((x0 + x1) / 2, y1 + 14, 'cuarto cierre: puerta o reja', { fs: 9, c: '#57636F' });
-    const ex0 = 270, ex1 = 370, ey0 = 110, ey1 = 200;
-    g += box(ex0, ey0, ex1 - ex0, ey1 - ey0, 'TRAFO');
-    g += cH(x0, ex0, 155, `${f(v('mt_d8a'))} m`, col('Separación a el muro izquierdo'));
-    g += cH(ex1, x1, 155, `${f(v('mt_d8c'))} m`, col('Separación a el muro derecho'));
-    g += cV(320, y0, ey0, `${f(v('mt_d8b'))} m`, col('Separación a el muro del fondo'));
-    g += cV(320, ey1, y1, `${f(v('mt_d8d'))} m`, col('Separación a el cuarto cierre'));
-    g += T(x1 + 20, 120, `ancho interior ${f(v('mt_anchoInt'))} m`, { a: 'start', fs: 9.5, b: true, c: col('Ancho interior') }) + T(x1 + 20, 134, exi('Ancho interior'), { a: 'start', fs: 9, c: '#57636F' });
-    g += T(x1 + 20, 160, `fondo interior ${f(v('mt_fondoInt'))} m`, { a: 'start', fs: 9.5, b: true, c: col('Fondo interior') }) + T(x1 + 20, 174, exi('Fondo interior'), { a: 'start', fs: 9, c: '#57636F' });
-    g += T(x0 - 20, 150, `altura ${f(v('mt_h8'))} m`, { a: 'end', fs: 9.5, b: true, c: col('Altura de los tres muros') }) + T(x0 - 20, 164, exi('Altura de los tres muros'), { a: 'end', fs: 9, c: '#57636F' });
-    g += nota(W, H, 'Planta en U. Retiros ≥ 1,50 m desde la proyección de cualquier punto del equipo (RIC 13 §7.2.6).');
-    out.push({ svg: svg(W, H, g, 'Planta del recinto en U'), cap: 'Planta: recinto de tres muros con cuarto cierre, retiros y dimensiones interiores (RIC 13 §7.2.6)' });
+    // Planta a escala con las medidas ingresadas: equipo, retiros medidos por lado y exigencia de cada lado.
+    const W = 640, H = 360, aE = v('mt_anchoEq'), fE = v('mt_fondoEq'), d = { a: v('mt_d8a'), b: v('mt_d8b'), c: v('mt_d8c'), dd: v('mt_d8d') };
+    const fl = id => fila('Separación ' + id), ex = id => { const x = fl(id); return x ? x.exig : ''; }, cl = id => { const x = fl(id); return x ? MT_COL[x.estado] : '#57636F'; };
+    const aI = v('mt_anchoInt') != null ? v('mt_anchoInt') : (aE != null && d.a != null && d.c != null ? aE + d.a + d.c : null);
+    const fI = v('mt_fondoInt') != null ? v('mt_fondoInt') : (fE != null && d.b != null && d.dd != null ? fE + d.b + d.dd : null);
+    const escala = aI != null && fI != null && aE != null && fE != null && d.a != null && d.b != null;
+    const bx = 300, by = 250, sc = escala ? Math.min(bx / aI, by / fI) : 1;
+    const wI = escala ? aI * sc : 300, hI = escala ? fI * sc : 230, x0 = 60 + (bx - wI) / 2, y0 = 50, x1 = x0 + wI, y1 = y0 + hI;
+    const ex0 = escala ? x0 + d.a * sc : x0 + 100, ey0 = escala ? y0 + d.b * sc : y0 + 70, ew = escala ? aE * sc : 100, eh = escala ? fE * sc : 90, ex1 = ex0 + ew, ey1 = ey0 + eh;
+    let g = muro(x0 - 10, y0 - 10, 10, hI + 10) + muro(x0 - 10, y0 - 10, wI + 20, 10) + muro(x1, y0 - 10, 10, hI + 10);
+    g += `<line x1="${x0}" y1="${y1}" x2="${x1}" y2="${y1}" stroke="#182430" stroke-width="2" stroke-dasharray="8 5"/>` + T((x0 + x1) / 2, y1 + 26, 'cuarto cierre: puerta o reja', { fs: 9, c: '#57636F' });
+    g += box(ex0, ey0, ew, eh, ew > 60 ? 'TRAFO' : '');
+    g += cH(x0, ex0, (ey0 + ey1) / 2, `${f(d.a)} m`, cl('al muro izquierdo')) + T((x0 + ex0) / 2, (ey0 + ey1) / 2 + 16, ex('al muro izquierdo'), { fs: 8.5, c: '#57636F' });
+    g += cH(ex1, x1, (ey0 + ey1) / 2, `${f(d.c)} m`, cl('al muro derecho')) + T((ex1 + x1) / 2, (ey0 + ey1) / 2 + 16, ex('al muro derecho'), { fs: 8.5, c: '#57636F' });
+    g += cV((ex0 + ex1) / 2, y0, ey0, `${f(d.b)} m · ${ex('al muro del fondo')}`, cl('al muro del fondo'));
+    g += cV((ex0 + ex1) / 2, ey1, y1, `${f(d.dd)} m · ${ex('al cuarto cierre')}`, cl('al cuarto cierre'));
+    if (aE != null) g += T((ex0 + ex1) / 2, ey0 + 14, `equipo ${f(aE)} × ${f(fE)} m`, { fs: 8.5, c: '#2a78d6' });
+    const xr = 60 + bx + 25;
+    g += T(xr, 90, `ancho interior ${f(v('mt_anchoInt'))} m`, { a: 'start', fs: 9.5, b: true, c: col('Ancho interior') }) + T(xr, 104, exi('Ancho interior'), { a: 'start', fs: 8.5, c: '#57636F' });
+    g += T(xr, 130, `fondo interior ${f(v('mt_fondoInt'))} m`, { a: 'start', fs: 9.5, b: true, c: col('Fondo interior') }) + T(xr, 144, exi('Fondo interior'), { a: 'start', fs: 8.5, c: '#57636F' });
+    g += T(xr, 170, `altura ${f(v('mt_h8'))} m`, { a: 'start', fs: 9.5, b: true, c: col('Altura de los tres muros') }) + T(xr, 184, exi('Altura de los tres muros'), { a: 'start', fs: 8.5, c: '#57636F' });
+    ['Coherencia: ancho', 'Coherencia: fondo'].forEach((k, i) => { const x = fila(k); if (x) g += T(xr, 210 + i * 14, `${k.replace('Coherencia: ', 'coherencia ')}: ${x.estado}`, { a: 'start', fs: 8.5, c: MT_COL[x.estado] }); });
+    g += nota(W, H, escala ? 'Planta a escala de las medidas ingresadas. Retiros desde la proyección del equipo completo a la cara interior del muro.' : 'Planta sin escala (faltan medidas). Retiros desde la proyección del equipo completo a la cara interior del muro.');
+    out.push({ svg: svg(W, H, g, 'Planta del recinto en U'), cap: 'Planta: recinto de tres muros con cuarto cierre, retiros medidos y exigidos por lado (RIC 13 §7.2.6 y fabricante) y dimensiones interiores' });
   }
   if (caso === '9') {
     const W = 640, H = 280, yG = 220, h = v('mt_h9'), hs = Math.min(150, (h || 2) * 60);
@@ -21431,14 +21833,14 @@ function mtEsquemas(inp, r) {
   }
   if (caso === '10') {
     const W = 640, H = 230, e = v('mt_esp10');
-    const reqs = [['Mínimo de la función', fila('Espesor mínimo prescrito')], ['Solución acreditada', fila('Espesor de la solución')], ['Cálculo estructural', fila('Espesor necesario')]]
+    const reqs = [['Mínimo de la función', fila('Espesor mínimo prescrito')], ['Solución acreditada', fila('Espesor frente a la solución')], ['Memoria estructural', fila('Espesor frente al requerido')]]
       .map(([t, x]) => { const m = x && /([\d.,]+) m/.exec(x.exig); return { t, req: m ? mtNum(m[1].replace(/\./g, '').replace(',', '.')) : null, c: x ? MT_COL[x.estado] : '#57636F' }; });
     const max = Math.max(0.25, e || 0, ...reqs.map(q => q.req || 0)) * 1.15, sx = x => 260 + x / max * 340;
     let g = `<rect x="40" y="30" width="${Math.max(18, Math.min(150, (e || 0.1) * 500))}" height="160" fill="#cfd6e0" stroke="#182430" stroke-width="1.4"/>`;
     g += T(40 + Math.max(18, Math.min(150, (e || 0.1) * 500)) / 2, 205, `e = ${f(e)} m`, { b: true });
     reqs.forEach((q, i) => { const y = 50 + i * 45; g += T(255, y + 12, q.t, { a: 'end', fs: 9.5 }); g += q.req != null ? `<rect x="260" y="${y}" width="${sx(q.req) - 260}" height="16" fill="${q.c}" opacity=".85"/>` + T(sx(q.req) + 4, y + 12, `${f(q.req)} m`, { a: 'start', fs: 9.5 }) : T(262, y + 12, 'sin dato: no verificado', { a: 'start', fs: 9, c: '#b07800' }); });
     if (e != null) g += `<line x1="${sx(e)}" y1="40" x2="${sx(e)}" y2="190" stroke="#182430" stroke-dasharray="5 3"/>` + T(sx(e), 200, 'espesor medido', { fs: 9 });
-    out.push({ svg: svg(W, H, g, 'Espesor del muro'), cap: 'Corte del muro y comparación del espesor medido con el mínimo de la función, la solución acreditada y el cálculo estructural' });
+    out.push({ svg: svg(W, H, g, 'Espesor del muro'), cap: 'Corte del muro y comparación del espesor medido con el mínimo de la función, la solución acreditada y el espesor de la memoria estructural (comparación de espesores; no es verificación estructural)' });
   }
   return out;
 }
@@ -21452,24 +21854,29 @@ function mtMemoriaHtml(inp, r, meta) {
   const grupos = [];
   r.filas.forEach(f => { let g = grupos.find(x => x.g === f.grupo); if (!g) { g = { g: f.grupo, filas: [] }; grupos.push(g); } g.filas.push(f); });
   const barras = r.filas.filter(f => f.cmp && f.cmp.tipo === 'min' && f.cmp.req > 0).map(f => ({ label: f.param, v: f.cmp.v / f.cmp.req * 100, color: f.estado === MT_ST.OK ? '#1E7A46' : (f.estado === MT_ST.NC ? '#B3261E' : '#eda100') }));
-  const pend = r.filas.filter(f => f.estado === MT_ST.NC || f.estado === MT_ST.NV);
-  const nc = r.filas.filter(f => f.estado === MT_ST.NC), nv = r.filas.filter(f => f.estado === MT_ST.NV);
-  let fig = mtEsquemas(inp, r).map(x => `<div class="keep"><div class="fig">${x.svg}</div>${MEM_F(x.cap + '. Dibujo sin escala; cotas en color según su estado')}</div>`).join('');
+  const pend = r.filas.filter(f => f.estado === MT_ST.NC || f.estado === MT_ST.NV || f.estado === MT_ST.FA);
+  const nc = r.filas.filter(f => f.estado === MT_ST.NC), nv = r.filas.filter(f => f.estado === MT_ST.NV), fa = r.filas.filter(f => f.estado === MT_ST.FA);
+  const alts = r.alternativas || [];
+  let fig = mtEsquemas(inp, r).map(x => `<div class="keep"><div class="fig">${x.svg}</div>${MEM_F(x.cap + (/a escala/.test(x.svg) ? '. Planta a escala de las medidas ingresadas' : '. Esquema sin escala') + '; cotas en color según su estado')}</div>`).join('');
   if (barras.length) fig += `<div class="keep"><div class="fig">${memBarras(barras, 'Valor medido como % del mínimo exigido (100 % = mínimo)', [{ v: 100, label: 'mínimo exigido' }])}</div>${MEM_F('Relación entre el valor medido y el mínimo exigido para los parámetros con mínimo numérico (verde: cumple; rojo: no cumple)')}</div>`;
   const conclusion = r.global === MT_ST.OK
-    ? `<p>Con los datos y antecedentes ingresados, <b>todos los parámetros verificados para el ${esc(r.casoTxt)} cumplen</b> los mínimos de los pliegos SEC aplicables y los criterios de la guía de referencia.</p>`
+    ? `<p>Con los datos y antecedentes ingresados, <b>todos los parámetros verificados para el ${esc(r.casoTxt)} cumplen</b> los mínimos de los pliegos SEC aplicables y los criterios de la guía de referencia, dentro del alcance declarado en el capítulo 1 (no incluye la verificación estructural de los muros).</p>`
     : (r.global === MT_ST.NC
-      ? `<p>Con los datos ingresados, <b>la instalación NO CUMPLE</b> en ${nc.length} parámetro(s) del ${esc(r.casoTxt)}: ${nc.map(f => esc(f.param) + ' (' + esc(f.ref) + ')').join('; ')}. Corresponde corregir la instalación o acreditar una solución alternativa admitida por el pliego respectivo.${nv.length ? ` Además, ${nv.length} parámetro(s) quedan sin verificar por falta de antecedentes.` : ''}</p>`
-      : `<p>No se detectaron incumplimientos, pero <b>no se puede declarar conformidad</b>: ${nv.length} parámetro(s) del ${esc(r.casoTxt)} quedan sin verificar por falta de datos o antecedentes (tabla de pendientes). La conformidad se declara solo cuando todos los parámetros aplicables están verificados.</p>`);
+      ? `<p>Con los datos ingresados, <b>la instalación NO CUMPLE</b> en ${nc.length} parámetro(s) del ${esc(r.casoTxt)}: ${nc.map(f => esc(f.param) + ' (' + esc(f.ref) + ')').join('; ')}. Corresponde corregir la instalación o acreditar una solución alternativa admitida por el pliego respectivo.${fa.length ? ` Además, ${fa.length} disposición(es) quedan fuera de su alcance para esta instalación.` : ''}${nv.length ? ` Además, ${nv.length} parámetro(s) quedan sin verificar por falta de antecedentes.` : ''}</p>`
+      : (r.global === MT_ST.FA
+        ? `<p>No se detectaron incumplimientos, pero <b>la verificación queda FUERA DE ALCANCE</b> en ${fa.length} parámetro(s) del ${esc(r.casoTxt)}: ${fa.map(f => esc(f.param) + ' (' + esc(f.ref) + ')').join('; ')}. La disposición citada no rige para la instalación descrita (régimen, tensión o condición de aplicación); la exigencia debe fijarse con la reglamentación que corresponda.${nv.length ? ` Además, ${nv.length} parámetro(s) quedan sin verificar.` : ''}</p>`
+        : `<p>No se detectaron incumplimientos, pero <b>no se puede declarar conformidad</b>: ${nv.length} parámetro(s) del ${esc(r.casoTxt)} quedan sin verificar por falta de datos o antecedentes (tabla de pendientes). La conformidad se declara solo cuando todos los parámetros aplicables están verificados.</p>`));
   const html = `<div class="mem-inf"><style>${MEM_CSS}</style>
     ${memPortada('INFORME DE VERIFICACIÓN DE CUMPLIMIENTO', 'Muros cortafuego, separaciones y recintos de transformadores — ' + esc(r.casoTxt), meta)}
     <div class="salto"></div>
     <h1>ÍNDICE</h1>
-    <p>1. Introducción y alcance<br>2. Antecedentes de la instalación<br>3. Marco normativo<br>4. Criterios de verificación<br>5. Desarrollo de cálculo<br>6. Resultados por parámetro<br>7. Estado de cumplimiento y conclusiones<br>Anexo A. Observaciones a la guía de referencia</p>
+    <p>1. Introducción y alcance<br>2. Antecedentes de la instalación<br>3. Marco normativo<br>4. Criterios de verificación<br>5. Desarrollo de cálculo<br>6. Resultados por parámetro<br>7. Estado de cumplimiento y conclusiones<br>8. Alternativas de corrección<br>Anexo A. Observaciones a la guía de referencia</p>
 
     <h1>1. INTRODUCCIÓN Y ALCANCE</h1>
     <p>Este informe verifica los datos de terreno de ${esc(proyecto)}${meta.cliente ? ', de ' + esc(meta.cliente) : ''}${meta.ubic ? ', ubicada en ' + esc(meta.ubic) : ''}, frente a los mínimos que fijan los pliegos técnicos de la Superintendencia de Electricidad y Combustibles para la protección contra incendio de transformadores y recintos eléctricos. Se aplica el <b>${esc(r.casoTxt)}</b> de la guía «Muros para transformadores — Guía de dimensiones y selección en Chile» (27-10-2026), cuyos valores se cotejaron con los textos oficiales.</p>
-    <p>Cada parámetro se califica como CUMPLE, NO CUMPLE, NO VERIFICADO (falta el dato o el antecedente que fija la exigencia) o NO APLICA. Un dato no informado nunca se supone cero. La verificación no cubre cargas de explosión, fundaciones ni armaduras: una clasificación F120 no acredita resistencia a sobrepresión, y un espesor mínimo prescrito no acredita resistencia al fuego.</p>
+    <p>Cada parámetro se califica como CUMPLE, NO CUMPLE, NO VERIFICADO (falta el dato o el antecedente que fija la exigencia), FUERA DE ALCANCE (la disposición no rige para el régimen, la tensión o la condición de la instalación) o NO APLICA. Un dato no informado nunca se supone cero. Cada exigencia indica su origen: exigencia normativa, exigencia por remisión expresa entre pliegos, criterio conservador, criterio de la guía o antecedente externo (fabricante, estudio o memoria), este último identificado por su documento.</p>
+    <p>Quedan fuera del alcance de esta verificación:</p>
+    <ul>${(r.fueraAlcance || []).map(t => `<li>${esc(t)}</li>`).join('')}</ul>
 
     <h1>2. ANTECEDENTES DE LA INSTALACIÓN</h1>
     ${meta.desc ? `<p>${esc(meta.desc).replace(/\n/g, '<br>')}</p>` : ''}
@@ -21487,11 +21894,11 @@ function mtMemoriaHtml(inp, r, meta) {
     <p>«—» indica un dato no informado; el parámetro que depende de él queda NO VERIFICADO.</p>
 
     <h1>3. MARCO NORMATIVO</h1>
-    <p>Pliegos y textos oficiales cotejados el 27-10-2026:</p>
+    <p>Pliegos y textos oficiales cotejados el 27-10-2026 y el 28-10-2026:</p>
     <ul>${MT_FUENTES.map(([t, u]) => `<li>${esc(t)} <a href="${u}">${esc(u)}</a></li>`).join('')}</ul>
     <p>Normas citadas por esos pliegos:</p>
     <ul>${MT_FUENTES_CIT.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
-    <p>Los pliegos RIC rigen las instalaciones de consumo; los RPTD, las centrales, subestaciones y redes bajo el D.S. N°109/2017. Las cotas de un régimen no se trasladan al otro.</p>
+    <p>Los pliegos RIC rigen las instalaciones de consumo; RIC 13 se limita a subestaciones y salas con transformadores de hasta 23.000 V (§2). Los RPTD rigen las centrales, subestaciones y redes bajo el D.S. N°109/2017. RIC 13 remite expresamente a las disposiciones constructivas del D.S. N°109/2017 para subestaciones a la intemperie (§6.3.1), aéreas (§7.1.1) e interiores (§8.1): cuando el proyectista declara esa remisión, las exigencias RPTD se informan como «exigencia por remisión». RPTD 08 §5.4 (Tabla N°1) queda restringida a centrales y subestaciones de transmisión.</p>
 
     <h1>4. CRITERIOS DE VERIFICACIÓN</h1>
     <ul>${r.criterios.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
@@ -21501,16 +21908,22 @@ function mtMemoriaHtml(inp, r, meta) {
     ${fig}
 
     <h1>6. RESULTADOS POR PARÁMETRO</h1>
-    ${grupos.map(g => `${MEM_T(esc(g.g))}<table class="inf-t"><tr><th>Parámetro</th><th>Terreno</th><th>Exigencia</th><th>Referencia</th><th>Estado</th><th>Observación</th></tr>
-      ${g.filas.map(f => `<tr><td class="l">${esc(f.param)}</td><td>${esc(f.terreno)}</td><td>${esc(f.exig)}</td><td class="l">${esc(f.ref)}</td><td class="${cls(f.estado)}">${f.estado}</td><td class="l">${esc(f.obs)}</td></tr>`).join('')}</table>`).join('')}
+    ${grupos.map(g => `${MEM_T(esc(g.g))}<table class="inf-t"><tr><th>Parámetro</th><th>Terreno</th><th>Exigencia</th><th>Referencia</th><th>Origen</th><th>Estado</th><th>Observación</th></tr>
+      ${g.filas.map(f => `<tr><td class="l">${esc(f.param)}</td><td>${esc(f.terreno)}</td><td>${esc(f.exig)}</td><td class="l">${esc(f.ref)}</td><td class="l">${esc(mtTipoTxt(f.tipo))}</td><td class="${cls(f.estado)}">${f.estado}</td><td class="l">${esc(f.obs)}</td></tr>`).join('')}</table>`).join('')}
 
     <h1>7. ESTADO DE CUMPLIMIENTO Y CONCLUSIONES</h1>
     ${MEM_T('Estado global')}
-    <table class="inf-t"><tr><th>Estado global</th><th>Cumplen</th><th>No cumplen</th><th>Sin verificar</th><th>No aplican</th></tr>
-      <tr><td class="${cls(r.global)}" style="font-size:10pt">${r.global}</td><td>${r.cuenta.CUMPLE}</td><td>${r.cuenta['NO CUMPLE']}</td><td>${r.cuenta['NO VERIFICADO']}</td><td>${r.cuenta['NO APLICA']}</td></tr></table>
+    <table class="inf-t"><tr><th>Estado global</th><th>Cumplen</th><th>No cumplen</th><th>Fuera de alcance</th><th>Sin verificar</th><th>No aplican</th></tr>
+      <tr><td class="${cls(r.global)}" style="font-size:10pt">${r.global}</td><td>${r.cuenta.CUMPLE}</td><td>${r.cuenta['NO CUMPLE']}</td><td>${r.cuenta['FUERA DE ALCANCE'] || 0}</td><td>${r.cuenta['NO VERIFICADO']}</td><td>${r.cuenta['NO APLICA']}</td></tr></table>
     ${conclusion}
     ${pend.length ? `${MEM_T('Parámetros que impiden declarar conformidad y antecedente requerido')}<table class="inf-t"><tr><th>Parámetro</th><th>Estado</th><th>Exigencia</th><th>Referencia</th><th>Acción o antecedente requerido</th></tr>
       ${pend.map(f => `<tr><td class="l">${esc(f.param)}</td><td class="${cls(f.estado)}">${f.estado}</td><td>${esc(f.exig)}</td><td class="l">${esc(f.ref)}</td><td class="l">${esc(f.obs || (f.estado === MT_ST.NC ? 'Corregir para alcanzar la exigencia.' : 'Informar el dato.'))}</td></tr>`).join('')}</table>` : ''}
+
+    <h1>8. ALTERNATIVAS DE CORRECCIÓN</h1>
+    ${alts.length ? `<p>Para cada parámetro que no cumple se propone una modificación con valor objetivo factible (dimensiones redondeadas hacia arriba al módulo indicado, clasificaciones F normalizadas). Cada alternativa se aplicó a una copia de los datos y se recalculó el caso completo. Ninguna alternativa se declara conforme por sí sola: queda condicionada a las comprobaciones que no acredita.</p>
+    <table class="inf-t"><tr><th>Parámetro</th><th>Modificación</th><th>Valor objetivo</th><th>Fundamento</th><th>Resultado del recálculo</th><th>Condiciones pendientes</th></tr>
+      ${alts.map(a => `<tr><td class="l">${esc(a.param)}</td><td class="l">${esc(a.mod)}</td><td>${esc(a.obj)}</td><td class="l">${esc(a.fundamento)}</td><td class="l">${esc(mtAltRes(a))}</td><td class="l">${esc(a.cond.join(' '))}</td></tr>`).join('')}</table>`
+      : '<p>No hay parámetros con NO CUMPLE que requieran alternativa de corrección.</p>'}
     ${memFirmas(meta)}
 
     <div class="salto"></div>
@@ -21539,10 +21952,11 @@ function renderMurosTrafo(container) {
       <h3 class="lbl-left">A · CASO Y ANTECEDENTES DEL EQUIPO</h3>
       <div class="note" style="margin-bottom:.6rem">${esc('Régimen normativo: ' + MT_REGIMEN + '.')}</div>
       <div class="field-grid">
-        ${sel('mt_caso')}${sel('mt_ambito')}
-        ${sel('mt_nueva', '1', 'mt_ambito=RPTD')}${sel('mt_central', '1,11', 'mt_ambito=RPTD')}
+        ${sel('mt_caso')}${sel('mt_ambito')}${sel('mt_remis', '', 'mt_ambito=RIC')}
+        ${sel('mt_nueva', '1')}${sel('mt_central', '1,11', 'mt_ambito=RPTD|')}
         ${num('mt_P')}${num('mt_kV')}${sel('mt_aislante')}${num('mt_tIgn', '', 'mt_aislante=claseK')}${num('mt_litros')}${sel('mt_ficha')}${num('mt_altitud')}
-        ${sel('mt_manual', '2,3,6,7,8')}${num('mt_fabMin', '2,3,6,7,8')}
+        ${sel('mt_manual', '2,3,6,7,8')}${num('mt_fabMin', '2,3,6,7,8')}${txt('mt_refFab', '2,3,6,7,8')}${txt('mt_refEst', '2,3,4,5,11')}
+        ${txt('mt_refCA', '2,4,5,9', 'mt_cierreRIC=si&mt_ambito=RPTD;mt_caso=9&mt_reg9=RPTD')}${txt('mt_refTerm', '7,8', 'mt_caso=7&mt_reg7=RIC;mt_caso=8&mt_enfr8=si')}
       </div>
       <p class="note">Elija el caso de la guía que describe la instalación y complete los datos medidos en terreno o tomados de la placa, ficha y plano del fabricante. Un campo vacío no se supone cero: deja el parámetro sin verificar. Use coma o punto decimal. Las medidas de separación se toman en horizontal, libres, desde la proyección más próxima del equipo completo (radiadores, conservador y salientes), no entre ejes. El ejemplo cargado corresponde a la primera fila de la tabla del caso 4 de la guía.</p>
     </div>
@@ -21555,15 +21969,16 @@ function renderMurosTrafo(container) {
       'Cotas superiores de depósito y conservador medidas sobre la base del propio equipo. Desnivel: positivo si la base del equipo está más alta que el apoyo del muro, negativo si está más baja, 0 si están al mismo nivel. En el caso 3 se ingresan siempre los equipos A y B. En el caso 8 este panel se usa solo si los muros cumplen función cortafuego.')}
     ${panel('D · MURO', '2,3,4,5,6',
       num('mt_hMuro') + num('mt_hEstudio', '2,3,4,5') + sel('mt_ric96', '4,5') + sel('mt_cierreRIC', '2,4,5') +
-      sel('mt_pub', '2,4,5', 'mt_cierreRIC=si') + sel('mt_antiesc', '2,4,5', 'mt_cierreRIC=si&mt_pub=si') + num('mt_dCierre', '2,4,5', 'mt_cierreRIC=si') +
-      sel('mt_extAlto', '2,4,5', 'mt_cierreRIC=si') + num('mt_hExt', '2,4,5', 'mt_cierreRIC=si&mt_extAlto=si') +
+      sel('mt_pub', '2,4,5', 'mt_cierreRIC=si&mt_ambito=RIC|') + sel('mt_antiesc', '2,4,5', 'mt_cierreRIC=si&mt_pub=si&mt_ambito=RIC|') + num('mt_dCierre', '2,4,5', 'mt_cierreRIC=si') +
+      num('mt_dReq9', '2,4,5', 'mt_cierreRIC=si&mt_ambito=RPTD').replace('id="mt_dReq9"', 'id="mt_dReq9b"').replace('for="mt_dReq9"', 'for="mt_dReq9b"') +
+      sel('mt_extAlto', '2,4,5', 'mt_cierreRIC=si&mt_ambito=RIC|') + num('mt_hExt', '2,4,5', 'mt_cierreRIC=si&mt_extAlto=si&mt_ambito=RIC|') +
       sel('mt_mat6', '6') + num('mt_esp6', '6'),
       'La altura del muro se mide desde su propio apoyo. La coronación exigida por el estudio de incendio es opcional: si se ingresa, se verifica además.')}
-    ${panel('E · RESISTENCIA AL FUEGO', '2,3,7,11',
+    ${panel('E · RESISTENCIA AL FUEGO', '2,3,7,10,11',
       num('mt_Fbarrera', '2,3,11') + num('mt_Festudio', '2,3,11') + sel('mt_estudioCC', '2,3,11') +
       sel('mt_reg7', '7') + sel('mt_sup7', '7', 'mt_reg7=RPTD') + num('mt_F7m', '7') + num('mt_F7t', '7') + num('mt_F7p', '7') +
-      sel('mt_acredF') + txt('mt_refF'),
-      'Clasificación en minutos (F120 → 120). En el caso 11 corresponde a las paredes del edificio y solo se evalúa si la separación es menor que la tabla. En el caso 7 con RPTD 08 §5.5 y transformador seco no se exige barrera.')}
+      sel('mt_acredF', '2,3,7,11') + txt('mt_refF'),
+      'Clasificación en minutos (F120 → 120). En el caso 11 corresponde a las paredes del edificio y solo se evalúa si la separación es menor que la tabla. En el caso 7 con RPTD 08 §5.5 y transformador seco no se exige barrera. En el caso 10 identifique aquí el informe o certificado de la solución con resistencia al fuego.')}
     ${panel('F · CASO 2 — CIRCULACIÓN Y LONGITUD', '2',
       sel('mt_pas2') + num('mt_pas2a', '', 'mt_pas2=rptd10|ric') + num('mt_pas2h', '', 'mt_pas2=rptd10|ric') + num('mt_Lreq') + num('mt_Lmuro'),
       'La longitud frente al edificio solo se verifica con el valor del estudio de protección contra incendio aprobado.')}
@@ -21575,29 +21990,36 @@ function renderMurosTrafo(container) {
       num('mt_p6a') + num('mt_p6ah') + num('mt_p6b') + num('mt_p6bh') + sel('mt_long6'),
       'Altura libre piso-cielo del pasillo; no es la altura de la barrera.')}
     ${panel('F · CASO 7 — ESPACIOS, ACCESO, RETIRO Y VENTILACIÓN', '7',
+      num('mt_L7', '', 'mt_reg7=RIC') + num('mt_B7', '', 'mt_reg7=RIC') + num('mt_H7', '', 'mt_reg7=RIC') +
       num('mt_p7a', '', 'mt_reg7=RIC') + num('mt_p7h', '', 'mt_reg7=RIC') + sel('mt_enf7', '', 'mt_reg7=RIC') + num('mt_p7ea', '', 'mt_reg7=RIC&mt_enf7=si') + num('mt_p7eh', '', 'mt_reg7=RIC&mt_enf7=si') +
+      sel('mt_bt7', '', 'mt_reg7=RIC') + sel('mt_bt7T', '', 'mt_reg7=RIC&mt_bt7=si') + num('mt_bt7a', '', 'mt_reg7=RIC&mt_bt7=si') +
       num('mt_puA', '', 'mt_reg7=RIC') + num('mt_puH', '', 'mt_reg7=RIC') + sel('mt_acc7', '', 'mt_reg7=RIC') +
       num('mt_apA') + num('mt_apH') + num('mt_trA') + num('mt_trH') +
-      sel('mt_vent', '', 'mt_reg7=RIC') + num('mt_sumKVA', '', 'mt_reg7=RIC&mt_vent=natural') + num('mt_Aadm', '', 'mt_reg7=RIC&mt_vent=natural') + num('mt_Aevac', '', 'mt_reg7=RIC&mt_vent=natural') +
-      num('mt_vol', '', 'mt_reg7=RIC&mt_vent=forzada') + num('mt_Q', '', 'mt_reg7=RIC&mt_vent=forzada') + num('mt_hRej', '', 'mt_reg7=RIC') + num('mt_malla', '', 'mt_reg7=RIC'),
-      'Superficies libres netas: descuente el área ocupada por la rejilla. Si deja vacía la suma de potencias, se usa la potencia del panel A.')}
+      sel('mt_vent', '', 'mt_reg7=RIC') + num('mt_sumKVA', '', 'mt_reg7=RIC') + num('mt_Aadm', '', 'mt_reg7=RIC&mt_vent=natural') + num('mt_Aevac', '', 'mt_reg7=RIC&mt_vent=natural') +
+      num('mt_vol', '', 'mt_reg7=RIC&mt_vent=forzada') + num('mt_Q', '', 'mt_reg7=RIC&mt_vent=forzada') + num('mt_hRej', '', 'mt_reg7=RIC') + num('mt_malla', '', 'mt_reg7=RIC') +
+      num('mt_Aterm', '', 'mt_reg7=RIC&mt_vent=natural') + num('mt_Qterm', '', 'mt_reg7=RIC&mt_vent=forzada'),
+      'Superficies libres netas: descuente el área ocupada por la rejilla. Si deja vacía la suma de potencias, se usa la potencia del panel A. El volumen ventilado se toma de las dimensiones del recinto si no se ingresa. La exigencia térmica (pérdidas del equipo) es distinta del mínimo reglamentario: ingrésela desde el fabricante o el cálculo térmico.')}
     ${panel('F · CASO 8 — RECINTO EN U', '8',
-      num('mt_d8a') + num('mt_d8b') + num('mt_d8c') + num('mt_d8d') + num('mt_h8') + sel('mt_pub8') + sel('mt_anti8', '', 'mt_pub8=si') + sel('mt_cuarto8') + sel('mt_cf8') +
-      num('mt_anchoEq') + num('mt_fondoEq') + num('mt_anchoInt') + num('mt_fondoInt') + sel('mt_abierto8') + sel('mt_enfr8'))}
+      num('mt_d8a') + num('mt_d8b') + num('mt_d8c') + num('mt_d8d') + num('mt_fab8a') + num('mt_fab8b') + num('mt_fab8c') + num('mt_fab8d') +
+      num('mt_h8') + sel('mt_pub8') + sel('mt_anti8', '', 'mt_pub8=si') + sel('mt_cuarto8') + sel('mt_cf8') +
+      num('mt_anchoEq') + num('mt_fondoEq') + num('mt_anchoInt') + num('mt_fondoInt') + sel('mt_abierto8') + sel('mt_enfr8'),
+      'Retiros medidos en horizontal desde la proyección del equipo completo (radiadores, conservador, salientes) hasta la cara interior de cada muro. Exigencia del fabricante por lado: deje vacío el lado que no tenga una exigencia distinta de la general del panel A.')}
     ${panel('F · CASO 9 — CIERRE PERIMETRAL', '9',
       sel('mt_reg9') + num('mt_h9') + sel('mt_pub9', '', 'mt_reg9=RIC') + sel('mt_anti9', '', 'mt_reg9=RIC&mt_pub9=si') + num('mt_d9') + num('mt_dReq9', '', 'mt_reg9=RPTD') +
       sel('mt_reja9', '', 'mt_reg9=RIC') + num('mt_malla9', '', 'mt_reg9=RIC&mt_reja9=si') + num('mt_alam9', '', 'mt_reg9=RIC&mt_reja9=si') + num('mt_hueco9', '', 'mt_reg9=RIC&mt_reja9=si') +
       num('mt_perim9', '', 'mt_reg9=RIC&mt_reja9=si') + num('mt_nPT9', '', 'mt_reg9=RIC&mt_reja9=si'))}
     ${panel('F · CASO 10 — ESPESOR DEL MURO', '10',
-      sel('mt_fun10') + sel('mt_mat10') + num('mt_esp10') + num('mt_espF10') + num('mt_espE10') + sel('mt_abert10', '', 'mt_fun10=cierreExt') + sel('mt_div10', '', 'mt_fun10=cierreExt') +
+      sel('mt_fun10') + sel('mt_mat10') + num('mt_esp10') + num('mt_espF10') + num('mt_espE10') + txt('mt_refEstr') + sel('mt_abert10', '', 'mt_fun10=cierreExt') + sel('mt_div10', '', 'mt_fun10=cierreExt') +
       sel('mt_acredF', '', 'mt_fun10=cierreExt&mt_div10=si').replace(/mt_acredF/g, 'mt_acredF10') ,
-      'El espesor definitivo es el mayor entre el mínimo de la función, el de la solución acreditada y el estructural: los tres se verifican por separado.')}
+      'El espesor definitivo es el mayor entre el mínimo de la función, el de la solución acreditada y el estructural: los tres se verifican por separado. Esta comparación no reemplaza la verificación estructural del muro (flexión, corte, estabilidad, conexiones y fundación), que queda fuera del alcance del módulo.')}
     ${panel('F · ACEITE — UBICACIÓN, CONTENCIÓN Y EVACUACIÓN', '1,2,3,4,5,6,7,11',
-      sel('mt_hab', '1,2,3,4,5,7,11', 'mt_ambito=RPTD') + sel('mt_fosoR', '1,2,3,4,5,7,11', 'mt_ambito=RPTD') + num('mt_vFosoR', '1,2,3,4,5,7,11', 'mt_ambito=RPTD&mt_fosoR=si') +
+      sel('mt_hab', '1,2,3,4,5,7,11', 'mt_ambito=RPTD;mt_ambito=RIC&mt_remis=remision|criterio') + sel('mt_fosoR', '1,2,3,4,5,7,11', 'mt_ambito=RPTD;mt_ambito=RIC&mt_remis=remision|criterio') + num('mt_vFosoR', '1,2,3,4,5,7,11', 'mt_ambito=RPTD&mt_fosoR=si;mt_ambito=RIC&mt_remis=remision|criterio&mt_fosoR=si') +
       sel('mt_casaMaq', '7', 'mt_reg7=RPTD') + sel('mt_celdaAE', '7', 'mt_reg7=RPTD&mt_casaMaq=si') +
-      sel('mt_pInc', '7', 'mt_reg7=RIC') + sel('mt_foso', '6,7', 'mt_reg7=RIC|') + num('mt_vMax', '6,7', 'mt_reg7=RIC|&mt_foso=si') + num('mt_vOtros', '6,7', 'mt_reg7=RIC|&mt_foso=si') + num('mt_vFoso', '6,7', 'mt_reg7=RIC|&mt_foso=si') + num('mt_umbral', '6,7', 'mt_reg7=RIC|&mt_foso=no') +
+      sel('mt_pInc', '7', 'mt_reg7=RIC') + sel('mt_foso', '6,7', 'mt_reg7=RIC|') + sel('mt_fosoTipo', '6,7', 'mt_reg7=RIC|&mt_foso=si') +
+      num('mt_vMax', '6,7', 'mt_reg7=RIC|&mt_foso=si|ducto|no') + num('mt_vOtros', '6,7', 'mt_reg7=RIC|&mt_foso=si|ducto|no') + num('mt_vFoso', '6,7', 'mt_reg7=RIC|&mt_foso=si|ducto') +
+      sel('mt_fosoImp', '6,7', 'mt_reg7=RIC|&mt_foso=no') + num('mt_umbral', '6,7', 'mt_reg7=RIC|&mt_foso=no') + num('mt_Apiso', '6,7', 'mt_reg7=RIC|&mt_foso=no') + sel('mt_disp', '6,7', 'mt_reg7=RIC|&mt_foso=no|ducto') +
       sel('mt_edif7', '7', 'mt_reg7=RIC') + sel('mt_accExt', '6,7', 'mt_edif7=si|') + num('mt_esc', '6,7', 'mt_edif7=si|') + sel('mt_escInt', '6,7', 'mt_edif7=si|'),
-      'Solo se verifica para transformadores con aislante líquido. Litros de placa o ficha del equipo; en un recinto con un solo transformador, la suma de los demás es 0.')}
+      'Solo se verifica para transformadores con aislante líquido. Litros de placa o ficha del equipo; en un recinto con un solo transformador, la suma de los demás es 0. El umbral de 0,10 m es un mínimo: debe retener el aceite del transformador de mayor potencia sobre la superficie de piso indicada.')}
     ${panel('F · BASE, GRAVILLA Y DRENAJE (SUBESTACIÓN A NIVEL DE SUELO)', '8,9',
       num('mt_base', '8,9', 'mt_reg9=RIC|') + num('mt_grav', '8,9', 'mt_reg9=RIC|') + num('mt_gravExt', '8,9', 'mt_reg9=RIC|') + sel('mt_dren', '8,9', 'mt_reg9=RIC|'),
       'Gravilla medida fuera de la base; su extensión se mide desde el cierre de protección hacia afuera, en las direcciones libres.')}
@@ -21622,7 +22044,11 @@ function renderMurosTrafo(container) {
       <h3 class="lbl-left">I · ESQUEMA DEL CASO</h3>
       <div id="mt_esquema"></div>
     </div>
-    ${memPanelHtml('mti', 'J', 'MEMORIA DE VERIFICACIÓN (INFORME)', 'Ej: Subestación unitaria de 2.500 kVA en aceite mineral, a la intemperie, junto a la fachada norte de la nave de proceso...')}
+    <div class="panel" id="mt_altPanel">
+      <h3 class="lbl-left">J · ALTERNATIVAS DE CORRECCIÓN</h3>
+      <div id="mt_alt"></div>
+    </div>
+    ${memPanelHtml('mti', 'K', 'MEMORIA DE VERIFICACIÓN (INFORME)', 'Ej: Subestación unitaria de 2.500 kVA en aceite mineral, a la intemperie, junto a la fachada norte de la nave de proceso...')}
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div><div id="printSheetInforme"></div>
   `;
 
@@ -21640,7 +22066,8 @@ function renderMurosTrafo(container) {
     campos.forEach(el => { inp[el.id] = el.value; });
     if (inp.mt_caso === '1') inp.mt_dEdif = inp.mt_dEdif1;
     if (inp.mt_caso === '10') inp.mt_acredF = inp.mt_acredF10;
-    delete inp.mt_dEdif1; delete inp.mt_acredF10;
+    if (['2','4','5'].indexOf(inp.mt_caso) >= 0) inp.mt_dReq9 = inp.mt_dReq9b;
+    delete inp.mt_dEdif1; delete inp.mt_acredF10; delete inp.mt_dReq9b;
     return inp;
   }
   function visibilidad() {
@@ -21648,7 +22075,8 @@ function renderMurosTrafo(container) {
     container.querySelectorAll('[data-casos]').forEach(el => { el.style.display = el.dataset.casos.split(',').indexOf(caso) >= 0 ? '' : 'none'; });
     container.querySelectorAll('[data-si]').forEach(el => {
       if (el.dataset.casos && el.dataset.casos.split(',').indexOf(caso) < 0) return;
-      const ok = el.dataset.si.split('&').every(c => { const [id, vs] = c.split('='); return vs.split('|').indexOf(val(id)) >= 0; });
+      // «;» separa alternativas (O); «&» une condiciones (Y); «|» lista valores admitidos ('' = vacío).
+      const ok = el.dataset.si.split(';').some(g => g.split('&').every(c => { const [id, vs] = c.split('='); return vs.split('|').indexOf(val(id)) >= 0; }));
       el.style.display = ok ? '' : 'none';
     });
     // Caso 3: siempre dos equipos.
@@ -21669,6 +22097,7 @@ function renderMurosTrafo(container) {
       document.getElementById('mt_global').innerHTML = '';
       document.getElementById('mt_tabla').innerHTML = '<p class="note">Sin resultados: corregir los datos indicados arriba.</p>';
       document.getElementById('mt_esquema').innerHTML = '';
+      document.getElementById('mt_alt').innerHTML = '';
       buildPrintSheetsMurosTrafo(inp, r);
       return;
     }
@@ -21679,16 +22108,24 @@ function renderMurosTrafo(container) {
     let g = '', h = '<table class="results"><tr><th>Parámetro</th><th>Terreno</th><th>Exigencia</th><th>Referencia</th><th>Estado</th></tr>';
     r.filas.forEach(f => {
       if (f.grupo !== g) { g = f.grupo; h += `<tr><td colspan="5"><b>${esc(g)}</b></td></tr>`; }
-      h += `<tr><td>${esc(f.param)}${f.obs ? `<div class="note" style="margin:.2rem 0 0">${esc(f.obs)}</div>` : ''}</td><td class="num">${esc(f.terreno)}</td><td>${esc(f.exig)}</td><td>${esc(f.ref)}</td><td><span class="chip ${MT_CHIP[f.estado]}">${f.estado}</span></td></tr>`;
+      h += `<tr><td>${esc(f.param)}${f.obs ? `<div class="note" style="margin:.2rem 0 0">${esc(f.obs)}</div>` : ''}</td><td class="num">${esc(f.terreno)}</td><td>${esc(f.exig)}</td><td>${esc(f.ref)}<div class="note" style="margin:.2rem 0 0">${esc(mtTipoTxt(f.tipo))}</div></td><td><span class="chip ${MT_CHIP[f.estado]}">${f.estado}</span></td></tr>`;
     });
     h += '</table>';
+    h += `<p class="note"><b>Fuera del alcance de este módulo:</b><br>${r.fueraAlcance.map(esc).join('<br>')}</p>`;
     h += `<p class="note">${r.criterios.map(esc).join('<br>')}</p>`;
     document.getElementById('mt_tabla').innerHTML = h;
+    const alts = r.alternativas || [];
+    document.getElementById('mt_alt').innerHTML = alts.length
+      ? `<p class="note">Cada alternativa se aplicó a una copia de los datos y se recalculó el caso completo. Ninguna se presenta como «cumple»: queda condicionada a lo que no acredita. Los valores ingresados no se modifican.</p>` +
+        alts.map(a => `<div class="panel" style="margin:.5rem 0;padding:.6rem .8rem"><b>${esc(a.param)}</b> <span class="chip ${a.resultado === 'CONDICIONADA' || a.resultado === 'RESUELVE LA FILA' ? 'warn' : 'bad'}">${esc(a.resultado)}</span>
+          <div class="note" style="margin:.3rem 0 0"><b>Modificación:</b> ${esc(a.mod)} · <b>Valor objetivo:</b> ${esc(a.obj)}${Object.keys(a.cambios).length ? ` (${esc(mtAltCambios(a))})` : ''}<br><b>Fundamento:</b> ${esc(a.fundamento)}<br>
+          <b>Recálculo:</b> ${esc(mtAltRes(a))}${a.nuevasNC.length ? ' · nuevos incumplimientos: ' + esc(a.nuevasNC.join('; ')) : ''}<br><b>Condiciones pendientes:</b> ${esc(a.cond.join(' ') || '—')}</div></div>`).join('')
+      : '<p class="note">Sin parámetros con NO CUMPLE: no se proponen alternativas.</p>';
     // Elevación de coronación (tema de la app) y esquemas acotados del caso (fondo blanco, sin escala).
     const esqs = mtEsquemas(inp, r).filter(x => !/^Elevación: cota superior/.test(x.cap));
     const elevApp = ['2','3','4','5'].indexOf(inp.mt_caso) >= 0 || (inp.mt_caso === '8' && inp.mt_cf8 === 'si');
     document.getElementById('mt_esquema').innerHTML = (elevApp ? svgCoronacionTrafo(inp, r) : '') +
-      esqs.map(x => `<div style="margin-top:.8rem">${x.svg}<p class="note" style="text-align:center;margin:.3rem 0 0">${esc(x.cap)}. Sin escala; cotas en verde (cumple), rojo (no cumple) u ocre (sin verificar).</p></div>`).join('');
+      esqs.map(x => `<div style="margin-top:.8rem">${x.svg}<p class="note" style="text-align:center;margin:.3rem 0 0">${esc(x.cap)}. ${/a escala/.test(x.svg) ? 'Planta a escala de las medidas ingresadas' : 'Esquema sin escala'}; cotas en verde (cumple), rojo (no cumple), ocre (sin verificar) o morado (fuera de alcance).</p></div>`).join('');
     buildPrintSheetsMurosTrafo(inp, r);
   }
 
@@ -46460,11 +46897,12 @@ const mvsVacio = v => !v || /^_+$/.test(v) || v === '—';
 function mvsEstados(C) {
   const out = [];
   C.secs.filter(s => s.grupo === 'calculo').forEach(s => s.filas.forEach(f => {
-    const e = f.find(c => /^(NO CUMPLE|NO VERIFICADO|CUMPLE|N\/A)\b/i.test(c.t));
+    const e = f.find(c => /^(NO CUMPLE|NO VERIFICADO|FUERA DE ALCANCE|CUMPLE|N\/A)\b/i.test(c.t));
     if (!e) return;
-    const est = /^NO CUMPLE/i.test(e.t) ? 'NO CUMPLE' : (/^NO VERIFICADO/i.test(e.t) ? 'NO VERIFICADO' : (/^N\/A/i.test(e.t) ? 'N/A' : 'CUMPLE'));
+    // FUERA DE ALCANCE impide declarar cumplimiento igual que NO VERIFICADO.
+    const est = /^NO CUMPLE/i.test(e.t) ? 'NO CUMPLE' : (/^(NO VERIFICADO|FUERA DE ALCANCE)/i.test(e.t) ? 'NO VERIFICADO' : (/^N\/A/i.test(e.t) ? 'N/A' : 'CUMPLE'));
     const lab = (f[0] && f[0] !== e ? f[0].t : s.titulo).replace(/^Estado:\s*/i, '');
-    const val = f.filter(c => c !== e && c !== f[0] && c.t && !/^(NO CUMPLE|NO VERIFICADO|CUMPLE|N\/A)/i.test(c.t)).map(c => c.t).join(' · ');
+    const val = f.filter(c => c !== e && c !== f[0] && c.t && !/^(NO CUMPLE|NO VERIFICADO|FUERA DE ALCANCE|CUMPLE|N\/A)/i.test(c.t)).map(c => c.t).join(' · ');
     out.push({sec:s.titulo, lab, val, est});
   }));
   return out;
@@ -52584,6 +53022,8 @@ route();
   window.addEventListener('hashchange', () => { if (DOCK) { DOCK.remove(); DOCK = null; document.documentElement.classList.remove('sol-dock'); } });
 
   function abrir() {
+    // Muros de transformadores: los datos son mediciones de terreno; las alternativas las calcula el propio módulo (panel J).
+    if (herr() === 'muros-transformadores') { const p = document.getElementById('mt_altPanel'); if (p) { p.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; } }
     const f = fallas(), cands = candidatos();
     const ov = document.createElement('div'); ov.id = 'solOv';
     const fmt = v => (typeof v === 'number' ? v.toLocaleString('es-CL', { maximumFractionDigits: 4 }) : String(v));
