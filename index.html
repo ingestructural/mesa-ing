@@ -52564,9 +52564,8 @@ route();
     if (big) { var bw = Math.min(Math.max(w, Math.round(window.innerWidth * 0.55)), 1000); left = window.innerWidth - bw - 20; w = bw; }
     box.style.display = 'flex'; box.style.left = left + 'px'; box.style.width = (big ? w : Math.min(w, 760)) + 'px';
     box.style.maxHeight = (window.innerHeight - 80) + 'px';
-    // si el esquema original ya está a la vista en la página, se atenúa la copia
-    var vis = srcs.some(function(el){ var q = el.getBoundingClientRect(); return q.top < window.innerHeight * 0.75 && q.bottom > window.innerHeight * 0.25; });
-    box.classList.toggle('dim', vis);
+    // el esquema se mantiene siempre visible, aunque el original también esté a la vista (pedido de ING, 28-10-2026)
+    box.classList.remove('dim');
   }
   function sync(){
     srcs = fuentes();
