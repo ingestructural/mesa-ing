@@ -52561,7 +52561,7 @@ route();
       box.style.maxHeight = (window.innerHeight - 140) + 'px'; return;
     }
     btn.style.display = 'none';
-    if (big) { var bw = Math.min(Math.max(w, Math.round(window.innerWidth * 0.55)), 1000); left = window.innerWidth - bw - 20; w = bw; }
+    if (big) { var bw = Math.min(Math.max(w, Math.round(window.innerWidth * 0.55)), 1000); left = Math.min(window.innerWidth - bw - 20, left); w = bw; } // ampliado: junto a la planilla si cabe, no pegado al borde derecho de pantallas anchas
     box.style.display = 'flex'; box.style.left = left + 'px'; box.style.width = (big ? w : Math.min(w, 760)) + 'px';
     box.style.maxHeight = (window.innerHeight - 80) + 'px';
     // el esquema se mantiene siempre visible, aunque el original también esté a la vista (pedido de ING, 28-10-2026)
