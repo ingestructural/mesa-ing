@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cotizador ING</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="theme-color" content="#1a5fb4">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<script>window.PW_CFG = {"url": "https://tayuwtdfeworgvnzmwkz.supabase.co", "key": "sb_publishable_bjPqOTlpvh2GdhlZyH9PjQ_CI8G-71h"};</script>
+<style>
+/* Cotizador ING Estructural · editor a la izquierda, hojas tamaño carta a la derecha (se apilan en pantallas angostas) */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --fg:#1b2430; --muted:#5d6a78; --line:#d0d7df;
+  --accent:#1a5fb4; --accent-soft:#e2ecf8; --input:#fff8e1; --warn:#9a5b00; --ok:#2f7a4a;
+  --doc-bg:#ffffff; --doc-fg:#111111; --doc-blue:#4472c4; --doc-blue2:#9dc3e6; --doc-band:#d9e1f2; --doc-in:#fff2cc; --doc-line:#bfbfbf; --doc-ink:#1f3fbf; --doc-navy:#1f3864;
+  --f-display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --f-body:"Source Sans 3","Segoe UI",Arial,sans-serif;
+  --f-mono:"JetBrains Mono",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#11161c;--panel:#19212a;--fg:#e3e8ee;--muted:#9aa7b4;--line:#2e3a46;--accent:#79aef0;--accent-soft:#1d3047;--input:#2a2618;--warn:#e3a54a;--ok:#6cc08b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#11161c;--panel:#19212a;--fg:#e3e8ee;--muted:#9aa7b4;--line:#2e3a46;--accent:#79aef0;--accent-soft:#1d3047;--input:#2a2618;--warn:#e3a54a;--ok:#6cc08b;color-scheme:dark}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45}
+img{max-width:100%}
+.top{padding-block:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;border-bottom:1px solid var(--line);background:var(--panel)}
+.top h1{font-family:var(--f-display);font-size:1.6rem;margin:0;font-weight:700}
+.top .sub{color:var(--muted);font-size:.85rem}
+.top .sp{flex:1}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{font:inherit;font-weight:600;padding:7px 14px;border:0;background:var(--panel);color:var(--fg);cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+.pill{font-family:var(--f-mono);font-size:.72rem;padding:3px 8px;border:1px solid currentColor;border-radius:99px}
+.pill.ok{color:var(--ok)} .pill.off{color:var(--warn)}
+.main{display:grid;grid-template-columns:minmax(0,460px) minmax(0,1fr);gap:20px;padding-block:18px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));align-items:start}
+@media (max-width:1100px){.main{grid-template-columns:minmax(0,1fr)}}
+.ed{display:flex;flex-direction:column;gap:14px;min-width:0}
+fieldset{border:1px solid var(--line);background:var(--panel);margin:0;padding:12px 14px 14px;display:flex;flex-direction:column;gap:10px;min-width:0;border-radius:6px}
+legend{font-family:var(--f-display);font-weight:600;font-size:1.1rem;padding:0 6px}
+.src{font-family:var(--f-mono);font-size:.66rem;padding:1px 6px;background:var(--accent-soft);color:var(--accent);margin-left:6px;vertical-align:middle}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}
+.grid2 .full{grid-column:1/-1}
+label{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted);font-weight:600;min-width:0}
+input,select,textarea{font:inherit;font-size:.92rem;color:var(--fg);background:var(--input);border:1px solid var(--line);border-radius:4px;padding:6px 8px;width:100%;box-sizing:border-box;min-width:0}
+textarea{min-height:64px;resize:vertical}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.hint{font-size:.78rem;color:var(--muted)}
+.hint.w{color:var(--warn)}
+.it{width:100%;border-collapse:collapse;font-size:.88rem}
+.it th{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;padding:3px 4px}
+.it td{padding:2px 3px}
+.it td.n input{text-align:right;font-variant-numeric:tabular-nums}
+.it td.t{text-align:right;font-family:var(--f-mono);font-size:.8rem;white-space:nowrap;padding-right:6px}
+.btn{font:inherit;font-size:.85rem;font-weight:600;padding:6px 12px;border:1px solid var(--accent);color:var(--accent);background:transparent;border-radius:4px;cursor:pointer;align-self:flex-start}
+.btn.pri{background:var(--accent);color:#fff}
+.btn.x{border:0;padding:4px 6px;color:var(--muted)}
+.btn:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+details summary{cursor:pointer;font-weight:600;font-size:.9rem}
+.cat{max-height:260px;overflow:auto;border:1px solid var(--line)}
+.cat .it td input{background:var(--panel)}
+.extra{border:1px dashed var(--line);border-radius:4px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.extra .row label{flex:1}
+.pv{min-width:0;display:flex;flex-direction:column;gap:8px}
+.pvbar{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;font-size:.82rem;color:var(--muted)}
+.paperwrap{overflow-x:auto;border:1px solid var(--line);background:var(--bg);padding:12px 0}
+.login{max-width:420px}
+.msg{font-size:.85rem;color:var(--warn);min-height:1em}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:.9rem;z-index:20}
+
+/* ---- hojas tamaño carta: mismo aspecto en ambos temas ---- */
+.page{background:var(--doc-bg);color:var(--doc-fg);font-family:Arial,Helvetica,sans-serif;font-size:12pt;line-height:1.3;width:8.5in;min-height:11in;margin:0 auto 14px;padding:.4cm 2.5cm 2.2cm 1.59cm;box-sizing:border-box;box-shadow:0 1px 6px rgba(0,0,0,.18);display:flex;flex-direction:column;position:relative}
+.page.cont{min-height:0}
+.page .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1.5px solid var(--doc-navy);padding-bottom:6px;margin-bottom:18px;gap:10px}
+.page .hd img{width:3in;height:auto;display:block}
+.page .hd .r{text-align:right;font-size:9pt;font-weight:700;color:var(--doc-navy)}
+.page .hd .r span{font-weight:400;color:#595959}
+.page table{border-collapse:collapse;width:100%}
+.page td,.page th{border:1px solid var(--doc-line);padding:3px 6px;vertical-align:top}
+.page .k{width:34%}
+.page .v{background:var(--doc-in);color:var(--doc-ink)}
+.page .band{background:var(--doc-band);color:var(--doc-navy);font-weight:700;padding:4px 8px;margin-top:14px}
+.page th{background:var(--doc-blue);color:#fff;font-weight:700;text-align:center}
+.page td.num{text-align:center;color:var(--doc-ink)}
+.page td.tot{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.page tr.sum td{background:var(--doc-blue2);font-weight:700;padding:6px}
+.page .leg{background:var(--doc-band);font-size:9pt;color:#333;text-align:center;padding:4px;margin-top:6px}
+.page h2{font-size:14pt;margin:16px 0 6px;font-weight:700;color:var(--doc-navy)}
+.page h3{font-size:12pt;margin:10px 0 4px;font-weight:700}
+.page p{margin:0 0 6pt;text-align:justify}
+.page ul{margin:0 0 6pt;padding-left:22px}
+.page .ttl{text-align:center;font-weight:700;text-decoration:underline;margin:0 0 6pt;color:var(--doc-navy)}
+.page .cover-t1{font-size:22pt}
+.page .cover-t2{font-size:20pt}
+.page .cover td{font-size:14pt;padding:6px 8px}
+.page .firma{margin-top:28px;text-align:center;font-weight:700;line-height:1.35}
+.page .firma span{font-weight:400}
+.page .ph{color:#b04a00;font-style:italic}
+.page .ft{margin-top:auto;padding-top:16px}
+.page .ft div{border-top:1px solid var(--doc-navy);padding-top:4px;font-size:8pt;color:#555;display:flex;justify-content:space-between}
+.page .mini{width:100%}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div><h1>Cotizador ING Estructural</h1><div class="sub" id="tdesc"></div></div>
+  <div class="seg" role="group" aria-label="Tipo de cotización">
+    <button type="button" data-t="rapida">Rápida</button>
+    <button type="button" data-t="formal">Formal</button>
+    <button type="button" data-t="flexible">Flexible</button>
+  </div>
+  <span class="sp"></span>
+  <span class="pill off" id="pwState">POWER: sin conectar</span>
+  <button type="button" class="btn" id="btnPower">Conectar POWER</button>
+</div>
+
+<div class="main">
+<form class="ed" id="ed" autocomplete="off">
+  <fieldset class="login" id="loginBox" hidden>
+    <legend>Iniciar sesión en POWER</legend>
+    <label for="lgMail">Correo<input id="lgMail" type="email" autocomplete="username"></label>
+    <label for="lgPass">Contraseña<input id="lgPass" type="password" autocomplete="current-password"></label>
+    <div class="row"><button type="button" class="btn pri" id="lgGo">Entrar</button><button type="button" class="btn x" id="lgCancel">Cancelar</button></div>
+    <div class="msg" id="lgMsg"></div>
+    <div class="hint">Use la misma cuenta de POWER. El cotizador solo lee clientes y proyectos; no modifica POWER.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Datos de la cotización <span class="src">POWER</span></legend>
+    <label for="buscaProy">Proyecto en POWER (código, mandante o nombre)
+      <input id="buscaProy" list="dlProy" placeholder="Escriba para buscar…"></label>
+    <datalist id="dlProy"></datalist>
+    <div class="hint" id="proyHint"></div>
+    <div class="grid2">
+      <label class="full" for="mandante">Mandante<input id="mandante"></label>
+      <label class="full" for="proyecto">Proyecto<input id="proyecto"></label>
+      <label for="contacto">Contacto (REF)<input id="contacto"></label>
+      <label for="fecha">Fecha<input id="fecha" type="date"></label>
+      <label for="numero">N° de cotización (código POWER)<input id="numero"></label>
+      <label for="plazo">Plazo de ejecución (días)<input id="plazo" type="number" min="0" step="1"></label>
+    </div>
+    <div class="row" id="fechaIngRow" hidden><button type="button" class="btn x" id="usarIngreso" style="color:var(--accent)"></button></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Cuadro de ítems (HH)</legend>
+    <table class="it" id="tItems">
+      <thead><tr><th>Ítem</th><th>hh/ing.</th><th>hh/proy.</th><th style="text-align:right">UF</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <datalist id="dlCat"></datalist>
+    <div class="row"><button type="button" class="btn" id="addItem">Agregar ítem</button><span class="hint" id="sumHH"></span></div>
+    <div class="grid2">
+      <label for="tIng">UF/hora ingeniero<input id="tIng" type="number" step="0.01" min="0"></label>
+      <label for="tProy">UF/hora proyectista<input id="tProy" type="number" step="0.01" min="0"></label>
+    </div>
+    <div class="hint">Tarifas de uso interno, no se imprimen.</div>
+    <details>
+      <summary>Catálogo de ítems y entregables</summary>
+      <p class="hint">Cada ítem del catálogo suma documentos a la tabla de entregables. Puede editar o agregar ítems.</p>
+      <div class="cat"><table class="it" id="tCat"><thead><tr><th>Ítem</th><th>Planos A1</th><th>MDC/Inf.</th><th>EETT</th><th></th></tr></thead><tbody></tbody></table></div>
+      <button type="button" class="btn" id="addCat" style="margin-top:8px">Agregar al catálogo</button>
+    </details>
+  </fieldset>
+
+  <fieldset data-only="formal flexible">
+    <legend>Contenido del documento</legend>
+    <div class="hint" id="contHint"></div>
+    <label for="validez">Validez de la oferta (días corridos)<input id="validez" type="number" min="0" step="1"></label>
+    <label for="antecedentes">1. Antecedentes del proyecto<textarea id="antecedentes"></textarea></label>
+    <label for="incluye">2.1 Incluye (una línea por punto)<textarea id="incluye"></textarea></label>
+    <label for="noIncluye">2.2 No incluye (una línea por punto)<textarea id="noIncluye"></textarea></label>
+    <div id="ex2"></div>
+    <button type="button" class="btn" data-addx="2" id="addX2">Agregar punto al 2</button>
+    <div class="grid2">
+      <label for="valorUF">Valor UF para el resumen en CLP<input id="valorUF" type="number" step="0.01" min="0"></label>
+      <label for="iva">IVA (%)<input id="iva" type="number" step="0.1" min="0"></label>
+    </div>
+    <div class="row"><button type="button" class="btn x" id="ufHoy" style="color:var(--accent)">Traer UF del día (mindicador.cl)</button><span class="hint" id="ufMsg"></span></div>
+    <div>
+      <div class="hint" style="font-weight:600;margin-bottom:4px">5.1 Forma de pago (hitos)</div>
+      <table class="it" id="tPagos"><thead><tr><th style="width:70px">%</th><th>Hito</th><th style="text-align:right">UF</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="row" style="margin-top:6px"><button type="button" class="btn" id="addPago">Agregar hito</button><span class="hint" id="pctSum"></span></div>
+    </div>
+    <label for="plazoTxt">5.2 Plazo de entrega<textarea id="plazoTxt"></textarea></label>
+    <label for="otras">5.4 Otras condiciones (una línea por punto)<textarea id="otras"></textarea></label>
+    <div id="ex5"></div>
+    <button type="button" class="btn" data-addx="5" id="addX5">Agregar punto al 5</button>
+    <button type="button" class="btn" id="usarPlantilla" data-only="flexible">Rellenar con textos de plantilla</button>
+  </fieldset>
+
+  <div class="row"><button type="button" class="btn" id="nueva">Nueva cotización</button></div>
+</form>
+
+<div class="pv">
+  <div class="pvbar"><span>Vista de la cotización · tamaño carta</span>
+    <span class="row"><button type="button" class="btn pri" id="expWord">Descargar Word</button><button type="button" class="btn" id="expPdf">Descargar PDF</button></span></div>
+  <div class="paperwrap"><div id="doc"></div></div>
+</div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const LOGO_SRC = "logo-ing.png";
+const DEMO = false;   // true en la vista previa publicada fuera del sitio
+// Catálogo de 01 Presupuesto_ING_Estructural.xlsx (columnas G:J): planos A1, MDC/informe, EETT que aporta cada ítem
+const CAT0 = [
+ ["Modelación 3D",0,0,0],["Diseño estructura de acero",0,0,0],["Diseño estructura de hormigón armado",0,0,0],["Diseño de fundaciones",0,0,0],
+ ["Revisión Fundación y anclajes",0,0,0],["Diseño de placas base",0,0,0],["Diseño de vigas",0,0,0],["Diseño sísmico NCh2369/433",0,0,0],
+ ["Revisión de proyecto estructural",0,0,0],["Elaboración memoria de cálculo",0,1,0],["Verificación Estructural",0,1,0],["Diseño reforzamientos",0,1,0],
+ ["Elaboración informe estructural",0,1,0],["Elaboración plano diseño detallado A1",1,0,0],["Elaboración especificaciones técnicas (EETT)",0,0,1],
+ ["Inspección técnica de obra (ITO)",0,0,0],["Anteproyecto estructural",0,0,0],["Visita Técnica",0,0,0],["Asesoría técnica",0,0,0]
+].map(([n,p,m,e])=>({n,p,m,e}));
+// Ejemplos de los archivos enviados por ING (se usan solo sin conexión a POWER)
+const EJEMPLOS = [
+ {id:"ej1", codigo:"", mandante:"MAESA LTDA.", proyecto:"VERIFICACION SISTEMA DE IZAJE VML", contacto:"M. FIGUEROA", creado:""},
+ {id:"ej2", codigo:"", mandante:"INCHALAM", proyecto:"DISEÑO MONORRIEL INCHALAM", contacto:"J. PARRAO", creado:""}
+];
+// Textos fijos de Formato_Cotizacion_Ingenieria_1.docx
+const TPL = {
+ antecedentes:"La presente cotización tiene por objeto establecer los honorarios y condiciones comerciales para la prestación de servicios de ingeniería estructural asociados al proyecto.",
+ alcance:"El alcance de los servicios cotizados incluye, según se detalla en la sección 3, el desarrollo de ingeniería estructural por horas hombre (HH) y/o la emisión de entregables específicos (planos, memorias, especificaciones e informes de inspección).",
+ sec3:"Los honorarios han sido determinados en base a una tarifa horaria por categoría. El siguiente cuadro detalla los ítems cotizados por horas hombre (HH) dedicadas y/o por entregable. Los valores son netos, no incluyen IVA.",
+ noIncluye:["Estudio de mecánica de suelos, ensayos de laboratorio ni sondajes (se cotizan por terceros).","Tramitación de permisos municipales, DOM ni otros organismos.","Levantamiento topográfico."],
+ otras:["Los honorarios no incluyen gastos notariales, permisos, derechos municipales ni ensayos de laboratorio, salvo indicación expresa.","Cualquier modificación al alcance definido en la sección 2 será cotizada como trabajo adicional.","Movilización, alojamiento y viáticos para visitas a terreno fuera del radio urbano de la oficina se cotizan por separado, salvo que se indique lo contrario."]
+};
+const FIRMA = ["ING Estructural","J. Germán Aguilera Hafner","Ingeniero Civil"];
+const today = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10); };
+function nueva(tipo){return {
+ tipo:tipo||"rapida", proyId:"", numero:"", mandante:"", proyecto:"", contacto:"", fecha:today(), fechaIngreso:"", plazo:"",
+ items:[{n:"",hi:"",hp:""}], tIng:1.22, tProy:0.75, cat:CAT0.map(c=>({...c})),
+ validez:"", antecedentes:TPL.antecedentes, incluye:"", noIncluye:TPL.noIncluye.join("\n"), ex2:[],
+ valorUF:"", iva:19, pagos:[], plazoTxt:"", otras:TPL.otras.join("\n"), ex5:[]
+};}
+function ejemplo(){const s=nueva("rapida");Object.assign(s,{proyId:"ej1",mandante:EJEMPLOS[0].mandante,proyecto:EJEMPLOS[0].proyecto,contacto:EJEMPLOS[0].contacto,plazo:3,
+ items:[{n:"Modelación 3D",hi:3,hp:2},{n:"Verificación Estructural",hi:5,hp:0},{n:"Elaboración memoria de cálculo",hi:3,hp:1}]});return s;}
+
+const LS = { get:k=>{try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}}, set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}} };
+const KEY="cot_ing_borrador_v2";
+let S = LS.get(KEY); if(!S||!S.items) S = ejemplo();
+S.ex2 = S.ex2||[]; S.ex5 = S.ex5||[]; S.pagos = S.pagos||[];
+const save=()=>LS.set(KEY,S);
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num=v=>{const x=parseFloat(String(v??"").replace(",","."));return isFinite(x)?x:0};
+const f1=x=>x.toLocaleString("es-CL",{minimumFractionDigits:1,maximumFractionDigits:1});
+const f2=x=>x.toLocaleString("es-CL",{minimumFractionDigits:2,maximumFractionDigits:2});
+const clp=x=>"$ "+Math.round(x).toLocaleString("es-CL");
+const fdate=d=>{if(!d)return"";const[a,m,dd]=String(d).slice(0,10).split("-");return `${dd}-${m}-${a}`};
+const lines=t=>String(t||"").split("\n").map(s=>s.trim()).filter(Boolean);
+function toast(t){const el=$("toast");el.textContent=t;el.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>el.hidden=true,3200);}
+const TDESC={rapida:"Rápida · formato propio con cuadro de ítems",formal:"Formal · portada y secciones con textos de plantilla",flexible:"Flexible · estructura de la formal con contenido manual"};
+
+/* ---------------- POWER (Supabase, solo lectura) ---------------- */
+const PW = (()=>{
+  const CFG = window.PW_CFG||{}; const K_S="cot_pw_sess", K_C="cot_pw_cache";
+  let sess = LS.get(K_S), cache = LS.get(K_C) || {clientes:[], proyectos:[]};
+  const hdr = auth => { const h={apikey:CFG.key,"Content-Type":"application/json"}; if(auth&&sess) h.Authorization="Bearer "+sess.access_token; return h; };
+  async function auth(grant, body){
+    const r = await fetch(`${CFG.url}/auth/v1/token?grant_type=${grant}`,{method:"POST",headers:hdr(false),body:JSON.stringify(body)});
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(j.error_description||j.msg||j.message||("Error "+r.status));
+    sess = {access_token:j.access_token, refresh_token:j.refresh_token, expires_at:j.expires_at||(Date.now()/1000+(j.expires_in||3600)), email:j.user&&j.user.email};
+    LS.set(K_S,sess); return sess;
+  }
+  async function ensure(){ if(!sess) throw Object.assign(new Error("Sin sesión"),{code:"auth"});
+    if(sess.expires_at-Date.now()/1000<90){ try{await auth("refresh_token",{refresh_token:sess.refresh_token});}catch(e){sess=null;LS.set(K_S,null);throw Object.assign(new Error("La sesión expiró"),{code:"auth"});} } }
+  async function load(){
+    await ensure(); const rows=[]; const step=1000;
+    for(let from=0;;from+=step){
+      const r = await fetch(`${CFG.url}/rest/v1/docs?select=col,id,data&col=in.(clientes,proyectos)&order=col.asc,id.asc&offset=${from}&limit=${step}`,{headers:hdr(true)});
+      if(r.status===401){sess=null;LS.set(K_S,null);throw Object.assign(new Error("La sesión expiró"),{code:"auth"});}
+      if(!r.ok) throw new Error("Error "+r.status);
+      const b = await r.json(); rows.push(...b); if(b.length<step) break;
+    }
+    cache = {clientes:rows.filter(r=>r.col==="clientes").map(r=>({id:r.id,...r.data})), proyectos:rows.filter(r=>r.col==="proyectos").map(r=>({id:r.id,...r.data})), at:Date.now()};
+    LS.set(K_C,cache); return cache;
+  }
+  return { get logged(){return !!sess}, get email(){return sess&&sess.email}, get data(){return cache},
+    login:(email,password)=>auth("password",{email,password}), load, logout(){sess=null;LS.set(K_S,null);} };
+})();
+function proyectosLista(){
+  const P = PW.data.proyectos||[];
+  if(!P.length) return DEMO||!PW.logged ? EJEMPLOS : [];
+  return [...P].sort((a,b)=>String(b.creado||"").localeCompare(String(a.creado||""))||String(b.codigo||"").localeCompare(String(a.codigo||"")));
+}
+const proyLabel=p=>[p.codigo,p.mandante,p.proyecto].filter(Boolean).join(" · ");
+function renderPwState(){
+  const n=(PW.data.proyectos||[]).length, el=$("pwState");
+  if(PW.logged&&n){el.textContent=`POWER: ${n} proyectos`;el.className="pill ok";$("btnPower").textContent="Actualizar";}
+  else if(PW.logged){el.textContent="POWER: conectado";el.className="pill ok";$("btnPower").textContent="Actualizar";}
+  else {el.textContent=DEMO?"POWER: vista previa con ejemplos":"POWER: sin conectar";el.className="pill off";$("btnPower").textContent="Conectar POWER";}
+  $("btnPower").hidden=DEMO;
+  $("dlProy").innerHTML=proyectosLista().map(p=>`<option value="${esc(proyLabel(p))}">`).join("");
+  $("proyHint").textContent = PW.logged ? "Al elegir un proyecto se copian mandante, proyecto, contacto y código." : (DEMO ? "Vista previa: la lista trae dos ejemplos. En el sitio se cargan los proyectos de POWER." : "Conecte POWER para buscar sus proyectos. Mientras tanto la lista trae dos ejemplos.");
+}
+async function cargarPower(){
+  try{ await PW.load(); renderPwState(); toast("Proyectos de POWER cargados"); }
+  catch(e){ if(e.code==="auth"){ $("loginBox").hidden=false; $("lgMsg").textContent=e.message==="Sin sesión"?"":e.message; renderPwState(); } else toast("No se pudo leer POWER: "+e.message); }
+}
+function aplicarProyecto(p){
+  const cli=(PW.data.clientes||[]).find(c=>c.nombre===p.mandante);
+  Object.assign(S,{proyId:p.id, numero:p.codigo||"", mandante:p.mandante||(cli&&cli.nombre)||"", proyecto:p.proyecto||"", contacto:p.contacto||"", fechaIngreso:p.creado||""});
+  if(p.descripcion && (!S.antecedentes.trim()||S.antecedentes===TPL.antecedentes)) S.antecedentes = TPL.antecedentes+"\n"+p.descripcion;
+  fillFields(); renderIngreso(); renderDoc(); save();
+}
+function renderIngreso(){ const r=$("fechaIngRow"); r.hidden=!S.fechaIngreso||S.fechaIngreso===S.fecha; $("usarIngreso").textContent=`Usar fecha de ingreso en POWER (${fdate(S.fechaIngreso)})`; }
+
+/* ---------------- cálculo ---------------- */
+function itemUF(it){return String(it.n||"").trim()?num(it.hi)*num(S.tIng)+num(it.hp)*num(S.tProy):0}
+function totales(){
+  const neto=S.items.reduce((s,it)=>s+itemUF(it),0), ent={p:0,m:0,e:0};
+  S.items.forEach(it=>{const n=String(it.n||"").trim().toLowerCase(); const c=n&&S.cat.find(c=>String(c.n).trim().toLowerCase()===n); if(c){ent.p+=num(c.p);ent.m+=num(c.m);ent.e+=num(c.e)}});
+  return {neto,ent,hi:S.items.reduce((s,i)=>s+num(i.hi),0),hp:S.items.reduce((s,i)=>s+num(i.hp),0)};
+}
+
+/* ---------------- editor ---------------- */
+const FIELDS=["mandante","proyecto","contacto","fecha","numero","plazo","tIng","tProy","validez","antecedentes","incluye","noIncluye","valorUF","iva","plazoTxt","otras"];
+function fillFields(){FIELDS.forEach(k=>{$(k).value=S[k]??""}); const p=proyectosLista().find(p=>p.id===S.proyId); $("buscaProy").value=p?proyLabel(p):"";}
+function renderTipo(){
+  document.querySelectorAll(".seg button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===S.tipo)));
+  document.querySelectorAll("[data-only]").forEach(el=>el.hidden=!el.dataset.only.split(" ").includes(S.tipo));
+  $("tdesc").textContent=TDESC[S.tipo];
+  $("contHint").textContent=S.tipo==="formal"?"Textos precargados desde su formato Word. Complete o ajuste cada sección.":"Ingrese el contenido a mano. El botón al final rellena con los textos de plantilla si los necesita.";
+}
+function renderItems(){
+  $("dlCat").innerHTML=S.cat.map(c=>`<option value="${esc(c.n)}">`).join("");
+  $("tItems").tBodies[0].innerHTML=S.items.map((it,i)=>`<tr>
+    <td><input list="dlCat" id="it-n-${i}" data-i="${i}" data-k="n" value="${esc(it.n)}" aria-label="Ítem ${i+1}"></td>
+    <td class="n" style="width:64px"><input id="it-hi-${i}" data-i="${i}" data-k="hi" inputmode="decimal" value="${esc(it.hi)}" aria-label="HH ingeniero ítem ${i+1}"></td>
+    <td class="n" style="width:64px"><input id="it-hp-${i}" data-i="${i}" data-k="hp" inputmode="decimal" value="${esc(it.hp)}" aria-label="HH proyectista ítem ${i+1}"></td>
+    <td class="t" id="it-t-${i}">${f1(itemUF(it))}</td>
+    <td><button type="button" class="btn x" data-del="${i}" aria-label="Quitar ítem">✕</button></td></tr>`).join("");
+}
+function renderCat(){
+  $("tCat").tBodies[0].innerHTML=S.cat.map((c,i)=>`<tr>
+    <td><input id="cat-n-${i}" data-c="${i}" data-k="n" value="${esc(c.n)}" aria-label="Nombre ítem catálogo"></td>
+    ${["p","m","e"].map(k=>`<td class="n" style="width:56px"><input id="cat-${k}-${i}" data-c="${i}" data-k="${k}" inputmode="numeric" value="${esc(c[k])}"></td>`).join("")}
+    <td><button type="button" class="btn x" data-cdel="${i}" aria-label="Quitar del catálogo">✕</button></td></tr>`).join("");
+}
+function renderPagos(){
+  const {neto}=totales();
+  $("tPagos").tBodies[0].innerHTML=S.pagos.map((p,i)=>`<tr>
+    <td class="n"><input id="pg-pct-${i}" data-p="${i}" data-k="pct" inputmode="decimal" value="${esc(p.pct)}"></td>
+    <td><input id="pg-h-${i}" data-p="${i}" data-k="h" value="${esc(p.h)}" placeholder="Ej.: contra entrega de memoria de cálculo"></td>
+    <td class="t" id="pg-t-${i}">${f1(neto*num(p.pct)/100)}</td>
+    <td><button type="button" class="btn x" data-pdel="${i}" aria-label="Quitar hito">✕</button></td></tr>`).join("");
+  updPagoSum();
+}
+function renderExtras(){
+  [["2",3],["5",5]].forEach(([s,base])=>{
+    const L=S["ex"+s];
+    $("ex"+s).innerHTML=L.map((x,i)=>`<div class="extra" style="margin-bottom:8px">
+      <div class="row"><label for="x${s}-t-${i}">${s}.${base+i} Título<input id="x${s}-t-${i}" data-x="${s}" data-j="${i}" data-k="t" value="${esc(x.t)}" placeholder="Título del punto"></label>
+      <button type="button" class="btn x" data-xdel="${s}" data-j="${i}" aria-label="Quitar punto">✕</button></div>
+      <label for="x${s}-x-${i}">Contenido (una línea por punto)<textarea id="x${s}-x-${i}" data-x="${s}" data-j="${i}" data-k="x">${esc(x.x)}</textarea></label></div>`).join("");
+    $("addX"+s).textContent=`Agregar punto ${s}.${base+L.length}`;
+  });
+}
+function updPagoSum(){
+  const s=S.pagos.reduce((a,p)=>a+num(p.pct),0), bad=S.pagos.length&&Math.abs(s-100)>0.01;
+  $("pctSum").textContent=S.pagos.length?`Suma: ${f1(s)} %`+(bad?" · debe sumar 100 %":""):"Sin hitos definidos";
+  $("pctSum").className="hint"+(bad?" w":"");
+}
+function updTotals(){
+  S.items.forEach((it,i)=>{const el=$("it-t-"+i);if(el)el.textContent=f1(itemUF(it))});
+  const t=totales();
+  $("sumHH").textContent=`${f1(t.hi)} hh ing. · ${f1(t.hp)} hh proy. · ${f1(t.neto)} UF neto`;
+  S.pagos.forEach((p,i)=>{const el=$("pg-t-"+i);if(el)el.textContent=f1(t.neto*num(p.pct)/100)});
+}
+
+/* ---------------- modelo del documento (lo usan la vista, Word y PDF) ---------------- */
+function modelo(){
+  const t=totales(), ivaP=num(S.iva), vuf=num(S.valorUF), iva=t.neto*ivaP/100;
+  const rows=S.items.filter(it=>String(it.n||"").trim()||num(it.hi)||num(it.hp));
+  return {t, ivaP, vuf, iva, tot:t.neto+iva, rows,
+    pagos:S.pagos.filter(p=>num(p.pct)||String(p.h||"").trim()),
+    ex2:S.ex2.filter(x=>String(x.t||"").trim()||lines(x.x).length).map((x,i)=>({n:"2."+(3+i),t:x.t,l:lines(x.x)})),
+    ex5:S.ex5.filter(x=>String(x.t||"").trim()||lines(x.x).length).map((x,i)=>({n:"5."+(5+i),t:x.t,l:lines(x.x)})),
+    plazo52: String(S.plazoTxt||"").trim() || (S.plazo?`${S.plazo} días desde la orden de compra o el pago del anticipo.`:"")};
+}
+
+/* ---------------- vista previa ---------------- */
+const ph=t=>`<span class="ph">[${esc(t)}]</span>`;
+const val=(v,t)=>String(v??"").trim()?esc(v):ph(t);
+const hdr=(r1,r2)=>`<div class="hd"><img src="${LOGO_SRC}" alt="ING Estructural"><div class="r">${r1}<br><span>${r2}</span></div></div>`;
+const pie=()=>`<div class="ft"><div><span>ING ESTRUCTURAL — Proyectos Civiles e Industriales</span><span>${esc(S.numero||"")}</span></div></div>`;
+const firma=()=>`<div class="firma">${FIRMA[0]}<br>${FIRMA[1]}<br><span>${FIRMA[2]}</span></div>`;
+function tablaDatos(){
+  return `<table><tbody>
+  <tr><td class="k">MANDANTE</td><td class="v" colspan="2">${val(S.mandante,"mandante")}</td></tr>
+  <tr><td class="k">PROYECTO:</td><td class="v" colspan="2">${val(S.proyecto,"proyecto")}</td></tr>
+  <tr><td class="k">FECHA:</td><td class="v" colspan="2">${S.fecha?fdate(S.fecha):ph("fecha")}</td></tr>
+  <tr><td class="k">REF:</td><td class="v" colspan="2">${val(S.contacto,"contacto")}</td></tr>
+  <tr><td class="k">PLAZO EJECUCIÓN:</td><td class="v" style="text-align:center;width:22%">${val(S.plazo,"días")}</td><td>días</td></tr>
+  ${S.tipo==="rapida"&&S.numero?`<tr><td class="k">N° COTIZACIÓN:</td><td class="v" colspan="2">${esc(S.numero)}</td></tr>`:""}
+  </tbody></table>`;
+}
+function cuadro(M){
+  const pad=Math.max(0,5-M.rows.length);
+  return `<div class="band">COTIZACIÓN</div>
+  <table><thead><tr><th style="width:50%">ITEM</th><th>hh/ing.</th><th>hh/proy.</th><th>TOTAL (UF)</th></tr></thead><tbody>
+  ${M.rows.map(it=>`<tr><td class="v">${esc(it.n)}</td><td class="num v">${num(it.hi)||""}</td><td class="num v">${num(it.hp)||""}</td><td class="tot">${f1(itemUF(it))}</td></tr>`).join("")}
+  ${Array.from({length:pad},()=>`<tr><td class="v">&nbsp;</td><td class="v"></td><td class="v"></td><td class="tot">0,0</td></tr>`).join("")}
+  <tr class="sum"><td>TOTAL NETO (SIN IVA)</td><td></td><td></td><td class="tot">${f1(M.t.neto)}</td></tr></tbody></table>
+  <table style="margin-top:14px"><thead><tr><th style="width:50%">ENTREGABLES</th><th>PLANOS A1</th><th>MDC/INFORME</th><th>EETT</th></tr></thead><tbody>
+  <tr><td>Documentos</td><td class="num">—</td><td class="num"><b>${M.t.ent.m}</b></td><td class="num"><b>${M.t.ent.e}</b></td></tr>
+  <tr><td>Planos</td><td class="num"><b>${M.t.ent.p}</b></td><td class="num">—</td><td class="num">—</td></tr></tbody></table>
+  <div class="leg">PLANO A1: DIGITAL FORMATO A1 · MDC/INF.: MEMORIA DE CÁLCULO/INFORME · EETT: ESPECIFICACIONES TÉCNICAS</div>`;
+}
+const lst=(l,phT)=>l.length?`<ul>${l.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:`<ul><li>${ph(phT)}</li></ul>`;
+function htmlRapida(M){
+  return `<div class="page">${hdr("J. GERMÁN AGUILERA HAFNER","Ingeniero Civil · Ingeniería Estructural")}
+  ${tablaDatos()}${cuadro(M)}${firma()}${pie()}</div>`;
+}
+function htmlFormal(M){
+  const H=hdr("COTIZACIÓN DE SERVICIOS DE INGENIERÍA",val(S.proyecto,"proyecto"));
+  const cover=`<div class="page">${H}
+   <div style="height:1.2cm"></div>
+   <p class="ttl cover-t1">COTIZACIÓN</p><p class="ttl cover-t2">SERVICIOS DE INGENIERÍA</p><p class="ttl cover-t2" style="margin-bottom:1cm">${val(S.proyecto,"proyecto")}</p>
+   <table class="cover"><tbody>
+    <tr><td class="k"><b>N° de Cotización</b></td><td>${val(S.numero,"código de proyecto en POWER")}</td></tr>
+    <tr><td class="k"><b>Cliente / Mandante</b></td><td>${val(S.mandante,"mandante")}</td></tr>
+    <tr><td class="k"><b>Contacto cliente</b></td><td>${val(S.contacto,"contacto")}</td></tr>
+    <tr><td class="k"><b>Fecha de emisión</b></td><td>${S.fecha?fdate(S.fecha):ph("dd-mm-aaaa")}</td></tr>
+    <tr><td class="k"><b>Validez de la oferta</b></td><td>${S.validez?esc(S.validez)+" días corridos desde la fecha de emisión":ph("días de validez")}</td></tr>
+    <tr><td class="k"><b>Preparado por</b></td><td>J. Germán Aguilera Hafner, Ingeniero Civil</td></tr>
+    <tr><td class="k"><b>Contacto oficina</b></td><td>ingestructural@ingestructural.cl</td></tr>
+   </tbody></table>
+   ${firma()}${pie()}</div>`;
+  const ant=lines(S.antecedentes);
+  const body=`<div class="page cont">${H}
+  <h2>1. ANTECEDENTES DEL PROYECTO</h2>${ant.length?ant.map(x=>`<p>${esc(x)}</p>`).join(""):`<p>${ph("descripción del proyecto")}</p>`}
+  <h2>2. ALCANCE DE LOS SERVICIOS</h2><p>${esc(TPL.alcance)}</p>
+  <h3>2.1 Incluye</h3>${lst(lines(S.incluye),"actividades incluidas")}
+  <h3>2.2 No incluye</h3>${lst(lines(S.noIncluye),"exclusiones")}
+  ${M.ex2.map(x=>`<h3>${x.n} ${val(x.t,"título")}</h3>${lst(x.l,"contenido")}`).join("")}
+  <h2>3. DETALLE DE HORAS HOMBRE E ÍTEMS DE ENTREGABLES</h2><p>${esc(TPL.sec3)}</p>
+  ${tablaDatos()}${cuadro(M)}
+  <h2>4. RESUMEN ECONÓMICO</h2>
+  <table><thead><tr><th style="text-align:left">Concepto</th><th>Monto (UF)</th><th>Monto (CLP)</th></tr></thead><tbody>
+   <tr><td>Subtotal Neto (sección 3)</td><td class="tot">${f2(M.t.neto)}</td><td class="tot">${M.vuf?clp(M.t.neto*M.vuf):ph("valor UF")}</td></tr>
+   <tr><td>IVA (${f1(M.ivaP)}%)</td><td class="tot">${f2(M.iva)}</td><td class="tot">${M.vuf?clp(M.iva*M.vuf):ph("valor UF")}</td></tr>
+   <tr><td><b>TOTAL COTIZACIÓN</b></td><td class="tot"><b>${f2(M.tot)}</b></td><td class="tot"><b>${M.vuf?clp(M.tot*M.vuf):ph("valor UF")}</b></td></tr>
+  </tbody></table>
+  ${M.vuf?`<p style="font-size:10pt;margin-top:4px">Valor UF utilizado: ${clp(M.vuf)}${S.fecha?" al "+fdate(S.fecha):""}.</p>`:""}
+  <h2>5. CONDICIONES GENERALES</h2>
+  <h3>5.1 Forma de pago</h3>${M.pagos.length?`<table class="mini"><tbody>${M.pagos.map(p=>`<tr><td style="width:16%">${f1(num(p.pct))} %</td><td>${val(p.h,"hito")}</td><td class="tot">${f2(M.t.neto*num(p.pct)/100)} UF + IVA</td></tr>`).join("")}</tbody></table>`:`<ul><li>${ph("hitos de pago")}</li></ul>`}
+  <h3>5.2 Plazo de entrega</h3><ul><li>${M.plazo52?esc(M.plazo52):ph("plazo de entrega")}</li></ul>
+  <h3>5.3 Vigencia de la oferta</h3><ul><li>Esta cotización tiene una validez de ${S.validez?esc(S.validez):ph("N")} días corridos desde su fecha de emisión.</li></ul>
+  <h3>5.4 Otras condiciones</h3>${lst(lines(S.otras),"otras condiciones")}
+  ${M.ex5.map(x=>`<h3>${x.n} ${val(x.t,"título")}</h3>${lst(x.l,"contenido")}`).join("")}
+  ${firma()}${pie()}</div>`;
+  return cover+body;
+}
+function renderDoc(){ const M=modelo(); $("doc").innerHTML = S.tipo==="rapida"?htmlRapida(M):htmlFormal(M); }
+function all(){fillFields();renderTipo();renderItems();renderCat();renderPagos();renderExtras();updTotals();renderIngreso();renderPwState();renderDoc();}
+
+/* ---------------- Word (.docx) con docx.iife.js de la Mesa ---------------- */
+function loadScript(src, glob){ if(window[glob]) return Promise.resolve(window[glob]);
+  return new Promise((ok,fail)=>{const s=document.createElement("script");s.src=src;s.onload=()=>window[glob]?ok(window[glob]):fail(new Error("librería no disponible"));s.onerror=()=>fail(new Error("no se pudo cargar "+src));document.head.appendChild(s);}); }
+async function logoBytes(){ const r=await fetch(LOGO_SRC); return new Uint8Array(await r.arrayBuffer()); }
+async function crearDocx(){
+  const d = await loadScript("../docx.iife.js","docx");
+  const {Document,Packer,Paragraph,TextRun,ImageRun,Table,TableRow,TableCell,Header,Footer,AlignmentType,WidthType,BorderStyle,ShadingType,PageNumber,PageBreak,TabStopType,VerticalAlign,LevelFormat,TableLayoutType} = d;
+  const M=modelo(), FONT="Arial", NAVY="1F3864", BLUE="4472C4", BLUE2="9DC3E6", BAND="D9E1F2", IN="FFF2CC", INK="1F3FBF", W=9920;
+  const run=(t,o={})=>new TextRun({text:String(t??""),font:FONT,size:o.size||24,bold:o.bold,italics:o.italics,color:o.color,underline:o.underline,highlight:o.hl});
+  const txt=(v,phT,o={})=>String(v??"").trim()?run(v,o):run(`[${phT}]`,{...o,hl:"yellow"});
+  const P=(children,o={})=>new Paragraph({children:Array.isArray(children)?children:[children],alignment:o.align||AlignmentType.JUSTIFIED,spacing:{before:o.before??0,after:o.after??120},keepNext:o.keepNext,numbering:o.bullet?{reference:"vin",level:0}:undefined});
+  const bd={style:BorderStyle.SINGLE,size:4,color:"BFBFBF"}, borders={top:bd,bottom:bd,left:bd,right:bd}, none={style:BorderStyle.NONE,size:0,color:"FFFFFF"};
+  const cell=(children,w,o={})=>new TableCell({width:{size:w,type:WidthType.DXA},borders,columnSpan:o.span,verticalAlign:VerticalAlign.CENTER,
+    shading:o.fill?{fill:o.fill,type:ShadingType.CLEAR,color:"auto"}:undefined,margins:{top:40,bottom:40,left:80,right:80},
+    children:[new Paragraph({alignment:o.align||AlignmentType.LEFT,spacing:{after:0},children:Array.isArray(children)?children:[children]})]});
+  const tabla=(widths,rows)=>{const sc=W/widths.reduce((a,b)=>a+b,0);const ws=widths.map(w=>Math.round(w*sc));ws[ws.length-1]+=W-ws.reduce((a,b)=>a+b,0);
+    return new Table({width:{size:W,type:WidthType.DXA},columnWidths:ws,layout:TableLayoutType.FIXED,rows:rows.map(r=>new TableRow({cantSplit:true,tableHeader:!!r.head,children:r.cells.map((c,i)=>{
+      const w=c.span?ws.slice(i,i+c.span).reduce((a,b)=>a+b,0):ws[i]; return cell(c.r,w,c);})}))});};
+  const C=(r,o={})=>({r,...o}), L=AlignmentType.LEFT, CE=AlignmentType.CENTER, R=AlignmentType.RIGHT;
+  const logo=await logoBytes().catch(()=>null);
+  const enc=(r1,r2)=>new Header({children:[new Table({width:{size:W,type:WidthType.DXA},columnWidths:[4600,5320],layout:TableLayoutType.FIXED,
+    borders:{top:none,left:none,right:none,bottom:none,insideHorizontal:none,insideVertical:none},
+    rows:[new TableRow({children:[
+      new TableCell({width:{size:4600,type:WidthType.DXA},borders:{top:none,left:none,right:none,bottom:{style:BorderStyle.SINGLE,size:8,color:NAVY}},children:[new Paragraph({spacing:{after:60},children:logo?[new ImageRun({type:"png",data:logo,transformation:{width:288,height:93}})]:[]})]}),
+      new TableCell({width:{size:5320,type:WidthType.DXA},verticalAlign:VerticalAlign.BOTTOM,borders:{top:none,left:none,right:none,bottom:{style:BorderStyle.SINGLE,size:8,color:NAVY}},children:[
+        new Paragraph({alignment:R,spacing:{after:0},children:[run(r1,{size:18,bold:true,color:NAVY})]}),
+        new Paragraph({alignment:R,spacing:{after:60},children:[run(r2,{size:16,color:"595959"})]})]})]})]})]});
+  const pieW=new Footer({children:[new Paragraph({border:{top:{style:BorderStyle.SINGLE,size:6,color:NAVY,space:4}},tabStops:[{type:TabStopType.RIGHT,position:W}],spacing:{after:0},
+    children:[run("ING ESTRUCTURAL — Proyectos Civiles e Industriales",{size:16,bold:true,color:NAVY}),new TextRun({children:["\tPágina ",PageNumber.CURRENT," de ",PageNumber.TOTAL_PAGES],font:FONT,size:16,color:"595959"})]})]});
+  const firmaW=()=>[P([],{after:360}),...FIRMA.map((t,i)=>P(run(t,{bold:i<2}),{align:CE,after:0}))];
+  const datos=()=>tabla([3400,1700,4820],[
+    {cells:[C(run("MANDANTE")),C(txt(S.mandante,"mandante",{color:INK}),{fill:IN,span:2})]},
+    {cells:[C(run("PROYECTO:")),C(txt(S.proyecto,"proyecto",{color:INK}),{fill:IN,span:2})]},
+    {cells:[C(run("FECHA:")),C(txt(fdate(S.fecha),"fecha",{color:INK}),{fill:IN,span:2})]},
+    {cells:[C(run("REF:")),C(txt(S.contacto,"contacto",{color:INK}),{fill:IN,span:2})]},
+    {cells:[C(run("PLAZO EJECUCIÓN:")),C(txt(S.plazo,"días",{color:INK}),{fill:IN,align:CE}),C(run("días"))]},
+    ...(S.tipo==="rapida"&&S.numero?[{cells:[C(run("N° COTIZACIÓN:")),C(run(S.numero,{color:INK}),{fill:IN,span:2})]}]:[])]);
+  const cuadroW=()=>{
+    const head=t=>C(run(t,{bold:true,color:"FFFFFF"}),{fill:BLUE,align:CE});
+    return [P(run("COTIZACIÓN",{bold:true,color:NAVY}),{before:200,after:60,keepNext:true}),
+      tabla([4960,1500,1500,1960],[{head:true,cells:["ITEM","hh/ing.","hh/proy.","TOTAL (UF)"].map(head)},
+        ...M.rows.map(it=>({cells:[C(run(it.n,{color:INK}),{fill:IN}),C(run(num(it.hi)||"",{color:INK}),{fill:IN,align:CE}),C(run(num(it.hp)||"",{color:INK}),{fill:IN,align:CE}),C(run(f1(itemUF(it))),{align:R})]})),
+        {cells:[C(run("TOTAL NETO (SIN IVA)",{bold:true}),{fill:BLUE2}),C(run(""),{fill:BLUE2}),C(run(""),{fill:BLUE2}),C(run(f1(M.t.neto),{bold:true}),{fill:BLUE2,align:R})]}]),
+      P([],{after:120}),
+      tabla([4960,1500,1800,1660],[{head:true,cells:["ENTREGABLES","PLANOS A1","MDC/INFORME","EETT"].map(head)},
+        {cells:[C(run("Documentos")),C(run("—"),{align:CE}),C(run(M.t.ent.m,{bold:true}),{align:CE}),C(run(M.t.ent.e,{bold:true}),{align:CE})]},
+        {cells:[C(run("Planos")),C(run(M.t.ent.p,{bold:true}),{align:CE}),C(run("—"),{align:CE}),C(run("—"),{align:CE})]}]),
+      P(run("PLANO A1: DIGITAL FORMATO A1 · MDC/INF.: MEMORIA DE CÁLCULO/INFORME · EETT: ESPECIFICACIONES TÉCNICAS",{size:16}),{align:CE,before:60})];
+  };
+  const H2=t=>P(run(t,{size:28,bold:true,color:NAVY}),{before:280,after:120,keepNext:true,align:L});
+  const H3=t=>P(run(t,{bold:true}),{before:160,after:80,keepNext:true,align:L});
+  const bullets=(l,phT)=>(l.length?l:[null]).map(x=>P(x==null?txt("",phT):run(x),{bullet:true,after:60}));
+  const K=[];
+  let r1,r2;
+  if(S.tipo==="rapida"){
+    r1="J. GERMÁN AGUILERA HAFNER"; r2="Ingeniero Civil · Ingeniería Estructural";
+    K.push(datos(),...cuadroW(),...firmaW());
+  } else {
+    r1="COTIZACIÓN DE SERVICIOS DE INGENIERÍA"; r2=S.proyecto||"";
+    K.push(P([],{after:480}));
+    K.push(P(run("COTIZACIÓN",{size:44,bold:true,color:NAVY,underline:{}}),{align:CE,after:160}));
+    K.push(P(run("SERVICIOS DE INGENIERÍA",{size:40,bold:true,color:NAVY,underline:{}}),{align:CE,after:160}));
+    K.push(P(txt(S.proyecto,"proyecto",{size:40,bold:true,color:NAVY,underline:{}}),{align:CE,after:560}));
+    const kv=(k,v)=>({cells:[C(run(k,{size:28,bold:true})),C(v)]}), s28={size:28};
+    K.push(tabla([3400,6520],[
+      kv("N° de Cotización",txt(S.numero,"código de proyecto en POWER",s28)), kv("Cliente / Mandante",txt(S.mandante,"mandante",s28)),
+      kv("Contacto cliente",txt(S.contacto,"contacto",s28)), kv("Fecha de emisión",txt(fdate(S.fecha),"dd-mm-aaaa",s28)),
+      kv("Validez de la oferta",S.validez?run(S.validez+" días corridos desde la fecha de emisión",s28):txt("","días de validez",s28)),
+      kv("Preparado por",run("J. Germán Aguilera Hafner, Ingeniero Civil",s28)), kv("Contacto oficina",run("ingestructural@ingestructural.cl",s28))]));
+    K.push(...firmaW());
+    K.push(new Paragraph({children:[new PageBreak()]}));
+    K.push(H2("1. ANTECEDENTES DEL PROYECTO")); (lines(S.antecedentes).length?lines(S.antecedentes):[null]).forEach(x=>K.push(P(x==null?txt("","descripción del proyecto"):run(x))));
+    K.push(H2("2. ALCANCE DE LOS SERVICIOS"),P(run(TPL.alcance)));
+    K.push(H3("2.1 Incluye"),...bullets(lines(S.incluye),"actividades incluidas"));
+    K.push(H3("2.2 No incluye"),...bullets(lines(S.noIncluye),"exclusiones"));
+    M.ex2.forEach(x=>K.push(H3(x.n+" "+(x.t||"")),...bullets(x.l,"contenido")));
+    K.push(H2("3. DETALLE DE HORAS HOMBRE E ÍTEMS DE ENTREGABLES"),P(run(TPL.sec3)),datos(),...cuadroW());
+    K.push(H2("4. RESUMEN ECONÓMICO"));
+    const cl=v=>M.vuf?run(clp(v*M.vuf)):txt("","valor UF");
+    K.push(tabla([5200,2200,2520],[{head:true,cells:["Concepto","Monto (UF)","Monto (CLP)"].map(t=>C(run(t,{bold:true,color:"FFFFFF"}),{fill:BLUE,align:CE}))},
+      {cells:[C(run("Subtotal Neto (sección 3)")),C(run(f2(M.t.neto)),{align:R}),C(cl(M.t.neto),{align:R})]},
+      {cells:[C(run(`IVA (${f1(M.ivaP)}%)`)),C(run(f2(M.iva)),{align:R}),C(cl(M.iva),{align:R})]},
+      {cells:[C(run("TOTAL COTIZACIÓN",{bold:true})),C(run(f2(M.tot),{bold:true}),{align:R}),C(M.vuf?run(clp(M.tot*M.vuf),{bold:true}):txt("","valor UF"),{align:R})]}]));
+    if(M.vuf) K.push(P(run(`Valor UF utilizado: ${clp(M.vuf)}${S.fecha?" al "+fdate(S.fecha):""}.`,{size:20}),{before:60}));
+    K.push(H2("5. CONDICIONES GENERALES"),H3("5.1 Forma de pago"));
+    if(M.pagos.length) K.push(tabla([1500,5900,2520],M.pagos.map(p=>({cells:[C(run(f1(num(p.pct))+" %")),C(txt(p.h,"hito")),C(run(f2(M.t.neto*num(p.pct)/100)+" UF + IVA"),{align:R})]}))));
+    else K.push(...bullets([],"hitos de pago"));
+    K.push(H3("5.2 Plazo de entrega"),...bullets(M.plazo52?[M.plazo52]:[],"plazo de entrega"));
+    K.push(H3("5.3 Vigencia de la oferta"),P([run("Esta cotización tiene una validez de "),S.validez?run(S.validez):txt("","N"),run(" días corridos desde su fecha de emisión.")],{bullet:true}));
+    K.push(H3("5.4 Otras condiciones"),...bullets(lines(S.otras),"otras condiciones"));
+    M.ex5.forEach(x=>K.push(H3(x.n+" "+(x.t||"")),...bullets(x.l,"contenido")));
+    K.push(...firmaW());
+  }
+  const doc=new Document({creator:"ING Estructural",title:"Cotización "+(S.numero||"")+" "+(S.proyecto||""),
+    styles:{default:{document:{run:{font:FONT,size:24}}}},
+    numbering:{config:[{reference:"vin",levels:[{level:0,format:LevelFormat.BULLET,text:"•",alignment:AlignmentType.LEFT,style:{paragraph:{indent:{left:500,hanging:280}}}}]}]},
+    sections:[{properties:{page:{size:{width:12240,height:15840},margin:{top:2269,bottom:1418,left:902,right:1418,header:227,footer:227}}},headers:{default:enc(r1,r2)},footers:{default:pieW},children:K}]});
+  return Packer.toBlob(doc);
+}
+const nombreArchivo=ext=>{const s=x=>String(x||"").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Za-z0-9]+/g,"_").replace(/^_|_$/g,"").slice(0,50);
+  return `Cotizacion_${s(S.numero)||"sin_codigo"}_${s(S.proyecto)||"proyecto"}.${ext}`;};
+function descargar(blob,nombre){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=nombre;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);toast("Descargado: "+nombre);}
+async function exportarWord(){ if(DEMO) return toast("Descarga disponible en el sitio instalado");
+  $("expWord").disabled=true; try{ descargar(await crearDocx(),nombreArchivo("docx")); }catch(e){ toast("No se pudo generar el Word: "+e.message); } finally{ $("expWord").disabled=false; } }
+async function exportarPdf(){ if(DEMO) return toast("Descarga disponible en el sitio instalado");
+  $("expPdf").disabled=true;
+  try{ const h2p=await loadScript("../html2pdf.bundle.min.js","html2pdf");
+    const el=$("doc").cloneNode(true); el.querySelectorAll(".page").forEach(p=>{p.style.boxShadow="none";p.style.margin="0";});
+    el.querySelectorAll(".page:not(:last-child)").forEach(p=>p.style.pageBreakAfter="always");
+    await h2p().set({margin:0,filename:nombreArchivo("pdf"),image:{type:"jpeg",quality:0.97},html2canvas:{scale:2,useCORS:true},jsPDF:{unit:"in",format:"letter",orientation:"portrait"},pagebreak:{mode:["css","legacy"],avoid:["tr","h2","h3"]}}).from(el).save();
+  }catch(e){ toast("No se pudo generar el PDF: "+e.message); } finally{ $("expPdf").disabled=false; } }
+
+/* ---------------- eventos ---------------- */
+document.querySelector(".seg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;S.tipo=b.dataset.t;renderTipo();renderDoc();save();});
+$("ed").addEventListener("input",e=>{
+  const el=e.target, d=el.dataset;
+  if(el.id==="buscaProy"){ const p=proyectosLista().find(p=>proyLabel(p)===el.value); if(p) aplicarProyecto(p); return; }
+  if(el.id&&el.id.startsWith("lg")) return;
+  if(d.i!==undefined){S.items[+d.i][d.k]=el.value;updTotals();}
+  else if(d.c!==undefined){S.cat[+d.c][d.k]=el.value; if(d.k==="n") $("dlCat").innerHTML=S.cat.map(c=>`<option value="${esc(c.n)}">`).join(""); updTotals();}
+  else if(d.p!==undefined){S.pagos[+d.p][d.k]=el.value;updTotals();updPagoSum();}
+  else if(d.x!==undefined){S["ex"+d.x][+d.j][d.k]=el.value;}
+  else if(FIELDS.includes(el.id)){S[el.id]=el.value; if(["tIng","tProy"].includes(el.id))updTotals(); if(el.id==="fecha")renderIngreso();}
+  renderDoc();save();
+});
+$("ed").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const d=b.dataset;
+  if(d.del!==undefined){S.items.splice(+d.del,1);renderItems();}
+  else if(d.cdel!==undefined){S.cat.splice(+d.cdel,1);renderCat();renderItems();}
+  else if(d.pdel!==undefined){S.pagos.splice(+d.pdel,1);renderPagos();}
+  else if(d.xdel!==undefined){S["ex"+d.xdel].splice(+d.j,1);renderExtras();}
+  else if(d.addx!==undefined){S["ex"+d.addx].push({t:"",x:""});renderExtras();const L=S["ex"+d.addx];$(`x${d.addx}-t-${L.length-1}`).focus();}
+  else if(b.id==="addItem"){S.items.push({n:"",hi:"",hp:""});renderItems();$("it-n-"+(S.items.length-1)).focus();}
+  else if(b.id==="addCat"){S.cat.push({n:"",p:0,m:0,e:0});renderCat();$("cat-n-"+(S.cat.length-1)).focus();}
+  else if(b.id==="addPago"){S.pagos.push({pct:"",h:""});renderPagos();}
+  else if(b.id==="usarIngreso"){S.fecha=S.fechaIngreso;fillFields();renderIngreso();}
+  else if(b.id==="usarPlantilla"){if(!S.antecedentes.trim())S.antecedentes=TPL.antecedentes;if(!S.noIncluye.trim())S.noIncluye=TPL.noIncluye.join("\n");if(!S.otras.trim())S.otras=TPL.otras.join("\n");fillFields();}
+  else if(b.id==="ufHoy"){traerUF();return;}
+  else if(b.id==="nueva"){const keep={tIng:S.tIng,tProy:S.tProy,cat:S.cat};S=Object.assign(nueva(S.tipo),keep);all();save();return;}
+  else if(b.id==="lgGo"){login();return;}
+  else if(b.id==="lgCancel"){$("loginBox").hidden=true;return;}
+  else return;
+  updTotals();renderDoc();save();
+});
+$("lgPass").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();login();}});
+async function login(){ $("lgMsg").textContent="Entrando…";
+  try{ await PW.login($("lgMail").value.trim(),$("lgPass").value); $("lgPass").value=""; $("loginBox").hidden=true; $("lgMsg").textContent=""; await cargarPower(); }
+  catch(e){ $("lgMsg").textContent=e.message; } }
+async function traerUF(){ if(DEMO){$("ufMsg").textContent="Disponible en el sitio instalado.";return;}
+  $("ufMsg").textContent="Consultando…";
+  try{ const r=await fetch("https://mindicador.cl/api/uf"); const j=await r.json(); const s=j.serie&&j.serie[0]; if(!s) throw new Error("sin datos");
+    S.valorUF=s.valor; $("valorUF").value=s.valor; $("ufMsg").textContent=`UF ${fdate(s.fecha.slice(0,10))}: ${f2(s.valor)}`; renderDoc(); save(); }
+  catch(e){ $("ufMsg").textContent="No se pudo obtener la UF; ingrésela a mano."; } }
+$("btnPower").addEventListener("click",()=>{ if(PW.logged) cargarPower(); else { $("loginBox").hidden=false; $("lgMail").focus(); } });
+$("expWord").addEventListener("click",exportarWord);
+$("expPdf").addEventListener("click",exportarPdf);
+all();
+if(PW.logged&&!DEMO) cargarPower();
+</script>
+</body>
+</html>
