@@ -10,7 +10,7 @@ self.addEventListener('fetch', e => {
   const u = new URL(r.url);
   const same = u.origin === location.origin, fonts = /fonts\.(googleapis|gstatic)\.com$/.test(u.hostname);
   if (!same && !fonts) return;                       // API y servicios externos: directo a la red
-  const BASE = new URL('./', self.registration.scope).pathname, EXCL = ["/power/", "/mesa-ing/power/", "/pauta/", "/mesa-ing/pauta/", "/ps/", "/mesa-ing/ps/"];
+  const BASE = new URL('./', self.registration.scope).pathname, EXCL = ["/power/", "/mesa-ing/power/", "/pauta/", "/mesa-ing/pauta/", "/ps/", "/mesa-ing/ps/", "/cotizador/", "/mesa-ing/cotizador/"];
   if (same && (!u.pathname.startsWith(BASE) || EXCL.some(x => u.pathname.startsWith(x)))) return;   // otra app del mismo sitio
   if (same && (u.pathname === BASE || u.pathname === BASE + 'index.html')) {
     e.respondWith(fetch(r, {cache: 'no-store'}).then(res => { const cp = res.clone(); caches.open(CACHE).then(c => c.put('./index.html', cp)); return res; })
