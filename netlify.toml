@@ -27,3 +27,9 @@
   for = "/power/"
   [headers.values]
     Cache-Control = "no-cache"
+# El cotizador se trasladó a su propio sitio (repositorio COTIZADOR)
+[[redirects]]
+  from = "/cotizador/*"
+  to = "https://cotizador-ing.netlify.app/:splat"
+  status = 301
+  force = true
