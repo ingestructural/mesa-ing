@@ -52519,12 +52519,15 @@ route();
   document.body.appendChild(box);
   var btn = document.createElement('button'); btn.id = 'esqBtn'; btn.type = 'button'; btn.textContent = '📐 Ver esquema'; document.body.appendChild(btn);
   var abierto = false; btn.addEventListener('click', function(){ abierto = !abierto; if (abierto) setMin(false); colocar(); });
-  var zb = box.querySelector('.el-z'), big = false; try { big = localStorage.getItem('mesaEsqLiveBig') === '1'; } catch(e){}
-  zb.addEventListener('click', function(ev){ ev.stopPropagation(); big = !big; zb.textContent = big ? '⤡ reducir' : '⤢ ampliar'; try { localStorage.setItem('mesaEsqLiveBig', big ? '1' : '0'); } catch(e){} colocar(); });
+  // plegado y ampliado no se recuerdan entre sesiones ni entre planillas: cada planilla abre con el esquema desplegado y en tamaño normal
+  try { localStorage.removeItem('mesaEsqLiveBig'); localStorage.removeItem('mesaEsqLiveMin'); } catch(e){}
+  var zb = box.querySelector('.el-z'), big = false;
+  zb.addEventListener('click', function(ev){ ev.stopPropagation(); setBig(!big); colocar(); });
+  function setBig(v){ big = v; zb.textContent = big ? '⤡ reducir' : '⤢ ampliar'; }
   zb.textContent = big ? '⤡ reducir' : '⤢ ampliar';
   var head = box.querySelector('.el-h'), body = box.querySelector('.el-b'), tog = box.querySelector('.el-t');
-  var min = false; try { min = localStorage.getItem('mesaEsqLiveMin') === '1'; } catch(e){}
-  function setMin(v){ min = v; box.classList.toggle('min', v); tog.textContent = v ? '▸ ver' : '▾ plegar'; try { localStorage.setItem('mesaEsqLiveMin', v ? '1' : '0'); } catch(e){} }
+  var min = false;
+  function setMin(v){ min = v; box.classList.toggle('min', v); tog.textContent = v ? '▸ ver' : '▾ plegar'; }
   setMin(min);
   head.addEventListener('click', function(){ setMin(!min); });
   var srcs = [], lastHtml = '';
@@ -52579,7 +52582,7 @@ route();
   if (main && window.MutationObserver) new MutationObserver(pronto).observe(main, {childList:true, subtree:true, attributes:true, attributeFilter:['style','class','hidden']});
   window.addEventListener('scroll', colocar, {passive:true});
   window.addEventListener('resize', colocar);
-  window.addEventListener('hashchange', pronto);
+  window.addEventListener('hashchange', function(){ setMin(false); setBig(false); abierto = false; pronto(); });
   window.addEventListener('change', pronto, true);
   window.addEventListener('beforeprint', function(){ box.style.display = 'none'; btn.style.display = 'none'; });
   window.addEventListener('afterprint', pronto);
