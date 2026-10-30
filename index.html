@@ -1991,7 +1991,7 @@ const TOOLS = [
     desc:'Diseño del empalme apernado de una viga de igual peralte a ambos lados mediante placas de ala (par flexor + axial) y placas laterales de alma (corte completo): distancias mínimas, capacidad de pernos, placas y elemento conectado a tracción/corte y bloque de corte, geometría mínima sugerida — por LRFD y ASD en paralelo. Perfil seleccionable de catálogo o de ingreso manual.',
     tag:'AISC 360 Cap. D2 / J3 / J4', calc:'empalmeViga' },
   { id:'seleccion-pernos', cat:'Conexiones', name:'Selección de Pernos Estructurales', file:'Seleccion_Pernos_Estructurales.xlsx',
-    desc:'Planilla de referencia para elegir un perno entre las calidades más frecuentes (A307, A325, A490): calidad, diámetro disponible y tipo de uso (corte simple, corte doble, tracción pura o corte+tracción combinados) por listas desplegables; entrega propiedades físicas y geométricas del perno (diámetro, área, agujero, peso lineal, espaciamiento y distancia al borde mínimos) y las cargas admisibles resultantes por LRFD y ASD, con verificación opcional contra una demanda ingresada.',
+    desc:'Planilla de referencia para elegir un perno entre las calidades más frecuentes (A307, A325, A490): calidad, diámetro disponible y tipo de uso (corte simple, corte doble, tracción pura o corte+tracción combinados) por listas desplegables; entrega propiedades físicas y geométricas del perno (diámetro, área, agujero, peso lineal, espaciamiento y distancia al borde mínimos), las cargas admisibles resultantes por LRFD y ASD, la pretensión mínima y el torque máximo de apriete (tonf·m), con verificación opcional contra una demanda ingresada.',
     tag:'AISC 360-16 Tabla J3.2 / J3.7', calc:'seleccionPernos' },
 
   { id:'oreja-conexion', cat:'Conexiones', name:'Oreja de Conexión (Padeye) — Tracción, Corte y Flexión 3D', file:'Verificacion_Oreja_Conexion.xlsx',
@@ -32711,7 +32711,7 @@ function xlsxEstadoSpan(est) {
 }
 
 function xlsxCalcRowHtml(row, r) {
-  if (row.t === 'desc') return `<tr class="xlsx-desc-row"><td colspan="5">${row.text}</td></tr>`;
+  if (row.t === 'desc') return `<tr class="xlsx-desc-row"><td colspan="5">${row.fText ? (r[row.fText] || '') : row.text}</td></tr>`;
   if (row.t === 'label') return `<tr><td colspan="5" class="xlsx-sub-label">${row.text}</td></tr>`;
   if (row.t === 'var1') {
     const v = xlsxNum(r[row.f], row.d);
@@ -41830,13 +41830,13 @@ function renderLosaIndividual(container) {
 const SP_GRADO_TABLA = [
   { label:'A307', Fnv_N:1898, Fnv_X:1898, Fnt:3164,
     obs:'Perno ordinario (bajo carbono, sin tratamiento térmico). Menor capacidad; Fnv es el mismo con la rosca incluida o excluida del plano de corte. Fnv/Fnt tabulados en AISC 360 Tabla J3.2.' },
-  { label:'A325', Fnv_N:3797, Fnv_X:4781, Fnt:6328,
+  { label:'A325', grupo:'A', Fnv_N:3797, Fnv_X:4781, Fnt:6328,
     obs:'Alta resistencia, templado y revenido. El más usado en conexiones estructurales de acero (vigas, columnas, arriostramientos). Fnv/Fnt tabulados en AISC 360 Tabla J3.2.' },
-  { label:'A490', Fnv_N:4781, Fnv_X:5906, Fnt:7945,
+  { label:'A490', grupo:'B', Fnv_N:4781, Fnv_X:5906, Fnt:7945,
     obs:'Alta resistencia, tratado térmicamente. Mayor capacidad que A325; no debe emplearse galvanizado en caliente. Fnv/Fnt tabulados en AISC 360 Tabla J3.2.' },
-  { label:'F3125 Gr. A325 (twist-off, tensión controlada)', Fnv_N:3797, Fnv_X:4781, Fnt:6328,
+  { label:'F3125 Gr. A325 (twist-off, tensión controlada)', grupo:'A', tc:true, Fnv_N:3797, Fnv_X:4781, Fnt:6328,
     obs:'Designación unificada vigente que reemplaza a A325/A325M para pernos estructurales (instalación por collar de tensión controlada); mismas resistencias Fnv/Fnt que A325.' },
-  { label:'F3125 Gr. A490 (twist-off, tensión controlada)', Fnv_N:4781, Fnv_X:5906, Fnt:7945,
+  { label:'F3125 Gr. A490 (twist-off, tensión controlada)', grupo:'B', tc:true, Fnv_N:4781, Fnv_X:5906, Fnt:7945,
     obs:'Designación unificada vigente que reemplaza a A490/A490M para pernos estructurales (instalación por collar de tensión controlada); mismas resistencias Fnv/Fnt que A490.' },
 ];
 // Grados NO listados en la Tabla J3.2 (pernos "comerciales"/mecánicos SAE J429, y ASTM A449):
@@ -41874,6 +41874,25 @@ const SP_DIAM = [
   { label:'1 3/8"', db:34.93, Lcmin:43.66 },
   { label:'1 1/2"', db:38.10, Lcmin:47.63 },
 ];
+// Pretensión mínima Tm (kips), AISC 360-16 Tabla J3.1 (= RCSC 2020 Tabla 5.2): Grupo A (A325 / F3125 Gr. A325 /
+// F1852) y Grupo B (A490 / F3125 Gr. A490 / F2280). Grupo A de 1 1/8" a 1 1/2" con los valores de la edición 2016
+// (Fu = 120 ksi en todo el rango). A307, SAE J429 y A449 no tienen pretensión asignada (sólo apriete ajustado).
+const SP_PRETENSION_KIP = {
+  '1/2"':   {A:12,  B:15},  '5/8"':   {A:19,  B:24},  '3/4"':   {A:28,  B:35},
+  '7/8"':   {A:39,  B:49},  '1"':     {A:51,  B:64},  '1 1/8"': {A:64,  B:80},
+  '1 1/4"': {A:81,  B:102}, '1 3/8"': {A:97,  B:121}, '1 1/2"': {A:118, B:148},
+};
+// Torque máximo del conjunto perno-tuerca-arandela: criterio del ensayo de capacidad rotacional
+// (FHWA, procedimiento de ensayo de capacidad rotacional para pernos A325/A490; los DOT lo adaptan
+// de ASTM F3125-23 Apéndice X2, p. ej. Iowa DOT IM 391): T ≤ 0.25·P·D, con P = tensión del perno y D = diámetro nominal.
+// Se evalúa con P = Tm (pretensión mínima). Es un límite superior, no un torque de instalación.
+function spTorque(g, d) {
+  const t = g.grupo && SP_PRETENSION_KIP[d.label];
+  if (!t) return { aplica:false };
+  const TmKip = t[g.grupo], Tm = TmKip*0.45359237;           // tonf
+  const Tmax = 0.25*Tm*d.db/1000;                              // tonf·m
+  return { aplica:true, TmKip, Tm, TmkN: TmKip*4.4482216, Tmax, TmaxNm: Tmax*9806.65, TmaxFtLb: 0.25*TmKip*1000*(d.db/25.4)/12 };
+}
 const SP_TIPO_USO = [
   { v:'corteSimple_N', label:'Corte simple (1 plano) — rosca incluida en el plano de corte (N)' },
   { v:'corteSimple_X', label:'Corte simple (1 plano) — rosca excluida del plano de corte (X)' },
@@ -41965,7 +41984,12 @@ function calcSeleccionPernos(inp) {
   if (g.dMaxIncl != null && db > g.dMaxIncl + EPS) fueraDeRango = true;
   if (g.dMinExcl != null && db <= g.dMinExcl + EPS) fueraDeRango = true;
 
-  return { db, dh, Ab, Fnv, Fnt, planos, phi, Omega, esX, esCorteSimple, esCorteDoble, esCorte, esTraccion, esCombinado,
+  const tq = spTorque(g, d);
+  const tqTxt = tq.aplica
+    ? `Torque máximo T = 0.25·Tm·db = 0.25 × ${fmt2(tq.Tm)} tonf × ${fmt2(db)} mm = ${fmt3(tq.Tmax)} tonf·m (${fmt1(tq.Tmax*1000)} kgf·m; ${fmt0(tq.TmaxNm)} N·m; ${fmt0(tq.TmaxFtLb)} lb·ft). Pretensión mínima Tm = ${tq.TmKip} kips = ${fmt2(tq.Tm)} tonf, Grupo ${g.grupo} (AISC 360-16 Tabla J3.1 / RCSC 2020 Tabla 5.2). Límite T ≤ 0.25·P·D del ensayo de capacidad rotacional de pernos de alta resistencia (FHWA; procedimiento de los DOT adaptado de ASTM F3125-23 Apéndice X2), evaluado con P = Tm. Es un límite superior del conjunto perno-tuerca-arandela, no un torque de instalación: AISC/RCSC no aceptan tablas de torque; si se instala con llave calibrada, el torque se determina por calibración diaria del lote (RCSC 2020 §8.2.2).` + (g.tc ? ' En pernos twist-off la tensión la controla la rotura del extremo ranurado.' : '')
+    : `No aplica torque normativo: AISC 360-16 Tabla J3.1 no asigna pretensión mínima a ${g.label}; se instala sólo con apriete ajustado (snug-tight, AISC 360-16 J3.1 / RCSC 2020 §8.1). Ninguna norma de diseño estructural fija un torque para esta calidad.`;
+  return { tq, tqTxt, Tm: tq.aplica ? tq.Tm : null, Tmax: tq.aplica ? tq.Tmax : null, TmaxNm: tq.aplica ? tq.TmaxNm : null,
+    db, dh, Ab, Fnv, Fnt, planos, phi, Omega, esX, esCorteSimple, esCorteDoble, esCorte, esTraccion, esCombinado,
     smin, spref, LcMin, pesoLineal, RnV, phiRnV, RnV_asd, RnT, phiRnT, RnT_asd,
     nB, VuPerno, TuPerno, okCorte_LRFD, okCorte_ASD, rCorte_L, rCorte_A, okTrac_LRFD, okTrac_ASD, rTrac_L, rTrac_A,
     frv, FntMod_LRFD, phiRnTmod, FntMod_ASD, RnTmod_asd, okCombCorte_LRFD, okCombCorte_ASD, rCombCorte_L, rCombCorte_A,
@@ -42184,7 +42208,13 @@ const SP_CALC_SECTIONS = [
     { t: 'chk', label: 'Largo suficiente: rosca sobresale ≥ 3 mm de la tuerca', estL: 'okLargo', forceNA: true },
     { t: 'chk', label: 'La rosca alcanza la tuerca completa (apriete posible)', estL: 'okRoscaApriete', forceNA: true },
   ]},
-  { num: '7', title: 'RESUMEN / VEREDICTO', hdrDE: false, rows: [
+  { num: '7', title: 'PRETENSIÓN MÍNIMA Y TORQUE MÁXIMO DE APRIETE (AISC 360-16 Tabla J3.1; T ≤ 0.25·P·D)', hdrDE: false, rows: [
+    { t: 'var1', label: 'Tm — pretensión mínima del perno, AISC 360-16 Tabla J3.1 (tonf)', f: 'Tm', d: 2 },
+    { t: 'var1', label: 'T,máx — torque máximo = 0.25·Tm·db (tonf·m)', f: 'Tmax', d: 3 },
+    { t: 'var1', label: 'T,máx — torque máximo (N·m)', f: 'TmaxNm', d: 0 },
+    { t: 'desc', fText: 'tqTxt' },
+  ]},
+  { num: '8', title: 'RESUMEN / VEREDICTO', hdrDE: false, rows: [
     { t: 'chk', label: 'ESTATUS GENERAL (solo si se ingresó demanda)', estL: 'global', forceNA: true },
   ]},
 ];
@@ -42255,7 +42285,12 @@ function renderSeleccionPernos(container) {
     </div>
 
     <div class="panel">
-      <h3>6 · Verificación / resumen</h3>
+      <h3>6 · Pretensión mínima y torque máximo de apriete</h3>
+      <div id="sp_torque"></div>
+    </div>
+
+    <div class="panel">
+      <h3>7 · Verificación / resumen</h3>
       <div id="sp_resumen"></div>
       <div class="disclosure">Herramienta de referencia para preselección de pernos (AISC 360-16 Cap. J3, φ=0.75 y Ω=2.00 para corte y tracción en conexiones tipo aplastamiento). Dos orígenes normativos distintos según la calidad elegida: A307, A325, A490 y F3125 Gr. A325/A490 usan Fnv/Fnt tabulados directamente en la Tabla J3.2; SAE Grado 2/5/8 y ASTM A449 no están tabulados en J3.2 (son pernos "comerciales"/mecánicos, no certificados como conectores estructurales de alta resistencia), por lo que sus Fnv/Fnt se derivan de la resistencia a la tracción mínima especificada Fu de cada grado (SAE J429 / ASTM A449) mediante la fórmula general de AISC 360 para pernos y partes roscadas no tabulados (Fnt=0.75·Fu, Fnv=0.450·Fu con rosca incluida, Fnv=0.563·Fu con rosca excluida) — como Fu de estas calidades depende del tramo de diámetro, cada tramo aparece como una fila propia del selector y la planilla advierte si el diámetro elegido no corresponde al tramo de la fila seleccionada. No incluye pernos de anclaje ASTM F1554 (ver "Estanque de Acero" o "Placas Base"), ni la resistencia por deslizamiento crítico (fricción) de conexiones pretensadas. No reemplaza el diseño completo de una conexión (distancias reales a bordes, bloque de corte, aplastamiento en los elementos conectados) — ver "Conexiones Diagonal-Columna", "Empalme Apernado de Viga" o "Placas Base".</div>
     </div>
@@ -42351,6 +42386,11 @@ function renderSeleccionPernos(container) {
     }
     document.getElementById('sp_cargas').innerHTML = `<table class="results">${filasCargas.join('')}</table>
       <div class="note">φ=0.75 (LRFD) y Ω=2.00 (ASD) para corte y tracción en conexiones tipo aplastamiento (AISC 360 J3.6). Valores por perno.</div>`;
+
+    document.getElementById('sp_torque').innerHTML = (r.tq.aplica ? `<table class="results">
+        <tr><td>Tm — pretensión mínima, Grupo ${SP_GRADO[state.gradoIdx].grupo} (AISC 360-16 Tabla J3.1)</td><td class="num">${r.tq.TmKip} kips = ${fmt2(r.Tm)} tonf (${fmt1(r.tq.TmkN)} kN)</td></tr>
+        <tr><td><b>T,máx — torque máximo = 0.25·Tm·db</b></td><td class="num"><b>${fmt3(r.Tmax)} tonf·m</b> (${fmt1(r.Tmax*1000)} kgf·m; ${fmt0(r.TmaxNm)} N·m; ${fmt0(r.tq.TmaxFtLb)} lb·ft)</td></tr>
+      </table>` : '') + `<div class="note">${r.tqTxt}</div>`;
 
     const filasGeo = !G.ingresado ? '' :
       (G.hayCorte ? `<div class="verdict-row"><span>Condición de rosca en el plano de corte — ${G.msgRosca}</span><span>${cdChip(G.okCondRosca)}</span></div>` : '') +
