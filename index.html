@@ -41986,7 +41986,7 @@ function calcSeleccionPernos(inp) {
 
   const tq = spTorque(g, d);
   const tqTxt = tq.aplica
-    ? `Torque máximo T = 0.25·Tm·db = 0.25 × ${fmt2(tq.Tm)} tonf × ${fmt2(db)} mm = ${fmt3(tq.Tmax)} tonf·m (${fmt1(tq.Tmax*1000)} kgf·m; ${fmt0(tq.TmaxNm)} N·m; ${fmt0(tq.TmaxFtLb)} lb·ft). Pretensión mínima Tm = ${tq.TmKip} kips = ${fmt2(tq.Tm)} tonf, Grupo ${g.grupo} (AISC 360-16 Tabla J3.1 / RCSC 2020 Tabla 5.2). Límite T ≤ 0.25·P·D del ensayo de capacidad rotacional de pernos de alta resistencia (FHWA; procedimiento de los DOT adaptado de ASTM F3125-23 Apéndice X2), evaluado con P = Tm. Es un límite superior del conjunto perno-tuerca-arandela, no un torque de instalación: AISC/RCSC no aceptan tablas de torque; si se instala con llave calibrada, el torque se determina por calibración diaria del lote (RCSC 2020 §8.2.2).` + (g.tc ? ' En pernos twist-off la tensión la controla la rotura del extremo ranurado.' : '')
+    ? `Torque máximo T = 0.25·Tm·db = 0.25 × ${fmt2(tq.Tm)} tonf × ${fmt2(db)} mm = ${fmt3(tq.Tmax)} tonf·m = ${fmt0(tq.TmaxNm)} N·m (${fmt1(tq.Tmax*1000)} kgf·m; ${fmt0(tq.TmaxFtLb)} lb·ft). Pretensión mínima Tm = ${tq.TmKip} kips = ${fmt2(tq.Tm)} tonf, Grupo ${g.grupo} (AISC 360-16 Tabla J3.1 / RCSC 2020 Tabla 5.2). Límite T ≤ 0.25·P·D del ensayo de capacidad rotacional de pernos de alta resistencia (FHWA; procedimiento de los DOT adaptado de ASTM F3125-23 Apéndice X2), evaluado con P = Tm. Es un límite superior del conjunto perno-tuerca-arandela, no un torque de instalación: AISC/RCSC no aceptan tablas de torque; si se instala con llave calibrada, el torque se determina por calibración diaria del lote (RCSC 2020 §8.2.2).` + (g.tc ? ' En pernos twist-off la tensión la controla la rotura del extremo ranurado.' : '')
     : `No aplica torque normativo: AISC 360-16 Tabla J3.1 no asigna pretensión mínima a ${g.label}; se instala sólo con apriete ajustado (snug-tight, AISC 360-16 J3.1 / RCSC 2020 §8.1). Ninguna norma de diseño estructural fija un torque para esta calidad.`;
   return { tq, tqTxt, Tm: tq.aplica ? tq.Tm : null, Tmax: tq.aplica ? tq.Tmax : null, TmaxNm: tq.aplica ? tq.TmaxNm : null,
     db, dh, Ab, Fnv, Fnt, planos, phi, Omega, esX, esCorteSimple, esCorteDoble, esCorte, esTraccion, esCombinado,
@@ -42389,7 +42389,9 @@ function renderSeleccionPernos(container) {
 
     document.getElementById('sp_torque').innerHTML = (r.tq.aplica ? `<table class="results">
         <tr><td>Tm — pretensión mínima, Grupo ${SP_GRADO[state.gradoIdx].grupo} (AISC 360-16 Tabla J3.1)</td><td class="num">${r.tq.TmKip} kips = ${fmt2(r.Tm)} tonf (${fmt1(r.tq.TmkN)} kN)</td></tr>
-        <tr><td><b>T,máx — torque máximo = 0.25·Tm·db</b></td><td class="num"><b>${fmt3(r.Tmax)} tonf·m</b> (${fmt1(r.Tmax*1000)} kgf·m; ${fmt0(r.TmaxNm)} N·m; ${fmt0(r.tq.TmaxFtLb)} lb·ft)</td></tr>
+        <tr><td><b>T,máx — torque máximo = 0.25·Tm·db</b></td><td class="num"><b>${fmt3(r.Tmax)} tonf·m</b></td></tr>
+        <tr><td><b>T,máx — torque máximo en N·m</b></td><td class="num"><b>${fmt0(r.TmaxNm)} N·m</b></td></tr>
+        <tr><td>Equivalencias</td><td class="num">${fmt1(r.Tmax*1000)} kgf·m · ${fmt0(r.tq.TmaxFtLb)} lb·ft</td></tr>
       </table>` : '') + `<div class="note">${r.tqTxt}</div>`;
 
     const filasGeo = !G.ingresado ? '' :
