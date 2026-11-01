@@ -3814,6 +3814,39 @@ function calcAnclaje(inp) {
 }
 
 /* =========================================================================
+   MOTOR — DETALLAMIENTO SÍSMICO DE PERNOS DE ANCLAJE, NCh2369.Of2003 §8.6.2
+   Pernos de anclaje que el análisis deja en tracción: silla y vástago visible
+   para inspección y reparación; longitud expuesta (largo libre entre placa base
+   y placa de silla) no inferior a 250 mm ni a 8 diámetros; hilo bajo la tuerca
+   no inferior a 75 mm. Excepción: pernos con capacidad suficiente para las
+   combinaciones con las fuerzas sísmicas amplificadas 0,5·R veces, pero no
+   menos de 1,5 veces. Texto de 8.6.2 según la transcripción de Chávez (2011,
+   U. de Chile, Tabla 2.2) y Narváez (2017, PUC, Tabla II-2).
+   NCh2369:2025 (§8.5.2): no incorporada; falta verificar su texto.
+   ========================================================================= */
+function calcDetalleNCh2369(inp) {
+  const {norma, solucion, da_mm, Lc_mm, hilo_mm, Nua, R, NuG, NuE, phiNn} = inp;
+  if (norma !== 'of2003') return {aplica:false, motivo:'No aplica: estructura no regida por NCh2369'};
+  if (!(Nua > 0)) return {aplica:false, motivo:'No aplica: los pernos no quedan en tracción (Nua ≤ 0)'};
+  if (solucion === 'sinSilla') {
+    const errores = [];
+    if (!(R > 0)) errores.push('Ingrese R > 0 (NCh2369.Of2003 Tabla 5.6).');
+    if (!(NuE > 0)) errores.push('Ingrese la tracción del grupo debida al sismo del análisis, NuE > 0.');
+    const k = Math.max(0.5*R, 1.5);
+    const NuAmp = NuG + k*NuE;
+    const r = phiNn > 0 ? NuAmp/phiNn : Infinity;
+    const okAmp = errores.length ? false : NuAmp <= phiNn;
+    return {aplica:true, solucion:'sinSilla', errores, k, NuAmp, phiNn, r, okAmp, ok:okAmp};
+  }
+  const L8d = 8*da_mm;
+  const LcMin = Math.max(250, L8d);
+  const rige = L8d > 250 ? '8·d' : '250 mm';
+  const okLc = Lc_mm >= LcMin, okHilo = hilo_mm >= 75;
+  return {aplica:true, solucion:'silla', errores:[], L8d, LcMin, rige, rLc: Lc_mm > 0 ? LcMin/Lc_mm : Infinity,
+    rHilo: hilo_mm > 0 ? 75/hilo_mm : Infinity, okLc, okHilo, ok: okLc && okHilo};
+}
+
+/* =========================================================================
    MOTOR — SELECTOR DE ANCLAJES HILTI (preselección de catálogo)
    Verificado contra el caso ejemplo del Excel (HIT-HY200 M16, N=22 Ton,
    V=18 Ton → 8 anclajes, coincide exacto).
@@ -4550,6 +4583,13 @@ function placasBaseDatosHtml(state) {
       ${row('Condición del hormigón', state.condicionHormigon)}
       ${row('¿Corte transmitido a través de placa de nivelación/grout?', state.corteViaGrout ? 'Sí' : 'No')}
     </tbody></table>
+    <div class="xlsx-section">G2. Detallamiento sísmico de pernos de anclaje — NCh2369.Of2003 §8.6.2</div>
+    <table class="xlsx-table"><tbody>
+      ${row('Norma sísmica de la estructura', state.n69 === 'of2003' ? 'NCh2369.Of2003 (industrial)' : 'No regida por NCh2369')}
+      ${state.n69 === 'of2003' ? row('Solución del anclaje', state.n69Sol === 'silla' ? 'Con silla (largo libre y vástago visible)' : 'Sin silla (excepción por capacidad con sismo amplificado)') : ''}
+      ${state.n69 === 'of2003' && state.n69Sol === 'silla' ? row('Lc — largo libre entre placa base y placa de silla [mm]', xlsxNum(state.n69Lc, 1)) + row('Largo de hilo bajo la tuerca [mm]', xlsxNum(state.n69Hilo, 1)) : ''}
+      ${state.n69 === 'of2003' && state.n69Sol !== 'silla' ? row('R — factor de modificación de la respuesta', xlsxNum(state.n69R, 2)) + row('NuE — tracción del grupo por el sismo del análisis [Ton]', xlsxNum(state.n69NuE, 2)) + row('NuG — tracción del grupo por cargas no sísmicas de la combinación [Ton]', xlsxNum(state.n69NuG, 2)) : ''}
+    </tbody></table>
 
     <div class="xlsx-section">H. Factores φ y constantes normativas aplicadas (no editables en esta versión web)</div>
     <table class="xlsx-table"><tbody>
@@ -4758,6 +4798,34 @@ function pbCalcSections(state) {
     { t: 'chk', label: 'Verificación final de interacción', estL: 'an_okInter', dcL: 'an_interVal', forceNA: true },
   ]});
 
+  const n69 = state._n69 || { aplica: false };
+  const n69Rows = [{ t: 'text', label: 'Aplicabilidad (pernos que el análisis deja en tracción)', f: 'n69_aplicaTxt' }];
+  if (!n69.aplica) {
+    n69Rows.push({ t: 'est1', label: 'Detallamiento NCh2369.Of2003 §8.6.2', est: 'n69_estNA' });
+  } else if (n69.solucion === 'silla') {
+    n69Rows.push(
+      { t: 'var1', label: '8·da [mm]', f: 'n69_L8d', d: 1 },
+      { t: 'var1', label: 'Lc,mín = máx(250 mm; 8·da) [mm]', f: 'n69_LcMin', d: 1 },
+      { t: 'text', label: 'Mínimo que rige', f: 'n69_rige' },
+      { t: 'var1', label: 'Lc — largo libre entre placa base y placa de silla [mm]', f: 'n69_Lc', d: 1 },
+      { t: 'chk', label: 'Verificación: Lc ≥ Lc,mín', estL: 'n69_okLc', dcL: 'n69_rLcDc', forceNA: true },
+      { t: 'var1', label: 'Hilo bajo la tuerca [mm]', f: 'n69_hilo', d: 1 },
+      { t: 'chk', label: 'Verificación: hilo bajo la tuerca ≥ 75 mm', estL: 'n69_okHilo', dcL: 'n69_rHiloDc', forceNA: true },
+      { t: 'text', label: 'Silla y vástago visible para inspección y reparación', f: 'n69_txtSilla' },
+    );
+  } else {
+    n69Rows.push(
+      { t: 'var1', label: 'R — factor de modificación de la respuesta', f: 'n69_Rin', d: 2 },
+      { t: 'var1', label: 'k = máx(0,5·R; 1,5)', f: 'n69_k', d: 2 },
+      { t: 'var1', label: 'NuG — tracción por cargas no sísmicas de la combinación [Ton]', f: 'n69_NuGin', d: 2 },
+      { t: 'var1', label: 'NuE — tracción por el sismo del análisis [Ton]', f: 'n69_NuEin', d: 2 },
+      { t: 'var1', label: 'Nu,amp = NuG + k·NuE [Ton]', f: 'n69_NuAmp', d: 2 },
+      { t: 'var1', label: 'φNn gobernante del grupo [Ton]', f: 'n69_phiNn', d: 2 },
+      { t: 'chk', label: 'Verificación: Nu,amp ≤ φNn (excepción, perno sin silla)', estL: 'n69_okAmp', dcL: 'n69_rAmp', forceNA: true },
+    );
+  }
+  sections.push({ num: '17', title: 'Detallamiento sísmico de pernos de anclaje (NCh2369.Of2003 §8.6.2)', hdrDE: false, rows: n69Rows });
+
   return sections;
 }
 
@@ -4767,7 +4835,7 @@ function placasBaseCalcHtml(state, r, opts) {
   return xlsxBuildCalculoHtml(sections, r, {
     resumen,
     intro: 'Fórmulas según AISC Design Guide 1 (2ª ed.) para geometría/espesor de placa y silla de corte, y ACI 318-19 Cap.17/§22.8 para pernos de anclaje y aplastamiento. Una sola columna de valores por fila (esta planilla no tiene columnas paralelas LRFD|ASD en ninguna de sus 5 hojas de cálculo). La sección "2. Geometría efectiva" muestra únicamente las filas correspondientes a la forma de columna actualmente seleccionada (H agrega X/λ/n′; Cajón y Tubular no). "ESTATUS GLOBAL" (al final) es una construcción propia del panel interactivo — el xlsx no tiene una celda global equivalente (son 5 hojas independientes con estados parciales propios).',
-    globalNum: '17', globalTitle: 'ESTATUS GLOBAL (placa + corte/silla + anclaje)',
+    globalNum: '18', globalTitle: 'ESTATUS GLOBAL (placa + corte/silla + anclaje + detallamiento NCh2369)',
     global: { estL: 'globalOk' },
   });
 }
@@ -4878,6 +4946,17 @@ function pbFlatten(state, g, cs, anc) {
     anc.modes.NsaOk && anc.modes.NcbgOk && anc.modes.NpnOk &&
     anc.modes.VsaOk && anc.modes.VcbgOk && anc.modes.VcpgOk;
 
+  // ---- detallamiento NCh2369.Of2003 §8.6.2 -> prefijo n69_ ----
+  const n69 = state._n69 || { aplica: false, motivo: 'No aplica' };
+  Object.keys(n69).forEach(k => { flat['n69_' + k] = n69[k]; });
+  flat.n69_aplicaTxt = n69.aplica ? (n69.solucion === 'silla' ? 'Aplica — solución con silla' : 'Aplica — sin silla (excepción por capacidad)') : n69.motivo;
+  flat.n69_estNA = 'N/A';
+  flat.n69_Lc = state.n69Lc; flat.n69_hilo = state.n69Hilo;
+  flat.n69_Rin = state.n69R; flat.n69_NuGin = state.n69NuG; flat.n69_NuEin = state.n69NuE;
+  flat.n69_txtSilla = 'Requisito de detalle (indicar en planos)';
+  flat.n69_rLcDc = n69.rLc; flat.n69_rHiloDc = n69.rHilo; flat.n69_rAmp = n69.r;
+  flat.globalOk = flat.globalOk && (!n69.aplica || n69.ok);
+
   return flat;
 }
 
@@ -4953,6 +5032,7 @@ function renderPlacasBase(container) {
     lambdaA:1, fya:2.53, condicionHormigon:'Fisurado', phiAceroTrac:0.75, phiAceroCorte:0.65, phiHormigon:0.7,
     da_mm:28, hef:40, ca1:15, ca2:15, s:20, ha:60, nTrac:4, nCorte:2, corteViaGrout:true, Nua:45, Vua:17,
     criterio:'manual', pct:100, tipoCap:'esperada', FyColTon:2.53, Ry:1.5, tfCol:1.2, twCol:0.8, tCol:0.8, Hcol:4, condCol:'voladizo', omega:2, vuaCap:'pernos',
+    n69:'of2003', n69Sol:'silla', n69Lc:300, n69Hilo:75, n69R:5, n69NuG:0, n69NuE:0,
   };
 
   container.innerHTML = `
@@ -5081,6 +5161,17 @@ function renderPlacasBase(container) {
         </div>
       </div>
       <div id="pb_anclaje" style="margin-top:.7rem"></div>
+      <h4 style="margin:1rem 0 .4rem">Detallamiento sísmico — NCh2369.Of2003 §8.6.2 (pernos en tracción)</h4>
+      <div class="field-grid">
+        <div class="field"><label>Norma sísmica de la estructura</label><select id="pb_n69"><option value="of2003">NCh2369.Of2003 (industrial) — §8.6.2</option><option value="no">No aplica (estructura no regida por NCh2369)</option><option value="2025" disabled>NCh2369:2025 §8.5.2 — pendiente de incorporar</option></select></div>
+        <div class="field pb-n69"><label>Solución del anclaje</label><select id="pb_n69Sol"><option value="silla">Con silla: largo libre y vástago visible</option><option value="sinSilla">Sin silla: capacidad con sismo amplificado (excepción)</option></select></div>
+        <div class="field pb-n69 pb-n69S"><label>Lc — largo libre entre placa base y placa de silla (mm)</label><input type="text" inputmode="decimal" id="pb_n69Lc" value="${state.n69Lc}" list="dl_pb_n69Lc"><datalist id="dl_pb_n69Lc"><option value="250"></option><option value="300"></option><option value="350"></option><option value="400"></option><option value="450"></option></datalist></div>
+        <div class="field pb-n69 pb-n69S"><label>Largo de hilo bajo la tuerca (mm)</label><input type="text" inputmode="decimal" id="pb_n69Hilo" value="${state.n69Hilo}" list="dl_pb_n69Hilo"><datalist id="dl_pb_n69Hilo"><option value="75"></option><option value="100"></option><option value="125"></option><option value="150"></option></datalist></div>
+        <div class="field pb-n69 pb-n69X"><label>R — factor de modificación de la respuesta (NCh2369.Of2003 Tabla 5.6)</label><input type="text" inputmode="decimal" id="pb_n69R" value="${state.n69R}"></div>
+        <div class="field pb-n69 pb-n69X"><label>NuE — tracción del grupo debida al sismo del análisis (Ton)</label><input type="text" inputmode="decimal" id="pb_n69NuE" value="${state.n69NuE}"></div>
+        <div class="field pb-n69 pb-n69X"><label>NuG — tracción del grupo por las cargas no sísmicas de la combinación (Ton; negativa si comprime)</label><input type="text" inputmode="decimal" id="pb_n69NuG" value="${state.n69NuG}"></div>
+      </div>
+      <div id="pb_n69Res" style="margin-top:.7rem"></div>
     </div>
 
     <div class="panel">
@@ -5180,6 +5271,13 @@ function renderPlacasBase(container) {
     state.Hcol = parseFloat(gv('pb_Hcol').value)||0;
     state.omega = parseFloat(gv('pb_omega').value)||1;
     state.vuaCap = gv('pb_vuaCap').value;
+    state.n69 = gv('pb_n69').value;
+    state.n69Sol = gv('pb_n69Sol').value;
+    state.n69Lc = parseFloat(gv('pb_n69Lc').value)||0;
+    state.n69Hilo = parseFloat(gv('pb_n69Hilo').value)||0;
+    state.n69R = parseFloat(gv('pb_n69R').value)||0;
+    state.n69NuE = parseFloat(gv('pb_n69NuE').value)||0;
+    state.n69NuG = parseFloat(gv('pb_n69NuG').value)||0;
     // valores ingresados (antes de aplicar el criterio de diseño)
     state.PuIn = state.Pu; state.VuIn = state.Vu; state.MuIn = state.Mu; state.MuYIn = state.MuY;
     state.NuaIn = state.Nua; state.VuaIn = state.Vua;
@@ -5323,12 +5421,42 @@ function renderPlacasBase(container) {
       </table>
       <div class="note">Nua/φNn = ${fmt3(anc.rNua)} · Vua/φVn = ${fmt3(anc.rVua)} · Interacción (ACI 17.8.2) = ${fmt3(anc.interVal)} ≤ ${fmt1(anc.interLim)} → ${chip(anc.okInter)}</div>`;
 
-    const globalOk = g.global && (!gy || gy.global) && cs.okLug!==false && anc.okInter && anc.modes.NsaOk && anc.modes.NcbgOk && anc.modes.NpnOk && anc.modes.VsaOk && anc.modes.VcbgOk && anc.modes.VcpgOk;
+    const n69 = calcDetalleNCh2369({norma:state.n69, solucion:state.n69Sol, da_mm:state.da_mm, Lc_mm:state.n69Lc, hilo_mm:state.n69Hilo,
+      Nua:state.Nua, R:state.n69R, NuG:state.n69NuG, NuE:state.n69NuE, phiNn:anc.phiNnGob});
+    state._n69 = n69;
+    const esN69 = state.n69 === 'of2003', esSilla = state.n69Sol === 'silla';
+    container.querySelectorAll('.pb-n69').forEach(e => e.style.display = esN69 ? '' : 'none');
+    container.querySelectorAll('.pb-n69S').forEach(e => e.style.display = (esN69 && esSilla) ? '' : 'none');
+    container.querySelectorAll('.pb-n69X').forEach(e => e.style.display = (esN69 && !esSilla) ? '' : 'none');
+    let n69Html;
+    if (!n69.aplica) {
+      n69Html = `<div class="note">${n69.motivo}.</div>`;
+    } else if (n69.solucion === 'silla') {
+      n69Html = `<table class="results">
+        <tr><td>8·da = 8 × ${fmt1(state.da_mm)} mm</td><td class="num">${fmt1(n69.L8d)} mm</td><td></td></tr>
+        <tr><td>Lc,mín = máx(250 mm; 8·da) — rige ${n69.rige}</td><td class="num">${fmt1(n69.LcMin)} mm</td><td></td></tr>
+        <tr><td>Largo libre: Lc = ${fmt1(state.n69Lc)} mm ≥ Lc,mín</td><td class="num">${fmtPct(n69.rLc)}</td><td>${chip(n69.okLc)}</td></tr>
+        <tr><td>Hilo bajo la tuerca = ${fmt1(state.n69Hilo)} mm ≥ 75 mm</td><td class="num">${fmtPct(n69.rHilo)}</td><td>${chip(n69.okHilo)}</td></tr>
+        <tr><td>Silla y vástago visible para inspección y reparación</td><td colspan="2">Requisito de detalle: indicar en planos</td></tr>
+      </table>`;
+    } else {
+      n69Html = (n69.errores.length ? `<div class="note" style="color:var(--bad)">${n69.errores.join(' ')}</div>` : '') + `<table class="results">
+        <tr><td>Factor de amplificación k = máx(0,5·R; 1,5), R = ${fmt2(state.n69R)}</td><td class="num">${fmt2(n69.k)}</td><td></td></tr>
+        <tr><td>Nu,amp = NuG + k·NuE = ${fmt2(state.n69NuG)} + ${fmt2(n69.k)} × ${fmt2(state.n69NuE)}</td><td class="num">${fmt2(n69.NuAmp)} Ton</td><td></td></tr>
+        <tr><td>φNn gobernante del grupo (ACI 318-19 Cap. 17)</td><td class="num">${fmt2(n69.phiNn)} Ton</td><td></td></tr>
+        <tr><td>Nu,amp ≤ φNn — excepción de 8.6.2 (sin silla)</td><td class="num">${isFinite(n69.r) ? fmtPct(n69.r) : '—'}</td><td>${chip(n69.okAmp)}</td></tr>
+      </table>`;
+    }
+    n69Html += `<div class="note">NCh2369.Of2003 §8.6.2: los pernos de anclaje en tracción llevan silla y vástago visible, largo libre ≥ 250 mm y ≥ 8 diámetros, y al menos 75 mm de hilo bajo la tuerca. Se exceptúan los pernos con capacidad suficiente para las combinaciones con el sismo amplificado 0,5·R veces, no menos de 1,5. La Of2003 rige hasta el 09-09-2027 (D. Ex. 12 y 36 de 2026, MINVU). La NCh2369:2025 §8.5.2 aún no está incorporada.</div>`;
+    document.getElementById('pb_n69Res').innerHTML = n69Html;
+
+    const globalOk = g.global && (!gy || gy.global) && cs.okLug!==false && anc.okInter && anc.modes.NsaOk && anc.modes.NcbgOk && anc.modes.NpnOk && anc.modes.VsaOk && anc.modes.VcbgOk && anc.modes.VcpgOk && (!n69.aplica || n69.ok);
     document.getElementById('pb_resumen').innerHTML = `
       <div class="verdict-row"><span>Aplastamiento y espesor de placa${gy ? ' — eje fuerte x-x' : ''}</span><span>${chip(g.global)}</span></div>
       ${gy ? `<div class="verdict-row"><span>Aplastamiento y espesor de placa — eje débil y-y</span><span>${chip(gy.global)}</span></div>` : ''}
       <div class="verdict-row"><span>Corte — fricción / silla</span><span>${chip(cs.okFriccion||cs.okLug)}</span></div>
       <div class="verdict-row"><span>Pernos de anclaje — interacción N+V</span><span>${chip(anc.okInter)}<span class="u">${fmtPct(anc.interVal/anc.interLim)}</span></span></div>
+      <div class="verdict-row"><span>Pernos de anclaje — detallamiento NCh2369.Of2003 §8.6.2</span><span>${n69.aplica ? chip(n69.ok) : '<span class="chip neutral">N/A</span>'}</span></div>
       <div class="global-verdict ${globalOk?'ok':'bad'}"><span class="label">ESTATUS GLOBAL</span><span class="label">${globalOk?'CUMPLE':'NO CUMPLE'}</span></div>`;
 
     if (typeof buildPrintSheetsPlacasBase === 'function') buildPrintSheetsPlacasBase(state, g, cs, anc);
@@ -5339,6 +5467,8 @@ function renderPlacasBase(container) {
   document.getElementById('pb_tipoCap').value = state.tipoCap;
   document.getElementById('pb_condCol').value = state.condCol;
   document.getElementById('pb_vuaCap').value = state.vuaCap;
+  document.getElementById('pb_n69').value = state.n69;
+  document.getElementById('pb_n69Sol').value = state.n69Sol;
   document.getElementById('pb_shape').addEventListener('change', () => {
     state.shape = document.getElementById('pb_shape').value;
     renderProfFields();
