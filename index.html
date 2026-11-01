@@ -3659,6 +3659,155 @@ function calcPlacaBaseGeom(inp) {
 }
 
 /* =========================================================================
+   PLACAS BASE — PERFIL DE LA COLUMNA (CATÁLOGO) Y GEOMETRÍA PROPUESTA
+   Catálogos de la Mesa (no se agregan dimensiones nuevas):
+   - H/I: CATALOG_PERFILES_H (ICHA IN/IP/HN/PH, JIS, IPN, IPE, HEA, HEB; sin canales).
+   - Cajón: tubos SHS/RHS de CATALOG_MASIVIDAD y cajón de 2 UPN punta con punta
+     armado con los UPN de CATALOG_PERFILES_H (Hc = H, Bc = 2·B).
+   - Tubular: MB_TUBOS (ASTM A53/A252, API 5L).
+   Distancias mínimas (todas en mm):
+   - Perforación y golilla: AISC Design Guide 1, 2ª ed., Tabla 2.3 (= AISC
+     Manual Tabla 14-2), diámetros 3/4"–1 1/2". Otros diámetros: ingreso del usuario.
+   - Tuerca hexagonal pesada: ancho entre caras F = 1,5·d + 1/8" y entre
+     vértices G = F/cos30° (ASME B18.2.2, Tabla 10).
+   - Borde de perforación a borde de placa ≥ 1/2" (12,7 mm) (AISC, seminario
+     «Column Base Plates», T. Murray) y golilla completa sobre la placa.
+   - Filete columna-placa mínimo: AISC 360-16 Tabla J2.4 según la parte más delgada.
+   - Separación entre pernos ≥ 4·da (sin torque) o 6·da (con torque):
+     ACI 318-19 §17.9.2, Tabla 17.9.2(a); y golillas sin traslape.
+   - Distancia al borde del pedestal con torque ≥ 6·da (ACI 318-19 Tabla 17.9.2(a)).
+   - Mínimo 4 pernos por columna: OSHA 29 CFR 1926.755(a)(1).
+   Disposición: pernos en dos filas paralelas a las alas (fuera del perfil en la
+   dirección N), nFila pernos por fila repartidos en el ancho B.
+   ========================================================================= */
+// [designación, d (pulg), perforación (pulg) DG1 T2.3, golilla lado (pulg), golilla t (pulg)]
+const PB_ANCLAS = [
+  ['3/4"', 0.75, 1+5/16, 2, 1/4], ['7/8"', 0.875, 1+9/16, 2.5, 5/16], ['1"', 1, 1+13/16, 3, 3/8],
+  ['1 1/8"', 1.125, null, null, null], ['1 1/4"', 1.25, 2+1/16, 3, 1/2], ['1 3/8"', 1.375, null, null, null],
+  ['1 1/2"', 1.5, 2+5/16, 3.5, 1/2], ['1 3/4"', 1.75, null, null, null], ['2"', 2, null, null, null]];
+// Espesores comerciales de plancha (mismo catálogo que el asistente de Rediseño), mm
+const PB_ESP_PLACA = [6, 8, 10, 12, 14, 16, 20, 22, 25, 32, 38, 50, 63, 75, 100];
+function pbAnclaPorDiam(da_mm) {
+  let best = null, dmin = 1e9;
+  PB_ANCLAS.forEach(a => { const dd = Math.abs(a[1]*25.4 - da_mm); if (dd < dmin) { dmin = dd; best = a; } });
+  return dmin <= 0.8 ? best : null;
+}
+function pbFileteMinJ24(t_mm) { // AISC 360-16 Tabla J2.4 (1/8, 3/16, 1/4, 5/16 in)
+  if (!(t_mm > 0)) return 0;
+  return t_mm <= 6 ? 3 : (t_mm <= 13 ? 5 : (t_mm <= 19 ? 6 : 8));
+}
+function pbCatalogoColumna(shape) {
+  const out = [];
+  if (shape === 'H') {
+    const fams = [['HN','HN — H soldado (ICHA)'],['PH','PH — H soldado (ICHA)'],['IN','IN — I soldado (ICHA)'],['IP','IP — I soldado (ICHA)'],
+      ['HEB','HEB (IPB) laminado'],['HEA','HEA (IPBL) laminado'],['IPE','IPE laminado'],['IPN','IPN laminado'],['JIS','H laminado JIS']];
+    const cat = typeof CATALOG_PERFILES_H !== 'undefined' ? CATALOG_PERFILES_H : [];
+    fams.forEach(([f, lbl]) => cat.filter(p => p.fam === f).forEach(p => out.push({ grupo: lbl, nombre: p.perfil,
+      d: p.H, bf: p.B, tf: p.tf, tw: p.tw, peso: p.peso, fuente: 'Catálogo de perfiles H/I de la Mesa' })));
+  } else if (shape === 'Cajon') {
+    const mas = typeof CATALOG_MASIVIDAD !== 'undefined' ? CATALOG_MASIVIDAD : [];
+    mas.filter(p => p.tipo === 'RHS' && /^(SHS|RHS)/.test(p.fam)).forEach(p => out.push({ grupo: p.fam, nombre: p.desig,
+      Hc: p.h, Bc: p.b, t: p.tw, peso: p.masa, fuente: 'Catálogo de tubos SHS/RHS de la Mesa (Factor de masividad)' }));
+    const cat = typeof CATALOG_PERFILES_H !== 'undefined' ? CATALOG_PERFILES_H : [];
+    cat.filter(p => p.fam === 'UPN').forEach(p => {
+      // Z del cajón 2 UPN punta con punta, modelo de placas (alas de espesor medio tf)
+      const H = p.H, B = p.B, tf = p.tf, tw = p.tw;
+      const Zx = 2*(B*tf*(H - tf) + tw*Math.pow(H - 2*tf, 2)/4)/1000;
+      const Zy = 2*(tw*H*(B - tw/2) + 2*tf*Math.pow(B - tw, 2)/2)/1000;
+      out.push({ grupo: 'Cajón 2 UPN (punta con punta)', nombre: 'Cajón 2 ' + p.perfil, Hc: H, Bc: 2*B, t: Math.min(tf, tw), tf, tw,
+        peso: 2*p.peso, Z: { Zx, Zy }, fuente: 'UPN del catálogo de perfiles de la Mesa' });
+    });
+  } else {
+    (typeof MB_TUBOS !== 'undefined' ? MB_TUBOS : []).forEach(p => out.push({ grupo: 'Tubo circular (ASTM A53/A252, API 5L)', nombre: p.nombre,
+      D: p.D, t: p.t, peso: p.peso, fuente: 'Catálogo de tubos de la Mesa' }));
+  }
+  return out;
+}
+function pbGeomPropuesta(inp) {
+  // inp: shape, Dn, Db (mm, dimensiones del perfil en dirección N y B), tPerf (mm), da_mm, dh_mm, gol_mm, w_mm,
+  //      holg_mm, nTot, torque, tp_mm, y cargas {fc, Fy, phiC, Pu, Mu, MuY, biax, A2, prof}
+  const r = { avisos: [], errores: [] };
+  const da = +inp.da_mm || 0;
+  const an = pbAnclaPorDiam(da);
+  r.ancla = an ? an[0] : null;
+  r.dh = inp.dh_mm > 0 ? +inp.dh_mm : (an && an[2] ? an[2]*25.4 : 0);
+  r.gol = inp.gol_mm > 0 ? +inp.gol_mm : (an && an[3] ? an[3]*25.4 : 0);
+  r.golT = an && an[4] ? an[4]*25.4 : 0;
+  r.dhTabla = !(inp.dh_mm > 0) && r.dh > 0; r.golTabla = !(inp.gol_mm > 0) && r.gol > 0;
+  if (!(da > 0)) r.errores.push('Falta el diámetro del perno (sección 10).');
+  if (!(r.dh > 0) || !(r.gol > 0)) r.errores.push(`El diámetro ${fmt1(da)} mm no está en la Tabla 2.3 de AISC DG1 (3/4", 7/8", 1", 1 1/4", 1 1/2"): ingrese la perforación y la golilla.`);
+  if (da > 0 && da < 19) r.avisos.push('AISC DG1 recomienda pernos de anclaje de 3/4" (19 mm) como mínimo.');
+  r.F = 1.5*da + 3.175; r.G = r.F/Math.cos(Math.PI/6);
+  const nTot = Math.max(0, Math.round(+inp.nTot || 0));
+  r.nTot = nTot; r.nFila = Math.max(1, Math.floor(nTot/2));
+  if (nTot < 4) r.errores.push('OSHA 29 CFR 1926.755(a)(1) exige un mínimo de 4 pernos de anclaje por columna.');
+  if (nTot % 2) r.errores.push('La disposición en dos filas requiere un número par de pernos.');
+  r.sAci = (inp.torque ? 6 : 4)*da;
+  r.sMin = Math.max(r.sAci, r.gol);
+  r.eMin = Math.max(r.dh/2 + 12.7, r.gol/2);
+  r.edgePedMin = inp.torque ? 6*da : 0;
+  const Dn = +inp.Dn || 0, Db = +inp.Db || 0, tPerf = +inp.tPerf || 0;
+  if (!(Dn > 0 && Db > 0)) r.errores.push('Faltan las dimensiones del perfil de la columna.');
+  const ceil10 = v => Math.ceil(v/10 - 1e-9)*10;
+  const L = inp.cargas || {};
+  const run = tpRef => {
+    const wMin = pbFileteMinJ24(Math.min(tPerf || tpRef, tpRef || tPerf));
+    const w = inp.w_mm > 0 ? Math.max(+inp.w_mm, 0) : wMin;
+    const cMin = Math.max(r.gol/2, r.G/2) + w + Math.max(+inp.holg_mm || 0, 0);
+    const Nmin = Dn + 2*(cMin + r.eMin);
+    const Bmin = Math.max(Db + 2*w, (r.nFila - 1)*r.sMin + 2*r.eMin);
+    let N = ceil10(Nmin), B = ceil10(Bmin), g = null, gy = null, it = 0, crece = false;
+    const evalG = () => {
+      const base = { shape: inp.shape, fc: L.fc, Fy: L.Fy, phiC: L.phiC, Pu: L.Pu, Vu: 0, N: N/10, B: B/10, tp_mm: 0, A2: L.A2, prof: L.prof };
+      g = calcPlacaBaseGeom(Object.assign({}, base, { Mu: L.Mu, fLever: (N/2 - r.eMin)/10, nPernosTrac: r.nFila }));
+      gy = L.biax ? calcPlacaBaseGeom(Object.assign({}, base, { Mu: L.MuY, fLever: (B/2 - r.eMin)/10, nPernosTrac: 2, eje: 'y' })) : null;
+    };
+    if (Dn > 0 && Db > 0 && L.Pu > 0) {
+      evalG();
+      while (it++ < 400) {
+        const okX = g.okYq && isFinite(g.Y), okY = !gy || (gy.okYq && isFinite(gy.Y));
+        if (!okX) N += 10; else if (!okY) B += 10; else if (!g.okAplast) { N += 10; B += 10; } else break;
+        crece = true; evalG();
+      }
+    }
+    return { w, wMin, cMin, Nmin, Bmin, N, B, g, gy, crece };
+  };
+  let p = run(+inp.tp_mm || 0);
+  const tpReq = p.g ? Math.max(p.g.tpReqMm || 0, p.gy ? (p.gy.tpReqMm || 0) : 0) : 0;
+  let tp = PB_ESP_PLACA.find(t => t >= tpReq - 1e-9) || null;
+  if (tp) { const p2 = run(tp); if (p2.w !== p.w) { p = p2; const tq2 = p.g ? Math.max(p.g.tpReqMm || 0, p.gy ? (p.gy.tpReqMm || 0) : 0) : 0; tp = PB_ESP_PLACA.find(t => t >= tq2 - 1e-9) || null; r.tpReq = tq2; } else r.tpReq = tpReq; }
+  else r.tpReq = tpReq;
+  if (p.g && !tp) r.errores.push(`El espesor requerido (${fmt1(r.tpReq)} mm) supera la plancha comercial máxima de 100 mm: aumente la placa, use atiesadores o revise las cargas.`);
+  if (!(L.Pu > 0)) r.avisos.push('Sin Pu de compresión: la geometría propuesta resulta solo de las distancias mínimas; el espesor no se propone.');
+  Object.assign(r, p);
+  r.tp = tp;
+  r.f = r.N/2 - r.eMin;                       // eje placa a eje pernos traccionados, dirección N (mm)
+  r.fy = r.B/2 - r.eMin;                      // idem dirección B
+  r.c = r.f - Dn/2;                           // eje perno a cara del perfil (mm)
+  r.s = r.nFila > 1 ? (r.B - 2*r.eMin)/(r.nFila - 1) : 0;
+  return r;
+}
+// Verificación de la geometría adoptada (N, B, f, s en cm; todo lo demás en mm)
+function pbVerifGeom(inp, prop) {
+  const N = inp.N*10, B = inp.B*10, f = inp.f*10, s = inp.s*10, Dn = +inp.Dn || 0;
+  const eN = N/2 - f, c = f - Dn/2, nFila = prop.nFila;
+  const eB = nFila > 1 ? (B - (nFila - 1)*s)/2 : B/2;
+  const filas = [
+    { k: 'eN', label: 'Eje perno a borde de placa, dirección N', v: eN, min: prop.eMin, ref: 'AISC DG1 Tabla 2.3 / borde de perforación ≥ 1/2"; golilla completa' },
+    { k: 'eB', label: 'Eje perno a borde de placa, dirección B', v: eB, min: prop.eMin, ref: 'AISC DG1 Tabla 2.3 / borde de perforación ≥ 1/2"; golilla completa' },
+    { k: 'c', label: 'Eje perno a cara del perfil (tuerca, golilla y filete)', v: c, min: prop.cMin, ref: 'ASME B18.2.2 (tuerca) + AISC 360-16 Tabla J2.4 (filete)' },
+  ];
+  if (nFila > 1) filas.push({ k: 's', label: 'Separación entre pernos de una fila', v: s, min: prop.sMin, ref: 'ACI 318-19 Tabla 17.9.2(a); golillas sin traslape' });
+  if (prop.edgePedMin > 0) {
+    filas.push({ k: 'ca1', label: 'ca1 — distancia al borde del pedestal (pernos con torque)', v: inp.ca1*10, min: prop.edgePedMin, ref: 'ACI 318-19 Tabla 17.9.2(a): 6·da' });
+    filas.push({ k: 'ca2', label: 'ca2 — distancia al borde del pedestal (pernos con torque)', v: inp.ca2*10, min: prop.edgePedMin, ref: 'ACI 318-19 Tabla 17.9.2(a): 6·da' });
+  }
+  filas.forEach(x => { x.ok = x.v >= x.min - 0.05; });
+  const evaluable = !prop.errores.length || prop.errores.every(e => !/Tabla 2.3|diámetro del perno|dimensiones del perfil/.test(e));
+  return { filas, ok: filas.every(x => x.ok) && (prop.nTot >= 4), evaluable };
+}
+
+/* =========================================================================
    PLACAS BASE -- DISEÑO POR CAPACIDAD DE LA COLUMNA (opción de la Mesa web)
    Criterios:
    - 'manual'    : solicitaciones ingresadas (Pu/Vu/Mu del análisis, ya combinadas y mayoradas).
@@ -3706,7 +3855,7 @@ function pbCargasDiseno(inp) {
     return out;
   }
   if (crit !== 'capacidad') return out;
-  const Z = pbModuloPlastico(inp.shape, inp.prof, inp.tCol);
+  const Z = (inp.Zover && inp.Zover.Zx > 0) ? inp.Zover : pbModuloPlastico(inp.shape, inp.prof, inp.tCol);
   const n69 = inp.tipoCap === 'nch2369';
   const esperada = inp.tipoCap === 'esperada' || n69;
   const fac = n69 ? (+inp.Ry || 1) : (esperada ? 1.1*(+inp.Ry || 1) : 0.90);
@@ -4630,7 +4779,9 @@ function placasBaseDatosHtml(state) {
 
     <div class="xlsx-section">D. Geometría del perfil de columna (forma seleccionada)</div>
     <table class="xlsx-table"><tbody>
+      ${row('Perfil de la columna', state.perfOrigen === 'catalogo' ? (state.perfil || '—') : 'Ingreso manual')}
       ${geomRows}
+      ${state.shape === 'H' ? row('tf / tw — espesores de ala y alma [cm]', xlsxNum(state.tfCol, 2) + ' / ' + xlsxNum(state.twCol, 2)) : row('t — espesor de pared [cm]', xlsxNum(state.tCol, 2))}
     </tbody></table>
 
     <div class="xlsx-section">E. Geometría de la placa base</div>
@@ -4641,6 +4792,11 @@ function placasBaseDatosHtml(state) {
       ${row('A2 — área hormigón similar/concéntrica (0 = usar A1) [cm²]', xlsxNum(state.A2, 1))}
       ${row('f — eje placa a eje pernos en tracción [cm]', xlsxNum(state.fLever, 2))}
       ${row('N° pernos lado traccionado', xlsxNum(state.nPernosTrac, 0))}
+      ${row('N° total de pernos de anclaje (dos filas paralelas a las alas)', xlsxNum(state.nTotP, 0))}
+      ${row('Instalación de los pernos', state.torqueP === 'si' ? 'Con torque de pretensión' : 'Sin torque de pretensión')}
+      ${row('Perforación en la placa / golilla de placa [mm]', (state.dhP > 0 ? xlsxNum(state.dhP, 1) : 'AISC DG1 Tabla 2.3') + ' / ' + (state.golP > 0 ? xlsxNum(state.golP, 1) : 'AISC DG1 Tabla 2.3'))}
+      ${row('Filete columna-placa [mm]', state.wP > 0 ? xlsxNum(state.wP, 1) : 'Mínimo AISC 360-16 Tabla J2.4')}
+      ${row('Holgura adicional perno-perfil [mm]', xlsxNum(state.holgP, 1))}
       ${state.biaxial === 'Si' ? row('f,y — eje placa a eje pernos en tracción, dirección B [cm]', xlsxNum(state.fLeverY, 2)) + row('N° pernos lado traccionado, eje débil', xlsxNum(state.nPernosTracY, 0)) : ''}
     </tbody></table>
 
@@ -4956,6 +5112,23 @@ function pbCalcSections(state) {
   }
   sections.push({ num: '17', title: 'Detallamiento sísmico de pernos de anclaje (' + n69Ref + ')', hdrDE: false, rows: n69Rows });
 
+  const geo = state._geo;
+  if (geo) {
+    const geoRows = [
+      { t: 'text', label: 'Perfil de la columna', f: 'geo_perfil' },
+      { t: 'text', label: 'Pernos de anclaje y disposición', f: 'geo_disp' },
+      { t: 'text', label: 'Perforación en la placa / golilla de placa, lado [mm]', f: 'geo_dhGol' },
+      { t: 'var1', label: 'Tuerca hexagonal pesada, ancho entre vértices G = (1,5·d + 1/8")/cos 30° (ASME B18.2.2) [mm]', f: 'geo_G', d: 1 },
+      { t: 'var1', label: 'Filete columna-placa (mínimo AISC 360-16 Tabla J2.4 si no se especifica) [mm]', f: 'geo_w', d: 1 },
+    ];
+    geo.ver.filas.forEach((x, i) => geoRows.push(
+      { t: 'var1', label: x.label + ' — adoptado [mm]', f: 'geo_v' + i, d: 1 },
+      { t: 'var1', label: 'Mínimo: ' + x.ref + ' [mm]', f: 'geo_m' + i, d: 1 },
+      { t: 'chk', label: 'Verificación: adoptado ≥ mínimo', estL: 'geo_ok' + i, forceNA: true },
+    ));
+    sections.push({ num: '18', title: 'Geometría de la placa — distancias mínimas de pernos (AISC DG1 Tabla 2.3, ASME B18.2.2, AISC 360-16 J2.4, ACI 318-19 §17.9.2)', hdrDE: false, rows: geoRows });
+  }
+
   return sections;
 }
 
@@ -4965,7 +5138,7 @@ function placasBaseCalcHtml(state, r, opts) {
   return xlsxBuildCalculoHtml(sections, r, {
     resumen,
     intro: 'Fórmulas según AISC Design Guide 1 (2ª ed.) para geometría/espesor de placa y silla de corte, y ACI 318-19 Cap.17/§22.8 para pernos de anclaje y aplastamiento. Una sola columna de valores por fila (esta planilla no tiene columnas paralelas LRFD|ASD en ninguna de sus 5 hojas de cálculo). La sección "2. Geometría efectiva" muestra únicamente las filas correspondientes a la forma de columna actualmente seleccionada (H agrega X/λ/n′; Cajón y Tubular no). "ESTATUS GLOBAL" (al final) es una construcción propia del panel interactivo — el xlsx no tiene una celda global equivalente (son 5 hojas independientes con estados parciales propios).',
-    globalNum: '18', globalTitle: 'ESTATUS GLOBAL (placa + corte/silla + anclaje + detallamiento NCh2369)',
+    globalNum: '19', globalTitle: 'ESTATUS GLOBAL (placa + corte/silla + anclaje + detallamiento NCh2369 + geometría)',
     global: { estL: 'globalOk' },
   });
 }
@@ -5091,6 +5264,18 @@ function pbFlatten(state, g, cs, anc) {
   flat.n69_rLcDc = n69.rLc; flat.n69_rHiloDc = n69.rHilo; flat.n69_rAmp = n69.r;
   flat.globalOk = flat.globalOk && (!n69.aplica || n69.ok);
 
+  // ---- geometría: distancias mínimas -> prefijo geo_ ----
+  const geo = state._geo;
+  if (geo) {
+    const pr = geo.prop;
+    flat.geo_perfil = geo.perfil;
+    flat.geo_disp = `${pr.ancla || xlsxNum(state.da_mm, 1) + ' mm'} — ${pr.nTot} pernos en 2 filas de ${pr.nFila}, ${state.torqueP === 'si' ? 'con' : 'sin'} torque de pretensión`;
+    flat.geo_dhGol = (pr.dh > 0 ? xlsxNum(pr.dh, 1) : '—') + ' / ' + (pr.gol > 0 ? xlsxNum(pr.gol, 1) : '—');
+    flat.geo_G = pr.G; flat.geo_w = pr.w;
+    geo.ver.filas.forEach((x, i) => { flat['geo_v' + i] = x.v; flat['geo_m' + i] = x.min; flat['geo_ok' + i] = geo.ver.evaluable ? x.ok : null; });
+    flat.globalOk = flat.globalOk && (!geo.ver.evaluable || geo.ver.ok);
+  }
+
   return flat;
 }
 
@@ -5167,6 +5352,7 @@ function renderPlacasBase(container) {
     da_mm:28, hef:40, ca1:15, ca2:15, s:20, ha:60, nTrac:4, nCorte:2, corteViaGrout:true, Nua:45, Vua:17,
     criterio:'manual', pct:100, tipoCap:'esperada', FyColTon:2.53, Ry:1.5, tfCol:1.2, twCol:0.8, tCol:0.8, Hcol:4, condCol:'voladizo', omega:2, vuaCap:'pernos',
     n69:'of2003', n69Sol:'silla', n69Lc:300, n69Hilo:75, n69R:5, n69NuG:0, n69NuE:0, n69Elong:0, n69VuE:0, n69VuG:0, n69CorteSol:'llave', n69Fu:0, n69HiloCorte:'incl', n69nTot:4, n69Holgura:'si',
+    perfOrigen:'catalogo', perfil:'HN 300x300x12x8', nTotP:4, torqueP:'no', dhP:0, golP:0, wP:0, holgP:0,
   };
 
   container.innerHTML = `
@@ -5208,9 +5394,6 @@ function renderPlacasBase(container) {
         <div class="field pb-cap"><label>Capacidad de la columna considerada</label><select id="pb_tipoCap"><option value="nch2369">Esperada Mpe = Ry·Fy·Z (NCh2369:2025 §8.3.1)</option><option value="esperada">Esperada 1,1·Ry·Fy·Z (AISC 341-16 §D2.6c)</option><option value="diseno">De diseño φMp = 0,90·Fy·Z (AISC 360, LRFD)</option></select></div>
         <div class="field pb-cap"><label>Fy — acero de la columna (t/cm²)</label><input type="text" inputmode="decimal" id="pb_FyCol" value="${state.FyColTon}" list="dl_pb_FyCol"><datalist id="dl_pb_FyCol"><option value="2.53">ASTM A36</option><option value="2.7">NCh203 A270ES (A42-27ES)</option><option value="3.234">ASTM A500 Gr B (HSS rectangular)</option><option value="3.515">ASTM A572 Gr50 / A992 / A500 Gr C</option><option value="2.461">ASTM A53 Gr B (tubo circular)</option></datalist></div>
         <div class="field pb-cap pb-capEsp"><label>Ry — razón fluencia esperada / mínima</label><input type="text" inputmode="decimal" id="pb_Ry" value="${state.Ry}" list="dl_pb_Ry"><datalist id="dl_pb_Ry"><option value="1.5">ASTM A36 (AISC 341 Tabla A3.1)</option><option value="1.1">ASTM A572 Gr50 / A992</option><option value="1.4">ASTM A500 Gr B</option><option value="1.3">ASTM A500 Gr C</option><option value="1.6">ASTM A53 Gr B</option></datalist></div>
-        <div class="field pb-cap pb-capH"><label>tf — espesor del ala de la columna (cm)</label><input type="text" inputmode="decimal" id="pb_tfCol" value="${state.tfCol}" list="dl_pb_tfCol"><datalist id="dl_pb_tfCol"><option value="0.8">Ala delgada</option><option value="1.2">Ala típica</option><option value="1.6">Ala gruesa</option></datalist></div>
-        <div class="field pb-cap pb-capH"><label>tw — espesor del alma de la columna (cm)</label><input type="text" inputmode="decimal" id="pb_twCol" value="${state.twCol}" list="dl_pb_twCol"><datalist id="dl_pb_twCol"><option value="0.6">Alma delgada</option><option value="0.8">Alma típica</option><option value="1.0">Alma gruesa</option></datalist></div>
-        <div class="field pb-cap pb-capT"><label>t — espesor de pared del cajón / tubo (cm)</label><input type="text" inputmode="decimal" id="pb_tCol" value="${state.tCol}" list="dl_pb_tCol"><datalist id="dl_pb_tCol"><option value="0.5">Pared delgada</option><option value="0.8">Pared típica</option><option value="1.2">Pared gruesa</option></datalist></div>
         <div class="field pb-cap"><label>Corte de diseño asociado a la capacidad</label><select id="pb_condCol"><option value="voladizo">Columna en voladizo: Vu = M/H</option><option value="doble">Doble curvatura: Vu = 2·M/H</option><option value="ingresado">Usar el Vu ingresado</option></select></div>
         <div class="field pb-cap pb-capHcol"><label>H — altura libre de la columna (m)</label><input type="text" inputmode="decimal" id="pb_Hcol" value="${state.Hcol}" list="dl_pb_Hcol"><datalist id="dl_pb_Hcol"><option value="3">Columna baja</option><option value="4">Columna típica</option><option value="6">Nave industrial</option><option value="9">Nave alta</option></datalist></div>
         <div class="field pb-om"><label>Ω0 — factor de sobrerresistencia</label><input type="text" inputmode="decimal" id="pb_omega" value="${state.omega}" list="dl_pb_omega"><datalist id="dl_pb_omega"><option value="2">2,0 — marcos arriostrados concéntricos / valor usual</option><option value="2.5">2,5 — marcos arriostrados excéntricos</option><option value="3">3,0 — marcos de momento</option></datalist></div>
@@ -5221,7 +5404,17 @@ function renderPlacasBase(container) {
 
     <div class="panel">
       <h3>3 · Geometría del perfil y de la placa</h3>
+      <div class="field-grid">
+        <div class="field"><label>Perfil de la columna — origen</label><select id="pb_perfOrigen"><option value="catalogo">Catálogo de perfiles de la Mesa</option><option value="manual">Ingreso manual de dimensiones</option></select></div>
+        <div class="field pb-perfCat" style="grid-column:span 2"><label>Perfil de la columna</label><select id="pb_perfil"></select></div>
+      </div>
+      <div class="note" id="pb_perfInfo"></div>
       <div id="pb_profFields" class="field-grid"></div>
+      <div class="field-grid" style="margin-top:.7rem">
+        <div class="field pb-espH"><label>tf — espesor del ala de la columna (cm)</label><input type="text" inputmode="decimal" id="pb_tfCol" value="${state.tfCol}" list="dl_pb_tfCol"><datalist id="dl_pb_tfCol"><option value="0.8">Ala delgada</option><option value="1.2">Ala típica</option><option value="1.6">Ala gruesa</option></datalist></div>
+        <div class="field pb-espH"><label>tw — espesor del alma de la columna (cm)</label><input type="text" inputmode="decimal" id="pb_twCol" value="${state.twCol}" list="dl_pb_twCol"><datalist id="dl_pb_twCol"><option value="0.6">Alma delgada</option><option value="0.8">Alma típica</option><option value="1.0">Alma gruesa</option></datalist></div>
+        <div class="field pb-espT"><label>t — espesor de pared del cajón / tubo (cm)</label><input type="text" inputmode="decimal" id="pb_tCol" value="${state.tCol}" list="dl_pb_tCol"><datalist id="dl_pb_tCol"><option value="0.5">Pared delgada</option><option value="0.8">Pared típica</option><option value="1.2">Pared gruesa</option></datalist></div>
+      </div>
       <div class="field-grid" style="margin-top:.7rem">
         <div class="field"><label>N — largo de la placa (cm)</label><input type="text" inputmode="decimal" id="pb_N" value="${state.N}" list="dl_pb_N"><datalist id="dl_pb_N"><option value="30">Placa base pequeña (columna liviana)</option><option value="40">Placa base común, edificación menor</option><option value="50">Placa base típica industrial</option><option value="60">Placa base de columna de gran carga</option><option value="80">Placa base de gran formato (nave industrial)</option></datalist></div>
         <div class="field"><label>B — ancho de la placa (cm)</label><input type="text" inputmode="decimal" id="pb_B" value="${state.B}" list="dl_pb_B"><datalist id="dl_pb_B"><option value="30">Placa base pequeña (columna liviana)</option><option value="40">Placa base común, edificación menor</option><option value="50">Placa base típica industrial</option><option value="60">Placa base de columna de gran carga</option><option value="80">Placa base de gran formato (nave industrial)</option></datalist></div>
@@ -5234,6 +5427,16 @@ function renderPlacasBase(container) {
         <div class="field"><label>f,y — eje placa a eje pernos en tracción, dirección B (cm)</label><input type="text" inputmode="decimal" step="0.1" id="pb_fLeverY" value="${state.fLeverY}" list="dl_pb_fLeverY"><datalist id="dl_pb_fLeverY"><option value="10">Placa pequeña</option><option value="17.5">Placa de 50 cm con pernos a 7,5 cm del borde</option><option value="22.5">Placa de 60 cm con pernos a 7,5 cm del borde</option></datalist></div>
         <div class="field"><label>N° pernos lado traccionado, eje débil</label><input type="text" inputmode="decimal" step="1" id="pb_nPernosTracY" value="${state.nPernosTracY}" list="dl_pb_nPernosTracY"><datalist id="dl_pb_nPernosTracY"><option value="2">2 pernos por lado</option><option value="3">3 pernos por lado</option></datalist></div>
       </div>
+      <h4 style="margin:1rem 0 .4rem">Geometría de la placa según el perfil, el número de pernos y las distancias mínimas</h4>
+      <div class="field-grid">
+        <div class="field"><label>N° total de pernos de anclaje (dos filas paralelas a las alas)</label><select id="pb_nTotP"><option value="4">4 pernos (2 por fila)</option><option value="6">6 pernos (3 por fila)</option><option value="8">8 pernos (4 por fila)</option><option value="10">10 pernos (5 por fila)</option><option value="12">12 pernos (6 por fila)</option></select></div>
+        <div class="field"><label>Instalación de los pernos</label><select id="pb_torqueP"><option value="no">Sin torque de pretensión (separación ≥ 4·da)</option><option value="si">Con torque de pretensión (separación y borde de pedestal ≥ 6·da)</option></select></div>
+        <div class="field"><label>Perforación en la placa (mm; 0 = AISC DG1 Tabla 2.3)</label><input type="text" inputmode="decimal" id="pb_dhP" value="${state.dhP}"></div>
+        <div class="field"><label>Golilla de placa, lado (mm; 0 = AISC DG1 Tabla 2.3)</label><input type="text" inputmode="decimal" id="pb_golP" value="${state.golP}"></div>
+        <div class="field"><label>Filete columna-placa (mm; 0 = mínimo AISC 360-16 Tabla J2.4)</label><input type="text" inputmode="decimal" id="pb_wP" value="${state.wP}"></div>
+        <div class="field"><label>Holgura adicional perno-perfil para llave o dado (mm)</label><input type="text" inputmode="decimal" id="pb_holgP" value="${state.holgP}"></div>
+      </div>
+      <div id="pb_geoProp" style="margin-top:.7rem"></div>
     </div>
 
     <div class="panel">
@@ -5344,8 +5547,52 @@ function renderPlacasBase(container) {
     el.querySelectorAll('input').forEach(i => i.addEventListener('input', recalc));
   }
 
+  // ---- perfil de la columna: catálogo de la Mesa o ingreso manual ----
+  function pbCat() { return pbCatalogoColumna(state.shape); }
+  function pbPerfilSel() { return state.perfOrigen === 'catalogo' ? (pbCat().find(p => p.nombre === state.perfil) || null) : null; }
+  function renderPerfilOptions() {
+    const cat = pbCat(), sel = document.getElementById('pb_perfil');
+    if (!cat.find(p => p.nombre === state.perfil)) {
+      // perfil más parecido a las dimensiones actuales
+      const dist = p => state.shape === 'H' ? Math.abs(p.d - 10*state.d) + Math.abs(p.bf - 10*state.bf) + Math.abs(p.tf - 10*state.tfCol)
+        : state.shape === 'Cajon' ? Math.abs(p.Hc - 10*state.Hc) + Math.abs(p.Bc - 10*state.Bc) + Math.abs(p.t - 10*state.tCol)
+        : Math.abs(p.D - 10*state.D) + Math.abs(p.t - 10*state.tCol);
+      let best = cat[0]; cat.forEach(p => { if (dist(p) < dist(best)) best = p; });
+      state.perfil = best ? best.nombre : '';
+    }
+    const grupos = [];
+    cat.forEach(p => { let g = grupos.find(x => x.l === p.grupo); if (!g) grupos.push(g = { l: p.grupo, o: [] }); g.o.push(p); });
+    sel.innerHTML = grupos.map(g => `<optgroup label="${g.l}">${g.o.map(p => `<option value="${p.nombre}">${p.nombre}</option>`).join('')}</optgroup>`).join('');
+    sel.value = state.perfil;
+  }
+  function aplicarPerfilCatalogo() {
+    const esCat = state.perfOrigen === 'catalogo';
+    container.querySelectorAll('.pb-perfCat').forEach(e => e.style.display = esCat ? '' : 'none');
+    const p = pbPerfilSel();
+    const ids = state.shape === 'H' ? ['pb_d','pb_bf','pb_tfCol','pb_twCol'] : (state.shape === 'Cajon' ? ['pb_Hc','pb_Bc','pb_tCol'] : ['pb_D','pb_tCol']);
+    ['pb_d','pb_bf','pb_Hc','pb_Bc','pb_D','pb_tfCol','pb_twCol','pb_tCol'].forEach(id => { const el = document.getElementById(id); if (el) { el.readOnly = false; el.style.opacity = ''; } });
+    const info = document.getElementById('pb_perfInfo');
+    state.Zover = null;
+    if (!p) { info.textContent = esCat ? 'Perfil no encontrado en el catálogo: elija otro o use el ingreso manual.' : ''; return; }
+    const val = state.shape === 'H' ? [p.d/10, p.bf/10, p.tf/10, p.tw/10] : (state.shape === 'Cajon' ? [p.Hc/10, p.Bc/10, p.t/10] : [p.D/10, p.t/10]);
+    ids.forEach((id, i) => { const el = document.getElementById(id); if (el) { el.value = +val[i].toFixed(3); el.readOnly = true; el.style.opacity = '.75'; } });
+    if (p.Z) state.Zover = { Zx: p.Z.Zx, Zy: p.Z.Zy };
+    const dims = state.shape === 'H' ? `d = ${fmt1(p.d)} mm · bf = ${fmt1(p.bf)} mm · tf = ${fmt1(p.tf)} mm · tw = ${fmt1(p.tw)} mm`
+      : state.shape === 'Cajon' ? `Hc = ${fmt1(p.Hc)} mm · Bc = ${fmt1(p.Bc)} mm · ${p.tf ? `tf = ${fmt1(p.tf)} mm · tw = ${fmt1(p.tw)} mm (Z con modelo de placas)` : `t = ${fmt1(p.t)} mm`}`
+      : `D = ${fmt1(p.D)} mm · t = ${fmt1(p.t)} mm`;
+    info.innerHTML = `${dims} · ${fmt1(p.peso)} kgf/m. Fuente: ${p.fuente}.`;
+  }
   function readState() {
     state.shape = document.getElementById('pb_shape').value;
+    state.perfOrigen = document.getElementById('pb_perfOrigen').value;
+    state.perfil = document.getElementById('pb_perfil').value || state.perfil;
+    aplicarPerfilCatalogo();
+    state.nTotP = parseFloat(document.getElementById('pb_nTotP').value)||0;
+    state.torqueP = document.getElementById('pb_torqueP').value;
+    state.dhP = parseFloat(document.getElementById('pb_dhP').value)||0;
+    state.golP = parseFloat(document.getElementById('pb_golP').value)||0;
+    state.wP = parseFloat(document.getElementById('pb_wP').value)||0;
+    state.holgP = parseFloat(document.getElementById('pb_holgP').value)||0;
     state.fcTon = parseFloat(document.getElementById('pb_fc').value)||0;
     state.fc = state.fcTon * KGF_POR_TON;
     state.FyTon = parseFloat(document.getElementById('pb_Fy').value)||0;
@@ -5447,8 +5694,8 @@ function renderPlacasBase(container) {
     const crit = state.criterio;
     const esCapPB = crit === 'capacidad', esOmPB = crit === 'omega', noManual = crit !== 'manual';
     container.querySelectorAll('.pb-cap').forEach(e => e.style.display = esCapPB ? '' : 'none');
-    container.querySelectorAll('.pb-capH').forEach(e => e.style.display = (esCapPB && state.shape==='H') ? '' : 'none');
-    container.querySelectorAll('.pb-capT').forEach(e => e.style.display = (esCapPB && state.shape!=='H') ? '' : 'none');
+    container.querySelectorAll('.pb-espH').forEach(e => e.style.display = state.shape==='H' ? '' : 'none');
+    container.querySelectorAll('.pb-espT').forEach(e => e.style.display = state.shape!=='H' ? '' : 'none');
     container.querySelectorAll('.pb-capEsp').forEach(e => e.style.display = (esCapPB && (state.tipoCap==='esperada' || state.tipoCap==='nch2369')) ? '' : 'none');
     container.querySelectorAll('.pb-capHcol').forEach(e => e.style.display = (esCapPB && state.condCol!=='ingresado') ? '' : 'none');
     container.querySelectorAll('.pb-om').forEach(e => e.style.display = esOmPB ? '' : 'none');
@@ -5456,7 +5703,7 @@ function renderPlacasBase(container) {
     ['pb_Nua','pb_Vua'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = noManual; });
     const cd = pbCargasDiseno({criterio:crit, tipoApoyo:state.tipoApoyo, Pu:state.PuIn, Vu:state.VuIn, Mu:state.MuIn, MuY:state.MuYIn,
       biax: state.biaxial==='Si', shape:state.shape, prof, tCol:{tf:state.tfCol, tw:state.twCol, t:state.tCol},
-      FyCol:state.FyCol, Ry:state.Ry, tipoCap:state.tipoCap, pct:state.pct, Hcol:state.Hcol, condCol:state.condCol, omega:state.omega});
+      FyCol:state.FyCol, Ry:state.Ry, Zover:state.Zover, tipoCap:state.tipoCap, pct:state.pct, Hcol:state.Hcol, condCol:state.condCol, omega:state.omega});
     state._cd = cd;
     state.Vu = cd.Vu; state.Mu = cd.Mu; state.MuY = cd.MuY;
     const g = calcPlacaBaseGeom({shape:state.shape, fc:state.fc, Fy:state.Fy, phiC:state.phiC, Pu:state.Pu, Vu:state.Vu, Mu:state.Mu,
@@ -5465,6 +5712,55 @@ function renderPlacasBase(container) {
     const gy = biax ? calcPlacaBaseGeom({shape:state.shape, fc:state.fc, Fy:state.Fy, phiC:state.phiC, Pu:state.Pu, Vu:state.Vu, Mu:state.MuY,
       N:state.N, B:state.B, tp_mm:state.tp_mm, A2:state.A2, prof, fLever:state.fLeverY, nPernosTrac:state.nPernosTracY, eje:'y'}) : null;
     state._gy = gy;
+    // ---- geometría propuesta según perfil, pernos y distancias mínimas ----
+    const dimCol = state.shape==='H' ? [10*state.d, 10*state.bf, 10*state.tfCol] : state.shape==='Cajon' ? [10*state.Hc, 10*state.Bc, 10*state.tCol] : [10*state.D, 10*state.D, 10*state.tCol];
+    const prop = pbGeomPropuesta({shape:state.shape, Dn:dimCol[0], Db:dimCol[1], tPerf:dimCol[2], da_mm:state.da_mm, dh_mm:state.dhP, gol_mm:state.golP,
+      w_mm:state.wP, holg_mm:state.holgP, nTot:state.nTotP, torque:state.torqueP==='si', tp_mm:state.tp_mm,
+      cargas:{fc:state.fc, Fy:state.Fy, phiC:state.phiC, Pu:state.Pu, Mu:state.Mu, MuY:state.MuY, biax, A2:state.A2, prof}});
+    const ver = pbVerifGeom({N:state.N, B:state.B, f:state.fLever, s:state.s, ca1:state.ca1, ca2:state.ca2, Dn:dimCol[0]}, prop);
+    state._geo = { prop, ver, perfil: state.perfOrigen==='catalogo' ? state.perfil : 'Ingreso manual' };
+    {
+      const mm = v => isFinite(v) ? fmt1(v) + ' mm' : '—';
+      const err = prop.errores.length ? `<div class="note" style="color:var(--bad)">${prop.errores.join(' ')}</div>` : '';
+      const av = prop.avisos.length ? `<div class="note">${prop.avisos.join(' ')}</div>` : '';
+      const dimN = state.shape==='H' ? 'd' : (state.shape==='Cajon' ? 'Hc' : 'D'), dimB = state.shape==='H' ? 'bf' : (state.shape==='Cajon' ? 'Bc' : 'D');
+      const tablaMin = `<table class="results">
+        <tr><th colspan="3">Distancias mínimas — perno ${prop.ancla || fmt1(state.da_mm) + ' mm'}, ${prop.nTot} pernos en 2 filas de ${prop.nFila}</th></tr>
+        <tr><td>Perforación en la placa${prop.dhTabla ? ' (AISC DG1 Tabla 2.3)' : (prop.dh > 0 ? ' (ingresada)' : '')}</td><td class="num">${prop.dh > 0 ? mm(prop.dh) : 'falta ingresar'}</td><td></td></tr>
+        <tr><td>Golilla de placa, lado${prop.golTabla ? ` (AISC DG1 Tabla 2.3; espesor ≥ ${fmt1(prop.golT)} mm)` : (prop.gol > 0 ? ' (ingresada)' : '')}</td><td class="num">${prop.gol > 0 ? mm(prop.gol) : 'falta ingresar'}</td><td></td></tr>
+        <tr><td>Tuerca hexagonal pesada: F = 1,5·d + 1/8" ; G = F/cos 30° (ASME B18.2.2)</td><td class="num">${mm(prop.F)} ; ${mm(prop.G)}</td><td></td></tr>
+        <tr><td>Filete columna-placa${state.wP > 0 ? ' (ingresado)' : ' — mínimo AISC 360-16 Tabla J2.4'}</td><td class="num">${mm(prop.w)}</td><td></td></tr>
+        <tr><td>e — eje perno a borde de placa = máx(perforación/2 + 12,7 ; golilla/2)</td><td class="num"><b>${mm(prop.eMin)}</b></td><td class="u">AISC DG1; borde de perforación ≥ 1/2"</td></tr>
+        <tr><td>c — eje perno a cara del perfil = máx(golilla/2 ; G/2) + filete + holgura</td><td class="num"><b>${mm(prop.cMin)}</b></td><td class="u">ASME B18.2.2 + AISC J2.4</td></tr>
+        <tr><td>s — separación entre pernos = máx(${state.torqueP==='si' ? '6' : '4'}·da ; golilla)</td><td class="num"><b>${mm(prop.sMin)}</b></td><td class="u">ACI 318-19 Tabla 17.9.2(a)</td></tr>
+        ${prop.edgePedMin > 0 ? `<tr><td>Borde del pedestal, pernos con torque ≥ 6·da</td><td class="num"><b>${mm(prop.edgePedMin)}</b></td><td class="u">ACI 318-19 Tabla 17.9.2(a)</td></tr>` : ''}
+        <tr><td>N mínimo = ${dimN} + 2·(c + e)</td><td class="num">${mm(prop.Nmin)}</td><td></td></tr>
+        <tr><td>B mínimo = máx(${dimB} + 2·filete ; (n−1)·s + 2·e)</td><td class="num">${mm(prop.Bmin)}</td><td></td></tr>
+      </table>`;
+      const puede = !prop.errores.length && prop.tp;
+      const tablaProp = `<table class="results" style="margin-top:.6rem">
+        <tr><th colspan="2">Geometría propuesta (múltiplos de 10 mm; espesor comercial)${prop.crece ? ' — agrandada para aplastamiento / excentricidad' : ''}</th></tr>
+        <tr><td>N × B — placa</td><td class="num"><b>${mm(prop.N)} × ${mm(prop.B)}</b></td></tr>
+        <tr><td>tp — espesor comercial ≥ requerido (${isFinite(prop.tpReq) ? fmt1(prop.tpReq) : '—'} mm)</td><td class="num"><b>${prop.tp ? prop.tp + ' mm' : '—'}</b></td></tr>
+        <tr><td>f — eje de la placa a eje de pernos traccionados, dirección N${biax ? ' / f,y dirección B' : ''}</td><td class="num">${mm(prop.f)}${biax ? ' / ' + mm(prop.fy) : ''}</td></tr>
+        <tr><td>c — eje perno a cara del perfil (resultante)</td><td class="num">${mm(prop.c)}</td></tr>
+        ${prop.nFila > 1 ? `<tr><td>s — separación entre pernos de una fila</td><td class="num">${mm(prop.s)}</td></tr>` : ''}
+      </table>
+      <div style="margin-top:.5rem"><button type="button" class="btn" id="pb_aplicarGeo"${puede ? '' : ' disabled'}>Aplicar geometría propuesta</button></div>
+      <div class="note">El botón copia N, B, tp, f, n° de pernos traccionados, s y n° total de pernos a la planilla; luego puede editarlos.</div>`;
+      const tablaVer = `<table class="results" style="margin-top:.6rem">
+        <tr><th colspan="4">Verificación de la geometría adoptada (N = ${fmt1(state.N)} cm, B = ${fmt1(state.B)} cm, f = ${fmt1(state.fLever)} cm, s = ${fmt1(state.s)} cm)</th></tr>
+        ${ver.filas.map(x => `<tr><td>${x.label}<div class="u">${x.ref}</div></td><td class="num">${mm(x.v)}</td><td class="num">≥ ${mm(x.min)}</td><td>${ver.evaluable ? chip(x.ok) : '<span class="chip neutral">N/D</span>'}</td></tr>`).join('')}
+      </table>`;
+      document.getElementById('pb_geoProp').innerHTML = err + av + tablaMin + tablaProp + tablaVer;
+      const btn = document.getElementById('pb_aplicarGeo');
+      if (btn) btn.onclick = () => {
+        const set = (id, v) => { const el = document.getElementById(id); if (el && isFinite(v)) el.value = +(+v).toFixed(2); };
+        set('pb_N', prop.N/10); set('pb_B', prop.B/10); set('pb_tp', prop.tp); set('pb_fLever', prop.f/10); set('pb_nPernosTrac', prop.nFila);
+        set('pb_fLeverY', prop.fy/10); set('pb_nPernosTracY', 2); if (prop.nFila > 1) set('pb_s', prop.s/10); set('pb_nTrac', prop.nFila); set('pb_n69nTot', prop.nTot);
+        recalc();
+      };
+    }
     if (noManual) {
       state.Nua = g.Tu + (gy ? gy.Tu : 0);
       state.Vua = state.vuaCap === 'silla' ? 0 : state.Vu;
@@ -5646,13 +5942,14 @@ function renderPlacasBase(container) {
       : `<div class="note">NCh2369.Of2003 §8.6.2: los pernos de anclaje en tracción llevan silla y vástago visible, largo libre ≥ 250 mm y ≥ 8 diámetros, y al menos 75 mm de hilo bajo la tuerca. Se exceptúan los pernos con capacidad suficiente para las combinaciones con el sismo amplificado 0,5·R veces, no menos de 1,5. Hasta el 09-09-2027 se puede usar la Of2003 o la :2025 (D. Ex. 12 y 36 de 2026, MINVU).</div>`;
     document.getElementById('pb_n69Res').innerHTML = n69Html;
 
-    const globalOk = g.global && (!gy || gy.global) && cs.okLug!==false && anc.okInter && anc.modes.NsaOk && anc.modes.NcbgOk && anc.modes.NpnOk && anc.modes.VsaOk && anc.modes.VcbgOk && anc.modes.VcpgOk && (!n69.aplica || n69.ok);
+    const globalOk = g.global && (!gy || gy.global) && cs.okLug!==false && anc.okInter && anc.modes.NsaOk && anc.modes.NcbgOk && anc.modes.NpnOk && anc.modes.VsaOk && anc.modes.VcbgOk && anc.modes.VcpgOk && (!n69.aplica || n69.ok) && (!state._geo.ver.evaluable || state._geo.ver.ok);
     document.getElementById('pb_resumen').innerHTML = `
       <div class="verdict-row"><span>Aplastamiento y espesor de placa${gy ? ' — eje fuerte x-x' : ''}</span><span>${chip(g.global)}</span></div>
       ${gy ? `<div class="verdict-row"><span>Aplastamiento y espesor de placa — eje débil y-y</span><span>${chip(gy.global)}</span></div>` : ''}
       <div class="verdict-row"><span>${state.n69 === '2025' ? 'Corte — ' + ({llave:'llave de corte', exc1:'pernos, excepción 1', exc2:'pernos, excepción 2'}[state.n69CorteSol] || 'llave de corte') + ', NCh2369:2025 §8.5.3 (sin roce, §8.5.4)' : 'Corte — fricción / silla'}</span><span>${chip(state.n69 === '2025' ? (state._n69 && state._n69.okCorte) : (cs.okFriccion||cs.okLug))}</span></div>
       <div class="verdict-row"><span>Pernos de anclaje — interacción N+V</span><span>${chip(anc.okInter)}<span class="u">${fmtPct(anc.interVal/anc.interLim)}</span></span></div>
       <div class="verdict-row"><span>Pernos de anclaje — detallamiento ${state.n69 === '2025' ? 'NCh2369:2025 §8.5.2' : 'NCh2369.Of2003 §8.6.2'}</span><span>${n69.aplica ? chip(n69.ok) : '<span class="chip neutral">N/A</span>'}</span></div>
+      <div class="verdict-row"><span>Geometría — distancias mínimas de pernos, golillas y filete (DG1, ACI 318-19 §17.9.2)</span><span>${state._geo.ver.evaluable ? chip(state._geo.ver.ok) : '<span class="chip neutral">N/D</span>'}</span></div>
       <div class="global-verdict ${globalOk?'ok':'bad'}"><span class="label">ESTATUS GLOBAL</span><span class="label">${globalOk?'CUMPLE':'NO CUMPLE'}</span></div>`;
 
     if (typeof buildPrintSheetsPlacasBase === 'function') buildPrintSheetsPlacasBase(state, g, cs, anc);
@@ -5671,12 +5968,17 @@ function renderPlacasBase(container) {
   document.getElementById('pb_shape').addEventListener('change', () => {
     state.shape = document.getElementById('pb_shape').value;
     renderProfFields();
+    renderPerfilOptions();
     recalc();
   });
   container.querySelectorAll('.panel').forEach(p => p.querySelectorAll('input,select').forEach(el => {
     if (el.id!=='pb_shape') el.addEventListener('input', recalc);
   }));
+  document.getElementById('pb_perfOrigen').value = state.perfOrigen;
+  document.getElementById('pb_nTotP').value = String(state.nTotP);
+  document.getElementById('pb_torqueP').value = state.torqueP;
   renderProfFields();
+  renderPerfilOptions();
   recalc();
 }
 
