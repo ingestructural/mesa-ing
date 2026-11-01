@@ -4858,7 +4858,7 @@ function pbCalcSections(state) {
       n69Rows.push(
         { t: 'var1', label: es25 ? 'R1' : 'R — factor de modificación de la respuesta', f: 'n69_Rin', d: 2 },
         { t: 'var1', label: es25 ? 'k = máx(0,7·R1; 1,0)' : 'k = máx(0,5·R; 1,5)', f: 'n69_k', d: 2 },
-        { t: 'var1', label: 'NuG — tracción por cargas no sísmicas de la combinación [Ton]', f: 'n69_NuGin', d: 2 },
+        { t: 'var1', label: es25 ? 'NuG — parte no sísmica de la combinación LRFD §4.5.1 (1,2D + aL + SO + SA, o 0,9D + SA) [Ton]' : 'NuG — tracción por cargas no sísmicas de la combinación [Ton]', f: 'n69_NuGin', d: 2 },
         { t: 'var1', label: 'NuE — tracción por el sismo del análisis [Ton]', f: 'n69_NuEin', d: 2 },
         { t: 'var1', label: 'Nu,amp = NuG + k·NuE [Ton]', f: 'n69_NuAmp', d: 2 },
         { t: 'var1', label: 'φNn gobernante del grupo [Ton]', f: 'n69_phiNn', d: 2 },
@@ -5220,7 +5220,7 @@ function renderPlacasBase(container) {
         <div class="field pb-n69 pb-n6925"><label>Alargamiento de rotura del acero del perno, probeta de 50 mm (%) — según especificación del material</label><input type="text" inputmode="decimal" id="pb_n69Elong" value="${state.n69Elong}"></div>
         <div class="field pb-n69 pb-n69X"><label id="pb_n69RLbl">R — factor de modificación de la respuesta (NCh2369.Of2003 Tabla 5.6)</label><input type="text" inputmode="decimal" id="pb_n69R" value="${state.n69R}"></div>
         <div class="field pb-n69 pb-n69X"><label>NuE — tracción del grupo debida al sismo del análisis (Ton)</label><input type="text" inputmode="decimal" id="pb_n69NuE" value="${state.n69NuE}"></div>
-        <div class="field pb-n69 pb-n69X"><label>NuG — tracción del grupo por las cargas no sísmicas de la combinación (Ton; negativa si comprime)</label><input type="text" inputmode="decimal" id="pb_n69NuG" value="${state.n69NuG}"></div>
+        <div class="field pb-n69 pb-n69X"><label id="pb_n69NuGLbl">NuG — tracción del grupo por las cargas no sísmicas de la combinación (Ton; negativa si comprime)</label><input type="text" inputmode="decimal" id="pb_n69NuG" value="${state.n69NuG}"></div>
       </div>
       <div id="pb_n69Res" style="margin-top:.7rem"></div>
     </div>
@@ -5484,6 +5484,9 @@ function renderPlacasBase(container) {
     container.querySelectorAll('.pb-n6925').forEach(e => e.style.display = es25 ? '' : 'none');
     const optRe = document.querySelector('#pb_n69Sol option[value="reemplazable"]'); if (optRe) optRe.disabled = !es25;
     document.getElementById('pb_n69RLbl').textContent = es25 ? 'R1 — NCh2369:2025 (amplificación 0,7·R1 ≥ 1,0)' : 'R — factor de modificación de la respuesta (NCh2369.Of2003 Tabla 5.6)';
+    document.getElementById('pb_n69NuGLbl').textContent = es25
+      ? 'NuG — tracción del grupo por la parte no sísmica de la combinación LRFD de §4.5.1: 1,2D + aL + SO + SA, o 0,9D + SA (Ton; negativa si comprime)'
+      : 'NuG — tracción del grupo por las cargas no sísmicas de la combinación (Ton; negativa si comprime)';
     const ref = es25 ? 'NCh2369:2025 §8.5.2' : 'NCh2369.Of2003 §8.6.2';
     let n69Html;
     if (!n69.aplica) {
@@ -5514,7 +5517,7 @@ function renderPlacasBase(container) {
         + `<table class="results">${rows}</table>`;
     }
     n69Html += es25
-      ? `<div class="note">NCh2369:2025 §8.5.2: pernos de anclaje dúctiles con silla y vástago que permitan inspección y reparación, o sin silla si son reemplazables con largo libre equivalente; hilo bajo la tuerca ≥ 75 mm; longitud expuesta ≥ 250 mm y ≥ 8 diámetros. Excepción: tracción con las combinaciones de 4.5 y sismo horizontal amplificado por 0,7·R1 ≥ 1,0. Bases empotradas: momento ≥ 50 % de la capacidad flexural esperada de la columna. §8.2.3: perno dúctil ≥ 20 % de alargamiento (probeta de 50 mm), mínimo 14 % en todo caso. C8.5.2: la placa de silla, los atiesadores y el pedestal se diseñan para la capacidad de fluencia esperada de los pernos. §8.5.3 (llaves de corte) no está incluida en esta verificación.</div>`
+      ? `<div class="note">NCh2369:2025 §8.5.2: pernos de anclaje dúctiles con silla y vástago que permitan inspección y reparación, o sin silla si son reemplazables con largo libre equivalente; hilo bajo la tuerca ≥ 75 mm; longitud expuesta ≥ 250 mm y ≥ 8 diámetros. Excepción: tracción con las combinaciones de 4.5 y sismo horizontal amplificado por 0,7·R1 ≥ 1,0; en LRFD (§4.5.1): 1,2D + aL + SO + SA + E y 0,9D + SA + E (la de 0,9D suele gobernar el arrancamiento), con E según la simultaneidad direccional de §4.5.2. Bases empotradas: momento ≥ 50 % de la capacidad flexural esperada de la columna. §8.2.3: perno dúctil ≥ 20 % de alargamiento (probeta de 50 mm), mínimo 14 % en todo caso. C8.5.2: la placa de silla, los atiesadores y el pedestal se diseñan para la capacidad de fluencia esperada de los pernos. §8.5.3 (llaves de corte) no está incluida en esta verificación.</div>`
       : `<div class="note">NCh2369.Of2003 §8.6.2: los pernos de anclaje en tracción llevan silla y vástago visible, largo libre ≥ 250 mm y ≥ 8 diámetros, y al menos 75 mm de hilo bajo la tuerca. Se exceptúan los pernos con capacidad suficiente para las combinaciones con el sismo amplificado 0,5·R veces, no menos de 1,5. Hasta el 09-09-2027 se puede usar la Of2003 o la :2025 (D. Ex. 12 y 36 de 2026, MINVU).</div>`;
     document.getElementById('pb_n69Res').innerHTML = n69Html;
 
