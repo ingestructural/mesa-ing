@@ -3814,36 +3814,69 @@ function calcAnclaje(inp) {
 }
 
 /* =========================================================================
-   MOTOR — DETALLAMIENTO SÍSMICO DE PERNOS DE ANCLAJE, NCh2369.Of2003 §8.6.2
-   Pernos de anclaje que el análisis deja en tracción: silla y vástago visible
-   para inspección y reparación; longitud expuesta (largo libre entre placa base
-   y placa de silla) no inferior a 250 mm ni a 8 diámetros; hilo bajo la tuerca
-   no inferior a 75 mm. Excepción: pernos con capacidad suficiente para las
-   combinaciones con las fuerzas sísmicas amplificadas 0,5·R veces, pero no
-   menos de 1,5 veces. Texto de 8.6.2 según la transcripción de Chávez (2011,
-   U. de Chile, Tabla 2.2) y Narváez (2017, PUC, Tabla II-2).
-   NCh2369:2025 (§8.5.2): no incorporada; falta verificar su texto.
+   MOTOR — DETALLAMIENTO SÍSMICO DE PERNOS DE ANCLAJE (NCh2369)
+   Of2003 §8.6.2 — pernos de anclaje que el análisis deja en tracción: silla y
+   vástago visible; longitud expuesta ≥ 250 mm y ≥ 8 diámetros; hilo bajo la
+   tuerca ≥ 75 mm. Excepción: capacidad suficiente con las fuerzas sísmicas
+   amplificadas 0,5·R veces, no menos de 1,5 (texto según Chávez 2011, U. de
+   Chile, Tabla 2.2, y Narváez 2017, PUC, Tabla II-2).
+   :2025 §8.5.2 — pernos de anclaje dúctiles: silla y vástago que permitan
+   inspección y reparación, o sin silla si son reemplazables con largo libre
+   equivalente; hilo bajo la tuerca ≥ 75 mm; longitud expuesta ≥ 250 mm y ≥ 8
+   diámetros nominales. Excepción: anclajes diseñados para la tracción con las
+   combinaciones de 4.5 y sismo horizontal amplificado por 0,7·R1 ≥ 1,0. Bases
+   empotradas: momento de empotramiento ≥ 50 % de la capacidad flexural
+   esperada de la columna. §8.2.3: perno dúctil con alargamiento de rotura
+   ≥ 20 % (probeta 50 mm); en todo caso ≥ 14 %. C8.2.3: con ductilidad
+   limitada se acepta proveer resistencia en vez de deformación.
+   Texto :2025 leído de capturas de la norma entregadas por ING (01-11-2026).
    ========================================================================= */
 function calcDetalleNCh2369(inp) {
-  const {norma, solucion, da_mm, Lc_mm, hilo_mm, Nua, R, NuG, NuE, phiNn} = inp;
-  if (norma !== 'of2003') return {aplica:false, motivo:'No aplica: estructura no regida por NCh2369'};
-  if (!(Nua > 0)) return {aplica:false, motivo:'No aplica: los pernos no quedan en tracción (Nua ≤ 0)'};
-  if (solucion === 'sinSilla') {
-    const errores = [];
-    if (!(R > 0)) errores.push('Ingrese R > 0 (NCh2369.Of2003 Tabla 5.6).');
-    if (!(NuE > 0)) errores.push('Ingrese la tracción del grupo debida al sismo del análisis, NuE > 0.');
-    const k = Math.max(0.5*R, 1.5);
-    const NuAmp = NuG + k*NuE;
-    const r = phiNn > 0 ? NuAmp/phiNn : Infinity;
-    const okAmp = errores.length ? false : NuAmp <= phiNn;
-    return {aplica:true, solucion:'sinSilla', errores, k, NuAmp, phiNn, r, okAmp, ok:okAmp};
+  const {norma, solucion, da_mm, Lc_mm, hilo_mm, Nua, R, NuG, NuE, phiNn, elong, empotrado, criterio, tipoCap, pct} = inp;
+  const es25 = norma === '2025';
+  if (norma !== 'of2003' && !es25) return {aplica:false, motivo:'No aplica: estructura no regida por NCh2369'};
+  if (!es25 && !(Nua > 0)) return {aplica:false, motivo:'No aplica: los pernos no quedan en tracción (Nua ≤ 0)'};
+  const errores = [];
+  const out = {aplica:true, norma, solucion, errores};
+  let ok = true;
+  // §8.2.3 (:2025): material del perno
+  if (es25) {
+    if (!(elong > 0)) errores.push('Ingrese el alargamiento de rotura del acero del perno (probeta de 50 mm).');
+    out.okElongMin = elong >= 14;
+    out.ductil = elong >= 20;
+    out.rElong = elong > 0 ? 14/elong : Infinity;
+    ok = ok && out.okElongMin;
+    if (elong > 0 && !out.ductil && solucion !== 'sinSilla') {
+      out.avisoDuctil = 'Perno de ductilidad limitada (alargamiento < 20 %): no califica como perno dúctil; debe diseñarse por resistencia con el sismo amplificado (C8.2.3, excepción de 8.5.2).';
+      ok = false;
+    }
   }
-  const L8d = 8*da_mm;
-  const LcMin = Math.max(250, L8d);
-  const rige = L8d > 250 ? '8·d' : '250 mm';
-  const okLc = Lc_mm >= LcMin, okHilo = hilo_mm >= 75;
-  return {aplica:true, solucion:'silla', errores:[], L8d, LcMin, rige, rLc: Lc_mm > 0 ? LcMin/Lc_mm : Infinity,
-    rHilo: hilo_mm > 0 ? 75/hilo_mm : Infinity, okLc, okHilo, ok: okLc && okHilo};
+  if (!es25 && solucion === 'reemplazable') errores.push('La solución sin silla reemplazable solo está en NCh2369:2025 §8.5.2.');
+  if (solucion === 'sinSilla') {
+    if (!(R > 0)) errores.push(es25 ? 'Ingrese R1 > 0.' : 'Ingrese R > 0 (NCh2369.Of2003 Tabla 5.6).');
+    if (!(NuE > 0)) errores.push('Ingrese la tracción del grupo debida al sismo del análisis, NuE > 0.');
+    out.k = es25 ? Math.max(0.7*R, 1.0) : Math.max(0.5*R, 1.5);
+    out.NuAmp = NuG + out.k*NuE;
+    out.phiNn = phiNn;
+    out.r = phiNn > 0 ? out.NuAmp/phiNn : Infinity;
+    out.okAmp = errores.length ? false : out.NuAmp <= phiNn;
+    ok = ok && out.okAmp;
+  } else {
+    out.L8d = 8*da_mm;
+    out.LcMin = Math.max(250, out.L8d);
+    out.rige = out.L8d > 250 ? '8·d' : '250 mm';
+    out.rLc = Lc_mm > 0 ? out.LcMin/Lc_mm : Infinity;
+    out.rHilo = hilo_mm > 0 ? 75/hilo_mm : Infinity;
+    out.okLc = Lc_mm >= out.LcMin; out.okHilo = hilo_mm >= 75;
+    ok = ok && out.okLc && out.okHilo;
+  }
+  // §8.5.2 (:2025), bases empotradas
+  if (es25 && empotrado) {
+    out.okEmp = criterio === 'capacidad' && tipoCap === 'esperada' && pct >= 50;
+    ok = ok && out.okEmp;
+  }
+  out.ok = errores.length ? false : ok;
+  return out;
 }
 
 /* =========================================================================
@@ -4583,14 +4616,14 @@ function placasBaseDatosHtml(state) {
       ${row('Condición del hormigón', state.condicionHormigon)}
       ${row('¿Corte transmitido a través de placa de nivelación/grout?', state.corteViaGrout ? 'Sí' : 'No')}
     </tbody></table>
-    <div class="xlsx-section">G2. Detallamiento sísmico de pernos de anclaje — NCh2369.Of2003 §8.6.2</div>
+    <div class="xlsx-section">G2. Detallamiento sísmico de pernos de anclaje — NCh2369</div>
     <table class="xlsx-table"><tbody>
-      ${row('Norma sísmica de la estructura', state.n69 === 'of2003' ? 'NCh2369.Of2003 (industrial)' : 'No regida por NCh2369')}
-      ${state.n69 === 'of2003' ? row('Solución del anclaje', state.n69Sol === 'silla' ? 'Con silla (largo libre y vástago visible)' : 'Sin silla (excepción por capacidad con sismo amplificado)') : ''}
-      ${state.n69 === 'of2003' && state.n69Sol === 'silla' ? row('Lc — largo libre entre placa base y placa de silla [mm]', xlsxNum(state.n69Lc, 1)) + row('Largo de hilo bajo la tuerca [mm]', xlsxNum(state.n69Hilo, 1)) : ''}
-      ${state.n69 === 'of2003' && state.n69Sol !== 'silla' ? row('R — factor de modificación de la respuesta', xlsxNum(state.n69R, 2)) + row('NuE — tracción del grupo por el sismo del análisis [Ton]', xlsxNum(state.n69NuE, 2)) + row('NuG — tracción del grupo por cargas no sísmicas de la combinación [Ton]', xlsxNum(state.n69NuG, 2)) : ''}
+      ${row('Norma sísmica de la estructura', state.n69 === 'of2003' ? 'NCh2369.Of2003 (industrial), §8.6.2' : (state.n69 === '2025' ? 'NCh2369:2025 (industrial), §8.2.3 y §8.5.2' : 'No regida por NCh2369'))}
+      ${state.n69 !== 'no' ? row('Solución del anclaje', ({silla:'Con silla (largo libre y vástago visible)', reemplazable:'Sin silla, perno reemplazable con largo libre equivalente', sinSilla:'Por resistencia con sismo amplificado (excepción)'})[state.n69Sol] || '') : ''}
+      ${state.n69 === '2025' ? row('Alargamiento de rotura del acero del perno, probeta 50 mm [%]', xlsxNum(state.n69Elong, 1)) : ''}
+      ${state.n69 !== 'no' && state.n69Sol !== 'sinSilla' ? row('Lc — largo libre [mm]', xlsxNum(state.n69Lc, 1)) + row('Largo de hilo bajo la tuerca [mm]', xlsxNum(state.n69Hilo, 1)) : ''}
+      ${state.n69 !== 'no' && state.n69Sol === 'sinSilla' ? row(state.n69 === '2025' ? 'R1' : 'R — factor de modificación de la respuesta', xlsxNum(state.n69R, 2)) + row('NuE — tracción del grupo por el sismo del análisis [Ton]', xlsxNum(state.n69NuE, 2)) + row('NuG — tracción del grupo por cargas no sísmicas de la combinación [Ton]', xlsxNum(state.n69NuG, 2)) : ''}
     </tbody></table>
-
     <div class="xlsx-section">H. Factores φ y constantes normativas aplicadas (no editables en esta versión web)</div>
     <table class="xlsx-table"><tbody>
       ${row('Condición A/B (refuerzo suplementario de anclaje)', 'B (sin refuerzo) — fijo en esta versión web, corresponde a φ_hormigón=0.70')}
@@ -4799,32 +4832,45 @@ function pbCalcSections(state) {
   ]});
 
   const n69 = state._n69 || { aplica: false };
-  const n69Rows = [{ t: 'text', label: 'Aplicabilidad (pernos que el análisis deja en tracción)', f: 'n69_aplicaTxt' }];
+  const es25 = state.n69 === '2025';
+  const n69Ref = es25 ? 'NCh2369:2025 §8.5.2' : 'NCh2369.Of2003 §8.6.2';
+  const n69Rows = [{ t: 'text', label: es25 ? 'Aplicabilidad (pernos de anclaje de la estructura)' : 'Aplicabilidad (pernos que el análisis deja en tracción)', f: 'n69_aplicaTxt' }];
   if (!n69.aplica) {
-    n69Rows.push({ t: 'est1', label: 'Detallamiento NCh2369.Of2003 §8.6.2', est: 'n69_estNA' });
-  } else if (n69.solucion === 'silla') {
-    n69Rows.push(
-      { t: 'var1', label: '8·da [mm]', f: 'n69_L8d', d: 1 },
-      { t: 'var1', label: 'Lc,mín = máx(250 mm; 8·da) [mm]', f: 'n69_LcMin', d: 1 },
-      { t: 'text', label: 'Mínimo que rige', f: 'n69_rige' },
-      { t: 'var1', label: 'Lc — largo libre entre placa base y placa de silla [mm]', f: 'n69_Lc', d: 1 },
-      { t: 'chk', label: 'Verificación: Lc ≥ Lc,mín', estL: 'n69_okLc', dcL: 'n69_rLcDc', forceNA: true },
-      { t: 'var1', label: 'Hilo bajo la tuerca [mm]', f: 'n69_hilo', d: 1 },
-      { t: 'chk', label: 'Verificación: hilo bajo la tuerca ≥ 75 mm', estL: 'n69_okHilo', dcL: 'n69_rHiloDc', forceNA: true },
-      { t: 'text', label: 'Silla y vástago visible para inspección y reparación', f: 'n69_txtSilla' },
-    );
+    n69Rows.push({ t: 'est1', label: 'Detallamiento sísmico de pernos de anclaje', est: 'n69_estNA' });
   } else {
-    n69Rows.push(
-      { t: 'var1', label: 'R — factor de modificación de la respuesta', f: 'n69_Rin', d: 2 },
-      { t: 'var1', label: 'k = máx(0,5·R; 1,5)', f: 'n69_k', d: 2 },
-      { t: 'var1', label: 'NuG — tracción por cargas no sísmicas de la combinación [Ton]', f: 'n69_NuGin', d: 2 },
-      { t: 'var1', label: 'NuE — tracción por el sismo del análisis [Ton]', f: 'n69_NuEin', d: 2 },
-      { t: 'var1', label: 'Nu,amp = NuG + k·NuE [Ton]', f: 'n69_NuAmp', d: 2 },
-      { t: 'var1', label: 'φNn gobernante del grupo [Ton]', f: 'n69_phiNn', d: 2 },
-      { t: 'chk', label: 'Verificación: Nu,amp ≤ φNn (excepción, perno sin silla)', estL: 'n69_okAmp', dcL: 'n69_rAmp', forceNA: true },
+    if (es25) n69Rows.push(
+      { t: 'var1', label: 'Alargamiento de rotura del acero, probeta 50 mm [%]', f: 'n69_elongIn', d: 1 },
+      { t: 'chk', label: 'Verificación: alargamiento ≥ 14 % (§8.2.3)', estL: 'n69_okElongMin', dcL: 'n69_rElongDc', forceNA: true },
+      { t: 'text', label: 'Clasificación (§8.2.3: dúctil si ≥ 20 %)', f: 'n69_ductilTxt' },
+    );
+    if (n69.solucion !== 'sinSilla') {
+      n69Rows.push(
+        { t: 'var1', label: '8·da [mm]', f: 'n69_L8d', d: 1 },
+        { t: 'var1', label: 'Lc,mín = máx(250 mm; 8·da) [mm]', f: 'n69_LcMin', d: 1 },
+        { t: 'text', label: 'Mínimo que rige', f: 'n69_rige' },
+        { t: 'var1', label: n69.solucion === 'reemplazable' ? 'Lc — largo libre equivalente [mm]' : 'Lc — largo libre entre placa base y placa de silla [mm]', f: 'n69_Lc', d: 1 },
+        { t: 'chk', label: 'Verificación: Lc ≥ Lc,mín', estL: 'n69_okLc', dcL: 'n69_rLcDc', forceNA: true },
+        { t: 'var1', label: 'Hilo bajo la tuerca [mm]', f: 'n69_hilo', d: 1 },
+        { t: 'chk', label: 'Verificación: hilo bajo la tuerca ≥ 75 mm', estL: 'n69_okHilo', dcL: 'n69_rHiloDc', forceNA: true },
+        { t: 'text', label: n69.solucion === 'reemplazable' ? 'Perno reemplazable, detalle que permita inspección y reparación' : 'Silla y vástago visible para inspección y reparación', f: 'n69_txtSilla' },
+      );
+    } else {
+      n69Rows.push(
+        { t: 'var1', label: es25 ? 'R1' : 'R — factor de modificación de la respuesta', f: 'n69_Rin', d: 2 },
+        { t: 'var1', label: es25 ? 'k = máx(0,7·R1; 1,0)' : 'k = máx(0,5·R; 1,5)', f: 'n69_k', d: 2 },
+        { t: 'var1', label: es25 ? 'NuG — parte no sísmica de la combinación LRFD §4.5.1 (1,2D + aL + SO + SA, o 0,9D + SA) [Ton]' : 'NuG — tracción por cargas no sísmicas de la combinación [Ton]', f: 'n69_NuGin', d: 2 },
+        { t: 'var1', label: 'NuE — tracción por el sismo del análisis [Ton]', f: 'n69_NuEin', d: 2 },
+        { t: 'var1', label: 'Nu,amp = NuG + k·NuE [Ton]', f: 'n69_NuAmp', d: 2 },
+        { t: 'var1', label: 'φNn gobernante del grupo [Ton]', f: 'n69_phiNn', d: 2 },
+        { t: 'chk', label: 'Verificación: Nu,amp ≤ φNn (excepción por resistencia)', estL: 'n69_okAmp', dcL: 'n69_rAmp', forceNA: true },
+      );
+    }
+    if (n69.okEmp !== undefined) n69Rows.push(
+      { t: 'text', label: 'Base empotrada: criterio de diseño de los pernos', f: 'n69_txtEmp' },
+      { t: 'chk', label: 'Verificación: momento ≥ 50 % de la capacidad flexural esperada de la columna', estL: 'n69_okEmp', forceNA: true },
     );
   }
-  sections.push({ num: '17', title: 'Detallamiento sísmico de pernos de anclaje (NCh2369.Of2003 §8.6.2)', hdrDE: false, rows: n69Rows });
+  sections.push({ num: '17', title: 'Detallamiento sísmico de pernos de anclaje (' + n69Ref + ')', hdrDE: false, rows: n69Rows });
 
   return sections;
 }
@@ -4949,11 +4995,15 @@ function pbFlatten(state, g, cs, anc) {
   // ---- detallamiento NCh2369.Of2003 §8.6.2 -> prefijo n69_ ----
   const n69 = state._n69 || { aplica: false, motivo: 'No aplica' };
   Object.keys(n69).forEach(k => { flat['n69_' + k] = n69[k]; });
-  flat.n69_aplicaTxt = n69.aplica ? (n69.solucion === 'silla' ? 'Aplica — solución con silla' : 'Aplica — sin silla (excepción por capacidad)') : n69.motivo;
+  flat.n69_aplicaTxt = n69.aplica ? ({silla:'Aplica — solución con silla', reemplazable:'Aplica — sin silla, perno reemplazable con largo libre equivalente', sinSilla:'Aplica — por resistencia con sismo amplificado (excepción)'}[n69.solucion] || 'Aplica') : n69.motivo;
+  flat.n69_ductilTxt = n69.ductil ? 'Dúctil (≥ 20 %)' : 'Ductilidad limitada (< 20 %)';
+  flat.n69_elongIn = state.n69Elong;
+  flat.n69_rElongDc = n69.rElong;
   flat.n69_estNA = 'N/A';
   flat.n69_Lc = state.n69Lc; flat.n69_hilo = state.n69Hilo;
   flat.n69_Rin = state.n69R; flat.n69_NuGin = state.n69NuG; flat.n69_NuEin = state.n69NuE;
   flat.n69_txtSilla = 'Requisito de detalle (indicar en planos)';
+  flat.n69_txtEmp = 'Criterio por capacidad, capacidad esperada, ' + xlsxNum(state.pct, 0) + ' % (se exige ≥ 50 %)';
   flat.n69_rLcDc = n69.rLc; flat.n69_rHiloDc = n69.rHilo; flat.n69_rAmp = n69.r;
   flat.globalOk = flat.globalOk && (!n69.aplica || n69.ok);
 
@@ -5032,7 +5082,7 @@ function renderPlacasBase(container) {
     lambdaA:1, fya:2.53, condicionHormigon:'Fisurado', phiAceroTrac:0.75, phiAceroCorte:0.65, phiHormigon:0.7,
     da_mm:28, hef:40, ca1:15, ca2:15, s:20, ha:60, nTrac:4, nCorte:2, corteViaGrout:true, Nua:45, Vua:17,
     criterio:'manual', pct:100, tipoCap:'esperada', FyColTon:2.53, Ry:1.5, tfCol:1.2, twCol:0.8, tCol:0.8, Hcol:4, condCol:'voladizo', omega:2, vuaCap:'pernos',
-    n69:'of2003', n69Sol:'silla', n69Lc:300, n69Hilo:75, n69R:5, n69NuG:0, n69NuE:0,
+    n69:'of2003', n69Sol:'silla', n69Lc:300, n69Hilo:75, n69R:5, n69NuG:0, n69NuE:0, n69Elong:0,
   };
 
   container.innerHTML = `
@@ -5161,15 +5211,16 @@ function renderPlacasBase(container) {
         </div>
       </div>
       <div id="pb_anclaje" style="margin-top:.7rem"></div>
-      <h4 style="margin:1rem 0 .4rem">Detallamiento sísmico — NCh2369.Of2003 §8.6.2 (pernos en tracción)</h4>
+      <h4 style="margin:1rem 0 .4rem">Detallamiento sísmico de pernos de anclaje — NCh2369</h4>
       <div class="field-grid">
-        <div class="field"><label>Norma sísmica de la estructura</label><select id="pb_n69"><option value="of2003">NCh2369.Of2003 (industrial) — §8.6.2</option><option value="no">No aplica (estructura no regida por NCh2369)</option><option value="2025" disabled>NCh2369:2025 §8.5.2 — pendiente de incorporar</option></select></div>
-        <div class="field pb-n69"><label>Solución del anclaje</label><select id="pb_n69Sol"><option value="silla">Con silla: largo libre y vástago visible</option><option value="sinSilla">Sin silla: capacidad con sismo amplificado (excepción)</option></select></div>
+        <div class="field"><label>Norma sísmica de la estructura</label><select id="pb_n69"><option value="of2003">NCh2369.Of2003 (industrial) — §8.6.2</option><option value="no">No aplica (estructura no regida por NCh2369)</option><option value="2025">NCh2369:2025 (industrial) — §8.2.3 y §8.5.2</option></select></div>
+        <div class="field pb-n69"><label>Solución del anclaje</label><select id="pb_n69Sol"><option value="silla">Con silla: largo libre y vástago visible</option><option value="reemplazable">Sin silla, perno reemplazable con largo libre equivalente (solo :2025)</option><option value="sinSilla">Por resistencia con sismo amplificado (excepción)</option></select></div>
         <div class="field pb-n69 pb-n69S"><label>Lc — largo libre entre placa base y placa de silla (mm)</label><input type="text" inputmode="decimal" id="pb_n69Lc" value="${state.n69Lc}" list="dl_pb_n69Lc"><datalist id="dl_pb_n69Lc"><option value="250"></option><option value="300"></option><option value="350"></option><option value="400"></option><option value="450"></option></datalist></div>
         <div class="field pb-n69 pb-n69S"><label>Largo de hilo bajo la tuerca (mm)</label><input type="text" inputmode="decimal" id="pb_n69Hilo" value="${state.n69Hilo}" list="dl_pb_n69Hilo"><datalist id="dl_pb_n69Hilo"><option value="75"></option><option value="100"></option><option value="125"></option><option value="150"></option></datalist></div>
-        <div class="field pb-n69 pb-n69X"><label>R — factor de modificación de la respuesta (NCh2369.Of2003 Tabla 5.6)</label><input type="text" inputmode="decimal" id="pb_n69R" value="${state.n69R}"></div>
+        <div class="field pb-n69 pb-n6925"><label>Alargamiento de rotura del acero del perno, probeta de 50 mm (%) — según especificación del material</label><input type="text" inputmode="decimal" id="pb_n69Elong" value="${state.n69Elong}"></div>
+        <div class="field pb-n69 pb-n69X"><label id="pb_n69RLbl">R — factor de modificación de la respuesta (NCh2369.Of2003 Tabla 5.6)</label><input type="text" inputmode="decimal" id="pb_n69R" value="${state.n69R}"></div>
         <div class="field pb-n69 pb-n69X"><label>NuE — tracción del grupo debida al sismo del análisis (Ton)</label><input type="text" inputmode="decimal" id="pb_n69NuE" value="${state.n69NuE}"></div>
-        <div class="field pb-n69 pb-n69X"><label>NuG — tracción del grupo por las cargas no sísmicas de la combinación (Ton; negativa si comprime)</label><input type="text" inputmode="decimal" id="pb_n69NuG" value="${state.n69NuG}"></div>
+        <div class="field pb-n69 pb-n69X"><label id="pb_n69NuGLbl">NuG — tracción del grupo por las cargas no sísmicas de la combinación (Ton; negativa si comprime)</label><input type="text" inputmode="decimal" id="pb_n69NuG" value="${state.n69NuG}"></div>
       </div>
       <div id="pb_n69Res" style="margin-top:.7rem"></div>
     </div>
@@ -5278,6 +5329,7 @@ function renderPlacasBase(container) {
     state.n69R = parseFloat(gv('pb_n69R').value)||0;
     state.n69NuE = parseFloat(gv('pb_n69NuE').value)||0;
     state.n69NuG = parseFloat(gv('pb_n69NuG').value)||0;
+    state.n69Elong = parseFloat(gv('pb_n69Elong').value)||0;
     // valores ingresados (antes de aplicar el criterio de diseño)
     state.PuIn = state.Pu; state.VuIn = state.Vu; state.MuIn = state.Mu; state.MuYIn = state.MuY;
     state.NuaIn = state.Nua; state.VuaIn = state.Vua;
@@ -5422,32 +5474,51 @@ function renderPlacasBase(container) {
       <div class="note">Nua/φNn = ${fmt3(anc.rNua)} · Vua/φVn = ${fmt3(anc.rVua)} · Interacción (ACI 17.8.2) = ${fmt3(anc.interVal)} ≤ ${fmt1(anc.interLim)} → ${chip(anc.okInter)}</div>`;
 
     const n69 = calcDetalleNCh2369({norma:state.n69, solucion:state.n69Sol, da_mm:state.da_mm, Lc_mm:state.n69Lc, hilo_mm:state.n69Hilo,
-      Nua:state.Nua, R:state.n69R, NuG:state.n69NuG, NuE:state.n69NuE, phiNn:anc.phiNnGob});
+      Nua:state.Nua, R:state.n69R, NuG:state.n69NuG, NuE:state.n69NuE, phiNn:anc.phiNnGob, elong:state.n69Elong,
+      empotrado:state.tipoApoyo==='Empotrado', criterio:state.criterio, tipoCap:state.tipoCap, pct:state.pct});
     state._n69 = n69;
-    const esN69 = state.n69 === 'of2003', esSilla = state.n69Sol === 'silla';
+    const es25 = state.n69 === '2025', esN69 = state.n69 === 'of2003' || es25, esRes = state.n69Sol === 'sinSilla';
     container.querySelectorAll('.pb-n69').forEach(e => e.style.display = esN69 ? '' : 'none');
-    container.querySelectorAll('.pb-n69S').forEach(e => e.style.display = (esN69 && esSilla) ? '' : 'none');
-    container.querySelectorAll('.pb-n69X').forEach(e => e.style.display = (esN69 && !esSilla) ? '' : 'none');
+    container.querySelectorAll('.pb-n69S').forEach(e => e.style.display = (esN69 && !esRes) ? '' : 'none');
+    container.querySelectorAll('.pb-n69X').forEach(e => e.style.display = (esN69 && esRes) ? '' : 'none');
+    container.querySelectorAll('.pb-n6925').forEach(e => e.style.display = es25 ? '' : 'none');
+    const optRe = document.querySelector('#pb_n69Sol option[value="reemplazable"]'); if (optRe) optRe.disabled = !es25;
+    document.getElementById('pb_n69RLbl').textContent = es25 ? 'R1 — NCh2369:2025 (amplificación 0,7·R1 ≥ 1,0)' : 'R — factor de modificación de la respuesta (NCh2369.Of2003 Tabla 5.6)';
+    document.getElementById('pb_n69NuGLbl').textContent = es25
+      ? 'NuG — tracción del grupo por la parte no sísmica de la combinación LRFD de §4.5.1: 1,2D + aL + SO + SA, o 0,9D + SA (Ton; negativa si comprime)'
+      : 'NuG — tracción del grupo por las cargas no sísmicas de la combinación (Ton; negativa si comprime)';
+    const ref = es25 ? 'NCh2369:2025 §8.5.2' : 'NCh2369.Of2003 §8.6.2';
     let n69Html;
     if (!n69.aplica) {
       n69Html = `<div class="note">${n69.motivo}.</div>`;
-    } else if (n69.solucion === 'silla') {
-      n69Html = `<table class="results">
-        <tr><td>8·da = 8 × ${fmt1(state.da_mm)} mm</td><td class="num">${fmt1(n69.L8d)} mm</td><td></td></tr>
-        <tr><td>Lc,mín = máx(250 mm; 8·da) — rige ${n69.rige}</td><td class="num">${fmt1(n69.LcMin)} mm</td><td></td></tr>
-        <tr><td>Largo libre: Lc = ${fmt1(state.n69Lc)} mm ≥ Lc,mín</td><td class="num">${fmtPct(n69.rLc)}</td><td>${chip(n69.okLc)}</td></tr>
-        <tr><td>Hilo bajo la tuerca = ${fmt1(state.n69Hilo)} mm ≥ 75 mm</td><td class="num">${fmtPct(n69.rHilo)}</td><td>${chip(n69.okHilo)}</td></tr>
-        <tr><td>Silla y vástago visible para inspección y reparación</td><td colspan="2">Requisito de detalle: indicar en planos</td></tr>
-      </table>`;
     } else {
-      n69Html = (n69.errores.length ? `<div class="note" style="color:var(--bad)">${n69.errores.join(' ')}</div>` : '') + `<table class="results">
-        <tr><td>Factor de amplificación k = máx(0,5·R; 1,5), R = ${fmt2(state.n69R)}</td><td class="num">${fmt2(n69.k)}</td><td></td></tr>
+      let rows = '';
+      if (es25) {
+        rows += `<tr><td>Alargamiento de rotura ${fmt1(state.n69Elong)} % ≥ 14 % (§8.2.3, todos los casos)</td><td class="num">${isFinite(n69.rElong) ? fmtPct(n69.rElong) : '—'}</td><td>${chip(n69.okElongMin)}</td></tr>
+        <tr><td>Perno dúctil: alargamiento ≥ 20 % (§8.2.3)</td><td></td><td>${n69.ductil ? '<span class="chip ok">DÚCTIL</span>' : '<span class="chip neutral">DUCTILIDAD LIMITADA</span>'}</td></tr>`;
+      }
+      if (n69.solucion !== 'sinSilla') {
+        rows += `<tr><td>8·da = 8 × ${fmt1(state.da_mm)} mm</td><td class="num">${fmt1(n69.L8d)} mm</td><td></td></tr>
+        <tr><td>Lc,mín = máx(250 mm; 8·da) — rige ${n69.rige}</td><td class="num">${fmt1(n69.LcMin)} mm</td><td></td></tr>
+        <tr><td>Largo libre${n69.solucion === 'reemplazable' ? ' equivalente' : ''}: Lc = ${fmt1(state.n69Lc)} mm ≥ Lc,mín</td><td class="num">${fmtPct(n69.rLc)}</td><td>${chip(n69.okLc)}</td></tr>
+        <tr><td>Hilo bajo la tuerca = ${fmt1(state.n69Hilo)} mm ≥ 75 mm</td><td class="num">${fmtPct(n69.rHilo)}</td><td>${chip(n69.okHilo)}</td></tr>
+        <tr><td>${n69.solucion === 'reemplazable' ? 'Perno reemplazable, con detalle que permita inspección y reparación' : 'Silla y vástago visible para inspección y reparación'}</td><td colspan="2">Requisito de detalle: indicar en planos</td></tr>`;
+      } else {
+        rows += `<tr><td>k = ${es25 ? 'máx(0,7·R1; 1,0), R1' : 'máx(0,5·R; 1,5), R'} = ${fmt2(state.n69R)}</td><td class="num">${fmt2(n69.k)}</td><td></td></tr>
         <tr><td>Nu,amp = NuG + k·NuE = ${fmt2(state.n69NuG)} + ${fmt2(n69.k)} × ${fmt2(state.n69NuE)}</td><td class="num">${fmt2(n69.NuAmp)} Ton</td><td></td></tr>
         <tr><td>φNn gobernante del grupo (ACI 318-19 Cap. 17)</td><td class="num">${fmt2(n69.phiNn)} Ton</td><td></td></tr>
-        <tr><td>Nu,amp ≤ φNn — excepción de 8.6.2 (sin silla)</td><td class="num">${isFinite(n69.r) ? fmtPct(n69.r) : '—'}</td><td>${chip(n69.okAmp)}</td></tr>
-      </table>`;
+        <tr><td>Nu,amp ≤ φNn — excepción de ${ref}</td><td class="num">${isFinite(n69.r) ? fmtPct(n69.r) : '—'}</td><td>${chip(n69.okAmp)}</td></tr>`;
+      }
+      if (n69.okEmp !== undefined) {
+        rows += `<tr><td>Base empotrada: pernos diseñados con momento ≥ 50 % de la capacidad flexural esperada de la columna (criterio «por capacidad», capacidad esperada, ≥ 50 %; actual: ${state.criterio === 'capacidad' ? (state.tipoCap === 'esperada' ? 'esperada' : 'de diseño') + ', ' + fmt1(state.pct) + ' %' : (state.criterio === 'omega' ? 'Ω0' : 'manual')})</td><td></td><td>${chip(n69.okEmp)}</td></tr>`;
+      }
+      n69Html = (n69.errores.length ? `<div class="note" style="color:var(--bad)">${n69.errores.join(' ')}</div>` : '')
+        + (n69.avisoDuctil ? `<div class="note" style="color:var(--bad)">${n69.avisoDuctil}</div>` : '')
+        + `<table class="results">${rows}</table>`;
     }
-    n69Html += `<div class="note">NCh2369.Of2003 §8.6.2: los pernos de anclaje en tracción llevan silla y vástago visible, largo libre ≥ 250 mm y ≥ 8 diámetros, y al menos 75 mm de hilo bajo la tuerca. Se exceptúan los pernos con capacidad suficiente para las combinaciones con el sismo amplificado 0,5·R veces, no menos de 1,5. La Of2003 rige hasta el 09-09-2027 (D. Ex. 12 y 36 de 2026, MINVU). La NCh2369:2025 §8.5.2 aún no está incorporada.</div>`;
+    n69Html += es25
+      ? `<div class="note">NCh2369:2025 §8.5.2: pernos de anclaje dúctiles con silla y vástago que permitan inspección y reparación, o sin silla si son reemplazables con largo libre equivalente; hilo bajo la tuerca ≥ 75 mm; longitud expuesta ≥ 250 mm y ≥ 8 diámetros. Excepción: tracción con las combinaciones de 4.5 y sismo horizontal amplificado por 0,7·R1 ≥ 1,0; en LRFD (§4.5.1): 1,2D + aL + SO + SA + E y 0,9D + SA + E (la de 0,9D suele gobernar el arrancamiento), con E según la simultaneidad direccional de §4.5.2. Bases empotradas: momento ≥ 50 % de la capacidad flexural esperada de la columna. §8.2.3: perno dúctil ≥ 20 % de alargamiento (probeta de 50 mm), mínimo 14 % en todo caso. C8.5.2: la placa de silla, los atiesadores y el pedestal se diseñan para la capacidad de fluencia esperada de los pernos. §8.5.3 (llaves de corte) no está incluida en esta verificación.</div>`
+      : `<div class="note">NCh2369.Of2003 §8.6.2: los pernos de anclaje en tracción llevan silla y vástago visible, largo libre ≥ 250 mm y ≥ 8 diámetros, y al menos 75 mm de hilo bajo la tuerca. Se exceptúan los pernos con capacidad suficiente para las combinaciones con el sismo amplificado 0,5·R veces, no menos de 1,5. Hasta el 09-09-2027 se puede usar la Of2003 o la :2025 (D. Ex. 12 y 36 de 2026, MINVU).</div>`;
     document.getElementById('pb_n69Res').innerHTML = n69Html;
 
     const globalOk = g.global && (!gy || gy.global) && cs.okLug!==false && anc.okInter && anc.modes.NsaOk && anc.modes.NcbgOk && anc.modes.NpnOk && anc.modes.VsaOk && anc.modes.VcbgOk && anc.modes.VcpgOk && (!n69.aplica || n69.ok);
@@ -5456,7 +5527,7 @@ function renderPlacasBase(container) {
       ${gy ? `<div class="verdict-row"><span>Aplastamiento y espesor de placa — eje débil y-y</span><span>${chip(gy.global)}</span></div>` : ''}
       <div class="verdict-row"><span>Corte — fricción / silla</span><span>${chip(cs.okFriccion||cs.okLug)}</span></div>
       <div class="verdict-row"><span>Pernos de anclaje — interacción N+V</span><span>${chip(anc.okInter)}<span class="u">${fmtPct(anc.interVal/anc.interLim)}</span></span></div>
-      <div class="verdict-row"><span>Pernos de anclaje — detallamiento NCh2369.Of2003 §8.6.2</span><span>${n69.aplica ? chip(n69.ok) : '<span class="chip neutral">N/A</span>'}</span></div>
+      <div class="verdict-row"><span>Pernos de anclaje — detallamiento ${state.n69 === '2025' ? 'NCh2369:2025 §8.5.2' : 'NCh2369.Of2003 §8.6.2'}</span><span>${n69.aplica ? chip(n69.ok) : '<span class="chip neutral">N/A</span>'}</span></div>
       <div class="global-verdict ${globalOk?'ok':'bad'}"><span class="label">ESTATUS GLOBAL</span><span class="label">${globalOk?'CUMPLE':'NO CUMPLE'}</span></div>`;
 
     if (typeof buildPrintSheetsPlacasBase === 'function') buildPrintSheetsPlacasBase(state, g, cs, anc);
