@@ -3832,13 +3832,13 @@ function calcAnclaje(inp) {
    limitada se acepta proveer resistencia en vez de deformación.
    §8.5.3: llaves de corte o topes sísmicos para el corte total, con las
    combinaciones de 4.5 y sismo horizontal amplificado por 0,7·R1 ≥ 1,0
-   (excepciones 1 y 2 con interacción de NCh427/1: no incorporadas). §8.5.4:
+   (excepciones 1 y 2: interacción NCh427/1, abajo). §8.5.4:
    no se considera el mortero de nivelación ni el roce placa base-hormigón.
    §8.3.1: Mpe = Fye·Z = Ry·Fy·Z (LRFD).
    Texto :2025 leído de capturas de la norma entregadas por ING (01-11-2026).
    ========================================================================= */
 function calcDetalleNCh2369(inp) {
-  const {norma, solucion, da_mm, Lc_mm, hilo_mm, Nua, R, NuG, NuE, phiNn, elong, empotrado, criterio, tipoCap, pct, VuG, VuE, phiVbr} = inp;
+  const {norma, solucion, da_mm, Lc_mm, hilo_mm, Nua, R, NuG, NuE, phiNn, elong, empotrado, criterio, tipoCap, pct, VuG, VuE, phiVbr, corteSol, FuMPa, hiloCorte, nTot, holgura, nTrac} = inp;
   const es25 = norma === '2025';
   if (norma !== 'of2003' && !es25) return {aplica:false, motivo:'No aplica: estructura no regida por NCh2369'};
   if (!es25 && !(Nua > 0)) return {aplica:false, motivo:'No aplica: los pernos no quedan en tracción (Nua ≤ 0)'};
@@ -3878,13 +3878,50 @@ function calcDetalleNCh2369(inp) {
   }
   // §8.5.3 / §8.5.4 (:2025): llave de corte para el corte total con sismo amplificado
   // 0,7·R1 ≥ 1,0; sin aporte del mortero de nivelación ni del roce placa-hormigón.
+  // Excepciones (los pernos toman el corte), interacción NCh427/1:2016 J3.6–J3.7:
+  //   1) Vu,amp < 75 kN (LRFD) con solo 2 pernos activos;
+  //   2) ≥ 9 pernos con holguras: activos un tercio del total; sin holguras: todos activos.
+  //   Rn = F'nt·Ab (J3-2); F'nt = 1,3·Fnt − Fnt/(φ·Fnv)·frv ≤ Fnt (J3-3a); φ = 0,75.
+  //   Tabla J3.2, partes roscadas: Fnt = 0,75·Fu; Fnv = 0,450·Fu (hilo en el plano de corte)
+  //   o 0,563·Fu (hilo excluido). Nota de J3.7: si f ≤ 30 % de la tensión disponible
+  //   (en corte o en tracción) no se consideran los efectos combinados.
   if (es25) {
     if (!(R > 0)) { if (errores.indexOf('Ingrese R1 > 0.') < 0) errores.push('Ingrese R1 > 0.'); }
     out.kV = Math.max(0.7*R, 1.0);
     out.VuAmp = VuG + out.kV*VuE;
-    out.phiVbr = phiVbr;
-    out.rV = phiVbr > 0 ? Math.max(out.VuAmp, 0)/phiVbr : Infinity;
-    out.okCorte = Math.max(out.VuAmp, 0) <= phiVbr;
+    out.corteSol = corteSol || 'llave';
+    const V = Math.max(out.VuAmp, 0);
+    if (out.corteSol === 'llave') {
+      out.phiVbr = phiVbr;
+      out.rV = phiVbr > 0 ? V/phiVbr : Infinity;
+      out.okCorte = V <= phiVbr;
+    } else {
+      const TON_N = 9806.65, phi = 0.75;
+      if (!(FuMPa > 0)) errores.push('Ingrese Fu del perno de anclaje (MPa) para las excepciones de §8.5.3.');
+      out.Ab = Math.PI/4*da_mm*da_mm;
+      out.Fnt = 0.75*FuMPa;
+      out.Fnv = (hiloCorte === 'excl' ? 0.563 : 0.450)*FuMPa;
+      out.VkN = V*TON_N/1000;
+      if (out.corteSol === 'exc1') {
+        out.nAct = 2;
+        out.okUmbral = out.VkN < 75;
+      } else {
+        out.okUmbral = nTot >= 9;
+        out.nAct = holgura === 'no' ? nTot : Math.floor(nTot/3);
+      }
+      out.NtAmp = Math.max(Nua, NuG + out.kV*NuE);
+      out.frv = out.nAct > 0 ? V*TON_N/(out.nAct*out.Ab) : Infinity;
+      out.ft = nTrac > 0 ? Math.max(out.NtAmp, 0)*TON_N/(nTrac*out.Ab) : Infinity;
+      out.phiFnv = phi*out.Fnv;
+      out.okV = out.frv <= out.phiFnv;
+      out.sinComb = out.frv <= 0.3*out.phiFnv || out.ft <= 0.3*phi*out.Fnt;
+      out.Fntp = out.sinComb ? out.Fnt : Math.min(1.3*out.Fnt - out.Fnt/(phi*out.Fnv)*out.frv, out.Fnt);
+      out.phiFntp = phi*out.Fntp;
+      out.okT = out.ft <= out.phiFntp;
+      out.rV = out.phiFnv > 0 ? out.frv/out.phiFnv : Infinity;
+      out.rT = out.phiFntp > 0 ? out.ft/out.phiFntp : Infinity;
+      out.okCorte = out.okUmbral && out.okV && out.okT && FuMPa > 0;
+    }
     ok = ok && out.okCorte;
   }
   // §8.5.2 (:2025), bases empotradas
@@ -4637,7 +4674,7 @@ function placasBaseDatosHtml(state) {
     <table class="xlsx-table"><tbody>
       ${row('Norma sísmica de la estructura', state.n69 === 'of2003' ? 'NCh2369.Of2003 (industrial), §8.6.2' : (state.n69 === '2025' ? 'NCh2369:2025 (industrial), §8.2.3 y §8.5.2' : 'No regida por NCh2369'))}
       ${state.n69 !== 'no' ? row('Solución del anclaje', ({silla:'Con silla (largo libre y vástago visible)', reemplazable:'Sin silla, perno reemplazable con largo libre equivalente', sinSilla:'Por resistencia con sismo amplificado (excepción)'})[state.n69Sol] || '') : ''}
-      ${state.n69 === '2025' ? row('Alargamiento de rotura del acero del perno, probeta 50 mm [%]', xlsxNum(state.n69Elong, 1)) + row('R1', xlsxNum(state.n69R, 2)) + row('VuE — corte en la base por el sismo horizontal del análisis [Ton]', xlsxNum(state.n69VuE, 2)) + row('VuG — corte en la base por la parte no sísmica de la combinación [Ton]', xlsxNum(state.n69VuG, 2)) : ''}
+      ${state.n69 === '2025' ? row('Alargamiento de rotura del acero del perno, probeta 50 mm [%]', xlsxNum(state.n69Elong, 1)) + row('R1', xlsxNum(state.n69R, 2)) + row('VuE — corte en la base por el sismo horizontal del análisis [Ton]', xlsxNum(state.n69VuE, 2)) + row('VuG — corte en la base por la parte no sísmica de la combinación [Ton]', xlsxNum(state.n69VuG, 2)) + row('Corte en la base (§8.5.3)', ({llave:'Llave de corte / tope sísmico', exc1:'Excepción 1 (< 75 kN, 2 pernos activos, NCh427/1)', exc2:'Excepción 2 (≥ 9 pernos, NCh427/1)'})[state.n69CorteSol]) + (state.n69CorteSol !== 'llave' ? row('Fu del perno [MPa]', xlsxNum(state.n69Fu, 0)) + row('Hilo en el plano de corte', state.n69HiloCorte === 'excl' ? 'Excluido' : 'No excluido') : '') + (state.n69CorteSol === 'exc2' ? row('N° total de pernos', xlsxNum(state.n69nTot, 0)) + row('Holguras de contacto', state.n69Holgura === 'no' ? 'Sin holguras (todos activos)' : 'Con holguras (1/3 activos)') : '') : ''}
       ${state.n69 !== 'no' && state.n69Sol !== 'sinSilla' ? row('Lc — largo libre [mm]', xlsxNum(state.n69Lc, 1)) + row('Largo de hilo bajo la tuerca [mm]', xlsxNum(state.n69Hilo, 1)) : ''}
       ${state.n69 !== 'no' && state.n69Sol === 'sinSilla' ? row(state.n69 === '2025' ? 'R1' : 'R — factor de modificación de la respuesta', xlsxNum(state.n69R, 2)) + row('NuE — tracción del grupo por el sismo del análisis [Ton]', xlsxNum(state.n69NuE, 2)) + row('NuG — tracción del grupo por cargas no sísmicas de la combinación [Ton]', xlsxNum(state.n69NuG, 2)) : ''}
     </tbody></table>
@@ -4882,7 +4919,7 @@ function pbCalcSections(state) {
         { t: 'chk', label: 'Verificación: Nu,amp ≤ φNn (excepción por resistencia)', estL: 'n69_okAmp', dcL: 'n69_rAmp', forceNA: true },
       );
     }
-    if (n69.okCorte !== undefined) n69Rows.push(
+    if (n69.okCorte !== undefined && n69.corteSol === 'llave') n69Rows.push(
       { t: 'label', text: 'Corte en la base — llave de corte (§8.5.3; sin mortero ni roce entre placa base y hormigón, §8.5.4)' },
       { t: 'var1', label: 'VuG — parte no sísmica de la combinación LRFD §4.5.1 [Ton]', f: 'n69_VuGin', d: 2 },
       { t: 'var1', label: 'VuE — corte por el sismo horizontal del análisis [Ton]', f: 'n69_VuEin', d: 2 },
@@ -4890,6 +4927,27 @@ function pbCalcSections(state) {
       { t: 'var1', label: 'Vu,amp = VuG + k·VuE [Ton]', f: 'n69_VuAmp', d: 2 },
       { t: 'var1', label: 'φVbr — aplastamiento de la llave de corte [Ton]', f: 'n69_phiVbr', d: 2 },
       { t: 'chk', label: 'Verificación: Vu,amp ≤ φVbr', estL: 'n69_okCorte', dcL: 'n69_rV', forceNA: true },
+    );
+    if (n69.okCorte !== undefined && n69.corteSol !== 'llave') n69Rows.push(
+      { t: 'label', text: 'Corte en la base — ' + (n69.corteSol === 'exc1' ? 'excepción 1' : 'excepción 2') + ' de §8.5.3, interacción NCh427/1:2016 J3.6–J3.7 (sin roce ni mortero, §8.5.4)' },
+      { t: 'var1', label: 'VuG — parte no sísmica de la combinación LRFD §4.5.1 [Ton]', f: 'n69_VuGin', d: 2 },
+      { t: 'var1', label: 'VuE — corte por el sismo horizontal del análisis [Ton]', f: 'n69_VuEin', d: 2 },
+      { t: 'var1', label: 'k = máx(0,7·R1; 1,0)', f: 'n69_kV', d: 2 },
+      { t: 'var1', label: 'Vu,amp = VuG + k·VuE [Ton]', f: 'n69_VuAmp', d: 2 },
+      n69.corteSol === 'exc1'
+        ? { t: 'chk', label: 'Verificación: Vu,amp < 75 kN (LRFD) [kN]', estL: 'n69_okUmbral', dcL: 'n69_VkN', forceNA: true }
+        : { t: 'chk', label: 'Verificación: N° total de pernos ≥ 9', estL: 'n69_okUmbral', forceNA: true },
+      { t: 'var1', label: 'Pernos activos al corte', f: 'n69_nAct', d: 0 },
+      { t: 'var1', label: 'Ab = π·da²/4 [mm²]', f: 'n69_Ab', d: 1 },
+      { t: 'var1', label: 'Fu del perno [MPa]', f: 'n69_FuIn', d: 0 },
+      { t: 'var1', label: 'Fnt = 0,75·Fu (Tabla J3.2) [MPa]', f: 'n69_Fnt', d: 1 },
+      { t: 'var1', label: 'Fnv (Tabla J3.2, ' + (state.n69HiloCorte === 'excl' ? '0,563·Fu, hilo excluido' : '0,450·Fu, hilo no excluido') + ') [MPa]', f: 'n69_Fnv', d: 1 },
+      { t: 'var1', label: 'frv = Vu,amp/(n activos·Ab) [MPa]', f: 'n69_frv', d: 1 },
+      { t: 'chk', label: 'Verificación: frv ≤ φFnv (J3-1, φ = 0,75)', estL: 'n69_okV', dcL: 'n69_rV', forceNA: true },
+      { t: 'var1', label: 'Tracción con sismo amplificado máx(Nua; NuG + k·NuE) [Ton]', f: 'n69_NtAmp', d: 2 },
+      { t: 'var1', label: 'ft = tracción/(nTrac·Ab) [MPa]', f: 'n69_ft', d: 1 },
+      { t: 'var1', label: "F'nt = 1,3·Fnt − Fnt/(φ·Fnv)·frv ≤ Fnt (J3-3a; = Fnt si f ≤ 30 %) [MPa]", f: 'n69_Fntp', d: 1 },
+      { t: 'chk', label: "Verificación: ft ≤ φF'nt (J3-2)", estL: 'n69_okT', dcL: 'n69_rT', forceNA: true },
     );
     if (n69.okEmp !== undefined) n69Rows.push(
       { t: 'text', label: 'Base empotrada: criterio de diseño de los pernos', f: 'n69_txtEmp' },
@@ -5027,7 +5085,7 @@ function pbFlatten(state, g, cs, anc) {
   flat.n69_rElongDc = n69.rElong;
   flat.n69_estNA = 'N/A';
   flat.n69_Lc = state.n69Lc; flat.n69_hilo = state.n69Hilo;
-  flat.n69_Rin = state.n69R; flat.n69_VuGin = state.n69VuG; flat.n69_VuEin = state.n69VuE; flat.n69_NuGin = state.n69NuG; flat.n69_NuEin = state.n69NuE;
+  flat.n69_Rin = state.n69R; flat.n69_VuGin = state.n69VuG; flat.n69_FuIn = state.n69Fu; flat.n69_VuEin = state.n69VuE; flat.n69_NuGin = state.n69NuG; flat.n69_NuEin = state.n69NuE;
   flat.n69_txtSilla = 'Requisito de detalle (indicar en planos)';
   flat.n69_txtEmp = 'Criterio por capacidad, ' + (state.tipoCap === 'nch2369' ? 'Mpe = Ry·Fy·Z' : (state.tipoCap === 'esperada' ? '1,1·Ry·Fy·Z' : 'de diseño')) + ', ' + xlsxNum(state.pct, 0) + ' % (se exige ≥ 50 % de la capacidad esperada)';
   flat.n69_rLcDc = n69.rLc; flat.n69_rHiloDc = n69.rHilo; flat.n69_rAmp = n69.r;
@@ -5108,7 +5166,7 @@ function renderPlacasBase(container) {
     lambdaA:1, fya:2.53, condicionHormigon:'Fisurado', phiAceroTrac:0.75, phiAceroCorte:0.65, phiHormigon:0.7,
     da_mm:28, hef:40, ca1:15, ca2:15, s:20, ha:60, nTrac:4, nCorte:2, corteViaGrout:true, Nua:45, Vua:17,
     criterio:'manual', pct:100, tipoCap:'esperada', FyColTon:2.53, Ry:1.5, tfCol:1.2, twCol:0.8, tCol:0.8, Hcol:4, condCol:'voladizo', omega:2, vuaCap:'pernos',
-    n69:'of2003', n69Sol:'silla', n69Lc:300, n69Hilo:75, n69R:5, n69NuG:0, n69NuE:0, n69Elong:0, n69VuE:0, n69VuG:0,
+    n69:'of2003', n69Sol:'silla', n69Lc:300, n69Hilo:75, n69R:5, n69NuG:0, n69NuE:0, n69Elong:0, n69VuE:0, n69VuG:0, n69CorteSol:'llave', n69Fu:0, n69HiloCorte:'incl', n69nTot:4, n69Holgura:'si',
   };
 
   container.innerHTML = `
@@ -5249,7 +5307,11 @@ function renderPlacasBase(container) {
         <div class="field pb-n69 pb-n69X"><label id="pb_n69NuGLbl">NuG — tracción del grupo por las cargas no sísmicas de la combinación (Ton; negativa si comprime)</label><input type="text" inputmode="decimal" id="pb_n69NuG" value="${state.n69NuG}"></div>
       </div>
       <div class="field-grid pb-n6925" style="margin-top:.6rem">
-        <div class="field"><label>Corte en la base (§8.5.3): solución</label><select id="pb_n69CorteSol"><option value="llave">Llave de corte / tope sísmico (silla de corte de la sección 9)</option><option value="exc" disabled>Excepciones 1 y 2 con interacción NCh427/1 — no incorporadas</option></select></div>
+        <div class="field"><label>Corte en la base (§8.5.3): solución</label><select id="pb_n69CorteSol"><option value="llave">Llave de corte / tope sísmico (silla de corte de la sección 9)</option><option value="exc1">Excepción 1: Vu,amp &lt; 75 kN (LRFD), 2 pernos activos, interacción NCh427/1</option><option value="exc2">Excepción 2: 9 o más pernos (1/3 activos con holguras), interacción NCh427/1</option></select></div>
+        <div class="field pb-n69Exc"><label>Fu del perno de anclaje (MPa)</label><input type="text" inputmode="decimal" id="pb_n69Fu" value="${state.n69Fu}" list="dl_pb_n69Fu"><datalist id="dl_pb_n69Fu"><option value="400">ASTM F1554 Gr.36 (58 ksi)</option><option value="517">ASTM F1554 Gr.55 (75 ksi)</option><option value="862">ASTM F1554 Gr.105 (125 ksi)</option></datalist></div>
+        <div class="field pb-n69Exc"><label>Hilo en el plano de corte (Tabla J3.2)</label><select id="pb_n69HiloCorte"><option value="incl">Hilo no excluido: Fnv = 0,450·Fu</option><option value="excl">Hilo excluido: Fnv = 0,563·Fu</option></select></div>
+        <div class="field pb-n69Exc2"><label>N° total de pernos de anclaje</label><input type="text" inputmode="decimal" id="pb_n69nTot" value="${state.n69nTot}"></div>
+        <div class="field pb-n69Exc2"><label>Holguras de contacto entre placa y pernos</label><select id="pb_n69Holgura"><option value="si">Con holguras: activos 1/3 del total</option><option value="no">Sin holguras: todos activos</option></select></div>
         <div class="field"><label>VuE — corte en la base debido al sismo horizontal del análisis (Ton)</label><input type="text" inputmode="decimal" id="pb_n69VuE" value="${state.n69VuE}"></div>
         <div class="field"><label>VuG — corte en la base por la parte no sísmica de la combinación LRFD §4.5.1 (Ton)</label><input type="text" inputmode="decimal" id="pb_n69VuG" value="${state.n69VuG}"></div>
       </div>
@@ -5363,6 +5425,11 @@ function renderPlacasBase(container) {
     state.n69Elong = parseFloat(gv('pb_n69Elong').value)||0;
     state.n69VuE = parseFloat(gv('pb_n69VuE').value)||0;
     state.n69VuG = parseFloat(gv('pb_n69VuG').value)||0;
+    state.n69CorteSol = gv('pb_n69CorteSol').value;
+    state.n69Fu = parseFloat(gv('pb_n69Fu').value)||0;
+    state.n69HiloCorte = gv('pb_n69HiloCorte').value;
+    state.n69nTot = parseFloat(gv('pb_n69nTot').value)||0;
+    state.n69Holgura = gv('pb_n69Holgura').value;
     // valores ingresados (antes de aplicar el criterio de diseño)
     state.PuIn = state.Pu; state.VuIn = state.Vu; state.MuIn = state.Mu; state.MuYIn = state.MuY;
     state.NuaIn = state.Nua; state.VuaIn = state.Vua;
@@ -5509,12 +5576,15 @@ function renderPlacasBase(container) {
     const n69 = calcDetalleNCh2369({norma:state.n69, solucion:state.n69Sol, da_mm:state.da_mm, Lc_mm:state.n69Lc, hilo_mm:state.n69Hilo,
       Nua:state.Nua, R:state.n69R, NuG:state.n69NuG, NuE:state.n69NuE, phiNn:anc.phiNnGob, elong:state.n69Elong,
       empotrado:state.tipoApoyo==='Empotrado', criterio:state.criterio, tipoCap:state.tipoCap, pct:state.pct,
-      VuG:state.n69VuG, VuE:state.n69VuE, phiVbr:cs.phiVbr});
+      VuG:state.n69VuG, VuE:state.n69VuE, phiVbr:cs.phiVbr, corteSol:state.n69CorteSol, FuMPa:state.n69Fu,
+      hiloCorte:state.n69HiloCorte, nTot:state.n69nTot, holgura:state.n69Holgura, nTrac:state.nTrac});
     state._n69 = n69;
     const es25 = state.n69 === '2025', esN69 = state.n69 === 'of2003' || es25, esRes = state.n69Sol === 'sinSilla';
     container.querySelectorAll('.pb-n69').forEach(e => e.style.display = esN69 ? '' : 'none');
     container.querySelectorAll('.pb-n69S').forEach(e => e.style.display = (esN69 && !esRes) ? '' : 'none');
-    container.querySelectorAll('.pb-n69X').forEach(e => e.style.display = (esN69 && esRes) ? '' : 'none');
+    container.querySelectorAll('.pb-n69X').forEach(e => e.style.display = (esN69 && (esRes || state.n69 === '2025')) ? '' : 'none');
+    container.querySelectorAll('.pb-n69Exc').forEach(e => e.style.display = (state.n69 === '2025' && state.n69CorteSol !== 'llave') ? '' : 'none');
+    container.querySelectorAll('.pb-n69Exc2').forEach(e => e.style.display = (state.n69 === '2025' && state.n69CorteSol === 'exc2') ? '' : 'none');
     container.querySelectorAll('.pb-n6925').forEach(e => e.style.display = es25 ? '' : 'none');
     container.querySelectorAll('.pb-n69R').forEach(e => e.style.display = (esN69 && (esRes || es25)) ? '' : 'none');
     const optRe = document.querySelector('#pb_n69Sol option[value="reemplazable"]'); if (optRe) optRe.disabled = !es25;
@@ -5545,10 +5615,24 @@ function renderPlacasBase(container) {
         <tr><td>Nu,amp ≤ φNn — excepción de ${ref}</td><td class="num">${isFinite(n69.r) ? fmtPct(n69.r) : '—'}</td><td>${chip(n69.okAmp)}</td></tr>`;
       }
       if (n69.okCorte !== undefined) {
-        rows += `<tr><th colspan="3">Corte en la base — llave de corte (§8.5.3; sin mortero ni roce, §8.5.4)</th></tr>
-        <tr><td>Vu,amp = VuG + máx(0,7·R1; 1,0)·VuE = ${fmt2(state.n69VuG)} + ${fmt2(n69.kV)} × ${fmt2(state.n69VuE)}</td><td class="num">${fmt2(n69.VuAmp)} Ton</td><td></td></tr>
-        <tr><td>φVbr — aplastamiento de la llave de corte (sección 9)</td><td class="num">${fmt2(n69.phiVbr)} Ton</td><td></td></tr>
-        <tr><td>Vu,amp ≤ φVbr</td><td class="num">${isFinite(n69.rV) ? fmtPct(n69.rV) : '—'}</td><td>${chip(n69.okCorte)}</td></tr>`;
+        const vTxt = `<tr><td>Vu,amp = VuG + máx(0,7·R1; 1,0)·VuE = ${fmt2(state.n69VuG)} + ${fmt2(n69.kV)} × ${fmt2(state.n69VuE)}</td><td class="num">${fmt2(n69.VuAmp)} Ton</td><td></td></tr>`;
+        if (n69.corteSol === 'llave') {
+          rows += `<tr><th colspan="3">Corte en la base — llave de corte (§8.5.3; sin mortero ni roce, §8.5.4)</th></tr>${vTxt}
+          <tr><td>φVbr — aplastamiento de la llave de corte (sección 9)</td><td class="num">${fmt2(n69.phiVbr)} Ton</td><td></td></tr>
+          <tr><td>Vu,amp ≤ φVbr</td><td class="num">${isFinite(n69.rV) ? fmtPct(n69.rV) : '—'}</td><td>${chip(n69.okCorte)}</td></tr>`;
+        } else {
+          const e1 = n69.corteSol === 'exc1';
+          rows += `<tr><th colspan="3">Corte en la base — ${e1 ? 'excepción 1' : 'excepción 2'} de §8.5.3, interacción NCh427/1:2016 J3.6–J3.7 (sin roce, §8.5.4)</th></tr>${vTxt}
+          ${e1 ? `<tr><td>Vu,amp = ${fmt2(n69.VkN)} kN &lt; 75 kN (LRFD)</td><td></td><td>${chip(n69.okUmbral)}</td></tr>`
+               : `<tr><td>N° total de pernos = ${fmt0(state.n69nTot)} ≥ 9</td><td></td><td>${chip(n69.okUmbral)}</td></tr>`}
+          <tr><td>Pernos activos al corte ${e1 ? '(solo 2)' : (state.n69Holgura === 'no' ? '(sin holguras: todos)' : '(con holguras: 1/3 del total)')}</td><td class="num">${fmt0(n69.nAct)}</td><td></td></tr>
+          <tr><td>Ab = π·da²/4 (área bruta)</td><td class="num">${fmt1(n69.Ab)} mm²</td><td></td></tr>
+          <tr><td>Fnt = 0,75·Fu ; Fnv = ${state.n69HiloCorte === 'excl' ? '0,563' : '0,450'}·Fu (Tabla J3.2, Fu = ${fmt0(state.n69Fu)} MPa)</td><td class="num">${fmt1(n69.Fnt)} ; ${fmt1(n69.Fnv)} MPa</td><td></td></tr>
+          <tr><td>frv = Vu,amp / (n activos·Ab) ≤ φFnv = ${fmt1(n69.phiFnv)} MPa</td><td class="num">${fmt1(n69.frv)} MPa</td><td>${chip(n69.okV)}</td></tr>
+          <tr><td>Tracción por perno con sismo amplificado: máx(Nua; NuG + k·NuE) = ${fmt2(n69.NtAmp)} Ton en ${fmt0(state.nTrac)} pernos → ft</td><td class="num">${fmt1(n69.ft)} MPa</td><td></td></tr>
+          <tr><td>F′nt = ${n69.sinComb ? 'Fnt (f ≤ 30 % de la tensión disponible: sin efectos combinados, nota J3.7)' : '1,3·Fnt − Fnt/(φ·Fnv)·frv ≤ Fnt (J3-3a)'}</td><td class="num">${fmt1(n69.Fntp)} MPa</td><td></td></tr>
+          <tr><td>ft ≤ φF′nt = ${fmt1(n69.phiFntp)} MPa (J3-2)</td><td class="num">${isFinite(n69.rT) ? fmtPct(n69.rT) : '—'}</td><td>${chip(n69.okT)}</td></tr>`;
+        }
       }
       if (n69.okEmp !== undefined) {
         rows += `<tr><td>Base empotrada: pernos diseñados con momento ≥ 50 % de la capacidad flexural esperada de la columna (criterio «por capacidad», capacidad esperada, ≥ 50 %; actual: ${state.criterio === 'capacidad' ? (state.tipoCap === 'nch2369' ? 'Ry·Fy·Z' : (state.tipoCap === 'esperada' ? '1,1·Ry·Fy·Z' : 'de diseño')) + ', ' + fmt1(state.pct) + ' %' : (state.criterio === 'omega' ? 'Ω0' : 'manual')})</td><td></td><td>${chip(n69.okEmp)}</td></tr>`;
@@ -5558,7 +5642,7 @@ function renderPlacasBase(container) {
         + `<table class="results">${rows}</table>`;
     }
     n69Html += es25
-      ? `<div class="note">NCh2369:2025 §8.5.2: pernos de anclaje dúctiles con silla y vástago que permitan inspección y reparación, o sin silla si son reemplazables con largo libre equivalente; hilo bajo la tuerca ≥ 75 mm; longitud expuesta ≥ 250 mm y ≥ 8 diámetros. Excepción: tracción con las combinaciones de 4.5 y sismo horizontal amplificado por 0,7·R1 ≥ 1,0; en LRFD (§4.5.1): 1,2D + aL + SO + SA + E y 0,9D + SA + E (la de 0,9D suele gobernar el arrancamiento), con E según la simultaneidad direccional de §4.5.2. Bases empotradas: momento ≥ 50 % de la capacidad flexural esperada de la columna. §8.2.3: perno dúctil ≥ 20 % de alargamiento (probeta de 50 mm), mínimo 14 % en todo caso. C8.5.2: la placa de silla, los atiesadores y el pedestal se diseñan para la capacidad de fluencia esperada de los pernos. §8.5.3: llave de corte o tope sísmico para el corte total con sismo amplificado 0,7·R1 ≥ 1,0 (las excepciones 1 y 2, con interacción de NCh427/1, no están incorporadas). §8.5.4: no se considera el mortero de nivelación ni el roce entre placa base y hormigón. §8.3.1: Mpe = Ry·Fy·Z.</div>`
+      ? `<div class="note">NCh2369:2025 §8.5.2: pernos de anclaje dúctiles con silla y vástago que permitan inspección y reparación, o sin silla si son reemplazables con largo libre equivalente; hilo bajo la tuerca ≥ 75 mm; longitud expuesta ≥ 250 mm y ≥ 8 diámetros. Excepción: tracción con las combinaciones de 4.5 y sismo horizontal amplificado por 0,7·R1 ≥ 1,0; en LRFD (§4.5.1): 1,2D + aL + SO + SA + E y 0,9D + SA + E (la de 0,9D suele gobernar el arrancamiento), con E según la simultaneidad direccional de §4.5.2. Bases empotradas: momento ≥ 50 % de la capacidad flexural esperada de la columna. §8.2.3: perno dúctil ≥ 20 % de alargamiento (probeta de 50 mm), mínimo 14 % en todo caso. C8.5.2: la placa de silla, los atiesadores y el pedestal se diseñan para la capacidad de fluencia esperada de los pernos. §8.5.3: llave de corte o tope sísmico para el corte total con sismo amplificado 0,7·R1 ≥ 1,0 o, por excepción, los pernos con la interacción de NCh427/1 (J3.6–J3.7): (1) Vu,amp &lt; 75 kN con 2 pernos activos, (2) 9 o más pernos, un tercio activos con holguras o todos sin holguras. §8.5.4: no se considera el mortero de nivelación ni el roce entre placa base y hormigón. §8.3.1: Mpe = Ry·Fy·Z.</div>`
       : `<div class="note">NCh2369.Of2003 §8.6.2: los pernos de anclaje en tracción llevan silla y vástago visible, largo libre ≥ 250 mm y ≥ 8 diámetros, y al menos 75 mm de hilo bajo la tuerca. Se exceptúan los pernos con capacidad suficiente para las combinaciones con el sismo amplificado 0,5·R veces, no menos de 1,5. Hasta el 09-09-2027 se puede usar la Of2003 o la :2025 (D. Ex. 12 y 36 de 2026, MINVU).</div>`;
     document.getElementById('pb_n69Res').innerHTML = n69Html;
 
@@ -5566,7 +5650,7 @@ function renderPlacasBase(container) {
     document.getElementById('pb_resumen').innerHTML = `
       <div class="verdict-row"><span>Aplastamiento y espesor de placa${gy ? ' — eje fuerte x-x' : ''}</span><span>${chip(g.global)}</span></div>
       ${gy ? `<div class="verdict-row"><span>Aplastamiento y espesor de placa — eje débil y-y</span><span>${chip(gy.global)}</span></div>` : ''}
-      <div class="verdict-row"><span>${state.n69 === '2025' ? 'Corte — llave de corte, NCh2369:2025 §8.5.3 (sin roce, §8.5.4)' : 'Corte — fricción / silla'}</span><span>${chip(state.n69 === '2025' ? (state._n69 && state._n69.okCorte) : (cs.okFriccion||cs.okLug))}</span></div>
+      <div class="verdict-row"><span>${state.n69 === '2025' ? 'Corte — ' + ({llave:'llave de corte', exc1:'pernos, excepción 1', exc2:'pernos, excepción 2'}[state.n69CorteSol] || 'llave de corte') + ', NCh2369:2025 §8.5.3 (sin roce, §8.5.4)' : 'Corte — fricción / silla'}</span><span>${chip(state.n69 === '2025' ? (state._n69 && state._n69.okCorte) : (cs.okFriccion||cs.okLug))}</span></div>
       <div class="verdict-row"><span>Pernos de anclaje — interacción N+V</span><span>${chip(anc.okInter)}<span class="u">${fmtPct(anc.interVal/anc.interLim)}</span></span></div>
       <div class="verdict-row"><span>Pernos de anclaje — detallamiento ${state.n69 === '2025' ? 'NCh2369:2025 §8.5.2' : 'NCh2369.Of2003 §8.6.2'}</span><span>${n69.aplica ? chip(n69.ok) : '<span class="chip neutral">N/A</span>'}</span></div>
       <div class="global-verdict ${globalOk?'ok':'bad'}"><span class="label">ESTATUS GLOBAL</span><span class="label">${globalOk?'CUMPLE':'NO CUMPLE'}</span></div>`;
@@ -5581,6 +5665,9 @@ function renderPlacasBase(container) {
   document.getElementById('pb_vuaCap').value = state.vuaCap;
   document.getElementById('pb_n69').value = state.n69;
   document.getElementById('pb_n69Sol').value = state.n69Sol;
+  document.getElementById('pb_n69CorteSol').value = state.n69CorteSol;
+  document.getElementById('pb_n69HiloCorte').value = state.n69HiloCorte;
+  document.getElementById('pb_n69Holgura').value = state.n69Holgura;
   document.getElementById('pb_shape').addEventListener('change', () => {
     state.shape = document.getElementById('pb_shape').value;
     renderProfFields();
