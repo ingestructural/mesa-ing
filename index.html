@@ -4768,6 +4768,7 @@ function placasBaseDatosHtml(state) {
 
     <div class="xlsx-section">C. Condición y cargas mayoradas</div>
     <table class="xlsx-table"><tbody>
+      ${state.ramOn === 'ram' ? row('Origen de las cargas', 'Reacciones de RAM' + (state.ramArchivo ? ' (archivo ' + esc(state.ramArchivo) + ')' : '') + (state.ramSel ? ': nudo ' + esc(state.ramSel.id) + ', ' + esc(state.ramSel.label) : '') + '; alma paralela al eje ' + (state.ramEje === 'z' ? 'Z' : 'X') + ' global; Vu = corte resultante en planta') : ''}
       ${row('Tipo de apoyo de la base', state.tipoApoyo === 'Articulado' ? 'Articulado (rótula, sin momento) — se fuerza Mu=0' : 'Empotrado (transmite momento)')}
       ${row('Pu — axial mayorada, compresión [Ton]', xlsxNum(state.Pu, 2))}
       ${row('Vu — corte mayorado, dirección del eje fuerte (paralelo al alma, dirección N) [Ton]', xlsxNum(state.Vu, 2))}
@@ -5352,6 +5353,7 @@ function renderPlacasBase(container) {
     da_mm:28, hef:40, ca1:15, ca2:15, s:20, ha:60, nTrac:4, nCorte:2, corteViaGrout:true, Nua:45, Vua:17,
     criterio:'manual', pct:100, tipoCap:'esperada', FyColTon:2.53, Ry:1.5, tfCol:1.2, twCol:0.8, tCol:0.8, Hcol:4, condCol:'voladizo', omega:2, vuaCap:'pernos',
     n69:'of2003', n69Sol:'silla', n69Lc:300, n69Hilo:75, n69R:5, n69NuG:0, n69NuE:0, n69Elong:0, n69VuE:0, n69VuG:0, n69CorteSol:'llave', n69Fu:0, n69HiloCorte:'incl', n69nTot:4, n69Holgura:'si',
+    ramOn:'manual', ramText:'', ramArchivo:'', ramFuerza:'Tonf', ramLong:'m', ramEje:'z', ramNodo:'', ramFam:'H', ramSel:null,
     perfOrigen:'catalogo', perfil:'HN 300x300x12x8', nTotP:4, torqueP:'no', dhP:0, golP:0, wP:0, holgP:0,
   };
 
@@ -5375,6 +5377,24 @@ function renderPlacasBase(container) {
 
     <div class="panel">
       <h3>2 · Condición y cargas mayoradas</h3>
+      <div class="field-grid">
+        <div class="field"><label>Origen de las cargas</label><select id="pb_ramOn"><option value="manual">Ingreso manual</option><option value="ram">Desde las reacciones de RAM (archivo Excel o tabla pegada)</option></select></div>
+      </div>
+      <div id="pb_ramBox" style="margin-top:.6rem">
+        <div class="field-grid">
+          <div class="field" style="grid-column:1/-1"><label>Archivo de reacciones de RAM (.xlsx, .csv o .txt)</label><input type="file" id="pb_ramFile" accept=".xlsx,.csv,.txt,.tsv" style="width:100%;max-width:none;min-width:0"></div>
+        </div>
+        <div class="note">También puede pegar la tabla de reacciones (Resultados &gt; Reacciones). Se reconoce el formato de RAM con bloques «Condition H#=…» o con una columna de combinación por fila, columnas Node/FX/FY/FZ/MX/MY/MZ (Y vertical: P = FY).</div>
+        <textarea class="ram-box" id="pb_ramText" placeholder="Node&#9;FX&#9;FY&#9;FZ&#9;MX&#9;MY&#9;MZ&#10;Condition H1=1.2PP+1.6SCr&#10;1&#9;0.5&#9;12.3&#9;1.1&#9;2.0&#9;0&#9;0.4"></textarea>
+        <div class="field-grid" style="margin-top:.6rem">
+          <div class="field"><label>Unidad de fuerza en la tabla</label><select id="pb_ramFuerza"><option value="Tonf">Tonf</option><option value="kgf">kgf</option><option value="kN">kN</option><option value="kip">kip</option></select></div>
+          <div class="field"><label>Unidad de longitud en la tabla</label><select id="pb_ramLong"><option value="m">m</option><option value="cm">cm</option><option value="ft">ft</option><option value="in">in</option></select></div>
+          <div class="field"><label>Orientación del alma de la columna (dirección N de la placa)</label><select id="pb_ramEje"><option value="z">Alma paralela al eje Z global: Mux = MX, Muy = MZ</option><option value="x">Alma paralela al eje X global: Mux = MZ, Muy = MX</option></select></div>
+          <div class="field"><label>Nudo de apoyo</label><select id="pb_ramNodo"></select></div>
+          <div class="field"><label>Combinaciones a considerar</label><select id="pb_ramFam"><option value="H">Solo las que empiezan con H (diseño, mayoradas)</option><option value="all">Todas las combinaciones</option></select></div>
+        </div>
+        <div id="pb_ramRes" style="margin-top:.6rem"></div>
+      </div>
       <div class="field-grid">
         <div class="field"><label>Tipo de apoyo de la base</label>
           <select id="pb_tipoApoyo"><option value="Empotrado">Empotrado (transmite momento)</option><option value="Articulado">Articulado (rótula, sin momento)</option></select>
@@ -5547,6 +5567,81 @@ function renderPlacasBase(container) {
     el.querySelectorAll('input').forEach(i => i.addEventListener('input', recalc));
   }
 
+  // ---- cargas desde las reacciones de RAM (archivo Excel o tabla pegada) ----
+  let ramCache = { key: null, filas: [] };
+  function ramFilas() {
+    const key = state.ramText.length + '|' + state.ramText.slice(0, 200) + '|' + state.ramText.slice(-200) + '|' + state.ramFuerza + state.ramLong + state.ramEje;
+    if (ramCache.key === key) return ramCache.filas;
+    const parsed = parseRamPaste(state.ramText);
+    const fF = FUERZA_A_TON[state.ramFuerza] || 1, fL = LONGITUD_A_M[state.ramLong] || 1, ejeZ = state.ramEje === 'z';
+    const filas = parsed.rows.map(r => {
+      const m = mapRamRow(r, fF, fL, false);
+      const VN = m.Vz == null ? null : Math.abs(ejeZ ? m.Vz : m.Vx), VB = m.Vx == null ? null : Math.abs(ejeZ ? m.Vx : m.Vz);
+      return { id: String(m.id), combo: String(m.combo || ''), label: String(m.comboLabel || m.combo || ''), P: m.P,
+        Mux: Math.abs(ejeZ ? m.Mx : m.Mz), Muy: Math.abs(ejeZ ? m.Mz : m.Mx), VN, VB, V: VN == null ? null : Math.hypot(VN, VB || 0) };
+    });
+    ramCache = { key, filas };
+    return filas;
+  }
+  function ramFiltradas() {
+    const todas = ramFilas();
+    let f = state.ramNodo ? todas.filter(r => r.id === state.ramNodo) : todas;
+    const fH = f.filter(r => /^h/i.test(r.combo));
+    return { filas: state.ramFam === 'H' && fH.length ? fH : f, sinH: state.ramFam === 'H' && !fH.length && f.length > 0 };
+  }
+  function cargarFilaRam(r) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = +(+v).toFixed(3); };
+    set('pb_Pu', r.P); if (r.V != null) set('pb_Vu', r.V); set('pb_Mu', r.Mux); set('pb_MuY', r.Muy);
+    if (r.Muy > 0.005 && document.getElementById('pb_biaxial').value !== 'Si') document.getElementById('pb_biaxial').value = 'Si';
+    state.ramSel = { id: r.id, label: r.label };
+    recalc();
+    if (state.criterio === 'manual') {
+      set('pb_Nua', (state._g ? state._g.Tu : 0) + (state._gy ? state._gy.Tu : 0));
+      if (r.V != null) set('pb_Vua', r.V);
+      recalc();
+    }
+  }
+  function renderRam(prof) {
+    const on = state.ramOn === 'ram';
+    document.getElementById('pb_ramBox').style.display = on ? '' : 'none';
+    ['pb_Pu', 'pb_Vu', 'pb_Mu', 'pb_MuY'].forEach(id => { const el = document.getElementById(id); if (el) { el.readOnly = on; el.style.opacity = on ? '.75' : ''; } });
+    if (!on) return;
+    const todas = ramFilas(), res = document.getElementById('pb_ramRes'), selN = document.getElementById('pb_ramNodo');
+    const nodos = [...new Set(todas.map(r => r.id))];
+    const optsN = '<option value="">Todos los nudos (' + nodos.length + ')</option>' + nodos.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    if (selN.dataset.k !== optsN) { selN.innerHTML = optsN; selN.dataset.k = optsN; }
+    if (state.ramNodo && !nodos.includes(state.ramNodo)) state.ramNodo = '';
+    selN.value = state.ramNodo;
+    if (!todas.length) { res.innerHTML = '<div class="note">Cargue el archivo o pegue la tabla de reacciones para ver las combinaciones.</div>'; return; }
+    const { filas, sinH } = ramFiltradas();
+    const base = { shape: state.shape, fc: state.fc, Fy: state.Fy, phiC: state.phiC, Vu: 0, N: state.N, B: state.B, tp_mm: state.tp_mm, A2: state.A2, prof };
+    let iTp = -1, iTu = -1, maxTp = -1, maxTu = -1;
+    const ev = filas.map((r, i) => {
+      if (!(r.P > 0)) return { r, trac: true };
+      const gx = calcPlacaBaseGeom(Object.assign({}, base, { Pu: r.P, Mu: state.tipoApoyo === 'Articulado' ? 0 : r.Mux, fLever: state.fLever, nPernosTrac: state.nPernosTrac }));
+      const gy2 = r.Muy > 0 && state.tipoApoyo !== 'Articulado' ? calcPlacaBaseGeom(Object.assign({}, base, { Pu: r.P, Mu: r.Muy, fLever: state.fLeverY, nPernosTrac: state.nPernosTracY, eje: 'y' })) : null;
+      const tp = Math.max(gx.tpReqMm, gy2 ? gy2.tpReqMm : 0), Tu = gx.Tu + (gy2 ? gy2.Tu : 0);
+      const ok = gx.global && (!gy2 || gy2.global);
+      if (isFinite(tp) && tp > maxTp) { maxTp = tp; iTp = i; }
+      if (isFinite(Tu) && Tu > maxTu) { maxTu = Tu; iTu = i; }
+      return { r, tp, Tu, ok };
+    });
+    const MAXF = 400;
+    const filasHtml = ev.slice(0, MAXF).map((e, i) => {
+      const r = e.r, marca = (i === iTp ? ' ◆tp' : '') + (i === iTu ? ' ◆Tu' : '');
+      const sel = state.ramSel && state.ramSel.id === r.id && state.ramSel.label === r.label;
+      return `<tr${sel ? ' style="background:var(--accent-soft, rgba(80,140,255,.12))"' : ''}><td>${esc(r.id)}</td><td>${esc(r.label)}</td><td class="num">${fmt2(r.P)}</td><td class="num">${r.V == null ? '—' : fmt2(r.V)}</td><td class="num">${fmt2(r.Mux)}</td><td class="num">${fmt2(r.Muy)}</td>`
+        + (e.trac ? '<td colspan="3" class="u">Tracción neta (P ≤ 0): fuera del alcance de esta planilla</td><td></td>'
+          : `<td class="num">${isFinite(e.tp) ? fmt1(e.tp) : '—'}</td><td class="num">${fmt2(e.Tu)}</td><td>${chip(e.ok)}<b>${marca}</b></td><td><button type="button" class="btn" data-ram="${i}">Usar</button></td>`) + '</tr>';
+    }).join('');
+    res.innerHTML = (sinH ? '<div class="note">No hay combinaciones que empiecen con H: se muestran todas.</div>' : '')
+      + `<div class="note">Evaluación con la placa actual (N = ${fmt1(state.N)} cm, B = ${fmt1(state.B)} cm, tp = ${fmt1(state.tp_mm)} mm). ◆tp = mayor espesor requerido; ◆Tu = mayor tracción en pernos. Vu = corte resultante en planta √(V∥² + V⊥²). «Usar» carga la fila en Pu, Vu, Mux y Muy${state.criterio === 'manual' ? ', y Nua = Tu de la placa y Vua = Vu en la sección 10' : ''}.</div>
+      <div style="margin:.4rem 0">${iTp >= 0 ? `<button type="button" class="btn" data-ram="${iTp}">Usar la más desfavorable para la placa (◆tp)</button> ` : ''}${iTu >= 0 && iTu !== iTp ? `<button type="button" class="btn" data-ram="${iTu}">Usar la más desfavorable para los pernos (◆Tu)</button>` : ''}</div>
+      <div style="overflow-x:auto"><table class="ped-table"><tr><th>Nudo</th><th>Combinación</th><th>Pu (Ton)</th><th>Vu (Ton)</th><th>Mux (Ton·m)</th><th>Muy (Ton·m)</th><th>tp req. (mm)</th><th>Tu (Ton)</th><th>Placa actual</th><th></th></tr>${filasHtml}</table></div>
+      ${ev.length > MAXF ? `<div class="note">Se muestran ${MAXF} de ${ev.length} filas; filtre por nudo.</div>` : ''}
+      ${state.ramSel ? `<div class="note">Cargada: nudo ${esc(state.ramSel.id)}, ${esc(state.ramSel.label)}.</div>` : ''}`;
+    res.querySelectorAll('button[data-ram]').forEach(b => b.onclick = () => cargarFilaRam(ev[+b.dataset.ram].r));
+  }
   // ---- perfil de la columna: catálogo de la Mesa o ingreso manual ----
   function pbCat() { return pbCatalogoColumna(state.shape); }
   function pbPerfilSel() { return state.perfOrigen === 'catalogo' ? (pbCat().find(p => p.nombre === state.perfil) || null) : null; }
@@ -5585,6 +5680,13 @@ function renderPlacasBase(container) {
   function readState() {
     state.shape = document.getElementById('pb_shape').value;
     state.perfOrigen = document.getElementById('pb_perfOrigen').value;
+    state.ramOn = document.getElementById('pb_ramOn').value;
+    state.ramText = document.getElementById('pb_ramText').value;
+    state.ramFuerza = document.getElementById('pb_ramFuerza').value;
+    state.ramLong = document.getElementById('pb_ramLong').value;
+    state.ramEje = document.getElementById('pb_ramEje').value;
+    state.ramNodo = document.getElementById('pb_ramNodo').value;
+    state.ramFam = document.getElementById('pb_ramFam').value;
     state.perfil = document.getElementById('pb_perfil').value || state.perfil;
     aplicarPerfilCatalogo();
     state.nTotP = parseFloat(document.getElementById('pb_nTotP').value)||0;
@@ -5711,7 +5813,8 @@ function renderPlacasBase(container) {
     const biax = state.biaxial === 'Si';
     const gy = biax ? calcPlacaBaseGeom({shape:state.shape, fc:state.fc, Fy:state.Fy, phiC:state.phiC, Pu:state.Pu, Vu:state.Vu, Mu:state.MuY,
       N:state.N, B:state.B, tp_mm:state.tp_mm, A2:state.A2, prof, fLever:state.fLeverY, nPernosTrac:state.nPernosTracY, eje:'y'}) : null;
-    state._gy = gy;
+    state._gy = gy; state._g = g;
+    renderRam(prof);
     // ---- geometría propuesta según perfil, pernos y distancias mínimas ----
     const dimCol = state.shape==='H' ? [10*state.d, 10*state.bf, 10*state.tfCol] : state.shape==='Cajon' ? [10*state.Hc, 10*state.Bc, 10*state.tCol] : [10*state.D, 10*state.D, 10*state.tCol];
     const prop = pbGeomPropuesta({shape:state.shape, Dn:dimCol[0], Db:dimCol[1], tPerf:dimCol[2], da_mm:state.da_mm, dh_mm:state.dhP, gol_mm:state.golP,
@@ -5975,6 +6078,21 @@ function renderPlacasBase(container) {
     if (el.id!=='pb_shape') el.addEventListener('input', recalc);
   }));
   document.getElementById('pb_perfOrigen').value = state.perfOrigen;
+  document.getElementById('pb_ramOn').value = state.ramOn;
+  document.getElementById('pb_ramText').addEventListener('input', () => { state.ramSel = null; recalc(); });
+  document.getElementById('pb_ramFile').addEventListener('change', async e => {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    const res = document.getElementById('pb_ramRes');
+    try {
+      const txt = await leerTablaArchivo(f);
+      document.getElementById('pb_ramText').value = txt;
+      state.ramArchivo = f.name; state.ramSel = null;
+      const u = ramDetectarUnidades(txt);
+      if (u.fuerza) document.getElementById('pb_ramFuerza').value = u.fuerza;
+      if (u.long) document.getElementById('pb_ramLong').value = u.long;
+      recalc();
+    } catch (err) { res.innerHTML = `<div class="note" style="color:var(--bad)">${esc(err.message || String(err))}</div>`; }
+  });
   document.getElementById('pb_nTotP').value = String(state.nTotP);
   document.getElementById('pb_torqueP').value = state.torqueP;
   renderProfFields();
@@ -24925,7 +25043,7 @@ function parseRamPaste(text){
   // perdiendo Mz/Vx/Vz y el nombre de la combinación de todas las filas.
   var head6Idx = -1, head6 = null;
   for (var k=0;k<lines.length;k++){
-    var cand = splitRamLine(lines[k]).map(function(h){return h.toLowerCase();});
+    var cand = splitRamLine(lines[k]).map(function(h){return h.toLowerCase().replace(/\s*[\[(][^\])]*[\])]\s*/g,' ').trim();});
     if (cand.indexOf('fx')>=0 && cand.indexOf('fy')>=0){ head6Idx = k; head6 = cand; break; }
   }
 
@@ -24934,6 +25052,9 @@ function parseRamPaste(text){
     var colId = findCol(head6, SYN_ID);
     var colFX = findCol(head6,['fx']), colFY = findCol(head6,['fy']), colFZ = findCol(head6,['fz']);
     var colMX = findCol(head6,['mx']), colMY = findCol(head6,['my']), colMZ = findCol(head6,['mz']);
+    // Columna de combinación por fila (tablas exportadas a Excel sin bloques "Condition")
+    var colCmb = -1;
+    for (var q=0;q<head6.length;q++){ if (/^(load )?(condition|condici[oó]n|combinaci[oó]n|combo|load case|caso|estado)/.test(head6[q])) { colCmb = q; break; } }
     var rows = [], comboLabels = [], comboSeen = {}, curCombo = '', curLabel = '';
     // [^\s=]+ (avara/greedy, excluye espacios y "=") para que capture el
     // identificador completo de la combinación (p.ej. "H2") antes del "=";
@@ -24953,6 +25074,12 @@ function parseRamPaste(text){
       if (parts.length<2) continue;
       var idVal = colId>=0 ? parts[colId] : parts[0];
       if (String(idVal).trim().toLowerCase()==='sum') continue; // fila de control de equilibrio, no es un nodo
+      if (colCmb>=0 && parts[colCmb]){
+        var cr = String(parts[colCmb]).trim(), mc = /^([^\s=]+)\s*=\s*(.*)$/.exec(cr);
+        curCombo = mc ? mc[1] : cr; curLabel = cr;
+        if (!comboSeen[curCombo]){ comboSeen[curCombo]=true; comboLabels.push({id:curCombo, label:curLabel}); }
+      }
+      if (colFY>=0 && ramNum(parts[colFY])===null && (colFX<0 || ramNum(parts[colFX])===null)) continue; // fila sin números (títulos repetidos)
       rows.push({
         id: idVal, combo: curCombo, comboLabel: curLabel,
         FX: colFX>=0 ? (ramNum(parts[colFX])||0) : 0,
@@ -24997,6 +25124,53 @@ function parseRamPaste(text){
   var comboSet2 = {};
   rowsFlat.forEach(function(r){ if (r.combo) comboSet2[r.combo]=true; });
   return {rows:rowsFlat, format:'plano', combos:Object.keys(comboSet2), comboLabels:Object.keys(comboSet2).map(function(c){return {id:c,label:c};})};
+}
+/* ---- Lectura de un .xlsx (o .csv/.txt) de reacciones a texto tabulado ----
+   El .xlsx es un .zip con XML (ECMA-376): se lee con fmpUnzip y DOMParser,
+   todas las hojas en orden, una línea por fila y celdas separadas por
+   tabulación, para pasarlo al mismo parser de tablas de RAM (parseRamPaste)
+   que usan las zapatas. El .xls binario antiguo no se lee: guardarlo como .xlsx. */
+async function leerTablaArchivo(file) {
+  const nombre = (file && file.name || '').toLowerCase();
+  if (/\.(csv|txt|tsv)$/.test(nombre)) return await file.text();
+  if (/\.xls$/.test(nombre)) throw new Error('El formato .xls antiguo no se puede leer: ábralo en Excel y guárdelo como .xlsx.');
+  if (typeof fmpUnzip !== 'function') throw new Error('Lector de .zip no disponible.');
+  const arch = await fmpUnzip(await file.arrayBuffer());
+  const td = new TextDecoder('utf-8'), dp = new DOMParser();
+  const xml = n => arch[n] ? dp.parseFromString(td.decode(arch[n]), 'application/xml') : null;
+  const txt = el => Array.from(el.getElementsByTagName('t')).map(t => t.textContent).join('');
+  const ss = xml('sharedStrings.xml');
+  const shared = ss ? Array.from(ss.getElementsByTagName('si')).map(txt) : [];
+  const hojas = Object.keys(arch).filter(n => /^sheet\d+\.xml$/.test(n)).sort((a, b) => parseInt(a.slice(5)) - parseInt(b.slice(5)));
+  if (!hojas.length) throw new Error('El archivo no contiene hojas de Excel (.xlsx).');
+  const colIdx = ref => { const m = /^([A-Z]+)/.exec(ref || ''); if (!m) return -1; let n = 0; for (const ch of m[1]) n = n*26 + ch.charCodeAt(0) - 64; return n - 1; };
+  const lineas = [];
+  hojas.forEach(h => {
+    const doc = xml(h);
+    Array.from(doc.getElementsByTagName('row')).forEach(row => {
+      const celdas = [];
+      Array.from(row.getElementsByTagName('c')).forEach((c, k) => {
+        const i = c.getAttribute('r') ? colIdx(c.getAttribute('r')) : k;
+        const t = c.getAttribute('t'), v = c.getElementsByTagName('v')[0];
+        let val = '';
+        if (t === 's') val = v ? (shared[+v.textContent] || '') : '';
+        else if (t === 'inlineStr') { const is = c.getElementsByTagName('is')[0]; val = is ? txt(is) : ''; }
+        else val = v ? v.textContent : '';
+        celdas[i] = String(val).replace(/[\t\r\n]+/g, ' ').trim();
+      });
+      const linea = Array.from(celdas, x => x == null ? '' : x);
+      if (linea.some(x => x !== '')) lineas.push(linea.join('\t'));
+    });
+  });
+  return lineas.join('\n');
+}
+// Unidades declaradas en los encabezados de RAM («Forces [Ton]», «Moments [kN*m]»)
+function ramDetectarUnidades(text) {
+  const s = String(text || '');
+  const f = /\[\s*(tonf|ton|kgf|kn|kip)\s*\]/i.exec(s);
+  const m = /\[\s*(?:tonf?|kgf|kn|kip)\s*[*·.\-]\s*(m|cm|ft|in)\s*\]/i.exec(s);
+  const mapF = { ton: 'Tonf', tonf: 'Tonf', kgf: 'kgf', kn: 'kN', kip: 'kip' };
+  return { fuerza: f ? mapF[f[1].toLowerCase()] : null, long: m ? m[1].toLowerCase() : null };
 }
 // Convierte y mapea una fila ya parseada al set unificado que usan los tres
 // módulos: {id, combo, comboLabel, x, z, P, Mx, Mz, Vx, Vz}.
