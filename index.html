@@ -6067,6 +6067,34 @@ function renderPlacasBase(container) {
       cargas:{fc:state.fc, Fy:state.Fy, phiC:state.phiC, Pu:state.Pu, Mu:state.Mu, MuY:state.MuY, biax, A2:state.A2, prof}});
     const ver = pbVerifGeom({N:state.N, B:state.B, f:state.fLever, s:state.s, ca1:state.ca1, ca2:state.ca2, Dn:dimCol[0], tf:10*state.tfCol, tw:10*state.twCol}, prop);
     state._geo = { prop, ver, perfil: state.perfOrigen==='catalogo' ? state.perfil : 'Ingreso manual' };
+    // ---- valores sugeridos en las listas de ingreso, según las reglas normativas (pedido de ING, 02-11-2026) ----
+    {
+      const cm = v => +(v/10).toFixed(1), ok = v => isFinite(v) && v > 0;
+      const dl = (id, ops) => {
+        const el = document.getElementById(id); if (!el) return;
+        const vistos = new Set(), html = ops.filter(o => ok(o[0]) && !vistos.has(o[0]) && vistos.add(o[0]))
+          .map(o => `<option value="${o[0]}">${esc(o[1])}</option>`).join('');
+        if (html && el.innerHTML !== html) el.innerHTML = html;
+      };
+      const esCad = prop.modo === 'cad', dimN = state.shape==='H' ? 'd' : (state.shape==='Cajon' ? 'Hc' : 'D');
+      const reglaE = esCad ? 'e = máx(AISC 360-16 J3.4 + C2 ; 2·db)' : 'e = máx(perforación/2 + 12,7 ; golilla/2), AISC DG1';
+      const reglaC = esCad ? 'c = máx(golilla F436/2 + 3 ; tuerca/2 + 10 ; perforación/2 + 12)' : 'c = máx(golilla/2 ; tuerca/2) + filete AISC J2.4';
+      dl('dl_pb_N', [[cm(prop.N), `Propuesto: mínimo de reglas + aplastamiento/excentricidad (AISC DG1, ACI 318-19 §22.8)`],
+                     [cm(prop.Nmin), `Mínimo = ${dimN} + 2·(c + e); ${reglaE}`]]);
+      dl('dl_pb_B', [[cm(prop.B), `Propuesto: mínimo de reglas + aplastamiento/excentricidad (AISC DG1, ACI 318-19 §22.8)`],
+                     [cm(prop.Bmin), esCad ? 'Mínimo = 2·s + 2·ey (separación ACI 318-19 Tabla 17.9.2(a))' : 'Mínimo = máx(perfil + 2·filete ; (n−1)·s + 2·e)']]);
+      const tps = PB_ESP_PLACA.filter(x => x >= Math.max(prop.tpReq || 0, esCad ? (prop.tbDet || 0) : 0) - 1e-9).slice(0, 3);
+      dl('dl_pb_tp', tps.map((x, i) => [x, i === 0 ? `Plancha comercial ≥ tp requerido ${isFinite(prop.tpReq) ? fmt1(prop.tpReq) + ' mm' : ''} (AISC DG1, método del voladizo${esCad ? '; mín. de detalle máx(20 ; 1,2·tf)' : ''})` : 'Plancha comercial siguiente']));
+      dl('dl_pb_fLever', [[cm(prop.f), `f = ${dimN}/2 + c; ${reglaC}`]]);
+      dl('dl_pb_fLeverY', [[cm(prop.fy), 'f,y = eje de la placa a la fila de pernos, dirección B (geometría propuesta)']]);
+      const sAci = (state.torqueP === 'si' ? 6 : 4)*(+state.da_mm || 0);
+      dl('dl_pb_s', [[cm(prop.s), 'Separación de la geometría propuesta'],
+                     [cm(prop.sMin), `Mínimo = ${state.torqueP === 'si' ? '6' : '4'}·da${!esCad && prop.sMin > sAci + 0.5 ? ' (o golilla)' : ''} — ACI 318-19 Tabla 17.9.2(a)`]]);
+      const caOps = [[cm(6*(+state.da_mm || 0)), '6·da — mínimo con torque de pretensión, ACI 318-19 Tabla 17.9.2(a)'],
+                     [+(1.5*(+state.hef || 0)).toFixed(1), '1,5·hef — sin reducción por borde ψed,N = 1, ACI 318-19 §17.6.2.5.1'],
+                     [cm(Math.min(prop.e || prop.eMin || 0, prop.ey || prop.e || prop.eMin || 0)), 'Eje perno a borde de placa: pedestal no menor que la placa (apoyo completo, ACI 318-19 §22.8)']];
+      dl('dl_pb_ca1', caOps); dl('dl_pb_ca2', caOps);
+    }
     {
       const mm = v => isFinite(v) ? fmt1(v) + ' mm' : '—';
       const err = prop.errores.length ? `<div class="note" style="color:var(--bad)">${prop.errores.join(' ')}</div>` : '';
