@@ -5407,6 +5407,7 @@ function svgPlacasBase(state, geo, extra = {}) {
   // Planta (izquierda) y elevación lateral (derecha) a escala real común; las cargas van solo en la
   // elevación y las cotas fuera de la placa, para que no se superpongan símbolos ni textos.
   const prop = extra.prop || {}, cs = extra.cs || null;
+  const z = extra.esc || 1;                          // escala de textos grises y cotas (1,5 en el esquema lateral)
   const num = v => (isFinite(+v) ? +v : 0);
   const Nmm = Math.max(50, num(state.N)*10), Bmm = Math.max(50, num(state.B)*10);
   const f = num(state.fLever)*10, s = num(state.s)*10, da = Math.max(6, num(state.da_mm));
@@ -5434,7 +5435,7 @@ function svgPlacasBase(state, geo, extra = {}) {
   const tracc = momento && disp !== 'PB1' && geo && geo.casoMomentoGrande;
 
   // ---------------- PLANTA ----------------
-  const W = 800, k = Math.min(250/Nmm, 250/Bmm);           // px por mm, común a ambas vistas
+  const W = 800 + 40*(z - 1)*2, k = Math.min(250/Nmm, 250/Bmm);           // px por mm, común a ambas vistas
   const pcx = 190, pcy = 205;
   const X = u => pcx + u*k, Y = v => pcy - v*k;
   const px0 = X(-Bmm/2), px1 = X(Bmm/2), py0 = Y(Nmm/2), py1 = Y(-Nmm/2);
@@ -5484,7 +5485,7 @@ function svgPlacasBase(state, geo, extra = {}) {
   const vPedMax = Math.max(Nmm/2 + 40, (disp === 'PB1' ? 0 : f) + ca);
   const hl = Math.max(16, num(state.dEmb)*10*k + grP);
   const ped0 = EX(-vPedMax), ped1 = EX(vPedMax), yPedBot = yPed + Math.max(80, (conLlave ? hl - grP : 0) + 34);
-  const yLey = yPedBot + 58;
+  const yLey = yPedBot + 46 + 12*z;
   let elev = '';
   elev += `<rect x="${ped0}" y="${yPed}" width="${ped1-ped0}" height="${yPedBot-yPed}" fill="var(--surface-alt)" fill-opacity="0.55" stroke="var(--ink-muted)" stroke-width="1.2"/>`;
   elev += `<path d="M ${ped0-6} ${yPedBot} L ${ped1+6} ${yPedBot}" stroke="var(--ink-muted)" stroke-width="1" stroke-dasharray="10,4"/>`;
@@ -5536,30 +5537,30 @@ function svgPlacasBase(state, geo, extra = {}) {
     // títulos
     out += ESQ.text(pcx, 22, 'PLANTA', {bold: true, fontSize: 12});
     out += ESQ.text(ecx, 22, 'ELEVACIÓN LATERAL', {bold: true, fontSize: 12});
-    out += ESQ.note(ecx, 36, '(mirando en la dirección B)', {fontSize: 9.5, color: 'var(--ink-muted)'});
+    out += ESQ.note(ecx, 32 + 4*z, '(mirando en la dirección B)', {fontSize: 9.5*z, color: 'var(--ink-muted)'});
     // planta
     out += `<rect x="${px0}" y="${py0}" width="${px1-px0}" height="${py1-py0}" fill="var(--surface-alt)" fill-opacity="0.35" stroke="var(--ink)" stroke-width="2"/>`;
     out += `<line x1="${px0-10}" y1="${pcy}" x2="${px1+10}" y2="${pcy}" stroke="var(--ink-muted)" stroke-width="0.7" stroke-dasharray="8,3,2,3"/>
       <line x1="${pcx}" y1="${py0-10}" x2="${pcx}" y2="${py1+10}" stroke="var(--ink-muted)" stroke-width="0.7" stroke-dasharray="8,3,2,3"/>`;
     out += perfil + sillaPl + pernosPl;
-    out += ESQ.dim(m, px0-22, py1, px0-22, py0, `N = ${fmt1(state.N)} cm`, {labelOffset: -6, fontSize: 10.5});
-    out += ESQ.dim(m, px0, py1+22, px1, py1+22, `B = ${fmt1(state.B)} cm`, {labelOffset: 14, fontSize: 10.5});
-    if (disp !== 'PB1' && f > 0) out += ESQ.vdim(m, px1+16, Y(f), pcy, `f = ${fmt1(state.fLever)}`, {side: 'right', fontSize: 10});
-    if (sTop.length > 1 && s > 0) out += ESQ.dim(m, X(sTop[0]), py0-14, X(sTop[1]), py0-14, `s = ${fmt1(state.s)}`, {labelOffset: -5, fontSize: 10});
-    out += ESQ.note(px1+6, pcy+13, 'x', {anchor: 'start', fontSize: 10, color: 'var(--ink-muted)'});
-    out += ESQ.note(pcx+5, py1+12, 'y', {anchor: 'start', fontSize: 10, color: 'var(--ink-muted)'});
+    out += ESQ.dim(m, px0-22, py1, px0-22, py0, `N = ${fmt1(state.N)} cm`, {labelOffset: -6*z, fontSize: 10.5*z});
+    out += ESQ.dim(m, px0, py1+22, px1, py1+22, `B = ${fmt1(state.B)} cm`, {labelOffset: 14*z, fontSize: 10.5*z});
+    if (disp !== 'PB1' && f > 0) out += ESQ.vdim(m, px1+16, Y(f), pcy, `f = ${fmt1(state.fLever)}`, {side: 'right', fontSize: 10*z});
+    if (sTop.length > 1 && s > 0) out += ESQ.dim(m, X(sTop[0]), py0-14, X(sTop[1]), py0-14, `s = ${fmt1(state.s)}`, {labelOffset: -5*z, fontSize: 10*z});
+    out += ESQ.note(px1+6, pcy+13*z, 'x', {anchor: 'start', fontSize: 10*z, color: 'var(--ink-muted)'});
+    out += ESQ.note(pcx+5, py1-5, 'y', {anchor: 'start', fontSize: 10*z, color: 'var(--ink-muted)'});
     // elevación
     out += elev;
-    out += ESQ.dim(m, EX(-Nmm/2), yPedBot+24, EX(Nmm/2), yPedBot+24, `N = ${fmt1(state.N)} cm`, {labelOffset: -5, fontSize: 10.5});
+    out += ESQ.dim(m, EX(-Nmm/2), yPedBot+24, EX(Nmm/2), yPedBot+24, `N = ${fmt1(state.N)} cm`, {labelOffset: -5*z, fontSize: 10.5*z});
     const xL = EX(-vPedMax) - 6;
-    out += ESQ.note(xL, yPl + tpP/2 + 3.5, `tp ${fmt1(tp)} mm`, {anchor: 'end', fontSize: 9.5, color: 'var(--ink)'});
-    if (grP > 0) out += ESQ.note(xL, yPl + tpP + grP + 10, `mortero ${fmt1(gr)} mm`, {anchor: 'end', fontSize: 9.5, color: 'var(--ink-muted)'});
+    out += ESQ.note(xL, yPl + tpP/2 + 3.5*z, `tp ${fmt1(tp)} mm`, {anchor: 'end', fontSize: 9.5*z, color: 'var(--ink)'});
+    if (grP > 0) out += ESQ.note(xL, Math.max(yPl + tpP + grP + 10*z, yPl + tpP/2 + 3.5*z + 13*z), `mortero ${fmt1(gr)} mm`, {anchor: 'end', fontSize: 9.5*z, color: 'var(--ink-muted)'});
     if (sillaOk) {
       const xs = EX(sillaV) + 14;
-      out += ESQ.vdim(m, xs, yPl - LcP, yPl, `Lc ${fmt1(Lc)}`, {side: 'right', fontSize: 9.5});
+      out += ESQ.vdim(m, xs, yPl - LcP, yPl, `Lc ${fmt1(Lc)}`, {side: 'right', fontSize: 9.5*z});
       out += ESQ.note(xs + 4, yTopSilla - 4, 'silla', {anchor: 'start', fontSize: 10, color: 'var(--accent)'});
     }
-    if (conLlave) out += ESQ.note(EX(0), yPl + tpP + hl + 13, 'llave de corte', {fontSize: 9.5, color: 'var(--ink-muted)'});
+    if (conLlave) out += ESQ.note(EX(0), yPl + tpP + hl + 13*z, 'llave de corte', {fontSize: 9.5*z, color: 'var(--ink-muted)'});
     // cargas
     out += ESQ.arrow(m, xc, yCol - 40, 90, 32, `Pu = ${fmt2(state.Pu)} T`, {labelDx: 8, labelDy: -22, fontSize: 11});
     if (momento) {
@@ -5575,9 +5576,9 @@ function svgPlacasBase(state, geo, extra = {}) {
     // leyenda
     const tipo = disp === 'filas' ? `${nTot} pernos en 2 filas de ${nFila}` : `${disp} — ${nTot} pernos${disp === 'PB1' ? ' (1 a cada lado del alma)' : ` (${nFila} por lado)`}`;
     out += ESQ.text(W/2, yLey, `${tipo} · perno ${ancla} · ${conSilla ? `con silla (Lc = ${fmt1(Lc)} mm)` : 'sin silla'}${conLlave ? ' · llave de corte' : ''}`, {fontSize: 11.5, bold: true});
-    out += ESQ.note(W/2, yLey + 18, `${state.tipoApoyo === 'Articulado' ? 'Base articulada' : 'Base empotrada'}${tracc ? ' · pernos en tracción en color' : ''} · m = ${fmt2(geo.m)} cm · n = ${fmt2(geo.n)} cm`, {fontSize: 10, color: 'var(--ink-muted)'});
+    out += ESQ.note(W/2, yLey + 8 + 10*z, `${state.tipoApoyo === 'Articulado' ? 'Base articulada' : 'Base empotrada'}${tracc ? ' · pernos en tracción en color' : ''} · m = ${fmt2(geo.m)} cm · n = ${fmt2(geo.n)} cm`, {fontSize: 10*z, color: 'var(--ink-muted)'});
     return out;
-  }, {viewBox: `0 0 ${W} ${Math.max(470, yLey + 30)}`, maxWidth: 800, aria: 'Planta y elevación lateral de la placa base: perfil, pernos de anclaje, silla, llave de corte, cotas y cargas'});
+  }, {viewBox: `0 0 ${W} ${Math.max(470, yLey + 20 + 10*z)}`, maxWidth: W, aria: 'Planta y elevación lateral de la placa base: perfil, pernos de anclaje, silla, llave de corte, cotas y cargas'});
 }
 
 function renderPlacasBase(container) {
@@ -6206,7 +6207,12 @@ function renderPlacasBase(container) {
       </table>`;
 
     const cs = calcCorteSilla({fc:state.fc, Pu:state.Pu, Vu:state.Vu, mu:state.mu, phiFriccion:state.phiFriccion, w:state.w, dEmb:state.dEmb, g:state.g});
-    document.getElementById('pb_esquema').innerHTML = svgPlacasBase(state, g, { prop: state._geo ? state._geo.prop : null, cs });
+    {
+      const esqEl = document.getElementById('pb_esquema'), xq = { prop: state._geo ? state._geo.prop : null, cs };
+      esqEl.innerHTML = svgPlacasBase(state, g, xq);
+      // esquema lateral (flotante): textos grises y cotas 50 % más grandes (pedido de ING, 02-11-2026)
+      esqEl.dataset.esqLateral = svgPlacasBase(state, g, Object.assign({ esc: 1.5 }, xq));
+    }
     document.getElementById('pb_corteSilla').innerHTML = `
       <table class="results">
         <tr><td>φVn = φ·μ·Pu — capacidad por fricción</td><td class="num">${fmt2(cs.phiVnFriccion)} Ton</td><td>${chip(cs.okFriccion,'CUMPLE — no requiere silla','NO CUMPLE — requiere silla')}</td></tr>
@@ -53694,7 +53700,7 @@ route();
   }
   function sync(){
     srcs = fuentes();
-    var html = srcs.map(function(el){ return el.innerHTML; }).join('');
+    var html = srcs.map(function(el){ return el.dataset.esqLateral || el.innerHTML; }).join('');
     if (html !== lastHtml) { lastHtml = html; body.innerHTML = html; }
     colocar();
   }
