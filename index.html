@@ -42524,6 +42524,15 @@ function spTorque(g, d) {
   const Tmax = 0.25*Tm*d.db/1000;                              // tonf·m
   return { aplica:true, TmKip, Tm, TmkN: TmKip*4.4482216, Tmax, TmaxNm: Tmax*9806.65, TmaxFtLb: 0.25*TmKip*1000*(d.db/25.4)/12 };
 }
+// Tipo de unión: define si corresponde pretensión/torque. Sólo la unión acero-acero tiene pretensión
+// normativa (AISC 360 Tabla J3.1 / RCSC); madera y hormigón no tienen torque tabulado por norma.
+const SP_UNION = [
+  { v:'acero', label:'Acero – acero (planchas, perfiles, gussets)' },
+  { v:'aceroMadera', label:'Acero – madera (plancha o herraje sobre madera)', txt:'Unión acero–madera: no corresponde torque de pretensión. La madera no admite pretensión permanente (se pierde por contracción y fluencia lenta, y el apriete excesivo aplasta las fibras); los pernos se aprietan sólo hasta contacto firme (ajustado, sin aplastar la madera), con golilla o plancha metálica entre la madera y la tuerca/cabeza (práctica AWC NDS / AITC para pernos en madera). Revisar y reapretar tras el secado de la madera. El torque de la tabla de acero no se aplica.' },
+  { v:'maderaMadera', label:'Madera – madera', txt:'Unión madera–madera: no corresponde torque de pretensión. Los pernos se aprietan sólo hasta contacto firme (ajustado, sin aplastar la madera), con golilla en ambas caras entre la madera y la tuerca/cabeza (práctica AWC NDS / AITC para pernos en madera). La tensión del perno se pierde con la contracción de la madera: revisar y reapretar tras el secado. El torque de la tabla de acero no se aplica.' },
+  { v:'hormigonPre', label:'Perno o inserto preinstalado (embebido) en hormigón', txt:'Perno o inserto embebido en hormigón: por defecto se aprieta sólo ajustado (snug-tight); la mayoría de las placas base no requieren pretensión (Manual AISC, Parte 14) y los requisitos de pretensión del RCSC no se aplican a varillas de anclaje (AISC FAQ 7.1.1). Si el diseño exige pretensión, debe especificarse en el proyecto (varilla desadherida o con camisa, pérdidas por fluencia lenta, giro de tuerca o torque de verificación del proyecto). La tabla de acero no se aplica.' },
+  { v:'hormigonPost', label:'Anclaje post-instalado en hormigón (expansión o químico)', txt:'Anclaje post-instalado: el torque de instalación Tinst es el de las instrucciones impresas del fabricante (MPII) y de su evaluación ICC-ES/ETA para ese anclaje, diámetro y hormigón; ACI 318-19 §26.7.2 exige instalarlo según esas instrucciones. No se debe usar el torque de la tabla de pernos de acero. Ver la planilla «Selector de Anclajes Hilti».' },
+];
 const SP_TIPO_USO = [
   { v:'corteSimple_N', label:'Corte simple (1 plano) — rosca incluida en el plano de corte (N)' },
   { v:'corteSimple_X', label:'Corte simple (1 plano) — rosca excluida del plano de corte (X)' },
@@ -42536,6 +42545,7 @@ const SP_TIPO_USO = [
 
 function calcSeleccionPernos(inp) {
   const { gradoIdx, diamIdx, tipoUso, Vu, Tu, nPernos } = inp;
+  const union = SP_UNION.find(u => u.v === inp.tipoUnion) || SP_UNION[0];
   const g = SP_GRADO[gradoIdx] || SP_GRADO[0], d = SP_DIAM[diamIdx] || SP_DIAM[0];
   const db = d.db, dh = db + 2;
   const Ab = Math.PI/4*Math.pow(db/10, 2); // cm²
@@ -42615,11 +42625,11 @@ function calcSeleccionPernos(inp) {
   if (g.dMaxIncl != null && db > g.dMaxIncl + EPS) fueraDeRango = true;
   if (g.dMinExcl != null && db <= g.dMinExcl + EPS) fueraDeRango = true;
 
-  const tq = spTorque(g, d);
-  const tqTxt = tq.aplica
+  const tq = union.v === 'acero' ? spTorque(g, d) : { aplica:false };
+  const tqTxt = union.v !== 'acero' ? union.txt : tq.aplica
     ? `Torque máximo T = 0.25·Tm·db = 0.25 × ${fmt2(tq.Tm)} tonf × ${fmt2(db)} mm = ${fmt3(tq.Tmax)} tonf·m = ${fmt0(tq.TmaxNm)} N·m (${fmt1(tq.Tmax*1000)} kgf·m; ${fmt0(tq.TmaxFtLb)} lb·ft). Pretensión mínima Tm = ${tq.TmKip} kips = ${fmt2(tq.Tm)} tonf, Grupo ${g.grupo} (AISC 360-16 Tabla J3.1 / RCSC 2020 Tabla 5.2). Límite T ≤ 0.25·P·D del ensayo de capacidad rotacional de pernos de alta resistencia (FHWA; procedimiento de los DOT adaptado de ASTM F3125-23 Apéndice X2), evaluado con P = Tm. Es un límite superior del conjunto perno-tuerca-arandela, no un torque de instalación: AISC/RCSC no aceptan tablas de torque; si se instala con llave calibrada, el torque se determina por calibración diaria del lote (RCSC 2020 §8.2.2).` + (g.tc ? ' En pernos twist-off la tensión la controla la rotura del extremo ranurado.' : '')
     : `No aplica torque normativo: AISC 360-16 Tabla J3.1 no asigna pretensión mínima a ${g.label}; se instala sólo con apriete ajustado (snug-tight, AISC 360-16 J3.1 / RCSC 2020 §8.1). Ninguna norma de diseño estructural fija un torque para esta calidad.`;
-  return { tq, tqTxt, Tm: tq.aplica ? tq.Tm : null, Tmax: tq.aplica ? tq.Tmax : null, TmaxNm: tq.aplica ? tq.TmaxNm : null,
+  return { union, unionTxt: union.label, tq, tqTxt, Tm: tq.aplica ? tq.Tm : null, Tmax: tq.aplica ? tq.Tmax : null, TmaxNm: tq.aplica ? tq.TmaxNm : null,
     db, dh, Ab, Fnv, Fnt, planos, phi, Omega, esX, esCorteSimple, esCorteDoble, esCorte, esTraccion, esCombinado,
     smin, spref, LcMin, pesoLineal, RnV, phiRnV, RnV_asd, RnT, phiRnT, RnT_asd,
     nB, VuPerno, TuPerno, okCorte_LRFD, okCorte_ASD, rCorte_L, rCorte_A, okTrac_LRFD, okTrac_ASD, rTrac_L, rTrac_A,
@@ -42775,6 +42785,7 @@ function spDatosHtml(state, r) {
     <table class="xlsx-table"><tbody>
       ${row('Calidad del perno', grado.label + ' — ' + grado.obs)}
       ${row('Diámetro nominal disponible', diam.label)}
+      ${row('Tipo de unión', (SP_UNION.find(u => u.v === state.tipoUnion) || SP_UNION[0]).label)}
       ${row('Tipo de uso / solicitación sobre el perno', tipo.label)}
       ${r && r.fueraDeRango ? row('ATENCIÓN', `El diámetro ${diam.label} no corresponde al tramo de diámetros de "${grado.label}". Verifique que corresponda al tramo real antes de usar estos valores.`) : ''}
     </tbody></table>
@@ -42839,7 +42850,8 @@ const SP_CALC_SECTIONS = [
     { t: 'chk', label: 'Largo suficiente: rosca sobresale ≥ 3 mm de la tuerca', estL: 'okLargo', forceNA: true },
     { t: 'chk', label: 'La rosca alcanza la tuerca completa (apriete posible)', estL: 'okRoscaApriete', forceNA: true },
   ]},
-  { num: '7', title: 'PRETENSIÓN MÍNIMA Y TORQUE MÁXIMO DE APRIETE (AISC 360-16 Tabla J3.1; T ≤ 0.25·P·D)', hdrDE: false, rows: [
+  { num: '7', title: 'PRETENSIÓN Y TORQUE DE APRIETE SEGÚN TIPO DE UNIÓN', hdrDE: false, rows: [
+    { t: 'text', label: 'Tipo de unión', f: 'unionTxt' },
     { t: 'var1', label: 'Tm — pretensión mínima del perno, AISC 360-16 Tabla J3.1 (tonf)', f: 'Tm', d: 2 },
     { t: 'var1', label: 'T,máx — torque máximo = 0.25·Tm·db (tonf·m)', f: 'Tmax', d: 3 },
     { t: 'var1', label: 'T,máx — torque máximo (N·m)', f: 'TmaxNm', d: 0 },
@@ -42866,7 +42878,7 @@ function buildPrintSheetsSeleccionPernos(state, r) {
    UI — SELECCIÓN DE PERNOS ESTRUCTURALES
    ========================================================================= */
 function renderSeleccionPernos(container) {
-  const state = { gradoIdx:1, diamIdx:4, tipoUso:'corteSimple_N', Vu:10, Tu:0, nPernos:2 };
+  const state = { gradoIdx:1, diamIdx:4, tipoUnion:'acero', tipoUso:'corteSimple_N', Vu:10, Tu:0, nPernos:2 };
 
   container.innerHTML = `
     <div class="calc-head">
@@ -42879,6 +42891,7 @@ function renderSeleccionPernos(container) {
       <div class="field-grid">
         <div class="field"><label>Calidad del perno</label><select id="sp_grado">${cdOptions(SP_GRADO, state.gradoIdx)}</select></div>
         <div class="field"><label>Diámetro nominal disponible</label><select id="sp_diam">${cdOptions(SP_DIAM, state.diamIdx)}</select></div>
+        <div class="field" style="grid-column:1/-1"><label>Tipo de unión (define la pretensión y el torque)</label><select id="sp_union">${SP_UNION.map(u=>`<option value="${u.v}" ${u.v===state.tipoUnion?'selected':''}>${u.label}</option>`).join('')}</select></div>
         <div class="field" style="grid-column:1/-1"><label>Tipo de uso / solicitación sobre el perno</label><select id="sp_tipoUso">${SP_TIPO_USO.map(t=>`<option value="${t.v}" ${t.v===state.tipoUso?'selected':''}>${t.label}</option>`).join('')}</select></div>
         <div class="field"><label>t1 — espesor plancha 1, lado de la cabeza (mm)</label><input type="text" inputmode="decimal" id="sp_t1" value="0" list="dl_sp_t"></div>
         <div class="field"><label>t2 — espesor plancha 2 (mm)</label><input type="text" inputmode="decimal" id="sp_t2" value="0" list="dl_sp_t"></div>
@@ -42916,7 +42929,7 @@ function renderSeleccionPernos(container) {
     </div>
 
     <div class="panel">
-      <h3>6 · Pretensión mínima y torque máximo de apriete</h3>
+      <h3>6 · Pretensión y torque de apriete según tipo de unión</h3>
       <div id="sp_torque"></div>
     </div>
 
@@ -42954,6 +42967,7 @@ function renderSeleccionPernos(container) {
     state.gradoIdx = parseInt(document.getElementById('sp_grado').value, 10)||0;
     state.diamIdx = parseInt(document.getElementById('sp_diam').value, 10)||0;
     state.tipoUso = document.getElementById('sp_tipoUso').value;
+    state.tipoUnion = document.getElementById('sp_union').value;
     state.Vu = parseFloat(document.getElementById('sp_Vu').value)||0;
     state.Tu = parseFloat(document.getElementById('sp_Tu').value)||0;
     state.nPernos = parseFloat(document.getElementById('sp_nPernos').value)||0;
@@ -42964,7 +42978,7 @@ function renderSeleccionPernos(container) {
   function recalc() {
     readState();
     actualizarVisibilidad();
-    const r = calcSeleccionPernos({ gradoIdx: state.gradoIdx, diamIdx: state.diamIdx, tipoUso: state.tipoUso, Vu: state.Vu, Tu: state.Tu, nPernos: state.nPernos });
+    const r = calcSeleccionPernos({ gradoIdx: state.gradoIdx, diamIdx: state.diamIdx, tipoUnion: state.tipoUnion, tipoUso: state.tipoUso, Vu: state.Vu, Tu: state.Tu, nPernos: state.nPernos });
     actualizarAvisoRango(r);
     const G = spGeometria(state, r);
     Object.assign(r, {geoIngresado: G.ingresado, grip: G.ingresado ? G.g : null, Lcom: G.ingresado ? G.L : null,
