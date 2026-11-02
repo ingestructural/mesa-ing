@@ -5403,55 +5403,181 @@ function buildPrintSheetsPlacasBase(state, g, cs, anc) {
 }
 
 /* ---- esquema — planta de la placa base con el perfil, cotas m/n, pernos y cargas ---- */
-function svgPlacasBase(state, geo) {
-  const cx=210, cy=180;
-  const halfN = Math.min(120, Math.max(40, state.N*1.4));
-  const halfB = Math.min(120, Math.max(40, state.B*1.4));
-  const x0=cx-halfB, x1=cx+halfB, y0=cy-halfN, y1=cy+halfN;
-  let profShape = '';
-  let hbH = 0; // media-ancho del ala del perfil H, usado también para ubicar los pernos a cada lado del alma
-  if (state.shape==='H') {
-    const hd=Math.min(halfN*0.8, state.d*1.4)/2, hb=Math.min(halfB*0.8, state.bf*1.4)/2, tf=6;
-    hbH = hb;
-    profShape = `<rect x="${cx-hb}" y="${cy-hd}" width="${2*hb}" height="${tf}" fill="var(--ink)"/>
-      <rect x="${cx-hb}" y="${cy+hd-tf}" width="${2*hb}" height="${tf}" fill="var(--ink)"/>
-      <rect x="${cx-3}" y="${cy-hd}" width="6" height="${2*hd}" fill="var(--ink)"/>`;
-  } else if (state.shape==='Cajon') {
-    const hh=Math.min(halfN*0.8, state.Hc*1.4)/2, hb=Math.min(halfB*0.8, state.Bc*1.4)/2;
-    profShape = `<rect x="${cx-hb}" y="${cy-hh}" width="${2*hb}" height="${2*hh}" fill="none" stroke="var(--ink)" stroke-width="5"/>`;
+function svgPlacasBase(state, geo, extra = {}) {
+  // Planta (izquierda) y elevación lateral (derecha) a escala real común; las cargas van solo en la
+  // elevación y las cotas fuera de la placa, para que no se superpongan símbolos ni textos.
+  const prop = extra.prop || {}, cs = extra.cs || null;
+  const num = v => (isFinite(+v) ? +v : 0);
+  const Nmm = Math.max(50, num(state.N)*10), Bmm = Math.max(50, num(state.B)*10);
+  const f = num(state.fLever)*10, s = num(state.s)*10, da = Math.max(6, num(state.da_mm));
+  const shape = state.shape;
+  const disp = shape === 'H' && /^PB[123]$/.test(state.dispP || '') ? state.dispP : 'filas';
+  // perfil en mm: dimensión en dirección N (dn), en dirección B (db) y espesores
+  const dn = shape === 'H' ? num(state.d)*10 : shape === 'Cajon' ? num(state.Hc)*10 : num(state.D)*10;
+  const dbP = shape === 'H' ? num(state.bf)*10 : shape === 'Cajon' ? num(state.Bc)*10 : num(state.D)*10;
+  const tf = shape === 'H' ? num(state.tfCol)*10 : num(state.tCol)*10, tw = shape === 'H' ? num(state.twCol)*10 : num(state.tCol)*10;
+  // pernos (coordenadas en mm; u = dirección B, v = dirección N, v > 0 hacia arriba en planta)
+  let pts = [], nFila = 0;
+  if (disp === 'PB3') { nFila = 3; [-f, f].forEach(v => [-s, 0, s].forEach(u => pts.push([u, v]))); }
+  else if (disp === 'PB2') { nFila = 2; [-f, f].forEach(v => [-s/2, s/2].forEach(u => pts.push([u, v]))); }
+  else if (disp === 'PB1') { nFila = 1; pts = [[-s/2, 0], [s/2, 0]]; }
+  else { nFila = Math.max(1, Math.floor(num(state.nTotP)/2)); [-f, f].forEach(v => { for (let i = 0; i < nFila; i++) pts.push([(i - (nFila-1)/2)*s, v]); }); }
+  const nTot = pts.length;
+  const conSilla = disp === 'PB3' || disp === 'PB2' || (disp === 'filas' && state.n69 !== 'no' && state.n69Sol === 'silla');
+  const sillaV = Math.min(Nmm/2, f + (f - dn/2)), sillaOk = conSilla && disp !== 'PB1' && sillaV > dn/2 + 5;
+  const conLlave = disp === 'PB3' || disp === 'PB2' || (cs && cs.okFriccion === false);
+  const tc = prop.modo === 'cad' && prop.tc ? prop.tc : Math.max(16, da/2);
+  const Lc = conSilla ? (prop.modo === 'cad' && prop.hs ? prop.hs : Math.max(num(state.n69Lc), 250, 8*da)) : 0;
+  const ancla = prop.ancla || (fmt1(da) + ' mm');
+  const tp = Math.max(1, num(state.tp_mm)), gr = Math.max(0, num(state.g)*10);
+  const momento = state.tipoApoyo !== 'Articulado' && num(state.Mu) > 0;
+  const tracc = momento && disp !== 'PB1' && geo && geo.casoMomentoGrande;
+
+  // ---------------- PLANTA ----------------
+  const W = 800, k = Math.min(250/Nmm, 250/Bmm);           // px por mm, común a ambas vistas
+  const pcx = 190, pcy = 205;
+  const X = u => pcx + u*k, Y = v => pcy - v*k;
+  const px0 = X(-Bmm/2), px1 = X(Bmm/2), py0 = Y(Nmm/2), py1 = Y(-Nmm/2);
+  const tpx = v => Math.max(2, v*k);
+  let perfil = '';
+  if (shape === 'H') {
+    const hb = dbP/2, hd = dn/2;
+    perfil = `<rect x="${X(-hb)}" y="${Y(hd)}" width="${dbP*k}" height="${tpx(tf)}" fill="var(--ink)"/>
+      <rect x="${X(-hb)}" y="${Y(-hd) - tpx(tf)}" width="${dbP*k}" height="${tpx(tf)}" fill="var(--ink)"/>
+      <rect x="${X(0) - tpx(tw)/2}" y="${Y(hd)}" width="${tpx(tw)}" height="${dn*k}" fill="var(--ink)"/>`;
+  } else if (shape === 'Cajon') {
+    perfil = `<rect x="${X(-dbP/2) + tpx(tf)/2}" y="${Y(dn/2) + tpx(tf)/2}" width="${dbP*k - tpx(tf)}" height="${dn*k - tpx(tf)}" fill="none" stroke="var(--ink)" stroke-width="${tpx(tf)}"/>`;
   } else {
-    const rad=Math.min(halfN*0.8, halfB*0.8, state.D*1.4/2);
-    profShape = `<circle cx="${cx}" cy="${cy}" r="${rad}" fill="none" stroke="var(--ink)" stroke-width="5"/>`;
+    perfil = `<circle cx="${pcx}" cy="${pcy}" r="${dn*k/2 - tpx(tf)/2}" fill="none" stroke="var(--ink)" stroke-width="${tpx(tf)}"/>`;
   }
-  const esArticulado = state.tipoApoyo === 'Articulado';
-  // En H articulado, los pernos no van arriba/abajo sobre el alma: van uno a cada lado del alma
-  // (separados horizontalmente, cerca del eje), ya que la conexión articulada no requiere pernos
-  // alineados con el alma para transmitir momento.
-  const boltOffsetH = Math.max(14, Math.min(hbH*0.7 || 30, halfB-14));
-  const bolts = esArticulado
-    ? (state.shape==='H' ? [[cx-boltOffsetH,cy],[cx+boltOffsetH,cy]] : [[cx,y0+16],[cx,y1-16]])
-    : [[x0+16,y0+16],[x1-16,y0+16],[x0+16,y1-16],[x1-16,y1-16]];
-  const tensionSide = geo.casoMomentoGrande;
-  return ESQ.svg(m => `
-    <rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="var(--surface-alt)" fill-opacity="0.35" stroke="var(--ink)" stroke-width="2.5"/>
-    ${profShape}
-    ${bolts.map(([bx,by],i) => `<circle cx="${bx}" cy="${by}" r="6" fill="none" stroke="${tensionSide && by<cy ? 'var(--accent-warm)':'var(--ink-muted)'}" stroke-width="2"/>`).join('')}
-    ${ESQ.dim(m, x0-26,y0, x0-26,y1, `N=${fmt1(state.N)} cm`, {labelOffset:-6})}
-    ${ESQ.dim(m, x0,y1+26, x1,y1+26, `B=${fmt1(state.B)} cm`, {labelOffset:-8})}
-    ${ESQ.note(x0+18, y0-20, `m=${fmt2(geo.m)}`, {anchor:'start', fontSize:10.5})}
-    ${ESQ.note(x0-40, cy, `n=${fmt2(geo.n)}`, {anchor:'end', fontSize:10.5})}
-    ${ESQ.arrow(m, cx, y0-40, 90, 34, `Pu=${fmt2(state.Pu)} T`, {labelDx:8, labelDy:4})}
-    <path d="M ${cx+30} ${y0-6} A 18 18 0 1 1 ${cx+30} ${y0-42}" fill="none" stroke="var(--accent-warm)" stroke-width="2.2" marker-end="url(#${m.load})"/>
-    ${ESQ.text(cx+40, y0-20, `${state.biaxial === 'Si' ? 'Mux' : 'Mu'}=${fmt2(state.Mu)} T·m`, {color:'var(--accent-warm)', bold:true, fontSize:12, anchor:'start'})}
-    <line x1="${x0-8}" y1="${cy}" x2="${x1+8}" y2="${cy}" stroke="var(--ink-muted)" stroke-width="0.8" stroke-dasharray="8,3,2,3"/>
-    <line x1="${cx}" y1="${y0-8}" x2="${cx}" y2="${y1+8}" stroke="var(--ink-muted)" stroke-width="0.8" stroke-dasharray="8,3,2,3"/>
-    ${ESQ.note(x1+10, cy+4, 'x', {anchor:'start', fontSize:10.5, color:'var(--ink-muted)'})}
-    ${ESQ.note(cx+5, y1-5, 'y', {anchor:'start', fontSize:10.5, color:'var(--ink-muted)'})}
-    ${ESQ.arrow(m, x1+42, cy-38, 90, 40, `Vu=${fmt2(state.Vu)} T`, {labelDx:8, labelDy:0})}
-    ${ESQ.note(x1+48, cy+22, '(dir. eje fuerte)', {anchor:'start', fontSize:9, color:'var(--ink-muted)'})}
-    ${state.biaxial === 'Si' ? ESQ.text(x1+10, y1-8, `Muy=${fmt2(state.MuY)} T·m`, {color:'var(--accent-warm)', bold:true, fontSize:11, anchor:'start'}) : ''}
-    ${geo.casoMomentoGrande ? ESQ.note(cx, y1+48, `Y=${fmt1(geo.Y)} cm (zona apoyo) · Tu=${fmt2(geo.Tu)} T`, {fontSize:10.5}) : ESQ.note(cx, y1+48, `e=${fmt2(geo.e)} cm (momento pequeño)`, {fontSize:10.5})}
-  `, {viewBox:'0 40 500 340', maxWidth:480, aria:'Planta de la placa base con el perfil, dimensiones m/n, pernos de anclaje y cargas Pu/Vu/Mu'});
+  // silla en planta (placa superior, línea segmentada) sobre cada fila
+  let sillaPl = '';
+  if (sillaOk) {
+    const us = pts.map(p => p[0]), uMin = Math.min(...us), uMax = Math.max(...us);
+    const ext = Math.max(da*1.5, 30);
+    const a0 = Math.max(-Bmm/2, uMin - ext), a1 = Math.min(Bmm/2, uMax + ext);
+    [1, -1].forEach(sg => {
+      const vIn = dn/2, vOut = sillaV;
+      sillaPl += `<rect x="${X(a0)}" y="${sg > 0 ? Y(vOut) : Y(-vIn)}" width="${(a1-a0)*k}" height="${(vOut - vIn)*k}" fill="none" stroke="var(--accent)" stroke-width="1.4" stroke-dasharray="5,3"/>`;
+    });
+  }
+  const rB = Math.max(3.2, da/2*k);
+  const pernosPl = pts.map(([u, v]) => {
+    const col = tracc && v > 0 ? 'var(--accent-warm)' : 'var(--ink)';
+    return `<circle cx="${X(u)}" cy="${Y(v)}" r="${rB}" fill="var(--surface)" stroke="${col}" stroke-width="1.8"/>
+      <line x1="${X(u)-rB-2}" y1="${Y(v)}" x2="${X(u)+rB+2}" y2="${Y(v)}" stroke="${col}" stroke-width="0.7"/>
+      <line x1="${X(u)}" y1="${Y(v)-rB-2}" x2="${X(u)}" y2="${Y(v)+rB+2}" stroke="${col}" stroke-width="0.7"/>`;
+  }).join('');
+  // cotas de planta (todas fuera de la placa)
+  const sTop = pts.filter(p => p[1] === Math.max(...pts.map(q => q[1]))).map(p => p[0]).sort((a, b) => a - b);
+
+  // ---------------- ELEVACIÓN LATERAL (mirando en la dirección B; horizontal = N) ----------------
+  const ecx = 585;
+  const EX = v => ecx + v*k;
+  const yPl = 300;                                   // cara superior de la placa base
+  const tpP = Math.max(3, tp*k), grP = Math.max(gr > 0 ? 3 : 0, gr*k);
+  const yPed = yPl + tpP + grP;                     // cara superior del pedestal
+  const LcP = conSilla ? Math.min(130, Math.max(28, Lc*k)) : 0, tcP = conSilla ? Math.max(3, tc*k) : 0;
+  const yTopSilla = yPl - LcP - tcP;
+  const yCol = Math.min(yTopSilla, yPl) - 60;        // corte superior de la columna
+  const ca = Math.max(num(state.ca1)*10, 50);
+  const vPedMax = Math.max(Nmm/2 + 40, (disp === 'PB1' ? 0 : f) + ca);
+  const hl = Math.max(16, num(state.dEmb)*10*k + grP);
+  const ped0 = EX(-vPedMax), ped1 = EX(vPedMax), yPedBot = yPed + Math.max(80, (conLlave ? hl - grP : 0) + 34);
+  const yLey = yPedBot + 58;
+  let elev = '';
+  elev += `<rect x="${ped0}" y="${yPed}" width="${ped1-ped0}" height="${yPedBot-yPed}" fill="var(--surface-alt)" fill-opacity="0.55" stroke="var(--ink-muted)" stroke-width="1.2"/>`;
+  elev += `<path d="M ${ped0-6} ${yPedBot} L ${ped1+6} ${yPedBot}" stroke="var(--ink-muted)" stroke-width="1" stroke-dasharray="10,4"/>`;
+  if (grP > 0) elev += `<rect x="${EX(-Nmm/2)}" y="${yPl+tpP}" width="${Nmm*k}" height="${grP}" fill="var(--ink-muted)" fill-opacity="0.25"/>`;
+  elev += `<rect x="${EX(-Nmm/2)}" y="${yPl}" width="${Nmm*k}" height="${tpP}" fill="var(--ink)" fill-opacity="0.85"/>`;
+  // columna
+  if (shape === 'H') {
+    elev += `<rect x="${EX(-dn/2)}" y="${yCol}" width="${dn*k}" height="${yPl-yCol}" fill="var(--surface-alt)" fill-opacity="0.6"/>
+      <rect x="${EX(-dn/2)}" y="${yCol}" width="${tpx(tf)}" height="${yPl-yCol}" fill="var(--ink)"/>
+      <rect x="${EX(dn/2)-tpx(tf)}" y="${yCol}" width="${tpx(tf)}" height="${yPl-yCol}" fill="var(--ink)"/>`;
+  } else {
+    elev += `<rect x="${EX(-dn/2)}" y="${yCol}" width="${dn*k}" height="${yPl-yCol}" fill="var(--surface-alt)" fill-opacity="0.35"/>
+      <rect x="${EX(-dn/2)}" y="${yCol}" width="${tpx(tf)}" height="${yPl-yCol}" fill="var(--ink)"/>
+      <rect x="${EX(dn/2)-tpx(tf)}" y="${yCol}" width="${tpx(tf)}" height="${yPl-yCol}" fill="var(--ink)"/>`;
+  }
+  elev += `<path d="M ${EX(-dn/2)-8} ${yCol} l 10 -5 l 6 10 l 10 -5" fill="none" stroke="var(--ink-muted)" stroke-width="1"/>`;
+  // silla en elevación: placa superior y atiesador (vistos de lado)
+  if (sillaOk) {
+    [1, -1].forEach(sg => {
+      const vIn = dn/2, vOut = sillaV;
+      const xa = EX(sg > 0 ? vIn : -vOut), w = (vOut - vIn)*k;
+      elev += `<rect x="${xa}" y="${yPl - LcP}" width="${w}" height="${LcP}" fill="var(--accent)" fill-opacity="0.12" stroke="var(--accent)" stroke-width="1.2"/>
+        <rect x="${xa}" y="${yTopSilla}" width="${w}" height="${tcP}" fill="var(--accent)" stroke="var(--accent)" stroke-width="1"/>`;
+    });
+  }
+  // pernos en elevación (posiciones v únicas en dirección N)
+  const vs = [...new Set(pts.map(p => Math.round(p[1]*10)/10))];
+  const embP = 62;
+  vs.forEach(v => {
+    const x = EX(v), yTop = sillaOk ? yTopSilla - Math.max(6, 1.6*da*k) - 8 : yPl - Math.max(6, 1.6*da*k) - 10;
+    const col = tracc && v > 0 ? 'var(--accent-warm)' : 'var(--ink)';
+    elev += `<line x1="${x}" y1="${yTop}" x2="${x}" y2="${yPed + embP}" stroke="${col}" stroke-width="${Math.max(2, da*k)}"/>`;
+    elev += `<path d="M ${x} ${yPed + embP} q 0 10 ${v >= 0 ? 10 : -10} 10" fill="none" stroke="${col}" stroke-width="${Math.max(2, da*k)}"/>`;
+    const yN = sillaOk ? yTopSilla : yPl;            // tuerca sobre placa superior o sobre la placa base
+    const hN = Math.max(5, da*k), wN = Math.max(9, 1.6*da*k);
+    elev += `<rect x="${x - wN/2 - 2}" y="${yN - 2.5}" width="${wN + 4}" height="2.5" fill="var(--ink-muted)"/>
+      <rect x="${x - wN/2}" y="${yN - 2.5 - hN}" width="${wN}" height="${hN}" fill="var(--ink-muted)"/>`;
+  });
+  // llave de corte bajo la placa
+  if (conLlave) {
+    const tl = Math.max(4, 25*k);
+    elev += `<rect x="${EX(0) - tl/2}" y="${yPl + tpP}" width="${tl}" height="${hl}" fill="var(--ink)" fill-opacity="0.7"/>`;
+  }
+  // cargas en la elevación
+  const xc = EX(0), xR = EX(dn/2);
+
+  return ESQ.svg(m => {
+    let out = '';
+    // títulos
+    out += ESQ.text(pcx, 22, 'PLANTA', {bold: true, fontSize: 12});
+    out += ESQ.text(ecx, 22, 'ELEVACIÓN LATERAL', {bold: true, fontSize: 12});
+    out += ESQ.note(ecx, 36, '(mirando en la dirección B)', {fontSize: 9.5, color: 'var(--ink-muted)'});
+    // planta
+    out += `<rect x="${px0}" y="${py0}" width="${px1-px0}" height="${py1-py0}" fill="var(--surface-alt)" fill-opacity="0.35" stroke="var(--ink)" stroke-width="2"/>`;
+    out += `<line x1="${px0-10}" y1="${pcy}" x2="${px1+10}" y2="${pcy}" stroke="var(--ink-muted)" stroke-width="0.7" stroke-dasharray="8,3,2,3"/>
+      <line x1="${pcx}" y1="${py0-10}" x2="${pcx}" y2="${py1+10}" stroke="var(--ink-muted)" stroke-width="0.7" stroke-dasharray="8,3,2,3"/>`;
+    out += perfil + sillaPl + pernosPl;
+    out += ESQ.dim(m, px0-22, py1, px0-22, py0, `N = ${fmt1(state.N)} cm`, {labelOffset: -6, fontSize: 10.5});
+    out += ESQ.dim(m, px0, py1+22, px1, py1+22, `B = ${fmt1(state.B)} cm`, {labelOffset: 14, fontSize: 10.5});
+    if (disp !== 'PB1' && f > 0) out += ESQ.vdim(m, px1+16, Y(f), pcy, `f = ${fmt1(state.fLever)}`, {side: 'right', fontSize: 10});
+    if (sTop.length > 1 && s > 0) out += ESQ.dim(m, X(sTop[0]), py0-14, X(sTop[1]), py0-14, `s = ${fmt1(state.s)}`, {labelOffset: -5, fontSize: 10});
+    out += ESQ.note(px1+6, pcy+13, 'x', {anchor: 'start', fontSize: 10, color: 'var(--ink-muted)'});
+    out += ESQ.note(pcx+5, py1+12, 'y', {anchor: 'start', fontSize: 10, color: 'var(--ink-muted)'});
+    // elevación
+    out += elev;
+    out += ESQ.dim(m, EX(-Nmm/2), yPedBot+24, EX(Nmm/2), yPedBot+24, `N = ${fmt1(state.N)} cm`, {labelOffset: -5, fontSize: 10.5});
+    const xL = EX(-vPedMax) - 6;
+    out += ESQ.note(xL, yPl + tpP/2 + 3.5, `tp ${fmt1(tp)} mm`, {anchor: 'end', fontSize: 9.5, color: 'var(--ink)'});
+    if (grP > 0) out += ESQ.note(xL, yPl + tpP + grP + 10, `mortero ${fmt1(gr)} mm`, {anchor: 'end', fontSize: 9.5, color: 'var(--ink-muted)'});
+    if (sillaOk) {
+      const xs = EX(sillaV) + 14;
+      out += ESQ.vdim(m, xs, yPl - LcP, yPl, `Lc ${fmt1(Lc)}`, {side: 'right', fontSize: 9.5});
+      out += ESQ.note(xs + 4, yTopSilla - 4, 'silla', {anchor: 'start', fontSize: 10, color: 'var(--accent)'});
+    }
+    if (conLlave) out += ESQ.note(EX(0), yPl + tpP + hl + 13, 'llave de corte', {fontSize: 9.5, color: 'var(--ink-muted)'});
+    // cargas
+    out += ESQ.arrow(m, xc, yCol - 40, 90, 32, `Pu = ${fmt2(state.Pu)} T`, {labelDx: 8, labelDy: -22, fontSize: 11});
+    if (momento) {
+      const ax = xR + 12, ay = yCol + 4;
+      out += `<path d="M ${ax} ${ay+22} A 16 16 0 1 0 ${ax} ${ay-10}" fill="none" stroke="var(--accent-warm)" stroke-width="2" marker-end="url(#${m.load})"/>`;
+      out += ESQ.text(ax + 22, ay + 10, `Mu = ${fmt2(state.Mu)} T·m`, {color: 'var(--accent-warm)', bold: true, fontSize: 11, anchor: 'start'});
+    }
+    if (num(state.Vu) > 0) {
+      const vy = sillaOk ? yCol + 26 : yPl - 26;
+      out += ESQ.arrow(m, EX(-dn/2) - 46, vy, 0, 36, '', {fontSize: 11});
+      out += ESQ.text(EX(-dn/2) - 10, vy - 8, `Vu = ${fmt2(state.Vu)} T`, {color: 'var(--accent-warm)', bold: true, fontSize: 11, anchor: 'end'});
+    }
+    // leyenda
+    const tipo = disp === 'filas' ? `${nTot} pernos en 2 filas de ${nFila}` : `${disp} — ${nTot} pernos${disp === 'PB1' ? ' (1 a cada lado del alma)' : ` (${nFila} por lado)`}`;
+    out += ESQ.text(W/2, yLey, `${tipo} · perno ${ancla} · ${conSilla ? `con silla (Lc = ${fmt1(Lc)} mm)` : 'sin silla'}${conLlave ? ' · llave de corte' : ''}`, {fontSize: 11.5, bold: true});
+    out += ESQ.note(W/2, yLey + 18, `${state.tipoApoyo === 'Articulado' ? 'Base articulada' : 'Base empotrada'}${tracc ? ' · pernos en tracción en color' : ''} · m = ${fmt2(geo.m)} cm · n = ${fmt2(geo.n)} cm`, {fontSize: 10, color: 'var(--ink-muted)'});
+    return out;
+  }, {viewBox: `0 0 ${W} ${Math.max(470, yLey + 30)}`, maxWidth: 800, aria: 'Planta y elevación lateral de la placa base: perfil, pernos de anclaje, silla, llave de corte, cotas y cargas'});
 }
 
 function renderPlacasBase(container) {
@@ -6022,7 +6148,6 @@ function renderPlacasBase(container) {
       ${cd.aviso ? `<div class="note" style="color:var(--bad)">${cd.aviso}</div>` : ''}
       <div class="note">${esCapPB ? 'Mp sin reducción por carga axial (cota superior, conservadora). Con ambos ejes activos, la capacidad se aplica simultáneamente en x e y (conservador). ' : 'Ω0 amplifica Vu y Mu ingresados; Pu no se amplifica (ingresar la axial compatible con la combinación sísmica). '}Los pernos de anclaje toman la tracción Tu que resulta en la placa con estas cargas (ACI 318-19 §17.10.5.3${esCapPB ? '(c)' : '(d)'}); los campos Nua y Vua de la sección 10 quedan deshabilitados. En zonas sísmicas, verificar además el factor 0,75 de §17.10.5.4 sobre las resistencias de hormigón.</div>`;
 
-    document.getElementById('pb_esquema').innerHTML = svgPlacasBase(state, g);
 
     document.getElementById('pb_aplastamiento').innerHTML = `
       <table class="results">
@@ -6081,6 +6206,7 @@ function renderPlacasBase(container) {
       </table>`;
 
     const cs = calcCorteSilla({fc:state.fc, Pu:state.Pu, Vu:state.Vu, mu:state.mu, phiFriccion:state.phiFriccion, w:state.w, dEmb:state.dEmb, g:state.g});
+    document.getElementById('pb_esquema').innerHTML = svgPlacasBase(state, g, { prop: state._geo ? state._geo.prop : null, cs });
     document.getElementById('pb_corteSilla').innerHTML = `
       <table class="results">
         <tr><td>φVn = φ·μ·Pu — capacidad por fricción</td><td class="num">${fmt2(cs.phiVnFriccion)} Ton</td><td>${chip(cs.okFriccion,'CUMPLE — no requiere silla','NO CUMPLE — requiere silla')}</td></tr>
