@@ -43360,6 +43360,8 @@ function renderSeleccionPernos(container) {
 
     <div class="panel">
       <h3>1 · Calidad, diámetro y tipo de uso</h3>
+      <style>.sp-uno{display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:1rem;align-items:start}#sp_mini svg{width:100%;height:auto}@media (max-width:760px){.sp-uno{grid-template-columns:1fr}#sp_mini{max-width:320px;margin:0 auto}}</style>
+      <div class="sp-uno">
       <div class="field-grid">
         <div class="field"><label>Calidad del perno</label><select id="sp_grado">${cdOptions(SP_GRADO, state.gradoIdx)}</select></div>
         <div class="field"><label>Diámetro nominal disponible</label><select id="sp_diam">${cdOptions(SP_DIAM, state.diamIdx)}</select></div>
@@ -43369,6 +43371,8 @@ function renderSeleccionPernos(container) {
         <div class="field"><label>t2 — espesor plancha 2 (mm)</label><input type="text" inputmode="decimal" id="sp_t2" value="0" list="dl_sp_t"></div>
         <div class="field" id="sp_grp_t3"><label>t3 — espesor plancha 3, lado de la tuerca (mm)</label><input type="text" inputmode="decimal" id="sp_t3" value="0" list="dl_sp_t"></div>
         <datalist id="dl_sp_t"><option value="0">Sin dato — sólo verificar el perno</option><option value="8">Plancha 8 mm</option><option value="10">Plancha 10 mm</option><option value="12">Plancha 12 mm</option><option value="16">Plancha 16 mm</option><option value="20">Plancha 20 mm</option><option value="25">Plancha 25 mm</option></datalist>
+      </div>
+      <div id="sp_mini" title="Elevación del perno con los datos ingresados"></div>
       </div>
       <div class="note" style="margin-top:.4rem">Espesores de las planchas unidas (alas, gussets, placas). Con ellos se calcula el grip, el largo comercial del perno y se verifica si la rosca queda dentro o fuera del plano de corte. Déjelos en 0 para verificar sólo el perno.</div>
       <div class="note" id="sp_gradoObs" style="margin-top:.5rem"></div>
@@ -43459,6 +43463,7 @@ function renderSeleccionPernos(container) {
       roscaTxt: G.ingresado ? (G.hayCorte ? (G.roscaEnPlano ? 'Incluida en el plano (N)' : 'Excluida del plano (X)') : 'No aplica (tracción)') : '',
       okLargo: G.okLargo, okRoscaApriete: G.okRoscaApriete, okCondRosca: G.okCondRosca});
 
+    document.getElementById('sp_mini').innerHTML = svgPerno(state, r);
     document.getElementById('sp_esquema').innerHTML = svgPerno(state, r) +
       `<div class="note">${SP_GRADO[state.gradoIdx].label} ${SP_DIAM[state.diamIdx].label} — ${SP_TIPO_USO.find(t=>t.v===state.tipoUso).label}.</div>`;
 
