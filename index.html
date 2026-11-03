@@ -43421,10 +43421,20 @@ function renderSeleccionPernos(container) {
     const selAll = () => { const rg = document.createRange(); rg.selectNodeContents(box); const sl = window.getSelection(); sl.removeAllRanges(); sl.addRange(rg); };
     box.addEventListener('contextmenu', selAll);
     box.addEventListener('copy', e => { if (!box._txt) return; e.preventDefault(); e.clipboardData.setData('text/plain', box._txt); e.clipboardData.setData('text/html', box._html); });
-    document.getElementById('sp_tqcopy').addEventListener('click', async () => {
-      try { await navigator.clipboard.writeText(box._txt); }
-      catch (_) { selAll(); document.execCommand('copy'); }
-      msg.textContent = 'Copiado'; setTimeout(() => msg.textContent = '', 1800);
+    document.getElementById('sp_tqcopy').addEventListener('click', () => {
+      const aviso = (ok) => { msg.textContent = ok ? 'Copiado al portapapeles' : 'No se pudo copiar: use clic derecho → Copiar'; setTimeout(() => msg.textContent = '', 2500); };
+      // 1) Copia síncrona dentro del clic (funciona en todos los navegadores, también fuera de https)
+      let ok = false;
+      try { selAll(); ok = document.execCommand('copy'); } catch (_) { ok = false; }
+      window.getSelection().removeAllRanges();
+      if (ok) return aviso(true);
+      // 2) API de portapapeles (texto + tabla)
+      try {
+        const p = (window.ClipboardItem && navigator.clipboard.write)
+          ? navigator.clipboard.write([new ClipboardItem({ 'text/plain': new Blob([box._txt], {type:'text/plain'}), 'text/html': new Blob([box._html], {type:'text/html'}) })])
+          : navigator.clipboard.writeText(box._txt);
+        p.then(() => aviso(true), () => aviso(false));
+      } catch (_) { aviso(false); }
     }); }
 
   function actualizarVisibilidad() {
