@@ -2073,6 +2073,9 @@ const TOOLS = [
   { id:'cargas-uso', cat:'Cargas', name:'Cargas de Uso — Pisos y Techos (NCh1537)', file:null,
     desc:'Carga de uso L₀ y concentrada Qk por destino (Tabla 4), reducción por área tributaria con KLL (8.1) y sobrecarga de techo reducida por área tributaria y pendiente (8.2), en t/m² y kPa.',
     tag:'NCh1537:2009', calc:'cargasUso' },
+  { id:'combinaciones-carga', cat:'Cargas', name:'Combinaciones de Carga para RAM (Acero, Hormigón, Fundaciones, Madera)', file:null,
+    desc:'Genera las combinaciones de carga para los estados que se marquen (peso propio, sobrecargas, techo, nieve, lluvia, temperatura, empuje de tierra, puente grúa, viento ±X/±Z, sismo ±X/±Z y vertical): NCh3171 o ASCE 7-16 / ACI 318-19, LRFD o ASD, con nombres A (acero), H (rotura hormigón y fundaciones), F (dimensionamiento de fundaciones) y MA (madera, con K_D), en formato para pegar en RAM Elements.',
+    tag:'NCh3171 · ASCE 7-16 · ACI 318-19 · NCh1198', calc:'combinacionesCarga' },
   { id:'viento', cat:'Cargas', name:'Cargas de Viento NCh432.Of2010', file:'Cargas_Viento_NCh432_2010_1.xlsx',
     desc:'Presiones y fuerzas de viento por método analítico: galpones, reticulados y bóvedas.',
     tag:'NCh432.Of2010', calc:'viento' },
@@ -51116,6 +51119,326 @@ function renderCargasUso(container) {
 }
 
 /* =========================================================================
+   COMBINACIONES DE CARGA — generador para RAM Elements
+   Familias (nomenclatura ING): A = acero, H = rotura de hormigón y fundaciones,
+   F = dimensionamiento de fundaciones (servicio: suelo, volcamiento, deslizamiento),
+   MA = madera (tensiones admisibles, con K_D de NCh1198).
+   Normas: NCh3171 (estructura de ASCE 7-02/05 §2.3.2 y §2.4.1, sismo 1,4E / E),
+   ASCE 7-16 §2.3.1, §2.3.6, §2.4.1, §2.4.5 (AISC 360-16 B2) y ACI 318-19 Tabla 5.3.1.
+   Exporta «Nombre=expresión» con la sintaxis de los reportes de RAM (p. ej. H1=1.2PP+1.6SCr).
+   ========================================================================= */
+// [clave, nombre RAM por defecto, descripción, clase, activo por defecto]
+// clases: D permanente, F fluidos, H empuje de tierra, L uso, Lr techo, S nieve, R lluvia, T temperatura,
+//         W viento (cada estado es una dirección), EH sismo horizontal (dir X o Z, se combina con ±), EV sismo vertical, ES empuje sísmico
+const CC_ESTADOS = [
+  ['PP', 'PP', 'Peso propio de la estructura', 'D', true],
+  ['CP', 'CP', 'Carga permanente adicional (terminaciones, cubierta, equipos fijos)', 'D', true],
+  ['FL', 'FL', 'Fluidos con presión y altura máxima definidas', 'F', false],
+  ['ET', 'ET', 'Empuje de tierra, napa freática o material a granel', 'H', false],
+  ['SC', 'SC', 'Sobrecarga de uso (NCh1537)', 'L', true],
+  ['SCP', 'SCP', 'Sobrecarga de piso — equipos o almacenamiento', 'L', false],
+  ['SOP', 'SOP', 'Sobrecarga de operación (material en proceso, equipos)', 'L', false],
+  ['SCr', 'SCr', 'Sobrecarga de techo', 'Lr', true],
+  ['N', 'N', 'Nieve', 'S', false],
+  ['LLU', 'LLU', 'Lluvia (agua acumulada en techo)', 'R', false],
+  ['TE', 'TE', 'Temperatura, retracción o deformación impuesta', 'T', false],
+  ['PGV', 'PGV', 'Puente grúa — cargas verticales de rueda con impacto', 'L', false],
+  ['PGL', 'PGL', 'Puente grúa — empuje lateral', 'L', false],
+  ['PGT', 'PGT', 'Puente grúa — tracción longitudinal', 'L', false],
+  ['VX', 'VX', 'Viento en +X', 'W', true],
+  ['VXn', 'VXn', 'Viento en −X', 'W', false],
+  ['VZ', 'VZ', 'Viento en +Z', 'W', true],
+  ['VZn', 'VZn', 'Viento en −Z', 'W', false],
+  ['SX', 'SX', 'Sismo horizontal en X (se combina con + y −)', 'EHX', true],
+  ['SZ', 'SZ', 'Sismo horizontal en Z (se combina con + y −)', 'EHZ', true],
+  ['SY', 'SY', 'Sismo vertical en Y (estado definido hacia abajo)', 'EV', false],
+  ['ETS', 'ETS', 'Incremento sísmico del empuje de tierra', 'ES', false],
+];
+const CC_CLASE = { D: 'D — permanente', F: 'F — fluidos', H: 'H — empuje de tierra', L: 'L — uso', Lr: 'Lr — techo', S: 'S — nieve', R: 'R — lluvia', T: 'T — temperatura', W: 'W — viento', EHX: 'E — sismo horizontal X', EHZ: 'E — sismo horizontal Z', EV: 'Ev — sismo vertical', ES: 'E — empuje sísmico' };
+// Duración por defecto (s) para K_D de madera — mismas duraciones de la planilla «Tensiones Admisibles — Madera»
+const CC_DUR = [[1577880000, 'Permanente (~50 años)'], [315576000, 'Normal (~10 años)'], [5184000, 'Nieve (~2 meses)'], [604800, 'Construcción / techo (~7 días)'], [600, 'Viento o sismo (~10 min)']];
+const CC_DUR0 = { D: 1577880000, F: 1577880000, H: 1577880000, L: 315576000, T: 315576000, Lr: 604800, R: 604800, S: 5184000, W: 600, EHX: 600, EHZ: 600, EV: 600, ES: 600 };
+// Términos: ['D',f] permanentes · ['F',f] · ['H',f,'est'] (est = combinación estabilizante: 0 si H se opone) · ['L',f,'x'] (x = admite 0,5L)
+// ['T',f] · ['ROOF',f] una de Lr/S/R · ['S',f] nieve · ['W',f] una dirección de viento · ['LW',fL,fW] L o W (uno de los dos)
+// ['E',f,sv] una dirección de sismo con ± (sv = signo del sismo vertical: +1 junto a 1,2D, −1 junto a 0,9D/0,6D)
+const CC_SETS = {
+  nchL: { n: 'NCh3171:2017 — diseño por resistencia (LRFD)', fam: 'LRFD', ver: false, rows: [
+    ['1', [['D', 1.4], ['F', 1.4]]],
+    ['2', [['D', 1.2], ['F', 1.2], ['T', 1.2], ['L', 1.6], ['H', 1.6], ['ROOF', 0.5]]],
+    ['3', [['D', 1.2], ['ROOF', 1.6], ['LW', 1.0, 0.8, 'x']]],
+    ['4', [['D', 1.2], ['W', 1.6], ['L', 1.0, 'x'], ['ROOF', 0.5]]],
+    ['5', [['D', 1.2], ['E', 1.4, 1], ['L', 1.0, 'x'], ['S', 0.2]]],
+    ['6', [['D', 0.9], ['W', 1.6], ['H', 1.6, 'est']]],
+    ['7', [['D', 0.9], ['E', 1.4, -1], ['H', 1.6, 'est']]]] },
+  nchA: { n: 'NCh3171:2017 — tensiones admisibles (ASD)', fam: 'ASD', ver: false, rows: [
+    ['1', [['D', 1], ['F', 1]]],
+    ['2', [['D', 1], ['H', 1], ['F', 1], ['L', 1], ['T', 1]]],
+    ['3', [['D', 1], ['H', 1], ['F', 1], ['ROOF', 1]]],
+    ['4', [['D', 1], ['H', 1], ['F', 1], ['L', 0.75], ['T', 0.75], ['ROOF', 0.75]]],
+    ['5 (W)', [['D', 1], ['H', 1], ['F', 1], ['W', 1]]],
+    ['5 (E)', [['D', 1], ['H', 1], ['F', 1], ['E', 1, 1]]],
+    ['6 (W)', [['D', 1], ['H', 1], ['F', 1], ['W', 0.75], ['L', 0.75], ['ROOF', 0.75]]],
+    ['6 (E)', [['D', 1], ['H', 1], ['F', 1], ['E', 0.75, 1], ['L', 0.75], ['ROOF', 0.75]]],
+    ['7', [['D', 0.6], ['W', 1], ['H', 1, 'est']]],
+    ['8', [['D', 0.6], ['E', 1, -1], ['H', 1, 'est']]]] },
+  asceL: { n: 'ASCE 7-16 §2.3.1 y §2.3.6 — LRFD (AISC 360-16 B2)', fam: 'LRFD', ver: false, rows: [
+    ['1', [['D', 1.4], ['F', 1.4], ['H', 1.6]]],
+    ['2', [['D', 1.2], ['F', 1.2], ['T', 1.0], ['L', 1.6], ['H', 1.6], ['ROOF', 0.5]]],
+    ['3', [['D', 1.2], ['F', 1.2], ['H', 1.6], ['ROOF', 1.6], ['LW', 1.0, 0.5, 'x']]],
+    ['4', [['D', 1.2], ['F', 1.2], ['H', 1.6], ['W', 1.0], ['L', 1.0, 'x'], ['ROOF', 0.5]]],
+    ['5', [['D', 0.9], ['F', 0.9], ['W', 1.0], ['H', 1.6, 'est']]],
+    ['6', [['D', 1.2], ['F', 1.2], ['H', 1.6], ['E', 1.0, 1], ['L', 1.0, 'x'], ['S', 0.2]]],
+    ['7', [['D', 0.9], ['F', 0.9], ['E', 1.0, -1], ['H', 1.6, 'est']]]] },
+  asceA: { n: 'ASCE 7-16 §2.4.1 y §2.4.5 — ASD (AISC 360-16 B2)', fam: 'ASD', ver: false, rows: [
+    ['1', [['D', 1], ['F', 1], ['H', 1]]],
+    ['2', [['D', 1], ['F', 1], ['H', 1], ['L', 1], ['T', 1]]],
+    ['3', [['D', 1], ['F', 1], ['H', 1], ['ROOF', 1]]],
+    ['4', [['D', 1], ['F', 1], ['H', 1], ['L', 0.75], ['T', 0.75], ['ROOF', 0.75]]],
+    ['5', [['D', 1], ['F', 1], ['H', 1], ['W', 0.6]]],
+    ['6', [['D', 1], ['F', 1], ['H', 1], ['L', 0.75], ['W', 0.45], ['ROOF', 0.75]]],
+    ['7', [['D', 0.6], ['F', 0.6], ['W', 0.6], ['H', 1, 'est']]],
+    ['8', [['D', 1], ['F', 1], ['H', 1], ['E', 0.7, 1]]],
+    ['9', [['D', 1], ['F', 1], ['H', 1], ['E', 0.525, 1], ['L', 0.75], ['S', 0.75]]],
+    ['10', [['D', 0.6], ['F', 0.6], ['E', 0.7, -1], ['H', 1, 'est']]]] },
+  aci: { n: 'ACI 318-19 Tabla 5.3.1 — resistencia', fam: 'LRFD', ver: false, rows: [
+    ['5.3.1a', [['D', 1.4], ['F', 1.4], ['H', 1.6]]],
+    ['5.3.1b', [['D', 1.2], ['F', 1.2], ['T', 1.0], ['L', 1.6], ['H', 1.6], ['ROOF', 0.5]]],
+    ['5.3.1c', [['D', 1.2], ['F', 1.2], ['H', 1.6], ['ROOF', 1.6], ['LW', 1.0, 0.5, 'x']]],
+    ['5.3.1d', [['D', 1.2], ['F', 1.2], ['H', 1.6], ['W', 1.0], ['L', 1.0, 'x'], ['ROOF', 0.5]]],
+    ['5.3.1e', [['D', 1.2], ['F', 1.2], ['H', 1.6], ['E', 1.0, 1], ['L', 1.0, 'x'], ['S', 0.2]]],
+    ['5.3.1f', [['D', 0.9], ['F', 0.9], ['W', 1.0], ['H', 1.6, 'est']]],
+    ['5.3.1g', [['D', 0.9], ['F', 0.9], ['E', 1.0, -1], ['H', 1.6, 'est']]]] },
+};
+// Familias: prefijo, nombre, conjunto según norma y método
+const CC_FAMS = [
+  { p: 'A', n: 'Acero — diseño de elementos y conexiones', set: (nor, mA) => nor === 'nch' ? (mA === 'ASD' ? 'nchA' : 'nchL') : (mA === 'ASD' ? 'asceA' : 'asceL') },
+  { p: 'H', n: 'Hormigón — diseño a la rotura (fundaciones y otros elementos de H.A.)', set: nor => nor === 'nch' ? 'nchL' : 'aci' },
+  { p: 'F', n: 'Fundaciones — dimensionamiento en servicio (tensiones en el suelo, volcamiento, deslizamiento)', set: nor => nor === 'nch' ? 'nchA' : 'asceA' },
+  { p: 'MA', n: 'Madera — tensiones admisibles (NCh1198), con K_D', set: nor => nor === 'nch' ? 'nchA' : 'asceA' },
+];
+function ccKD(t) { return 1.747 * Math.pow(t, -0.0464) + 0.295; }
+function ccFmt(f) { const r = Math.round(f * 10000) / 10000; return String(r); }
+// Expresión con la sintaxis de RAM: factores con punto decimal, sin espacios; factor 1 se omite.
+function ccExpr(terms) {
+  return terms.map((t, i) => {
+    const a = Math.abs(t.f), s = t.f < 0 ? '-' : (i ? '+' : '');
+    return s + (Math.abs(a - 1) < 1e-9 ? '' : ccFmt(a)) + t.nm;
+  }).join('');
+}
+// Genera las combinaciones de un conjunto con los estados activos
+function ccGenerar(setKey, est, op) {
+  const S = CC_SETS[setKey];
+  const de = c => est.filter(e => e.cl === c);
+  const W = de('W'), EH = est.filter(e => e.cl === 'EHX' || e.cl === 'EHZ'), EV = de('EV'), ES = de('ES');
+  const roof = ['Lr', 'S', 'R'].filter(c => de(c).length);
+  const out = [], vistos = new Set();
+  S.rows.forEach(([eq, terms]) => {
+    if (terms.some(t => t[0] === 'W') && !W.length) return;
+    if (terms.some(t => t[0] === 'E') && !EH.length) return;
+    // alternativas: lista de opciones; cada opción = lista de [estado, factor]
+    let opciones = [[]];
+    const mult = alts => { const n = []; opciones.forEach(o => alts.forEach(a => n.push(o.concat(a)))); opciones = n; };
+    const fL = (t, f) => (op.medioL && t.includes('x')) ? 0.5 : f;
+    terms.forEach(t => {
+      const k = t[0];
+      if (k === 'D' || k === 'F' || k === 'T') mult([de(k).map(e => [e, t[1]])]);
+      else if (k === 'H') mult([de('H').map(e => [e, (t[2] === 'est' && op.hEstab) ? 0 : t[1]])]);
+      else if (k === 'L') mult([de('L').map(e => [e, fL(t, t[1])])]);
+      else if (k === 'S') mult([de('S').map(e => [e, t[1]])]);
+      else if (k === 'ROOF') mult(roof.length ? roof.map(c => de(c).map(e => [e, t[1]])) : [[]]);
+      else if (k === 'W') mult(W.map(e => [[e, t[1]]]));
+      else if (k === 'LW') {
+        const L = de('L'), alts = [];
+        if (L.length) alts.push(L.map(e => [e, fL(t, t[1])]));
+        W.forEach(e => alts.push([[e, t[2]]]));
+        mult(alts.length ? alts : [[]]);
+      } else if (k === 'E') {
+        const f = t[1], sv = t[2], alts = [];
+        EH.forEach(h => [1, -1].forEach(s => {
+          const otros = op.orto ? EH.filter(o => o.cl !== h.cl) : [];
+          const base = [[h, s * f]].concat(EV.map(v => [v, sv * f]), ES.map(v => [v, f]));
+          if (!otros.length) alts.push(base);
+          else [1, -1].forEach(s2 => alts.push(base.concat(otros.map(o => [o, s2 * 0.3 * f]))));
+        }));
+        mult(alts);
+      }
+    });
+    opciones.forEach(o => {
+      const m = new Map();
+      o.forEach(([e, f]) => { if (Math.abs(f) > 1e-9) m.set(e, (m.get(e) || 0) + f); });
+      const lista = est.filter(e => m.has(e)).map(e => ({ e, nm: e.nm, f: m.get(e) }));
+      if (!lista.length) return;
+      const clave = lista.map(x => x.e.k + ':' + ccFmt(x.f)).join('|');
+      if (vistos.has(clave)) return;
+      vistos.add(clave);
+      const tmin = Math.min(...lista.map(x => x.e.dur));
+      out.push({ eq, terms: lista, expr: ccExpr(lista), tmin, KD: ccKD(tmin) });
+    });
+  });
+  return out;
+}
+
+function renderCombinacionesCarga(container) {
+  const filas = CC_ESTADOS.map((e, i) => `<tr>
+      <td style="text-align:center"><input type="checkbox" id="cc_on${i}"${e[4] ? ' checked' : ''} style="width:auto;min-width:0;margin:0"></td>
+      <td><input type="text" id="cc_nm${i}" value="${esc(e[1])}" maxlength="12" style="width:6.5em;min-width:0" spellcheck="false"></td>
+      <td>${esc(e[2])}</td><td style="white-space:nowrap">${esc(CC_CLASE[e[3]])}</td>
+      <td class="cc-dur"><select id="cc_du${i}" style="min-width:0">${CC_DUR.map(d => `<option value="${d[0]}"${d[0] === CC_DUR0[e[3]] ? ' selected' : ''}>${esc(d[1])}</option>`).join('')}</select></td></tr>`).join('');
+  container.innerHTML = `
+    <div class="calc-head">
+      <h1>Combinaciones de Carga para RAM</h1>
+      <div class="sub">Genera las combinaciones de carga para los estados que usted marque, con los factores de la norma elegida, por método de resistencia (LRFD / rotura) o de tensiones admisibles (ASD / servicio). Nombres según la familia: A acero, H rotura de hormigón y fundaciones, F dimensionamiento de fundaciones, MA madera. Salida con la sintaxis de RAM: <code>H1=1.2PP+1.6SC</code>.</div>
+    </div>
+
+    <div class="panel">
+      <h3>1 · Norma y familias de combinaciones</h3>
+      <div class="field-grid">
+        <div class="field"><label>Norma de combinaciones</label><select id="cc_norma">
+          <option value="nch">NCh3171:2017 — Chile (sismo NCh433 + DS61 / NCh2369, viento NCh432)</option>
+          <option value="asce">ASCE 7-16 (AISC 360-16) y ACI 318-19 Tabla 5.3.1</option></select></div>
+        <div class="field"><label>Método para el acero (A)</label><select id="cc_mA"><option value="LRFD">LRFD — factores de carga</option><option value="ASD">ASD — tensiones admisibles</option></select></div>
+        <div class="field"><label>Sismo en dos direcciones horizontales</label><select id="cc_orto"><option value="0">Cada dirección por separado</option><option value="1">100 % en una dirección + 30 % en la otra</option></select></div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem 1.6rem;margin-top:.6rem">
+        ${CC_FAMS.map(f => `<label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cc_f${f.p}" checked style="width:auto;min-width:0;flex:none;margin:0"> <span><b>${f.p}</b> — ${esc(f.n)}</span></label>`).join('')}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.4rem;margin-top:.7rem">
+        <label style="display:flex;gap:.45rem;align-items:flex-start;cursor:pointer"><input type="checkbox" id="cc_medioL" style="width:auto;min-width:0;flex:none;margin:.2rem 0 0"> <span>Usar factor 0,5 en L en las combinaciones con viento o sismo (sólo si L₀ ≤ 4,79 kPa = 0,488 t/m² y no son estacionamientos ni lugares de reunión pública)</span></label>
+        <label style="display:flex;gap:.45rem;align-items:flex-start;cursor:pointer"><input type="checkbox" id="cc_hEstab" style="width:auto;min-width:0;flex:none;margin:.2rem 0 0"> <span>El empuje de tierra H se opone al efecto del viento o sismo (factor 0 en las combinaciones con 0,9D / 0,6D)</span></label>
+      </div>
+      <div id="cc_avNorma" style="margin-top:.6rem"></div>
+    </div>
+
+    <div class="panel">
+      <h3>2 · Estados de carga</h3>
+      <div class="note">Marque los estados que existen en el modelo y escriba el nombre exacto de cada estado en RAM (sin espacios). El sismo horizontal se combina con signo + y −; el vertical se define hacia abajo.</div>
+      <div style="overflow-x:auto;margin-top:.4rem"><table class="results" id="cc_tEst"><tr><th>Usar</th><th>Nombre en RAM</th><th>Estado</th><th>Tipo</th><th class="cc-dur">Duración (K_D madera)</th></tr>${filas}</table></div>
+      <div id="cc_errEst" style="margin-top:.4rem"></div>
+    </div>
+
+    <div class="panel" data-resumen="force">
+      <h3>3 · Combinaciones generadas</h3>
+      <div id="cc_res"></div>
+    </div>
+
+    <div class="panel">
+      <h3>4 · Exportar a RAM</h3>
+      <div class="note">En RAM Elements, cree primero los estados de carga con los mismos nombres de la tabla 2. Luego copie las combinaciones y péguelas en la planilla de estados y combinaciones de carga: nombre en la columna de la condición y expresión en la descripción, marcada como combinación. El archivo .txt trae una combinación por línea (Nombre=expresión) y el .csv separa nombre, expresión, familia y ecuación de origen.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin:.6rem 0">
+        <button type="button" class="print-btn" id="cc_bCopTab">📋 Copiar tabla para pegar en RAM</button>
+        <button type="button" class="print-btn" id="cc_bCopTxt">📋 Copiar Nombre=expresión</button>
+        <button type="button" class="print-btn" id="cc_bTxt">⬇ Descargar .txt</button>
+        <button type="button" class="print-btn" id="cc_bCsv">⬇ Descargar .csv</button>
+      </div>
+      <textarea id="cc_txt" readonly rows="8" style="width:100%;font-family:monospace;font-size:.85rem" spellcheck="false"></textarea>
+      <div id="cc_msg" class="note"></div>
+    </div>
+
+    <div class="panel">
+      <div class="disclosure" id="cc_fuente"></div>
+    </div>
+    <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>`;
+  const $ = id => document.getElementById(id);
+  let ult = { lineas: [], tabla: '', csv: '' };
+  const nCL = x => x.toLocaleString('es-CL', { maximumFractionDigits: 4 });
+  const exprCL = terms => terms.map((t, i) => { const a = Math.abs(t.f); return (t.f < 0 ? ' − ' : i ? ' + ' : '') + (Math.abs(a - 1) < 1e-9 ? '' : nCL(a)) + t.nm; }).join('');
+  function recalc() {
+    const nor = $('cc_norma').value, mA = $('cc_mA').value;
+    const op = { orto: $('cc_orto').value === '1', medioL: $('cc_medioL').checked, hEstab: $('cc_hEstab').checked };
+    const fams = CC_FAMS.filter(f => $('cc_f' + f.p).checked);
+    $('cc_mA').closest('.field').hidden = !$('cc_fA').checked;
+    container.querySelectorAll('.cc-dur').forEach(el => { el.hidden = !$('cc_fMA').checked; });
+    // estados
+    const est = [], errs = [];
+    CC_ESTADOS.forEach((e, i) => {
+      const nm = String($('cc_nm' + i).value).trim();
+      if (!$('cc_on' + i).checked) return;
+      if (!nm) errs.push(`«${e[2]}»: falta el nombre.`);
+      else if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(nm)) errs.push(`«${nm}»: use sólo letras, números o _ y comience con letra (sin espacios ni signos).`);
+      est.push({ k: e[0], nm, d: e[2], cl: e[3], dur: +$('cc_du' + i).value });
+    });
+    const usados = {};
+    est.forEach(e => { const u = e.nm.toUpperCase(); if (usados[u]) errs.push(`El nombre «${e.nm}» está repetido.`); usados[u] = 1; });
+    if (est.length && !est.some(e => e.cl === 'D')) errs.push('Marque al menos un estado permanente D (peso propio).');
+    if (!est.length) errs.push('Marque al menos un estado de carga.');
+    if (!fams.length) errs.push('Marque al menos una familia de combinaciones (A, H, F o MA).');
+    $('cc_errEst').innerHTML = errs.length ? `<div class="note" style="color:var(--bad,#b00020)"><b>Datos inválidos:</b> ${errs.map(esc).join(' ')}</div>` : '';
+    $('cc_avNorma').innerHTML = nor === 'nch'
+      ? `<div class="note">NCh3171 sigue la estructura de las combinaciones de ASCE 7-02/7-05 (§2.3.2 y §2.4.1) con el sismo amplificado por 1,4 en resistencia y por 1,0 en tensiones admisibles. La transcripción de los factores de NCh3171:2017 queda pendiente de cotejo con el texto de la norma.</div>`
+      : `<div class="note">ASCE 7-16 usa viento de nivel último (1,0W en LRFD, 0,6W en ASD). No use estos factores con presiones de NCh432, que son de nivel de servicio: en ese caso elija NCh3171.</div>`;
+    if (errs.length) {
+      $('cc_res').innerHTML = '<div class="note">Corrija los datos de la tabla 2 para generar las combinaciones.</div>';
+      $('cc_txt').value = ''; ult = { lineas: [], tabla: '', csv: '' };
+      const err = `<div class="xlsx-title-bar" data-calc-bloqueo="${esc('datos inválidos — ' + errs.join(' '))}">COMBINACIONES DE CARGA</div><div class="xlsx-section">DATOS INVÁLIDOS — NO SE GENERAN COMBINACIONES</div><table class="xlsx-table"><tbody>${errs.map(e => `<tr><td class="xv-label">${esc(e)}</td></tr>`).join('')}</tbody></table>`;
+      xlsxSetPrintSheets('', err, err);
+      return;
+    }
+    // combinaciones por familia
+    const res = fams.map(f => {
+      const sk = f.set(nor, mA), lst = ccGenerar(sk, est, op);
+      lst.forEach((c, i) => { c.nm = f.p + (i + 1); });
+      return { f, sk, set: CC_SETS[sk], lst };
+    });
+    const tablaFam = (r, print) => {
+      const ma = r.f.p === 'MA';
+      if (print) return `<table class="xlsx-table xlsx-calc-table"><tbody><tr><td class="xv-label"><b>Nombre</b></td><td class="xv-label"><b>Combinación</b></td><td class="xv-label"><b>Ec.</b></td>${ma ? '<td class="xv-num"><b>K_D</b></td>' : ''}</tr>
+        ${r.lst.map(c => `<tr><td class="xv-label"><b>${esc(c.nm)}</b></td><td class="xv-label">${esc(exprCL(c.terms))}</td><td class="xv-label">${esc(c.eq)}</td>${ma ? `<td class="xv-num">${xlsxNum(c.KD, 3)}</td>` : ''}</tr>`).join('')}</tbody></table>`;
+      return `<table class="results"><tr><th>Nombre</th><th>Combinación</th><th>Expresión para RAM</th><th>Ec.</th>${ma ? '<th class="num">K_D</th>' : ''}</tr>
+        ${r.lst.map(c => `<tr><td><b>${esc(c.nm)}</b></td><td>${esc(exprCL(c.terms))}</td><td><code>${esc(c.expr)}</code></td><td style="white-space:nowrap">${esc(c.eq)}</td>${ma ? `<td class="num">${nCL(Math.round(c.KD * 1000) / 1000)}</td>` : ''}</tr>`).join('')}</table>`;
+    };
+    $('cc_res').innerHTML = res.map(r => `<h4 style="margin:.9rem 0 .3rem">${esc(r.f.p)} — ${esc(r.f.n)} <small style="font-weight:normal">· ${esc(r.set.n)} · ${r.lst.length} combinaciones</small></h4>
+      <div style="overflow-x:auto">${tablaFam(r, false)}</div>${r.f.p === 'MA' ? '<div class="note">K_D = 1,747·t^(−0,0464) + 0,295 (NCh1198), con t la duración del estado de menor duración de la combinación.</div>' : ''}`).join('')
+      + `<div class="note"><b>Total:</b> ${res.reduce((s, r) => s + r.lst.length, 0)} combinaciones.</div>`;
+    // exportación
+    const todas = [].concat(...res.map(r => r.lst.map(c => ({ c, r }))));
+    const lineas = todas.map(({ c }) => `${c.nm}=${c.expr}`);
+    const tabla = todas.map(({ c }) => `${c.nm}\t${c.expr}`).join('\r\n');
+    const csvEsc = s => /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    const csv = ['Nombre;Expresion RAM;Familia;Norma;Ecuacion;KD'].concat(todas.map(({ c, r }) => [c.nm, c.expr, r.f.p, r.set.n, c.eq, r.f.p === 'MA' ? c.KD.toFixed(3).replace('.', ',') : ''].map(csvEsc).join(';'))).join('\r\n');
+    ult = { lineas, tabla, csv };
+    $('cc_txt').value = lineas.join('\n');
+    $('cc_fuente').textContent = 'Fuentes: ' + (nor === 'nch'
+      ? 'NCh3171:2017 Diseño estructural — Disposiciones generales y combinaciones de cargas (INN), que adopta la estructura de ASCE 7 (2.3.2 resistencia: 1,4D; 1,2D + 1,6L + 0,5(Lr o S o R); 1,2D + 1,6(Lr o S o R) + (L o 0,8W); 1,2D + 1,6W + L + 0,5(Lr o S o R); 1,2D + 1,4E + L + 0,2S; 0,9D + 1,6W + 1,6H; 0,9D + 1,4E + 1,6H. 2.4.1 tensiones admisibles: D + F; D + H + F + L + T; D + H + F + (Lr o S o R); D + H + F + 0,75(L + T) + 0,75(Lr o S o R); D + H + F + (W o E); D + H + F + 0,75(W o E) + 0,75L + 0,75(Lr o S o R); 0,6D + W + H; 0,6D + E + H). Estructura y factores no sísmicos cotejados con ASCE 7-02 §2.3.2 y §2.4.1 (texto en los archivos del proyecto); excepción 1: factor 0,5 en L de las combinaciones 3 a 5 si L₀ ≤ 4,79 kPa, salvo estacionamientos y reunión pública; excepción 2: H = 0 en 6 y 7 si se opone a W o E.'
+      : 'ASCE/SEI 7-16 §2.3.1 (1,4D; 1,2D + 1,6L + 0,5(Lr o S o R); 1,2D + 1,6(Lr o S o R) + (L o 0,5W); 1,2D + 1,0W + L + 0,5(Lr o S o R); 0,9D + 1,0W), §2.3.6 (1,2D + Ev + Eh + L + 0,2S; 0,9D − Ev + Eh), §2.4.1 (D; D + L; D + (Lr o S o R); D + 0,75L + 0,75(Lr o S o R); D + 0,6W; D + 0,75L + 0,75(0,6W) + 0,75(Lr o S o R); 0,6D + 0,6W) y §2.4.5 (D + 0,7Ev + 0,7Eh; D + 0,525Ev + 0,525Eh + 0,75L + 0,75S; 0,6D − 0,7Ev + 0,7Eh); F con el factor de D; H con 1,6 (LRFD) o 1,0 (ASD) cuando se suma y 0 cuando se opone y no es permanente; Ev = 0,2·SDS·D (§12.4.2.2). AISC 360-16 B2 remite a ASCE 7. ACI 318-19 Tabla 5.3.1 (a)–(g), 5.3.3 (0,5L), 5.3.6 (T ≥ 1,0), 5.3.7 (F) y 5.3.8 (H).')
+      + ' Sismo en dos direcciones (opción 100 % + 30 %): ASCE 7-16 §12.5.3.1(a); verifique la exigencia de la norma sísmica aplicada. Temperatura T: incluida con factor 1,0 en la combinación gravitacional (ASCE 7-16 §2.3.4 / ACI 5.3.6 exigen factor ≥ 1,0 sin fijar la combinación; criterio del programa). Cargas de puente grúa tratadas como carga de uso L. Madera: K_D según NCh1198 con la duración del estado más corto de la combinación.';
+    // impresión
+    const rr = (l, v) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${v}</td></tr>`;
+    const datos = `<div class="xlsx-title-bar">DATOS DE ENTRADA</div><table class="xlsx-table"><tbody>
+      ${rr('Norma de combinaciones', esc($('cc_norma').selectedOptions[0].text))}
+      ${rr('Familias', res.map(r => esc(r.f.p + ' — ' + r.set.n)).join('<br>'))}
+      ${rr('Sismo en dos direcciones', op.orto ? '100 % + 30 %' : 'cada dirección por separado')}
+      ${op.medioL ? rr('Factor en L con viento o sismo', '0,5') : ''}
+      ${op.hEstab ? rr('Empuje H', 'se opone al viento o sismo: 0 en combinaciones con 0,9D / 0,6D') : ''}
+    </tbody></table>
+    <div class="xlsx-section">ESTADOS DE CARGA</div><table class="xlsx-table"><tbody>
+      ${est.map(e => `<tr><td class="xv-label"><b>${esc(e.nm)}</b></td><td class="xv-input" colspan="3">${esc(e.d)} — ${esc(CC_CLASE[e.cl])}</td></tr>`).join('')}</tbody></table>`;
+    let ns = 0;
+    const calc = `<div class="xlsx-title-bar">COMBINACIONES DE CARGA</div>${res.map(r => `<div class="xlsx-section">${++ns}. ${esc(r.f.p)} — ${esc(r.f.n.toUpperCase())} (${esc(r.set.n)})</div>${tablaFam(r, true)}`).join('')}
+      <div class="xlsx-desc-row" style="padding:.3rem">${esc($('cc_fuente').textContent)}</div>`;
+    const resum = `<div class="xlsx-title-bar">COMBINACIONES DE CARGA</div>${res.map(r => `<div class="xlsx-section">${esc(r.f.p)} — ${esc(r.set.n)}</div>${tablaFam(r, true)}`).join('')}`;
+    xlsxSetPrintSheets(datos, calc, resum);
+  }
+  const msg = t => { $('cc_msg').textContent = t; };
+  const copiar = (txt, ok) => {
+    if (!txt) { msg('No hay combinaciones para copiar.'); return; }
+    const alt = () => { const ta = $('cc_txt'), v = ta.value; ta.value = txt; ta.select(); try { document.execCommand('copy'); msg(ok); } catch (e) { msg('No se pudo copiar: seleccione el texto y use Ctrl+C.'); } ta.value = v; };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(() => msg(ok), alt); else alt();
+  };
+  const bajar = (txt, nombre, tipo) => {
+    if (!txt) { msg('No hay combinaciones para descargar.'); return; }
+    const blob = new Blob(['﻿' + txt], { type: tipo }), a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = nombre; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500); msg('Archivo descargado: ' + nombre);
+  };
+  $('cc_bCopTab').addEventListener('click', () => copiar(ult.tabla, 'Copiado: ' + ult.lineas.length + ' combinaciones (nombre y expresión separados por tabulación).'));
+  $('cc_bCopTxt').addEventListener('click', () => copiar(ult.lineas.join('\r\n'), 'Copiado: ' + ult.lineas.length + ' líneas Nombre=expresión.'));
+  $('cc_bTxt').addEventListener('click', () => bajar(ult.lineas.join('\r\n'), 'Combinaciones_RAM.txt', 'text/plain'));
+  $('cc_bCsv').addEventListener('click', () => bajar(ult.csv, 'Combinaciones_RAM.csv', 'text/csv'));
+  container.querySelectorAll('input,select').forEach(el => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
+  recalc();
+}
+
+/* =========================================================================
    DISEÑO EN ACERO INOXIDABLE — ANSI/AISC 370-21
    (Specification for Structural Stainless Steel Buildings)
    Módulos: barra (tracción D, compresión E, flexión F, corte G, interacción
@@ -53565,6 +53888,7 @@ const CALC_RENDERERS = { murosTrafo: renderMurosTrafo, memorias: renderMemorias,
   dosificacion: renderDosificacion,
   fuegoLosas: renderFuegoLosas,
   cargasUso: renderCargasUso,
+  combinacionesCarga: renderCombinacionesCarga,
   inoxidable: renderIxInox,
   metalcon: renderMetalcon };
 
