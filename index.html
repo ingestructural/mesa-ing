@@ -51162,25 +51162,31 @@ const CC_DUR0 = { D: 1577880000, F: 1577880000, H: 1577880000, L: 315576000, T: 
 // ['T',f] · ['ROOF',f] una de Lr/S/R · ['S',f] nieve · ['W',f] una dirección de viento · ['LW',fL,fW] L o W (uno de los dos)
 // ['E',f,sv] una dirección de sismo con ± (sv = signo del sismo vertical: +1 junto a 1,2D, −1 junto a 0,9D/0,6D)
 const CC_SETS = {
-  nchL: { n: 'NCh3171:2017 — diseño por resistencia (LRFD)', fam: 'LRFD', ver: false, rows: [
-    ['1', [['D', 1.4], ['F', 1.4]]],
+  // NCh3171.Of2010 cláusula 9.1.1 (texto entregado por ING, 03-11-2026). Excepciones: a) 0,5L en 3a, 4 y 5 si L0 ≤ 5 kN/m²;
+  // b) F y T con el factor de D en 1, 2, 3a, 3b, 4, 5 y 7; c) H con 1,6 en 2 y 3a, y en 3b, 4, 5, 6 y 7 cuando se suma a E o W
+  // (0 en 6 y 7 si se opone; H incluye el empuje sísmico en las combinaciones con sismo); e) 1,3W en 4 y 6 si W no se redujo por Kd.
+  nchL: { n: 'NCh3171.Of2010 9.1.1 — diseño por resistencia (LRFD)', fam: 'LRFD', ver: true, rows: [
+    ['1', [['D', 1.4], ['F', 1.4], ['T', 1.4]]],
     ['2', [['D', 1.2], ['F', 1.2], ['T', 1.2], ['L', 1.6], ['H', 1.6], ['ROOF', 0.5]]],
-    ['3', [['D', 1.2], ['ROOF', 1.6], ['LW', 1.0, 0.8, 'x']]],
-    ['4', [['D', 1.2], ['W', 1.6], ['L', 1.0, 'x'], ['ROOF', 0.5]]],
-    ['5', [['D', 1.2], ['E', 1.4, 1], ['L', 1.0, 'x'], ['S', 0.2]]],
-    ['6', [['D', 0.9], ['W', 1.6], ['H', 1.6, 'est']]],
-    ['7', [['D', 0.9], ['E', 1.4, -1], ['H', 1.6, 'est']]]] },
-  nchA: { n: 'NCh3171:2017 — tensiones admisibles (ASD)', fam: 'ASD', ver: false, rows: [
-    ['1', [['D', 1], ['F', 1]]],
-    ['2', [['D', 1], ['H', 1], ['F', 1], ['L', 1], ['T', 1]]],
-    ['3', [['D', 1], ['H', 1], ['F', 1], ['ROOF', 1]]],
-    ['4', [['D', 1], ['H', 1], ['F', 1], ['L', 0.75], ['T', 0.75], ['ROOF', 0.75]]],
-    ['5 (W)', [['D', 1], ['H', 1], ['F', 1], ['W', 1]]],
-    ['5 (E)', [['D', 1], ['H', 1], ['F', 1], ['E', 1, 1]]],
-    ['6 (W)', [['D', 1], ['H', 1], ['F', 1], ['W', 0.75], ['L', 0.75], ['ROOF', 0.75]]],
-    ['6 (E)', [['D', 1], ['H', 1], ['F', 1], ['E', 0.75, 1], ['L', 0.75], ['ROOF', 0.75]]],
+    ['3a', [['D', 1.2], ['F', 1.2], ['T', 1.2], ['ROOF', 1.6], ['L', 1.0, 'x'], ['H', 1.6]]],
+    ['3b', [['D', 1.2], ['F', 1.2], ['T', 1.2], ['ROOF', 1.6], ['W', 0.8], ['H', 1.6, 'est']]],
+    ['4', [['D', 1.2], ['F', 1.2], ['T', 1.2], ['W', 1.6, 'w13'], ['L', 1.0, 'x'], ['ROOF', 0.5], ['H', 1.6, 'est']]],
+    ['5', [['D', 1.2], ['F', 1.2], ['T', 1.2], ['E', 1.4, 1, 1.6], ['L', 1.0, 'x'], ['S', 0.2], ['H', 1.6, 'est']]],
+    ['6', [['D', 0.9], ['W', 1.6, 'w13'], ['H', 1.6, 'est']]],
+    ['7', [['D', 0.9], ['F', 0.9], ['T', 0.9], ['E', 1.4, -1, 1.6], ['H', 1.6, 'est']]]] },
+  // NCh3171.Of2010 cláusula 9.2.1. Excepciones: a) F y T con el factor de D en todas excepto la 7; b) H con 1,0 en 2, 3 y 4,
+  // y en 5a, 5b, 6a y 6b cuando se suma a E o W (0 si se opone). Sin incremento de tensiones admisibles.
+  nchA: { n: 'NCh3171.Of2010 9.2.1 — tensiones admisibles (ASD)', fam: 'ASD', ver: true, rows: [
+    ['1', [['D', 1], ['F', 1], ['T', 1]]],
+    ['2', [['D', 1], ['F', 1], ['T', 1], ['L', 1], ['H', 1]]],
+    ['3', [['D', 1], ['F', 1], ['T', 1], ['ROOF', 1], ['H', 1]]],
+    ['4', [['D', 1], ['F', 1], ['T', 1], ['L', 0.75], ['ROOF', 0.75], ['H', 1]]],
+    ['5a', [['D', 1], ['F', 1], ['T', 1], ['W', 1], ['H', 1, 'est']]],
+    ['5b', [['D', 1], ['F', 1], ['T', 1], ['E', 1, 1, 1], ['H', 1, 'est']]],
+    ['6a', [['D', 1], ['F', 1], ['T', 1], ['W', 0.75], ['L', 0.75], ['ROOF', 0.75], ['H', 1, 'est']]],
+    ['6b', [['D', 1], ['F', 1], ['T', 1], ['E', 0.75, 1, 1], ['L', 0.75], ['S', 0.75], ['H', 1, 'est']]],
     ['7', [['D', 0.6], ['W', 1], ['H', 1, 'est']]],
-    ['8', [['D', 0.6], ['E', 1, -1], ['H', 1, 'est']]]] },
+    ['8', [['D', 0.6], ['F', 0.6], ['T', 0.6], ['E', 1, -1, 1], ['H', 1, 'est']]]] },
   asceL: { n: 'ASCE 7-16 §2.3.1 y §2.3.6 — LRFD (AISC 360-16 B2)', fam: 'LRFD', ver: false, rows: [
     ['1', [['D', 1.4], ['F', 1.4], ['H', 1.6]]],
     ['2', [['D', 1.2], ['F', 1.2], ['T', 1.0], ['L', 1.6], ['H', 1.6], ['ROOF', 0.5]]],
@@ -51216,6 +51222,7 @@ const CC_FAMS = [
   { p: 'F', n: 'Fundaciones — dimensionamiento en servicio (tensiones en el suelo, volcamiento, deslizamiento)', set: nor => nor === 'nch' ? 'nchA' : 'asceA' },
   { p: 'MA', n: 'Madera — tensiones admisibles (NCh1198), con K_D', set: nor => nor === 'nch' ? 'nchA' : 'asceA' },
 ];
+const CC_NOTA_F = 'NCh3171.Of2010 9.2.1, Nota: para el diseño de fundaciones superficiales aisladas con las combinaciones (7) y (8) se debe asegurar un factor de seguridad al volcamiento mayor que 1,5 y/o un área comprimida mínima de 50 %.';
 function ccKD(t) { return 1.747 * Math.pow(t, -0.0464) + 0.295; }
 function ccFmt(f) { const r = Math.round(f * 10000) / 10000; return String(r); }
 // Expresión con la sintaxis de RAM: factores con punto decimal, sin espacios; factor 1 se omite.
@@ -51246,17 +51253,17 @@ function ccGenerar(setKey, est, op) {
       else if (k === 'L') mult([de('L').map(e => [e, fL(t, t[1])])]);
       else if (k === 'S') mult([de('S').map(e => [e, t[1]])]);
       else if (k === 'ROOF') mult(roof.length ? roof.map(c => de(c).map(e => [e, t[1]])) : [[]]);
-      else if (k === 'W') mult(W.map(e => [[e, t[1]]]));
+      else if (k === 'W') mult(W.map(e => [[e, (t[2] === 'w13' && op.w13) ? 1.3 : t[1]]]));
       else if (k === 'LW') {
         const L = de('L'), alts = [];
         if (L.length) alts.push(L.map(e => [e, fL(t, t[1])]));
         W.forEach(e => alts.push([[e, t[2]]]));
         mult(alts.length ? alts : [[]]);
       } else if (k === 'E') {
-        const f = t[1], sv = t[2], alts = [];
+        const f = t[1], sv = t[2], fES = t[3] != null ? t[3] : t[1], alts = [];
         EH.forEach(h => [1, -1].forEach(s => {
           const otros = op.orto ? EH.filter(o => o.cl !== h.cl) : [];
-          const base = [[h, s * f]].concat(EV.map(v => [v, sv * f]), ES.map(v => [v, f]));
+          const base = [[h, s * f]].concat(EV.map(v => [v, sv * f]), ES.map(v => [v, fES]));
           if (!otros.length) alts.push(base);
           else [1, -1].forEach(s2 => alts.push(base.concat(otros.map(o => [o, s2 * 0.3 * f]))));
         }));
@@ -51294,7 +51301,7 @@ function renderCombinacionesCarga(container) {
       <h3>1 · Norma y familias de combinaciones</h3>
       <div class="field-grid">
         <div class="field"><label>Norma de combinaciones</label><select id="cc_norma">
-          <option value="nch">NCh3171:2017 — Chile (sismo NCh433 + DS61 / NCh2369, viento NCh432)</option>
+          <option value="nch">NCh3171.Of2010 — Chile (sismo NCh433 + DS61 / NCh2369, viento NCh432)</option>
           <option value="asce">ASCE 7-16 (AISC 360-16) y ACI 318-19 Tabla 5.3.1</option></select></div>
         <div class="field"><label>Método para el acero (A)</label><select id="cc_mA"><option value="LRFD">LRFD — factores de carga</option><option value="ASD">ASD — tensiones admisibles</option></select></div>
         <div class="field"><label>Sismo en dos direcciones horizontales</label><select id="cc_orto"><option value="0">Cada dirección por separado</option><option value="1">100 % en una dirección + 30 % en la otra</option></select></div>
@@ -51303,8 +51310,9 @@ function renderCombinacionesCarga(container) {
         ${CC_FAMS.map(f => `<label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cc_f${f.p}" checked style="width:auto;min-width:0;flex:none;margin:0"> <span><b>${f.p}</b> — ${esc(f.n)}</span></label>`).join('')}
       </div>
       <div style="display:flex;flex-direction:column;gap:.4rem;margin-top:.7rem">
-        <label style="display:flex;gap:.45rem;align-items:flex-start;cursor:pointer"><input type="checkbox" id="cc_medioL" style="width:auto;min-width:0;flex:none;margin:.2rem 0 0"> <span>Usar factor 0,5 en L en las combinaciones con viento o sismo (sólo si L₀ ≤ 4,79 kPa = 0,488 t/m² y no son estacionamientos ni lugares de reunión pública)</span></label>
-        <label style="display:flex;gap:.45rem;align-items:flex-start;cursor:pointer"><input type="checkbox" id="cc_hEstab" style="width:auto;min-width:0;flex:none;margin:.2rem 0 0"> <span>El empuje de tierra H se opone al efecto del viento o sismo (factor 0 en las combinaciones con 0,9D / 0,6D)</span></label>
+        <label style="display:flex;gap:.45rem;align-items:flex-start;cursor:pointer"><input type="checkbox" id="cc_medioL" style="width:auto;min-width:0;flex:none;margin:.2rem 0 0"> <span id="cc_medioLtx"></span></label>
+        <label style="display:flex;gap:.45rem;align-items:flex-start;cursor:pointer" id="cc_wW13"><input type="checkbox" id="cc_w13" style="width:auto;min-width:0;flex:none;margin:.2rem 0 0"> <span>Viento W no reducido por el factor de direccionalidad Kd: usar 1,3W en lugar de 1,6W en las combinaciones (4) y (6) (NCh3171.Of2010 9.1.1 e)</span></label>
+        <label style="display:flex;gap:.45rem;align-items:flex-start;cursor:pointer"><input type="checkbox" id="cc_hEstab" style="width:auto;min-width:0;flex:none;margin:.2rem 0 0"> <span id="cc_hEstabtx"></span></label>
       </div>
       <div id="cc_avNorma" style="margin-top:.6rem"></div>
     </div>
@@ -51344,7 +51352,14 @@ function renderCombinacionesCarga(container) {
   const exprCL = terms => terms.map((t, i) => { const a = Math.abs(t.f); return (t.f < 0 ? ' − ' : i ? ' + ' : '') + (Math.abs(a - 1) < 1e-9 ? '' : nCL(a)) + t.nm; }).join('');
   function recalc() {
     const nor = $('cc_norma').value, mA = $('cc_mA').value;
-    const op = { orto: $('cc_orto').value === '1', medioL: $('cc_medioL').checked, hEstab: $('cc_hEstab').checked };
+    const op = { orto: $('cc_orto').value === '1', medioL: $('cc_medioL').checked, hEstab: $('cc_hEstab').checked, w13: nor === 'nch' && $('cc_w13').checked };
+    $('cc_wW13').hidden = nor !== 'nch';
+    $('cc_medioLtx').textContent = nor === 'nch'
+      ? 'Usar factor 0,5 en L en las combinaciones (3a), (4) y (5) de resistencia (NCh3171.Of2010 9.1.1 a): sólo si L₀ ≤ 5 kN/m² (0,51 t/m²) según NCh1537, salvo estacionamientos y lugares de asamblea pública'
+      : 'Usar factor 0,5 en L en las combinaciones de resistencia con viento o sismo (ASCE 7-16 §2.3.1 exc. 1 / ACI 318-19 5.3.3): sólo si L₀ ≤ 4,79 kPa (0,488 t/m²), salvo estacionamientos y lugares de reunión pública';
+    $('cc_hEstabtx').textContent = nor === 'nch'
+      ? 'La presión lateral del suelo H se opone a la acción de E o W: factor 0 en las combinaciones con viento o sismo (NCh3171.Of2010 9.1.1 c y 9.2.1 b)'
+      : 'El empuje de tierra H se opone al efecto del viento o sismo: factor 0 en las combinaciones con 0,9D / 0,6D (ASCE 7-16 §2.3.1 / ACI 318-19 5.3.8)';
     const fams = CC_FAMS.filter(f => $('cc_f' + f.p).checked);
     $('cc_mA').closest('.field').hidden = !$('cc_fA').checked;
     container.querySelectorAll('.cc-dur').forEach(el => { el.hidden = !$('cc_fMA').checked; });
@@ -51364,7 +51379,7 @@ function renderCombinacionesCarga(container) {
     if (!fams.length) errs.push('Marque al menos una familia de combinaciones (A, H, F o MA).');
     $('cc_errEst').innerHTML = errs.length ? `<div class="note" style="color:var(--bad,#b00020)"><b>Datos inválidos:</b> ${errs.map(esc).join(' ')}</div>` : '';
     $('cc_avNorma').innerHTML = nor === 'nch'
-      ? `<div class="note">NCh3171 sigue la estructura de las combinaciones de ASCE 7-02/7-05 (§2.3.2 y §2.4.1) con el sismo amplificado por 1,4 en resistencia y por 1,0 en tensiones admisibles. La transcripción de los factores de NCh3171:2017 queda pendiente de cotejo con el texto de la norma.</div>`
+      ? `<div class="note">Combinaciones transcritas de NCh3171.Of2010, cláusula 9 (9.1.1 y 9.2.1). En diseño sísmico prevalecen las disposiciones de NCh433, NCh2369 y NCh2745 (cláusula 9). No es necesario considerar viento y sismo simultáneos. En zonas donde viento y nieve no son eventuales (montañosas, regiones XI y XII) deben estudiarse combinaciones especiales que reemplacen las (3b), (4) y (5) de resistencia y la (6) de tensiones admisibles.</div>`
       : `<div class="note">ASCE 7-16 usa viento de nivel último (1,0W en LRFD, 0,6W en ASD). No use estos factores con presiones de NCh432, que son de nivel de servicio: en ese caso elija NCh3171.</div>`;
     if (errs.length) {
       $('cc_res').innerHTML = '<div class="note">Corrija los datos de la tabla 2 para generar las combinaciones.</div>';
@@ -51387,7 +51402,7 @@ function renderCombinacionesCarga(container) {
         ${r.lst.map(c => `<tr><td><b>${esc(c.nm)}</b></td><td>${esc(exprCL(c.terms))}</td><td><code>${esc(c.expr)}</code></td><td style="white-space:nowrap">${esc(c.eq)}</td>${ma ? `<td class="num">${nCL(Math.round(c.KD * 1000) / 1000)}</td>` : ''}</tr>`).join('')}</table>`;
     };
     $('cc_res').innerHTML = res.map(r => `<h4 style="margin:.9rem 0 .3rem">${esc(r.f.p)} — ${esc(r.f.n)} <small style="font-weight:normal">· ${esc(r.set.n)} · ${r.lst.length} combinaciones</small></h4>
-      <div style="overflow-x:auto">${tablaFam(r, false)}</div>${r.f.p === 'MA' ? '<div class="note">K_D = 1,747·t^(−0,0464) + 0,295 (NCh1198), con t la duración del estado de menor duración de la combinación.</div>' : ''}`).join('')
+      <div style="overflow-x:auto">${tablaFam(r, false)}</div>${r.f.p === 'MA' ? '<div class="note">K_D = 1,747·t^(−0,0464) + 0,295 (NCh1198), con t la duración del estado de menor duración de la combinación.</div>' : ''}${r.f.p === 'F' && r.sk === 'nchA' ? `<div class="note">${CC_NOTA_F}</div>` : ''}`).join('')
       + `<div class="note"><b>Total:</b> ${res.reduce((s, r) => s + r.lst.length, 0)} combinaciones.</div>`;
     // exportación
     const todas = [].concat(...res.map(r => r.lst.map(c => ({ c, r }))));
@@ -51398,24 +51413,25 @@ function renderCombinacionesCarga(container) {
     ult = { lineas, tabla, csv };
     $('cc_txt').value = lineas.join('\n');
     $('cc_fuente').textContent = 'Fuentes: ' + (nor === 'nch'
-      ? 'NCh3171:2017 Diseño estructural — Disposiciones generales y combinaciones de cargas (INN), que adopta la estructura de ASCE 7 (2.3.2 resistencia: 1,4D; 1,2D + 1,6L + 0,5(Lr o S o R); 1,2D + 1,6(Lr o S o R) + (L o 0,8W); 1,2D + 1,6W + L + 0,5(Lr o S o R); 1,2D + 1,4E + L + 0,2S; 0,9D + 1,6W + 1,6H; 0,9D + 1,4E + 1,6H. 2.4.1 tensiones admisibles: D + F; D + H + F + L + T; D + H + F + (Lr o S o R); D + H + F + 0,75(L + T) + 0,75(Lr o S o R); D + H + F + (W o E); D + H + F + 0,75(W o E) + 0,75L + 0,75(Lr o S o R); 0,6D + W + H; 0,6D + E + H). Estructura y factores no sísmicos cotejados con ASCE 7-02 §2.3.2 y §2.4.1 (texto en los archivos del proyecto); excepción 1: factor 0,5 en L de las combinaciones 3 a 5 si L₀ ≤ 4,79 kPa, salvo estacionamientos y reunión pública; excepción 2: H = 0 en 6 y 7 si se opone a W o E.'
+      ? 'NCh3171.Of2010 Diseño estructural — Disposiciones generales y combinaciones de cargas (INN; D. Ex. N° 415 de 2010, MINVU), cláusula 9. 9.1.1 resistencia: (1) 1,4D; (2) 1,2D + 1,6L + 0,5(Lr o S o R); (3a) 1,2D + 1,6(Lr o S o R) + L; (3b) 1,2D + 1,6(Lr o S o R) + 0,8W; (4) 1,2D + 1,6W + L + 0,5(Lr o S o R); (5) 1,2D + 1,4E + L + 0,2S; (6) 0,9D + 1,6W; (7) 0,9D + 1,4E; excepciones: a) 0,5L en (3a), (4) y (5) si L₀ ≤ 5 kN/m², salvo estacionamientos y asamblea pública; b) F y T con el factor de D en (1), (2), (3a), (3b), (4), (5) y (7); c) H con 1,6 en (2) y (3a), y en (3b), (4), (5), (6) y (7) cuando se suma a E o W, 0 en (6) y (7) cuando se opone; e) 1,3W en (4) y (6) si W no fue reducido por Kd. 9.2.1 tensiones admisibles: (1) D; (2) D + L; (3) D + (Lr o S o R); (4) D + 0,75L + 0,75(Lr o S o R); (5a) D + W; (5b) D + E; (6a) D + 0,75W + 0,75L + 0,75(Lr o S o R); (6b) D + 0,75E + 0,75L + 0,75S; (7) 0,6D + W; (8) 0,6D + E; excepciones: a) F y T con el factor de D en todas excepto la (7); b) H con 1,0 en (2), (3) y (4), y en (5a), (5b), (6a) y (6b) cuando se suma a E o W, 0 cuando se opone; sin incremento de tensiones admisibles. H incluye el empuje sísmico del suelo en las combinaciones con sismo (3.2), por lo que el incremento sísmico del empuje lleva el factor de H. Criterio del programa: en tensiones admisibles H también se incluye con 1,0 en (7) y (8) cuando se suma (como en ASCE 7-05 2.4.1, base de la norma); con la opción «H se opone» se usa 0 en todas las combinaciones con viento o sismo; el sismo vertical se suma con el signo del peso en (5), (5b) y (6b) y se resta en (7) y (8).'
       : 'ASCE/SEI 7-16 §2.3.1 (1,4D; 1,2D + 1,6L + 0,5(Lr o S o R); 1,2D + 1,6(Lr o S o R) + (L o 0,5W); 1,2D + 1,0W + L + 0,5(Lr o S o R); 0,9D + 1,0W), §2.3.6 (1,2D + Ev + Eh + L + 0,2S; 0,9D − Ev + Eh), §2.4.1 (D; D + L; D + (Lr o S o R); D + 0,75L + 0,75(Lr o S o R); D + 0,6W; D + 0,75L + 0,75(0,6W) + 0,75(Lr o S o R); 0,6D + 0,6W) y §2.4.5 (D + 0,7Ev + 0,7Eh; D + 0,525Ev + 0,525Eh + 0,75L + 0,75S; 0,6D − 0,7Ev + 0,7Eh); F con el factor de D; H con 1,6 (LRFD) o 1,0 (ASD) cuando se suma y 0 cuando se opone y no es permanente; Ev = 0,2·SDS·D (§12.4.2.2). AISC 360-16 B2 remite a ASCE 7. ACI 318-19 Tabla 5.3.1 (a)–(g), 5.3.3 (0,5L), 5.3.6 (T ≥ 1,0), 5.3.7 (F) y 5.3.8 (H).')
-      + ' Sismo en dos direcciones (opción 100 % + 30 %): ASCE 7-16 §12.5.3.1(a); verifique la exigencia de la norma sísmica aplicada. Temperatura T: incluida con factor 1,0 en la combinación gravitacional (ASCE 7-16 §2.3.4 / ACI 5.3.6 exigen factor ≥ 1,0 sin fijar la combinación; criterio del programa). Cargas de puente grúa tratadas como carga de uso L. Madera: K_D según NCh1198 con la duración del estado más corto de la combinación.';
+      + ' Sismo en dos direcciones (opción 100 % + 30 %): ASCE 7-16 §12.5.3.1(a); verifique la exigencia de la norma sísmica aplicada.' + (nor === 'nch' ? '' : ' Temperatura T: incluida con factor 1,0 en la combinación gravitacional (ASCE 7-16 §2.3.4 / ACI 5.3.6 exigen factor ≥ 1,0 sin fijar la combinación; criterio del programa).') + ' Cargas de puente grúa tratadas como carga de uso L. Madera: K_D según NCh1198 con la duración del estado más corto de la combinación.';
     // impresión
     const rr = (l, v) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${v}</td></tr>`;
     const datos = `<div class="xlsx-title-bar">DATOS DE ENTRADA</div><table class="xlsx-table"><tbody>
       ${rr('Norma de combinaciones', esc($('cc_norma').selectedOptions[0].text))}
       ${rr('Familias', res.map(r => esc(r.f.p + ' — ' + r.set.n)).join('<br>'))}
       ${rr('Sismo en dos direcciones', op.orto ? '100 % + 30 %' : 'cada dirección por separado')}
-      ${op.medioL ? rr('Factor en L con viento o sismo', '0,5') : ''}
-      ${op.hEstab ? rr('Empuje H', 'se opone al viento o sismo: 0 en combinaciones con 0,9D / 0,6D') : ''}
+      ${op.medioL ? rr('Factor 0,5 en L', nor === 'nch' ? 'combinaciones (3a), (4) y (5) — 9.1.1 a)' : 'combinaciones con viento o sismo') : ''}
+      ${op.w13 ? rr('Viento sin factor Kd', '1,3W en (4) y (6) — 9.1.1 e)') : ''}
+      ${op.hEstab ? rr('Empuje H', nor === 'nch' ? 'se opone a E o W: 0 en las combinaciones con viento o sismo' : 'se opone al viento o sismo: 0 en combinaciones con 0,9D / 0,6D') : ''}
     </tbody></table>
     <div class="xlsx-section">ESTADOS DE CARGA</div><table class="xlsx-table"><tbody>
       ${est.map(e => `<tr><td class="xv-label"><b>${esc(e.nm)}</b></td><td class="xv-input" colspan="3">${esc(e.d)} — ${esc(CC_CLASE[e.cl])}</td></tr>`).join('')}</tbody></table>`;
     let ns = 0;
-    const calc = `<div class="xlsx-title-bar">COMBINACIONES DE CARGA</div>${res.map(r => `<div class="xlsx-section">${++ns}. ${esc(r.f.p)} — ${esc(r.f.n.toUpperCase())} (${esc(r.set.n)})</div>${tablaFam(r, true)}`).join('')}
+    const calc = `<div class="xlsx-title-bar">COMBINACIONES DE CARGA</div>${res.map(r => `<div class="xlsx-section">${++ns}. ${esc(r.f.p)} — ${esc(r.f.n.toUpperCase())} (${esc(r.set.n)})</div>${tablaFam(r, true)}${r.f.p === 'F' && r.sk === 'nchA' ? `<div class="xlsx-desc-row" style="padding:.3rem">${CC_NOTA_F}</div>` : ''}`).join('')}
       <div class="xlsx-desc-row" style="padding:.3rem">${esc($('cc_fuente').textContent)}</div>`;
-    const resum = `<div class="xlsx-title-bar">COMBINACIONES DE CARGA</div>${res.map(r => `<div class="xlsx-section">${esc(r.f.p)} — ${esc(r.set.n)}</div>${tablaFam(r, true)}`).join('')}`;
+    const resum = `<div class="xlsx-title-bar">COMBINACIONES DE CARGA</div>${res.map(r => `<div class="xlsx-section">${esc(r.f.p)} — ${esc(r.set.n)}</div>${tablaFam(r, true)}${r.f.p === 'F' && r.sk === 'nchA' ? `<div class="xlsx-desc-row" style="padding:.3rem">${CC_NOTA_F}</div>` : ''}`).join('')}`;
     xlsxSetPrintSheets(datos, calc, resum);
   }
   const msg = t => { $('cc_msg').textContent = t; };
