@@ -43360,7 +43360,7 @@ function renderSeleccionPernos(container) {
 
     <div class="panel">
       <h3>1 · Calidad, diámetro y tipo de uso</h3>
-      <style>.sp-uno{display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:1rem;align-items:start}#sp_mini svg{width:100%;height:auto}@media (max-width:760px){.sp-uno{grid-template-columns:1fr}#sp_mini{max-width:320px;margin:0 auto}}</style>
+      <style>.sp-uno{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:1rem;align-items:start}#sp_tqbox{border:1px solid var(--line,#ccc);border-radius:6px;padding:.5rem .6rem;font-size:.85rem;cursor:context-menu}#sp_tqbox table{width:100%;border-collapse:collapse}#sp_tqbox td{padding:.25rem .3rem;border-top:1px solid var(--line,#ddd);vertical-align:top}#sp_tqbox td.num{white-space:nowrap;text-align:right}#sp_tqbox tr.sel td{font-weight:700}#sp_tqbox .tq-tit{font-weight:700;margin-bottom:.3rem}@media (max-width:760px){.sp-uno{grid-template-columns:1fr}}</style>
       <div class="sp-uno">
       <div class="field-grid">
         <div class="field"><label>Calidad del perno</label><select id="sp_grado">${cdOptions(SP_GRADO, state.gradoIdx)}</select></div>
@@ -43372,7 +43372,7 @@ function renderSeleccionPernos(container) {
         <div class="field" id="sp_grp_t3"><label>t3 — espesor plancha 3, lado de la tuerca (mm)</label><input type="text" inputmode="decimal" id="sp_t3" value="0" list="dl_sp_t"></div>
         <datalist id="dl_sp_t"><option value="0">Sin dato — sólo verificar el perno</option><option value="8">Plancha 8 mm</option><option value="10">Plancha 10 mm</option><option value="12">Plancha 12 mm</option><option value="16">Plancha 16 mm</option><option value="20">Plancha 20 mm</option><option value="25">Plancha 25 mm</option></datalist>
       </div>
-      <div id="sp_mini" title="Elevación del perno con los datos ingresados"></div>
+      <div><div id="sp_tqbox" title="Clic derecho → Copiar: copia el recuadro completo"></div><button type="button" class="btn" id="sp_tqcopy" style="margin-top:.35rem">📋 Copiar torques</button> <span class="note" id="sp_tqmsg"></span></div>
       </div>
       <div class="note" style="margin-top:.4rem">Espesores de las planchas unidas (alas, gussets, placas). Con ellos se calcula el grip, el largo comercial del perno y se verifica si la rosca queda dentro o fuera del plano de corte. Déjelos en 0 para verificar sólo el perno.</div>
       <div class="note" id="sp_gradoObs" style="margin-top:.5rem"></div>
@@ -43417,6 +43417,15 @@ function renderSeleccionPernos(container) {
 
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>
   `;
+  { const box = document.getElementById('sp_tqbox'), msg = document.getElementById('sp_tqmsg');
+    const selAll = () => { const rg = document.createRange(); rg.selectNodeContents(box); const sl = window.getSelection(); sl.removeAllRanges(); sl.addRange(rg); };
+    box.addEventListener('contextmenu', selAll);
+    box.addEventListener('copy', e => { if (!box._txt) return; e.preventDefault(); e.clipboardData.setData('text/plain', box._txt); e.clipboardData.setData('text/html', box._html); });
+    document.getElementById('sp_tqcopy').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(box._txt); }
+      catch (_) { selAll(); document.execCommand('copy'); }
+      msg.textContent = 'Copiado'; setTimeout(() => msg.textContent = '', 1800);
+    }); }
 
   function actualizarVisibilidad() {
     const showVu = state.tipoUso.startsWith('corteSimple') || state.tipoUso.startsWith('corteDoble') || state.tipoUso.startsWith('combinado');
@@ -43463,7 +43472,18 @@ function renderSeleccionPernos(container) {
       roscaTxt: G.ingresado ? (G.hayCorte ? (G.roscaEnPlano ? 'Incluida en el plano (N)' : 'Excluida del plano (X)') : 'No aplica (tracción)') : '',
       okLargo: G.okLargo, okRoscaApriete: G.okRoscaApriete, okCondRosca: G.okCondRosca});
 
-    document.getElementById('sp_mini').innerHTML = svgPerno(state, r);
+    { const g0 = SP_GRADO[state.gradoIdx], d0 = SP_DIAM[state.diamIdx], t0 = spTorque(g0, d0);
+      const ac = t0.aplica ? `${fmt0(t0.TmaxNm)} N·m (${fmt3(t0.Tmax)} tonf·m)` : 'No aplica: apriete ajustado (calidad sin pretensión en AISC 360-16 Tabla J3.1)';
+      const val = { acero: ac, aceroMadera: 'Sin torque de pretensión: apriete ajustado con golilla; reapretar tras el secado', maderaMadera: 'Sin torque de pretensión: apriete ajustado con golilla en ambas caras; reapretar tras el secado',
+        hormigonPre: 'Apriete ajustado (snug-tight), salvo pretensión especificada en el proyecto', hormigonPost: 'Torque Tinst del fabricante del anclaje (MPII, ICC-ES/ETA)' };
+      const tit = `Torque máximo de pretensión — ${g0.label}, Ø ${d0.label}`;
+      const filas = SP_UNION.map(u => ({ sel: u.v === state.tipoUnion, k: ({acero:'Acero – acero', aceroMadera:'Acero – madera', maderaMadera:'Madera – madera', hormigonPre:'Perno embebido en hormigón', hormigonPost:'Anclaje post-instalado en hormigón'})[u.v] || u.label, v: val[u.v] }));
+      const pie = t0.aplica ? `Acero–acero: T = 0,25·Tm·db, Tm = ${t0.TmKip} kips = ${fmt2(t0.Tm)} tonf (AISC 360-16 Tabla J3.1); límite superior, no torque de instalación.` : '';
+      const box = document.getElementById('sp_tqbox');
+      box.innerHTML = `<div class="tq-tit">${tit}</div><table>${filas.map(f => `<tr class="${f.sel?'sel':''}"><td>${f.k}</td><td class="${f.v===ac&&t0.aplica?'num':''}">${f.v}</td></tr>`).join('')}</table>` + (pie ? `<div class="note" style="margin-top:.3rem">${pie}</div>` : '');
+      box._txt = [tit, ...filas.map(f => `• ${f.k}: ${f.v}`), ...(pie ? [pie] : [])].join('\n');
+      const cs = getComputedStyle(box).fontFamily.replace(/"/g, "'"), td = 'padding:3px 6px;border-top:1px solid #ccc;vertical-align:top';
+      box._html = `<div style="font-family:${cs};font-size:13px"><b>${tit}</b><table style="border-collapse:collapse;margin-top:4px">${filas.map(f => `<tr><td style="${td}${f.sel?';font-weight:700':''}">${f.k}</td><td style="${td}${f.sel?';font-weight:700':''}">${f.v}</td></tr>`).join('')}</table>${pie ? `<div style="margin-top:4px;font-size:12px">${pie}</div>` : ''}</div>`; }
     document.getElementById('sp_esquema').innerHTML = svgPerno(state, r) +
       `<div class="note">${SP_GRADO[state.gradoIdx].label} ${SP_DIAM[state.diamIdx].label} — ${SP_TIPO_USO.find(t=>t.v===state.tipoUso).label}.</div>`;
 
