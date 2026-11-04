@@ -1944,8 +1944,8 @@ const TOOLS = [
   { id:'eett', cat:'Documentos', name:'Especificaciones Técnicas', file:null,
     desc:'Arma las especificaciones técnicas de estructuras de acero, hormigón armado, madera, albañilería reforzada y perfiles Metalcon en formato ING Estructural, con la biblioteca de EETT de la oficina; toma los datos del proyecto y las calidades de materiales desde la memoria de cálculo. Emite Word y PDF.',
     tag:'EETT · Formato ING · Word · PDF', calc:'eett' },
-  { id:'costaneras', cat:'Acero', name:'Costaneras C / CA / Z / Omega / Cajón', file:'Diseno_Costaneras_C_CA_Z_4.xlsx',
-    desc:'Perfiles conformados en frío (costaneras C, CA, Z, omega Metalcon y cajón cuadrado o rectangular de tubo Cintac): selección por catálogo, flexión biaxial por inclinación de techo, combinaciones con viento, deformaciones. Las omega y los cajones usan la sección efectiva de AISI S100-16.',
+  { id:'costaneras', cat:'Acero', name:'Costaneras C / CA / Z / Omega / OC', file:'Diseno_Costaneras_C_CA_Z_4.xlsx',
+    desc:'Perfiles conformados en frío (costaneras C, CA, Z, omega Metalcon y OC cuadrado o rectangular de tubo Cintac): selección por catálogo, flexión biaxial por inclinación de techo, combinaciones con viento, deformaciones. Las omega y los OC usan la sección efectiva de AISI S100-16.',
     tag:'AISI · catálogo CINTAC', calc:'costaneras' },
   { id:'metalcon', cat:'Acero', name:'Verificador de Secciones Metalcon', file:null,
     desc:'Perfiles Metalcon de Cintac (montantes C, canales U, omegas, ángulos, tirantes; estructural, tabiquería y cielos), simples, doble C espalda con espalda o cajón C dentro de U, según AISI S100-16 por el método del ancho efectivo: tracción, compresión con pandeo global, local y distorsional, flexión con pandeo lateral-torsional, local y distorsional, corte, abolladura del alma e interacciones; y uniones con tornillos autoperforantes.',
@@ -2541,7 +2541,7 @@ function calcCostaneras(inp) {
   }
   let cj = null;
   if (esCajon) {
-    // Cajón: AISI S100-16 F2.1 + F2.1.4 + F3.1 (costCajonEf); simétrico: igual con presión o succión. Sin φ_aprox.
+    // OC: AISI S100-16 F2.1 + F2.1.4 + F3.1 (costCajonEf); simétrico: igual con presión o succión. Sin φ_aprox.
     cj = costCajonEf(inp.perfil, Fy, L);
     MxAdmBase = cj.Mnx/omega; MyAdmBase = cj.Mny/omega;
     MxAdmI = MxAdmBase; MxAdmII = MxAdmBase*1.33;
@@ -3085,8 +3085,8 @@ function costanerasOptions() {
     const opts = op(CATALOG_COSTANERAS.filter(p => p.fam===fam));
     return `<optgroup label="${fam === 'OMA' ? 'Serie Omega — Metalcon y a medida (AISI S100, sección efectiva)' : 'Serie ' + fam}">${opts}${fam === 'OMA' ? '<option value="OMEGA_MEDIDA">Omega a medida (plegada) — ingresar dimensiones</option>' : ''}</optgroup>`;
   }).join('') +
-    `<optgroup label="Cajón cuadrado — tubo Cintac ASTM A500 (AISI S100, sección efectiva)">${op(caj.filter(p => p.H === p.B))}</optgroup>` +
-    `<optgroup label="Cajón rectangular — tubo Cintac ASTM A500 (AISI S100, sección efectiva)">${op(caj.filter(p => p.H !== p.B))}<option value="CAJON_MEDIDA">Cajón a medida — ingresar dimensiones</option></optgroup>`;
+    `<optgroup label="OC cuadrado — tubo Cintac ASTM A500 (AISI S100, sección efectiva)">${op(caj.filter(p => p.H === p.B))}</optgroup>` +
+    `<optgroup label="OC rectangular — tubo Cintac ASTM A500 (AISI S100, sección efectiva)">${op(caj.filter(p => p.H !== p.B))}<option value="CAJON_MEDIDA">OC a medida — ingresar dimensiones</option></optgroup>`;
 }
 /* Costaneras omega Metalcon: propiedades brutas calculadas con el motor del Verificador Metalcon (línea media,
    radio interior = e), instaladas con la cresta hacia arriba (la cubierta se fija a la cresta). Se agregan al
@@ -3116,7 +3116,7 @@ function costOmegaEf(perfil, FyKgf) {
   const top = mcFlexEf(sec, 'x', 1, Fy, Fy), bot = mcFlexEf(sec, 'x', -1, Fy, Fy), y = mcFlexEf(sec, 'y', 1, Fy, Fy);
   return { WxeTop: top.Se / 1e3, WxeBot: bot.Se / 1e3, Wye: y.Se / 1e3 };
 }
-/* Costaneras cajón (tubo cuadrado o rectangular conformado en frío, costura soldada) — AISI S100-16 (R2020).
+/* Costaneras OC (tubo cuadrado o rectangular conformado en frío, costura soldada) — AISI S100-16 (R2020).
    Catálogo: Cintac, «Perfiles para usos estructurales e industriales» (ed. enero 2014), tablas «Perfiles Cuadrados
    ASTM A500» y «Perfiles Rectangulares ASTM A500» (calidades A270ES, A240ES, SAE 1010, SAE 1008).
    Columnas: [H, B, e (mm), peso (kgf/m), A (cm²), Ix (cm⁴), Wx (cm³), ix (cm), Iy (cm⁴), Wy (cm³), iy (cm)] tal como
@@ -3124,7 +3124,7 @@ function costOmegaEf(perfil, FyKgf) {
    (radio exterior = 2e) coinciden con el catálogo dentro de ±2 % en todas las filas, salvo dos erratas del área en el
    propio catálogo (50x50x4: 9,95 cm²; 100x50x4: 10,59 cm²), incoherentes con su peso; la planilla usa siempre las
    propiedades recalculadas (A = 6,95 y 10,95 cm² en esos dos casos) y muestra el peso del catálogo.
-   Verificación (igual que las omega, por ancho efectivo): F2.1 (Mne = Sf·Fn ≤ My) con F2.1.4 (cajón cerrado: Lu y
+   Verificación (igual que las omega, por ancho efectivo): F2.1 (Mne = Sf·Fn ≤ My) con F2.1.4 (OC cerrado: Lu y
    Fcre, Cw despreciado, J de la Ec. C-F2.1-9 sin radios, conservador) y F3.1 (Mn = Se·Fn ≤ Set·Fy) con anchos
    efectivos del Apéndice 1 (1.1: paredes atiesadas, k = 4 en compresión uniforme y 1.1.2 con gradiente). Ωb = 1,67. */
 const COST_CAJON_CINTAC = [
@@ -3153,7 +3153,7 @@ const COST_CAJON_CINTAC = [
   [200,70,4,16.13,20.55,968.54,96.85,6.87,185.17,52.91,3.00], [200,70,5,19.90,25.36,1172.89,117.29,6.80,221.55,63.30,2.96], [200,70,6,23.58,30.03,1362.69,136.27,6.74,254.26,72.65,2.91],
 ]);
 
-// Sección del cajón para el motor del Verificador Metalcon (línea media, esquinas redondeadas con radio interior = e).
+// Sección del OC para el motor del Verificador Metalcon (línea media, esquinas redondeadas con radio interior = e).
 // Las cuatro paredes son elementos atiesados en ambos bordes (alas y almas); las esquinas son totalmente efectivas.
 function costCajonSec(H, B, t) {
   if (!(t > 0 && H > 4 * t && B > 4 * t)) return null;
@@ -3199,19 +3199,19 @@ function costCajonCat() {
   if (CATALOG_COSTANERAS.some(p => p.fam === 'CAJ') || typeof mcProps === 'undefined') return;
   const f = x => String(x).replace('.', ',');
   COST_CAJON_CINTAC.forEach(([H, B, e, peso, A, Ix, Wx, ix, Iy, Wy, iy]) => {
-    const p = costCajonPerfil(H, B, e, peso, `CAJÓN ${H}x${B}x${f(e)}`, `${H}x${B}x${e}`, { A, Ix, Wx, ix, Iy, Wy, iy });
+    const p = costCajonPerfil(H, B, e, peso, `OC ${H}x${B}x${f(e)}`, `${H}x${B}x${e}`, { A, Ix, Wx, ix, Iy, Wy, iy });
     if (p) CATALOG_COSTANERAS.push(p);
   });
 }
-// Cajón a medida a partir de los campos de la planilla
+// OC a medida a partir de los campos de la planilla
 function costCajonMedida() {
   const v = id => { const el = document.getElementById(id); const x = parseFloat(String(el ? el.value : '').replace(',', '.')); return isNaN(x) ? 0 : x; };
   const H = v('co_cjH'), B = v('co_cjB'), e = v('co_cjE'), f = x => String(x).replace('.', ',');
   if (!(e > 0 && H > 4 * e && B > 4 * e)) return null;
   if ((Math.max(H, B) - 4 * e) / e > 500) return null; // B4.1: w/t ≤ 500 en elementos atiesados
-  return costCajonPerfil(H, B, e, null, `CAJÓN ${f(H)}x${f(B)}x${f(e)} (a medida)`, 'MEDIDA', null);
+  return costCajonPerfil(H, B, e, null, `OC ${f(H)}x${f(B)}x${f(e)} (a medida)`, 'MEDIDA', null);
 }
-/* Resistencia a flexión del cajón según AISI S100-16, en kgf·m (nominal, sin Ω):
+/* Resistencia a flexión del OC según AISI S100-16, en kgf·m (nominal, sin Ω):
    eje x (H, normal a la cubierta): F2.1.4 con Ly = L (sin arriostramiento lateral intermedio, conservador) y Cb = 1
    (conservador frente a la carga uniforme) → Fn (Ec. F2.1-3 a F2.1-5) → Mne = Sf·Fn ≤ My; F3.1: Mnℓ = Se(Fn)·Fn ≤ Set·Fy.
    Eje y: flexión en torno al eje menor, sin pandeo lateral-torsional → Fn = Fy. Sección doblemente simétrica: el
@@ -3282,7 +3282,7 @@ function costanerasDatosHtml(state) {
 
     <div class="xlsx-section">1. SELECCIÓN DE PERFIL</div>
     <table class="xlsx-table"><tbody>
-      ${row('Perfil (catálogo C / CA / Z / Omega / Cajón o a medida)', (state.perfil && state.perfil.perfil) || state.perfilName)}
+      ${row('Perfil (catálogo C / CA / Z / Omega / OC o a medida)', (state.perfil && state.perfil.perfil) || state.perfilName)}
     </tbody></table>
 
     <div class="xlsx-section">2. GEOMETRÍA Y ESPACIAMIENTO</div>
@@ -3344,14 +3344,14 @@ const COSTANERAS_CALC_SECTIONS = [
     { t: 'var1', label: 'Omega — Wxe cresta comprimida, AISI S100 (cm³)', f: 'WxeTop', d: 2 },
     { t: 'var1', label: 'Omega — Wxe alas comprimidas, AISI S100 (cm³)', f: 'WxeBot', d: 2 },
     { t: 'var1', label: 'Omega — Wye efectivo, AISI S100 (cm³)', f: 'Wye', d: 2 },
-    { t: 'var1', label: 'Cajón — ancho plano máximo / espesor, w/t (B4.1: ≤ 500)', f: 'cjWt', d: 1 },
-    { t: 'var1', label: 'Cajón — Lu, longitud sin pandeo lateral-torsional, AISI S100 Ec. F2.1.4-1 (m)', f: 'cjLu', d: 2 },
-    { t: 'var1', label: 'Cajón — Fcre con Ly = L y Cb = 1, Ec. F2.1.4-2 (kgf/cm²; solo si L > Lu)', f: 'cjFcre', d: 0 },
-    { t: 'var1', label: 'Cajón — Fn, Ec. F2.1-3 a F2.1-5 (kgf/cm²)', f: 'cjFn', d: 0 },
-    { t: 'var1', label: 'Cajón — Wxe efectivo a Fn, F3.1 y Apéndice 1 (cm³)', f: 'cjWxe', d: 2 },
-    { t: 'var1', label: 'Cajón — Wye efectivo a Fy, F3.1 y Apéndice 1 (cm³)', f: 'cjWye', d: 2 },
-    { t: 'var1', label: 'Cajón — Mnx = mín(Sf·Fn, My, Se·Fn ≤ Set·Fy), nominal (kgf·m)', f: 'cjMnx', d: 1 },
-    { t: 'var1', label: 'Cajón — Mny = mín(My, Se·Fy), nominal (kgf·m)', f: 'cjMny', d: 1 },
+    { t: 'var1', label: 'OC — ancho plano máximo / espesor, w/t (B4.1: ≤ 500)', f: 'cjWt', d: 1 },
+    { t: 'var1', label: 'OC — Lu, longitud sin pandeo lateral-torsional, AISI S100 Ec. F2.1.4-1 (m)', f: 'cjLu', d: 2 },
+    { t: 'var1', label: 'OC — Fcre con Ly = L y Cb = 1, Ec. F2.1.4-2 (kgf/cm²; solo si L > Lu)', f: 'cjFcre', d: 0 },
+    { t: 'var1', label: 'OC — Fn, Ec. F2.1-3 a F2.1-5 (kgf/cm²)', f: 'cjFn', d: 0 },
+    { t: 'var1', label: 'OC — Wxe efectivo a Fn, F3.1 y Apéndice 1 (cm³)', f: 'cjWxe', d: 2 },
+    { t: 'var1', label: 'OC — Wye efectivo a Fy, F3.1 y Apéndice 1 (cm³)', f: 'cjWye', d: 2 },
+    { t: 'var1', label: 'OC — Mnx = mín(Sf·Fn, My, Se·Fn ≤ Set·Fy), nominal (kgf·m)', f: 'cjMnx', d: 1 },
+    { t: 'var1', label: 'OC — Mny = mín(My, Se·Fy), nominal (kgf·m)', f: 'cjMny', d: 1 },
   ]},
   { num: '3', title: 'CARGAS', hdrDE: false, rows: [
     { t: 'var1', label: 'Peso propio costanera (kgf/m) — automático:', f: 'pesoPropio', d: 2 },
@@ -3403,11 +3403,11 @@ const COSTANERAS_CALC_SECTIONS = [
 
 function costanerasCalcHtml(r, opts) {
   const resumen = !!(opts && opts.resumen);
-  // filas propias de otra familia (M tab. Z, omega, cajón) quedan sin valor: se omiten
+  // filas propias de otra familia (M tab. Z, omega, OC) quedan sin valor: se omiten
   const secs = COSTANERAS_CALC_SECTIONS.map(sec => Object.assign({}, sec, { rows: sec.rows.filter(row => !(row.t === 'var1' && r[row.f] == null)) }));
   return xlsxBuildCalculoHtml(secs, r, {
     resumen,
-    intro: (r.esCajon ? 'Perfil cajón (tubo cuadrado o rectangular conformado en frío): capacidad a flexión según AISI S100-16, Mn/Ωb con F2.1, F2.1.4 (sección cerrada) y F3.1 (ancho efectivo, Apéndice 1). ' : '') + 'Cálculo según hoja "Diseño" de la planilla Excel. Combinación I = peso propio + cubierta + SC de techo + colgadores, sin viento; Combinación II = peso propio + cubierta, con viento (incremento ASD ×1,33 en la capacidad admisible).',
+    intro: (r.esCajon ? 'Perfil OC (tubo cuadrado o rectangular conformado en frío): capacidad a flexión según AISI S100-16, Mn/Ωb con F2.1, F2.1.4 (sección cerrada) y F3.1 (ancho efectivo, Apéndice 1). ' : '') + 'Cálculo según hoja "Diseño" de la planilla Excel. Combinación I = peso propio + cubierta + SC de techo + colgadores, sin viento; Combinación II = peso propio + cubierta, con viento (incremento ASD ×1,33 en la capacidad admisible).',
   });
 }
 
@@ -3486,8 +3486,8 @@ function renderCostaneras(container) {
 
   container.innerHTML = `
     <div class="calc-head">
-      <h1>Costaneras C / CA / Z / Omega / Cajón</h1>
-      <div class="sub">Flexión biaxial por inclinación de techo, combinaciones con viento y verificación de deformaciones. Incluye costaneras omega Metalcon y cajón (tubo cuadrado o rectangular) con sección efectiva según AISI S100-16.</div>
+      <h1>Costaneras C / CA / Z / Omega / OC</h1>
+      <div class="sub">Flexión biaxial por inclinación de techo, combinaciones con viento y verificación de deformaciones. Incluye costaneras omega Metalcon y OC (tubo cuadrado o rectangular) con sección efectiva según AISI S100-16.</div>
     </div>
 
     <div class="panel">
@@ -3507,9 +3507,9 @@ function renderCostaneras(container) {
         <p class="note" style="grid-column:1/-1;margin:0">Dimensiones exteriores. Radio interior de plegado = e. Las propiedades y la sección efectiva se calculan con el motor del Verificador Metalcon (AISI S100-16).</p>
       </div>
       <div class="field-grid" id="co_cjWrap" hidden style="margin-top:.5rem">
-        <div class="field"><label>Cajón — altura H (mm), normal a la cubierta</label><input type="text" inputmode="decimal" id="co_cjH" value="100" list="dl_co_cjH"><datalist id="dl_co_cjH"><option value="40">catálogo Cintac</option><option value="50">catálogo Cintac</option><option value="60">catálogo Cintac</option><option value="70">catálogo Cintac</option><option value="75">catálogo Cintac</option><option value="80">catálogo Cintac</option><option value="100">catálogo Cintac</option><option value="135">catálogo Cintac</option><option value="150">catálogo Cintac</option><option value="200">catálogo Cintac</option></datalist></div>
-        <div class="field"><label>Cajón — ancho B (mm)</label><input type="text" inputmode="decimal" id="co_cjB" value="50" list="dl_co_cjB"><datalist id="dl_co_cjB"><option value="20">catálogo Cintac</option><option value="30">catálogo Cintac</option><option value="40">catálogo Cintac</option><option value="50">catálogo Cintac</option><option value="70">catálogo Cintac</option><option value="75">catálogo Cintac</option><option value="100">catálogo Cintac</option><option value="135">catálogo Cintac</option></datalist></div>
-        <div class="field"><label>Cajón — espesor e (mm)</label><input type="text" inputmode="decimal" id="co_cjE" value="3" list="dl_co_cjE"><datalist id="dl_co_cjE"><option value="1.5">catálogo Cintac</option><option value="2">catálogo Cintac</option><option value="3">catálogo Cintac</option><option value="4">catálogo Cintac</option><option value="5">catálogo Cintac</option><option value="6">catálogo Cintac</option></datalist></div>
+        <div class="field"><label>OC — altura H (mm), normal a la cubierta</label><input type="text" inputmode="decimal" id="co_cjH" value="100" list="dl_co_cjH"><datalist id="dl_co_cjH"><option value="40">catálogo Cintac</option><option value="50">catálogo Cintac</option><option value="60">catálogo Cintac</option><option value="70">catálogo Cintac</option><option value="75">catálogo Cintac</option><option value="80">catálogo Cintac</option><option value="100">catálogo Cintac</option><option value="135">catálogo Cintac</option><option value="150">catálogo Cintac</option><option value="200">catálogo Cintac</option></datalist></div>
+        <div class="field"><label>OC — ancho B (mm)</label><input type="text" inputmode="decimal" id="co_cjB" value="50" list="dl_co_cjB"><datalist id="dl_co_cjB"><option value="20">catálogo Cintac</option><option value="30">catálogo Cintac</option><option value="40">catálogo Cintac</option><option value="50">catálogo Cintac</option><option value="70">catálogo Cintac</option><option value="75">catálogo Cintac</option><option value="100">catálogo Cintac</option><option value="135">catálogo Cintac</option></datalist></div>
+        <div class="field"><label>OC — espesor e (mm)</label><input type="text" inputmode="decimal" id="co_cjE" value="3" list="dl_co_cjE"><datalist id="dl_co_cjE"><option value="1.5">catálogo Cintac</option><option value="2">catálogo Cintac</option><option value="3">catálogo Cintac</option><option value="4">catálogo Cintac</option><option value="5">catálogo Cintac</option><option value="6">catálogo Cintac</option></datalist></div>
         <p class="note" style="grid-column:1/-1;margin:0">Dimensiones exteriores; radio interior de esquina = e (el que reproduce las tablas Cintac). Use una combinación que el fabricante produzca: los perfiles del catálogo ya están en la lista.</p>
       </div>
       <div id="co_propOut" class="note mono"></div>
@@ -3551,7 +3551,7 @@ function renderCostaneras(container) {
     <div class="panel">
       <h3>6 · Capacidad admisible a flexión</h3>
       <div class="field-grid">
-        <div class="field"><label>Fy — fluencia (t/cm²)</label><input type="text" inputmode="decimal" id="co_Fy" value="${state.Fy}" list="dl_co_Fy"><datalist id="dl_co_Fy"><option value="2.55">acero ZAR250 (250 MPa) — costaneras livianas</option><option value="2.7">acero galvanizado ~265 MPa (valor por defecto)</option><option value="3.058">acero G300 (300 MPa) — grado estructural típico CINTAC</option><option value="3.568">acero G350 (350 MPa) — alta resistencia</option><option value="2.753">A270ES (270 MPa, NCh203) — tubos cajón Cintac</option><option value="3.234">ASTM A500 Gr B (46 ksi) — tubo cuadrado / rectangular</option></datalist></div>
+        <div class="field"><label>Fy — fluencia (t/cm²)</label><input type="text" inputmode="decimal" id="co_Fy" value="${state.Fy}" list="dl_co_Fy"><datalist id="dl_co_Fy"><option value="2.55">acero ZAR250 (250 MPa) — costaneras livianas</option><option value="2.7">acero galvanizado ~265 MPa (valor por defecto)</option><option value="3.058">acero G300 (300 MPa) — grado estructural típico CINTAC</option><option value="3.568">acero G350 (350 MPa) — alta resistencia</option><option value="2.753">A270ES (270 MPa, NCh203) — tubos OC Cintac</option><option value="3.234">ASTM A500 Gr B (46 ksi) — tubo cuadrado / rectangular</option></datalist></div>
         <div class="field"><label>Ω — factor seguridad ASD</label><input type="text" inputmode="decimal" step="0.01" id="co_omega" value="${state.omega}" list="dl_co_omega"><datalist id="dl_co_omega"><option value="1.67">Ω AISI S100 para flexión general (valor por defecto)</option><option value="1.80">Ω para pandeo distorsional / elementos esbeltos</option><option value="2.00">Ω conservador para secciones muy esbeltas</option></datalist></div>
         <div class="field"><label>φ_aprox — reducción C/CA</label><input type="text" inputmode="decimal" step="0.01" id="co_phiAprox" value="${state.phiAprox}" list="dl_co_phiAprox"><datalist id="dl_co_phiAprox"><option value="0.75">muy conservador</option><option value="0.80">conservador</option><option value="0.85">calibrado contra perfiles Z-TuBest (valor por defecto)</option><option value="0.90">menos conservador</option></datalist></div>
       </div>
@@ -3574,7 +3574,7 @@ function renderCostaneras(container) {
         Herramienta de apoyo al predimensionamiento. Perfiles Z usan el momento admisible tabulado por CINTAC;
         las omega Metalcon usan Fy·Wxe/Ω con el módulo efectivo de AISI S100-16 (no usan φ_aprox; se supone la cresta arriostrada por la cubierta atornillada
         y no se evalúa el pandeo lateral de las alas comprimidas por succión: para ese caso use el Verificador de Secciones Metalcon);
-        los cajones (tubo cuadrado o rectangular) usan Mn/Ω de AISI S100-16 (F2.1 con F2.1.4 para sección cerrada, Ly = L y Cb = 1, y F3.1 con anchos
+        los OC (tubo cuadrado o rectangular) usan Mn/Ω de AISI S100-16 (F2.1 con F2.1.4 para sección cerrada, Ly = L y Cb = 1, y F3.1 con anchos
         efectivos del Apéndice 1; no usan φ_aprox);
         perfiles C/CA usan Fy·Wx·φ_aprox/Ω (φ_aprox calibrado contra 24 perfiles Z-TuBest, con sesgo conservador
         conocido de hasta ~15%). La deflexión solo combina la componente normal a la cubierta — la componente
@@ -3611,14 +3611,14 @@ function renderCostaneras(container) {
     document.getElementById('co_omWrap').hidden = !medida;
     document.getElementById('co_cjWrap').hidden = !cjMedida;
     const perfil = medida ? costOmegaMedida() : cjMedida ? costCajonMedida() : CATALOG_COSTANERAS.find(p => p.perfil===state.perfilName);
-    if (!perfil) { document.getElementById('co_propOut').textContent = cjMedida ? 'Dimensiones del cajón inválidas: H y B deben ser mayores que 4·e y el ancho plano de cada pared no puede superar 500·e (AISI S100-16, B4.1).' : 'Dimensiones de la omega inválidas: revise H, cresta, ala, labio y espesor.'; return; }
+    if (!perfil) { document.getElementById('co_propOut').textContent = cjMedida ? 'Dimensiones del OC inválidas: H y B deben ser mayores que 4·e y el ancho plano de cada pared no puede superar 500·e (AISI S100-16, B4.1).' : 'Dimensiones de la omega inválidas: revise H, cresta, ala, labio y espesor.'; return; }
     const r = calcCostaneras({...state, perfil});
 
     document.getElementById('co_propOut').innerHTML =
-      `${perfil.fam} · H=${perfil.H} B=${perfil.B}${perfil.clabio?(' labio='+perfil.clabio):''} e=${perfil.e} mm · A=${fmt2(perfil.A)} cm² · Peso=${fmt2(perfil.peso)} kgf/m` +
+      `${perfil.fam === 'CAJ' ? 'OC' : perfil.fam} · H=${perfil.H} B=${perfil.B}${perfil.clabio?(' labio='+perfil.clabio):''} e=${perfil.e} mm · A=${fmt2(perfil.A)} cm² · Peso=${fmt2(perfil.peso)} kgf/m` +
       (perfil.Mtab ? ` · M tab. fábrica = ${fmt3(perfil.Mtab/KGF_POR_TON)} ton·m` : '') +
       (perfil.fam === 'OMA' ? `<br>Omega con cresta hacia arriba (ala ${perfil.ala} mm) · Ix=${fmt2(perfil.Ix)} cm⁴ · Wx=${fmt2(perfil.Wx)} cm³ · Wy=${fmt2(perfil.Wy)} cm³ · módulos efectivos a Fy (AISI S100): Wxe cresta comprimida = ${fmt2(r.WxeTop)} cm³, Wxe alas comprimidas = ${fmt2(r.WxeBot)} cm³, Wye = ${fmt2(r.Wye)} cm³. Para Metalcon use Fy = 2.812 kgf/cm² (A653 Gr 40). Las omega se usan en luces cortas (cerchas o vigas cada 0,6 a 1,2 m aprox.): ajuste L y la separación sep.` : '') +
-      (perfil.fam === 'CAJ' ? `<br>Cajón con H normal a la cubierta · Ix=${fmt2(perfil.Ix)} cm⁴ · Wx=${fmt2(perfil.Wx)} cm³ · Iy=${fmt2(perfil.Iy)} cm⁴ · Wy=${fmt2(perfil.Wy)} cm³ (recalculados con radio interior = e${perfil.cat ? `; catálogo Cintac: A=${fmt2(perfil.cat.A)} cm², Wx=${fmt2(perfil.cat.Wx)} cm³, Wy=${fmt2(perfil.cat.Wy)} cm³` : ''}) · módulos efectivos (AISI S100): Wxe = ${fmt2(r.cjWxe)} cm³ a Fn, Wye = ${fmt2(r.cjWye)} cm³ a Fy · Lu = ${fmt2(r.cjLu)} m (F2.1.4). Fy según la calidad comprada: A270ES = 2.753 t/cm² (270 MPa); ASTM A500 Gr B rectangular = 3.234 t/cm² (46 ksi).` : '');
+      (perfil.fam === 'CAJ' ? `<br>OC con H normal a la cubierta · Ix=${fmt2(perfil.Ix)} cm⁴ · Wx=${fmt2(perfil.Wx)} cm³ · Iy=${fmt2(perfil.Iy)} cm⁴ · Wy=${fmt2(perfil.Wy)} cm³ (recalculados con radio interior = e${perfil.cat ? `; catálogo Cintac: A=${fmt2(perfil.cat.A)} cm², Wx=${fmt2(perfil.cat.Wx)} cm³, Wy=${fmt2(perfil.cat.Wy)} cm³` : ''}) · módulos efectivos (AISI S100): Wxe = ${fmt2(r.cjWxe)} cm³ a Fn, Wye = ${fmt2(r.cjWye)} cm³ a Fy · Lu = ${fmt2(r.cjLu)} m (F2.1.4). Fy según la calidad comprada: A270ES = 2.753 t/cm² (270 MPa); ASTM A500 Gr B rectangular = 3.234 t/cm² (46 ksi).` : '');
 
     document.getElementById('co_esquema').innerHTML = svgCostaneras(state, r);
 
