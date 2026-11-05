@@ -43,7 +43,16 @@ input,select{font:inherit;width:100%;padding:7px 9px;border:1px solid var(--bord
 .estado{font-size:13px;color:var(--sub);margin:4px 0 10px;display:flex;gap:12px;flex-wrap:wrap}
 .estado .cola{color:var(--cot);font-weight:600}
 .lay{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
-.lay.ver{grid-template-columns:minmax(0,1fr) minmax(0,1.05fr)}
+.lay.ver{grid-template-columns:minmax(260px,var(--izq,48%)) 10px minmax(320px,1fr);gap:0}
+#sep{display:none}
+.lay.ver #sep{display:block;cursor:col-resize;position:sticky;top:10px;height:calc(100vh - 30px);touch-action:none}
+.lay.ver #sep::after{content:"";display:block;width:4px;height:48px;margin:calc(50vh - 40px) auto 0;border-radius:3px;background:#c3cad6}
+.lay.ver #sep:hover::after,.lay.ver #sep.arr::after{background:var(--azul)}
+.lay.ver #lista{position:sticky;top:10px;max-height:calc(100vh - 30px);overflow:auto;border-radius:8px}
+.lay.ver #lista table{width:max-content;min-width:100%}
+.lay.ver td.tit{min-width:240px;max-width:520px}
+td.c-proy{white-space:nowrap}
+body.arrastrando{user-select:none;cursor:col-resize}
 table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--borde);border-radius:8px;overflow:hidden}
 th,td{padding:7px 9px;border-bottom:1px solid #eef1f5;text-align:left;vertical-align:top;font-size:14px}
 th{background:#f6f8fb;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--sub);position:sticky;top:0}
@@ -81,6 +90,9 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-w
   header .sub:not(#quien){display:none}
   .bar select,.bar input[type=date]{flex:1 1 140px;min-width:0}
   .lay.ver{grid-template-columns:minmax(0,1fr)}
+  .lay.ver #sep{display:none}
+  .lay.ver #lista{position:static;max-height:none}
+  #lista{overflow-x:auto}
   #visor{position:fixed;inset:0;height:auto;z-index:40;background:var(--fondo);padding:10px;border-radius:0}
   th.c-ext,td.c-ext,th.c-kb,td.c-kb,th.c-proy,td.c-proy{display:none}
   td.tit .mov{display:block}
@@ -120,6 +132,7 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
     <div class="estado"><span id="eCuenta"></span><span id="eCola" class="cola"></span></div>
     <div class="lay" id="lay">
       <div id="lista"></div>
+      <div id="sep" title="Arrastre para cambiar el ancho de la lista"></div>
       <div id="visor" class="card" hidden></div>
     </div>
   </div>
@@ -305,6 +318,23 @@ async function mostrarPdf(blob, k) {
   }
   const pie = document.createElement('div'); pie.className = 'pie'; pie.textContent = pdf.numPages + (pdf.numPages === 1 ? ' página' : ' páginas'); box.appendChild(pie);
 }
+/* separador arrastrable entre la lista y la vista previa (el ancho queda guardado) */
+(function () {
+  const lay = $('lay'), sep = $('sep'), K = 'ing_archivo_izq';
+  const fijar = pct => { pct = Math.min(80, Math.max(22, pct)); lay.style.setProperty('--izq', pct.toFixed(1) + '%'); return pct; };
+  try { const g = parseFloat(localStorage.getItem(K)); if (g) fijar(g); } catch (e) {}
+  let ult = null;
+  sep.addEventListener('pointerdown', e => {
+    e.preventDefault(); sep.setPointerCapture(e.pointerId); sep.classList.add('arr'); document.body.classList.add('arrastrando');
+    const r = lay.getBoundingClientRect();
+    const mover = ev => { ult = fijar((ev.clientX - r.left) / r.width * 100); };
+    const soltar = () => { sep.classList.remove('arr'); document.body.classList.remove('arrastrando'); sep.removeEventListener('pointermove', mover);
+      sep.removeEventListener('pointerup', soltar); sep.removeEventListener('pointercancel', soltar);
+      if (ult) try { localStorage.setItem(K, String(ult)); } catch (e) {} };
+    sep.addEventListener('pointermove', mover); sep.addEventListener('pointerup', soltar); sep.addEventListener('pointercancel', soltar);
+  });
+  sep.addEventListener('dblclick', () => { lay.style.removeProperty('--izq'); try { localStorage.removeItem(K); } catch (e) {} });
+})();
 function cerrarVisor() { sel = null; $('visor').hidden = true; $('visor').classList.remove('grande'); $('lay').classList.remove('ver'); if (verUrl) { URL.revokeObjectURL(verUrl); verUrl = null; } render(); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('visor').hidden && !document.querySelector('dialog[open]')) cerrarVisor(); });
 
