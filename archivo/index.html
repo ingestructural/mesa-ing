@@ -65,7 +65,10 @@ td.tit small{display:block;font-weight:400;color:var(--sub);font-size:12px;word-
 #visor .vh{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 #visor .vh b{flex:1 1 200px;font-size:15px;color:var(--azul)}
 #visor .meta{font-size:13px;color:var(--sub);margin-bottom:8px}
-#visor iframe{flex:1;width:100%;border:1px solid var(--borde);border-radius:6px;background:#525659}
+#visor .hojas{flex:1;overflow:auto;border:1px solid var(--borde);border-radius:6px;background:#525659;padding:10px;display:flex;flex-direction:column;align-items:center;gap:10px}
+#visor .hojas canvas{width:100%;max-width:900px;height:auto;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+#visor .hojas .pie{color:#e5e7eb;font-size:13px}
+#visor.grande{position:fixed;inset:0;z-index:45;height:auto;border-radius:0}
 #visor .noprev{flex:1;display:flex;align-items:center;justify-content:center;border:1px dashed var(--borde);border-radius:6px;color:var(--sub);text-align:center;padding:20px}
 dialog{border:1px solid var(--borde);border-radius:10px;padding:16px;max-width:520px;width:calc(100% - 32px)}
 dialog h3{margin:0 0 10px;color:var(--azul);font-size:17px}
@@ -262,7 +265,7 @@ async function ver(k) {
   const vis = $('visor'); vis.hidden = false; $('lay').classList.add('ver');
   const pr = [v.p.codigo, v.p.mandante, v.p.proyecto].filter(Boolean).join(' · ');
   const editable = v.d.col !== 'cotizaciones_pdf';
-  vis.innerHTML = `<div class="vh"><b>${esc(v.titulo)}</b><button class="btn" type="button" id="vAbrir" disabled>Abrir en pestaña</button><button class="btn pri" type="button" id="vBajar" disabled>Descargar</button>${editable ? '<button class="btn" type="button" id="vEdit">Editar datos</button>' : ''}<button class="btn" type="button" id="vCerrar">✕</button></div>
+  vis.innerHTML = `<div class="vh"><b>${esc(v.titulo)}</b><button class="btn" type="button" id="vAbrir" disabled>⤢ Ampliar</button><button class="btn pri" type="button" id="vBajar" disabled>Descargar</button>${editable ? '<button class="btn" type="button" id="vEdit">Editar datos</button>' : ''}<button class="btn" type="button" id="vCerrar">✕</button></div>
     <div class="meta">${esc(A.COLS[v.d.col])}${pr ? ' · ' + esc(pr) : ''}${v.rev ? ' · Rev. ' + esc(v.rev) : ''}${v.fe ? ' · emitido ' + esc(dmy(v.fe)) : ''} · archivado ${esc(new Date(v.guard).toLocaleString('es-CL', {dateStyle: 'short', timeStyle: 'short'}))}${v.d.carpeta ? '<br>Carpeta: ' + esc(v.d.carpeta) : ''}${v.d.equipo ? ' · equipo ' + esc(v.d.equipo) : ''}</div>
     <div class="noprev" id="vCuerpo">Descargando…</div>`;
   $('vCerrar').onclick = cerrarVisor;
@@ -275,12 +278,34 @@ async function ver(k) {
     const nombre = nombreDescarga(v);
     $('vBajar').disabled = $('vAbrir').disabled = false;
     $('vBajar').onclick = () => { const a = document.createElement('a'); a.href = verUrl; a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); };
-    $('vAbrir').onclick = () => window.open(verUrl, '_blank');
-    if (mime === 'application/pdf') { const f = document.createElement('iframe'); f.src = verUrl; f.title = v.titulo; $('vCuerpo').replaceWith(f); }
+    $('vAbrir').onclick = () => { const g = $('visor').classList.toggle('grande'); $('vAbrir').textContent = g ? '⤡ Reducir' : '⤢ Ampliar'; };
+    if (mime === 'application/pdf') await mostrarPdf(blob, k);
     else { $('vAbrir').hidden = true; $('vCuerpo').textContent = 'Vista previa disponible solo para PDF. Use «Descargar» para abrir el ' + (ext(v.archivo) === 'DOCX' ? 'Word' : ext(v.archivo) === 'XLSX' ? 'Excel' : 'archivo') + '.'; }
   } catch (e) { if (e.code === 'auth') return mostrarLogin(e.message); $('vCuerpo').textContent = 'No se pudo obtener el documento: ' + e.message; }
 }
-function cerrarVisor() { sel = null; $('visor').hidden = true; $('lay').classList.remove('ver'); if (verUrl) { URL.revokeObjectURL(verUrl); verUrl = null; } render(); }
+/* vista previa con pdf.js (no depende del visor de PDF del navegador, que puede estar configurado para descargar) */
+let PDFJS = null;
+function cargarPdfjs() {
+  if (PDFJS) return PDFJS;
+  PDFJS = new Promise((ok, ko) => { const s = document.createElement('script'); s.src = 'pdfjs.min.js';
+    s.onload = () => { if (!window.pdfjsLib) return ko(new Error('visor no disponible')); pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs.worker.min.js'; ok(pdfjsLib); };
+    s.onerror = () => { PDFJS = null; ko(new Error('no se pudo cargar el visor (¿sin conexión?)')); }; document.head.appendChild(s); });
+  return PDFJS;
+}
+async function mostrarPdf(blob, k) {
+  const lib = await cargarPdfjs(), pdf = await lib.getDocument({data: new Uint8Array(await blob.arrayBuffer())}).promise;
+  if (sel !== k) return;
+  const box = document.createElement('div'); box.className = 'hojas'; $('vCuerpo').replaceWith(box);
+  const esc2 = Math.min(2, Math.max(1.2, (window.devicePixelRatio || 1) * 1.2));
+  for (let n = 1; n <= pdf.numPages; n++) {
+    if (sel !== k) return;
+    const pg = await pdf.getPage(n), vp = pg.getViewport({scale: esc2}), c = document.createElement('canvas');
+    c.width = vp.width; c.height = vp.height; box.appendChild(c);
+    await pg.render({canvasContext: c.getContext('2d'), viewport: vp}).promise;
+  }
+  const pie = document.createElement('div'); pie.className = 'pie'; pie.textContent = pdf.numPages + (pdf.numPages === 1 ? ' página' : ' páginas'); box.appendChild(pie);
+}
+function cerrarVisor() { sel = null; $('visor').hidden = true; $('visor').classList.remove('grande'); $('lay').classList.remove('ver'); if (verUrl) { URL.revokeObjectURL(verUrl); verUrl = null; } render(); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('visor').hidden && !document.querySelector('dialog[open]')) cerrarVisor(); });
 
 /* ---------- editar / eliminar ---------- */
