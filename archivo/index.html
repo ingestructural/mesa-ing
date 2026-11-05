@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Archivo ING</title>
+<meta name="apple-mobile-web-app-title" content="Archivo ING">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1F3864">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="arch-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="arch-192.png">
+<style>
+:root{--azul:#1F3864;--azul2:#2E5597;--fondo:#F1F3F6;--panel:#fff;--txt:#1d2433;--sub:#5b6577;--borde:#d9dee7;--ok:#1b7a3d;--warn:#b42318;
+  --plano:#0e7490;--memoria:#6d28d9;--cot:#b45309;}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;font:15px/1.4 system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:var(--fondo);color:var(--txt)}
+header{background:var(--azul);color:#fff;padding:10px 16px;min-width:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{font-size:19px;margin:0;font-weight:700;letter-spacing:.3px}
+header .sub{font-size:13px;opacity:.8}
+header .sp{flex:1}
+header button,header a{color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:6px 10px;font:inherit;font-size:13px;cursor:pointer;text-decoration:none}
+button{font:inherit;cursor:pointer}
+.btn{background:var(--panel);border:1px solid var(--borde);border-radius:6px;padding:7px 12px;color:var(--txt)}
+.btn.pri{background:var(--azul);border-color:var(--azul);color:#fff}
+.btn.x{color:var(--warn)}
+.btn:disabled{opacity:.5;cursor:default}
+main{max-width:1500px;margin:0 auto;padding:14px 16px 40px}
+.card{background:var(--panel);border:1px solid var(--borde);border-radius:8px;padding:14px}
+#login{max-width:420px;margin:40px auto}
+#login h2{margin:0 0 6px;font-size:18px;color:var(--azul)}
+#login p{color:var(--sub);margin:0 0 12px;font-size:14px}
+label{display:block;font-size:13px;color:var(--sub);margin-bottom:8px}
+input,select{font:inherit;width:100%;padding:7px 9px;border:1px solid var(--borde);border-radius:6px;background:#fff;color:var(--txt)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.bar input[type=search]{flex:1 1 260px;width:auto}
+.bar select,.bar input[type=date]{width:auto}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--borde);background:#fff;border-radius:999px;padding:5px 12px;font-size:13px}
+.chip.on{background:var(--azul);color:#fff;border-color:var(--azul)}
+.chip b{font-weight:600;margin-left:4px;opacity:.75}
+.estado{font-size:13px;color:var(--sub);margin:4px 0 10px;display:flex;gap:12px;flex-wrap:wrap}
+.estado .cola{color:var(--cot);font-weight:600}
+.lay{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+.lay.ver{grid-template-columns:minmax(0,1fr) minmax(0,1.05fr)}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--borde);border-radius:8px;overflow:hidden}
+th,td{padding:7px 9px;border-bottom:1px solid #eef1f5;text-align:left;vertical-align:top;font-size:14px}
+th{background:#f6f8fb;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--sub);position:sticky;top:0}
+tr.doc{cursor:pointer}
+tr.doc:hover{background:#f4f7fc}
+tr.doc.sel{background:#e8eefa}
+td.tit{font-weight:600}
+td.tit small{display:block;font-weight:400;color:var(--sub);font-size:12px;word-break:break-all}
+.tag{display:inline-block;font-size:11px;font-weight:700;color:#fff;border-radius:4px;padding:2px 6px;white-space:nowrap}
+.tag.planos_pdf{background:var(--plano)}.tag.memorias_pdf{background:var(--memoria)}.tag.cotizaciones_pdf{background:var(--cot)}
+.ext{font-size:11px;color:var(--sub);border:1px solid var(--borde);border-radius:4px;padding:1px 4px;margin-left:4px}
+.num{white-space:nowrap}
+.vacio{padding:30px;text-align:center;color:var(--sub)}
+#visor{position:sticky;top:10px;height:calc(100vh - 30px);display:flex;flex-direction:column}
+#visor .vh{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+#visor .vh b{flex:1 1 200px;font-size:15px;color:var(--azul)}
+#visor .meta{font-size:13px;color:var(--sub);margin-bottom:8px}
+#visor iframe{flex:1;width:100%;border:1px solid var(--borde);border-radius:6px;background:#525659}
+#visor .noprev{flex:1;display:flex;align-items:center;justify-content:center;border:1px dashed var(--borde);border-radius:6px;color:var(--sub);text-align:center;padding:20px}
+dialog{border:1px solid var(--borde);border-radius:10px;padding:16px;max-width:520px;width:calc(100% - 32px)}
+dialog h3{margin:0 0 10px;color:var(--azul);font-size:17px}
+dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
+.drop{border:2px dashed var(--borde);border-radius:8px;padding:18px;text-align:center;color:var(--sub);margin-bottom:10px}
+.drop.over{border-color:var(--azul);background:#eef3fb}
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#1d2433;color:#fff;padding:9px 14px;border-radius:6px;font-size:14px;display:none;z-index:50;max-width:calc(100% - 32px)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+@media (max-width:900px){
+  header .sub:not(#quien){display:none}
+  .bar select,.bar input[type=date]{flex:1 1 140px;min-width:0}
+  .lay.ver{grid-template-columns:minmax(0,1fr)}
+  #visor{position:fixed;inset:0;height:auto;z-index:40;background:var(--fondo);padding:10px;border-radius:0}
+  th.c-ext,td.c-ext,th.c-kb,td.c-kb,th.c-proy,td.c-proy{display:none}
+  td.tit .mov{display:block}
+}
+td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🗂 Archivo ING</h1><span class="sub">Documentos emitidos: planos PDF, memorias y cotizaciones</span>
+  <span class="sp"></span>
+  <span id="quien" class="sub"></span>
+  <a href="../" title="Volver a la Mesa de Cálculo">Mesa de Cálculo</a>
+  <button type="button" id="salir" hidden>Cerrar sesión</button>
+</header>
+<main>
+  <div id="login" class="card" hidden>
+    <h2>Iniciar sesión</h2>
+    <p>Use su cuenta de POWER. Los documentos quedan guardados en POWER y solo se ven con esta cuenta.</p>
+    <form id="fLogin">
+      <label>Correo<input id="lEmail" type="email" autocomplete="username" required></label>
+      <label>Contraseña<input id="lPass" type="password" autocomplete="current-password" required></label>
+      <button class="btn pri" type="submit" id="lBtn">Entrar</button> <span id="lMsg" style="color:var(--warn);font-size:13px"></span>
+    </form>
+  </div>
+
+  <div id="app" hidden>
+    <div class="bar">
+      <input type="search" id="q" placeholder="Buscar por título, proyecto, código, mandante, archivo…" aria-label="Buscar">
+      <select id="fProy" aria-label="Proyecto"><option value="">Todos los proyectos</option></select>
+      <input type="date" id="fDesde" aria-label="Desde" title="Desde">
+      <input type="date" id="fHasta" aria-label="Hasta" title="Hasta">
+      <button class="btn" type="button" id="bSubir">⬆ Subir documento</button>
+      <button class="btn" type="button" id="bAct">↻ Actualizar</button>
+    </div>
+    <div class="bar chips" id="chips"></div>
+    <div class="estado"><span id="eCuenta"></span><span id="eCola" class="cola"></span></div>
+    <div class="lay" id="lay">
+      <div id="lista"></div>
+      <div id="visor" class="card" hidden></div>
+    </div>
+  </div>
+</main>
+
+<dialog id="dSubir">
+  <h3>Subir documento al archivo</h3>
+  <div class="drop" id="drop">Arrastre aquí los archivos (PDF, Word o Excel) o <button class="btn" type="button" id="dElegir">elija archivos…</button><input type="file" id="dFile" multiple accept=".pdf,.docx,.xlsx" hidden></div>
+  <div id="dLista" style="font-size:13px;color:var(--sub);margin-bottom:8px"></div>
+  <label>Tipo<select id="dTipo"><option value="planos_pdf">Plano (PDF)</option><option value="memorias_pdf">Memoria de cálculo</option></select></label>
+  <label>Proyecto (POWER)<select id="dProy"><option value="">(sin proyecto)</option></select></label>
+  <div class="grid2"><label>Título (vacío = nombre del archivo)<input id="dTit"></label><label>Revisión<input id="dRev"></label></div>
+  <label>Fecha de emisión<input id="dFecha" type="date"></label>
+  <div class="row"><button class="btn" type="button" data-cerrar>Cancelar</button><button class="btn pri" type="button" id="dOk">Subir</button></div>
+</dialog>
+
+<dialog id="dEdit">
+  <h3>Datos del documento</h3>
+  <label>Título<input id="eTit"></label>
+  <label>Proyecto (POWER)<select id="eProy"><option value="">(sin proyecto)</option></select></label>
+  <div class="grid2"><label>Revisión<input id="eRev"></label><label>Fecha de emisión<input id="eFecha" placeholder="dd-mm-aaaa"></label></div>
+  <div class="row"><button class="btn x" type="button" id="eDel">Eliminar del archivo</button><span style="flex:1"></span><button class="btn" type="button" data-cerrar>Cancelar</button><button class="btn pri" type="button" id="eOk">Guardar</button></div>
+</dialog>
+
+<div id="toast" role="status"></div>
+<script src="archivo-api.js"></script>
+<script>
+'use strict';
+const A = window.INGArchivo, $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+let DOCS = [], PROY = [], tipo = '', sel = null, verUrl = null;
+function toast(t, ms) { const d = $('toast'); d.textContent = t; d.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => d.style.display = 'none', ms || 4000); }
+
+/* ---------- fechas: dd-mm-aaaa, aaaa-mm-dd o ISO → aaaa-mm-dd ---------- */
+function iso(f) {
+  f = String(f || '').trim(); let m;
+  if ((m = f.match(/^(\d{4})-(\d{2})-(\d{2})/))) return m[1] + '-' + m[2] + '-' + m[3];
+  if ((m = f.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/))) return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+  return '';
+}
+const dmy = i => i ? i.slice(8, 10) + '-' + i.slice(5, 7) + '-' + i.slice(0, 4) : '';
+const ext = n => (String(n || '').match(/\.([a-z0-9]+)$/i) || [, ''])[1].toUpperCase();
+
+/* ---------- proyecto: código guardado o detectado en carpeta/dibujo/título/archivo ---------- */
+function proyDe(d) {
+  if (d.codigo) return PROY.find(p => p.codigo === d.codigo) || {codigo: d.codigo, mandante: d.mandante, proyecto: d.proyecto};
+  if (d.col === 'cotizaciones_pdf' && d.numero) { const p = PROY.find(x => x.codigo === d.numero); if (p) return p; }
+  const txt = norm([d.carpeta, d.dibujo, d.titulo, d.archivo].join(' '));
+  const p = PROY.find(x => x.codigo && txt.includes(norm(x.codigo)));
+  if (p) return p;
+  if (d.mandante || d.proyecto) return {codigo: d.numero || '', mandante: d.mandante, proyecto: d.proyecto};
+  return null;
+}
+function vista(d) {
+  const p = proyDe(d) || {};
+  const titulo = d.col === 'cotizaciones_pdf' ? 'Cotización ' + (d.numero || '(sin N°)') + (d.documento ? ' — ' + d.documento : '') : (d.titulo || d.archivo || '(sin título)');
+  const det = d.col === 'cotizaciones_pdf' ? [d.estado, d.neto != null ? Number(d.neto).toLocaleString('es-CL', {maximumFractionDigits: 2}) + ' UF neto' : ''].filter(Boolean).join(' · ')
+    : d.col === 'planos_pdf' ? [d.escala, d.dibujo].filter(Boolean).join(' · ')
+    : [d.clase === 'verificacion' ? 'Verificación individual' : d.clase === 'general' ? 'Memoria general' : '', d.planilla].filter(Boolean).join(' · ');
+  const fe = iso(d.fecha) || iso(d.guardado);
+  return {d, p, titulo, det, fe, guard: String(d.guardado || ''), archivo: d.archivo || '', rev: d.rev || '',
+    txt: norm([titulo, det, p.codigo, p.mandante, p.proyecto, d.archivo, d.carpeta, d.rev ? 'rev ' + d.rev : '', A.COLS[d.col]].join(' '))};
+}
+
+/* ---------- carga ---------- */
+async function cargar() {
+  $('lista').innerHTML = '<div class="vacio">Cargando documentos…</div>';
+  try {
+    const n = await A.vaciarCola(); if (n) toast(n + (n === 1 ? ' documento pendiente subido' : ' documentos pendientes subidos') + ' al archivo.');
+    const [docs, proy] = await Promise.all([A.listar(), A.proyectos().catch(() => [])]);
+    PROY = proy.filter(p => p.codigo); DOCS = docs.map(vista);
+    DOCS.sort((a, b) => b.guard.localeCompare(a.guard));
+    llenarProyectos(); render(); cola();
+  } catch (e) {
+    if (e.code === 'auth') return mostrarLogin(e.message);
+    $('lista').innerHTML = '<div class="vacio">No se pudo leer el archivo: ' + esc(e.message) + '</div>';
+  }
+}
+async function cola() {
+  let L = []; try { L = await A.cola(); } catch (e) {}
+  $('eCola').textContent = L.length ? `${L.length} pendiente(s) de subir en este equipo (se suben al actualizar).` : '';
+}
+function llenarProyectos() {
+  const usados = new Map();
+  DOCS.forEach(v => { if (v.p.codigo) usados.set(v.p.codigo, v.p); });
+  const opt = p => `<option value="${esc(p.codigo)}">${esc([p.codigo, p.mandante, p.proyecto].filter(Boolean).join(' · '))}</option>`;
+  const f = $('fProy'), cur = f.value;
+  f.innerHTML = '<option value="">Todos los proyectos</option>' + [...usados.values()].sort((a, b) => String(b.codigo).localeCompare(String(a.codigo))).map(opt).join('') + '<option value="-">(sin proyecto)</option>';
+  f.value = cur;
+  const todos = PROY.slice().sort((a, b) => String(b.creado || '').localeCompare(String(a.creado || '')) || String(b.codigo).localeCompare(String(a.codigo))).map(opt).join('');
+  $('dProy').innerHTML = $('eProy').innerHTML = '<option value="">(sin proyecto)</option>' + todos;
+}
+
+/* ---------- lista ---------- */
+function filtrados(sinTipo) {
+  const q = norm($('q').value.trim()).split(/\s+/).filter(Boolean), fp = $('fProy').value, d1 = $('fDesde').value, d2 = $('fHasta').value;
+  return DOCS.filter(v => (sinTipo || !tipo || v.d.col === tipo) && q.every(w => v.txt.includes(w))
+    && (!fp || (fp === '-' ? !v.p.codigo : v.p.codigo === fp)) && (!d1 || v.fe >= d1) && (!d2 || v.fe <= d2));
+}
+function render() {
+  const base = filtrados(true), cnt = c => base.filter(v => v.d.col === c).length;
+  $('chips').innerHTML = [['', 'Todos', base.length], ...Object.entries(A.COLS).map(([c, n]) => [c, n === 'Plano (AutoCAD)' ? 'Planos (AutoCAD)' : n === 'Cotización' ? 'Cotizaciones' : 'Memorias', cnt(c)])]
+    .map(([c, n, k]) => `<button type="button" class="chip${tipo === c ? ' on' : ''}" data-tipo="${c}">${esc(n)}<b>${k}</b></button>`).join('');
+  const F = tipo ? base.filter(v => v.d.col === tipo) : base;
+  const kb = DOCS.reduce((s, v) => s + (+v.d.kb || 0), 0);
+  $('eCuenta').textContent = `${DOCS.length} documentos en el archivo (${(kb / 1024).toLocaleString('es-CL', {maximumFractionDigits: 1})} MB)` + (F.length !== DOCS.length ? ` · ${F.length} con los filtros` : '');
+  if (!F.length) { $('lista').innerHTML = `<div class="vacio card">${DOCS.length ? 'Sin resultados con estos filtros.' : 'Aún no hay documentos archivados. Se agregan solos al emitir un PDF en AutoCAD (comando PDF), una memoria en la Mesa o al guardar una cotización.'}</div>`; return; }
+  $('lista').innerHTML = `<table><thead><tr><th>Tipo</th><th>Documento</th><th class="c-proy">Proyecto</th><th>Rev.</th><th>Emisión</th><th class="c-kb">Tamaño</th></tr></thead><tbody>${F.slice(0, 600).map(v => {
+    const key = v.d.col + '|' + v.d.id, pr = [v.p.codigo, v.p.mandante, v.p.proyecto].filter(Boolean).join(' · ');
+    return `<tr class="doc${sel === key ? ' sel' : ''}" data-k="${esc(key)}"><td><span class="tag ${v.d.col}">${esc(A.COLS[v.d.col].split(' ')[0])}</span></td>
+      <td class="tit">${esc(v.titulo)}<span class="ext">${esc(ext(v.archivo) || 'PDF')}</span>${v.det ? `<small>${esc(v.det)}</small>` : ''}<span class="mov">${esc(pr)}</span></td>
+      <td class="c-proy">${esc(pr) || '<span style="color:var(--sub)">—</span>'}</td><td class="num">${esc(v.rev)}</td><td class="num">${esc(dmy(v.fe))}</td><td class="num c-kb">${v.d.kb != null ? esc(v.d.kb.toLocaleString('es-CL')) + ' kB' : ''}</td></tr>`;
+  }).join('')}</tbody></table>${F.length > 600 ? '<p class="estado">Se muestran los 600 más recientes: afine la búsqueda.</p>' : ''}`;
+}
+$('chips').addEventListener('click', e => { const b = e.target.closest('[data-tipo]'); if (!b) return; tipo = b.dataset.tipo; render(); });
+['q', 'fProy', 'fDesde', 'fHasta'].forEach(id => $(id).addEventListener('input', render));
+$('lista').addEventListener('click', e => { const tr = e.target.closest('tr.doc'); if (tr) ver(tr.dataset.k); });
+
+/* ---------- visor ---------- */
+const buscar = k => DOCS.find(v => v.d.col + '|' + v.d.id === k);
+function nombreDescarga(v) {
+  if (v.d.col !== 'cotizaciones_pdf') return v.archivo || 'documento.pdf';
+  return (v.archivo || 'Cotizacion.pdf').replace(/\.pdf$/i, '') + (v.rev ? '_Rev' + v.rev : '') + '_' + v.guard.slice(0, 10) + '.pdf';
+}
+async function ver(k) {
+  const v = buscar(k); if (!v) return; sel = k; render();
+  const vis = $('visor'); vis.hidden = false; $('lay').classList.add('ver');
+  const pr = [v.p.codigo, v.p.mandante, v.p.proyecto].filter(Boolean).join(' · ');
+  const editable = v.d.col !== 'cotizaciones_pdf';
+  vis.innerHTML = `<div class="vh"><b>${esc(v.titulo)}</b><button class="btn" type="button" id="vAbrir" disabled>Abrir en pestaña</button><button class="btn pri" type="button" id="vBajar" disabled>Descargar</button>${editable ? '<button class="btn" type="button" id="vEdit">Editar datos</button>' : ''}<button class="btn" type="button" id="vCerrar">✕</button></div>
+    <div class="meta">${esc(A.COLS[v.d.col])}${pr ? ' · ' + esc(pr) : ''}${v.rev ? ' · Rev. ' + esc(v.rev) : ''}${v.fe ? ' · emitido ' + esc(dmy(v.fe)) : ''} · archivado ${esc(new Date(v.guard).toLocaleString('es-CL', {dateStyle: 'short', timeStyle: 'short'}))}${v.d.carpeta ? '<br>Carpeta: ' + esc(v.d.carpeta) : ''}${v.d.equipo ? ' · equipo ' + esc(v.d.equipo) : ''}</div>
+    <div class="noprev" id="vCuerpo">Descargando…</div>`;
+  $('vCerrar').onclick = cerrarVisor;
+  if (editable) $('vEdit').onclick = () => editar(v);
+  try {
+    const mime = v.d.mime || A.mimeDe(v.archivo);
+    const blob = await A.obtener(v.d.col, v.d.id, mime);
+    if (sel !== k) return;
+    if (verUrl) URL.revokeObjectURL(verUrl); verUrl = URL.createObjectURL(blob);
+    const nombre = nombreDescarga(v);
+    $('vBajar').disabled = $('vAbrir').disabled = false;
+    $('vBajar').onclick = () => { const a = document.createElement('a'); a.href = verUrl; a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); };
+    $('vAbrir').onclick = () => window.open(verUrl, '_blank');
+    if (mime === 'application/pdf') { const f = document.createElement('iframe'); f.src = verUrl; f.title = v.titulo; $('vCuerpo').replaceWith(f); }
+    else { $('vAbrir').hidden = true; $('vCuerpo').textContent = 'Vista previa disponible solo para PDF. Use «Descargar» para abrir el ' + (ext(v.archivo) === 'DOCX' ? 'Word' : ext(v.archivo) === 'XLSX' ? 'Excel' : 'archivo') + '.'; }
+  } catch (e) { if (e.code === 'auth') return mostrarLogin(e.message); $('vCuerpo').textContent = 'No se pudo obtener el documento: ' + e.message; }
+}
+function cerrarVisor() { sel = null; $('visor').hidden = true; $('lay').classList.remove('ver'); if (verUrl) { URL.revokeObjectURL(verUrl); verUrl = null; } render(); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('visor').hidden && !document.querySelector('dialog[open]')) cerrarVisor(); });
+
+/* ---------- editar / eliminar ---------- */
+let editando = null;
+function editar(v) {
+  editando = v; $('eTit').value = v.d.titulo || ''; $('eProy').value = v.p.codigo && PROY.some(p => p.codigo === v.p.codigo) ? v.p.codigo : '';
+  $('eRev').value = v.d.rev || ''; $('eFecha').value = v.d.fecha || ''; $('eDel').dataset.ok = ''; $('eDel').textContent = 'Eliminar del archivo'; $('dEdit').showModal();
+}
+$('eOk').onclick = async () => {
+  const v = editando, p = PROY.find(x => x.codigo === $('eProy').value);
+  const c = {titulo: $('eTit').value.trim(), rev: $('eRev').value.trim(), fecha: $('eFecha').value.trim(), codigo: p ? p.codigo : '', mandante: p ? p.mandante || '' : '', proyecto: p ? p.proyecto || '' : ''};
+  $('eOk').disabled = true;
+  try { const m = await A.editarMeta(v.d.col, v.d.id, c); const nv = vista(Object.assign({id: v.d.id, col: v.d.col}, m)); DOCS[DOCS.indexOf(v)] = nv; $('dEdit').close(); llenarProyectos(); ver(v.d.col + '|' + v.d.id); toast('Datos guardados.'); }
+  catch (e) { toast('No se pudo guardar: ' + e.message); } finally { $('eOk').disabled = false; }
+};
+$('eDel').onclick = async () => {
+  const b = $('eDel'); if (!b.dataset.ok) { b.dataset.ok = '1'; b.textContent = 'Confirmar: eliminar definitivamente'; return; }
+  const v = editando; b.disabled = true;
+  try { await A.borrar(v.d.col, v.d.id); DOCS = DOCS.filter(x => x !== v); $('dEdit').close(); cerrarVisor(); toast('Documento eliminado del archivo.'); }
+  catch (e) { toast('No se pudo eliminar: ' + e.message); } finally { b.disabled = false; }
+};
+document.querySelectorAll('[data-cerrar]').forEach(b => b.onclick = () => b.closest('dialog').close());
+
+/* ---------- subir a mano ---------- */
+let porSubir = [];
+function listaSubir() { $('dLista').textContent = porSubir.length ? porSubir.map(f => f.name + ' (' + Math.round(f.size / 1024).toLocaleString('es-CL') + ' kB)').join(' · ') : 'Ningún archivo elegido.'; }
+function agregar(fs) { porSubir.push(...[...fs].filter(f => /\.(pdf|docx|xlsx)$/i.test(f.name))); listaSubir(); }
+$('bSubir').onclick = () => { porSubir = []; listaSubir(); $('dTit').value = $('dRev').value = ''; $('dFecha').value = new Date().toISOString().slice(0, 10); $('dSubir').showModal(); };
+$('dElegir').onclick = () => $('dFile').click();
+$('dFile').onchange = e => { agregar(e.target.files); e.target.value = ''; };
+const drop = $('drop');
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); agregar(e.dataTransfer.files); });
+$('dOk').onclick = async () => {
+  if (!porSubir.length) return toast('Elija al menos un archivo.');
+  const p = PROY.find(x => x.codigo === $('dProy').value), b = $('dOk'); b.disabled = true;
+  let ok = 0;
+  for (const f of porSubir) {
+    b.textContent = `Subiendo ${ok + 1} de ${porSubir.length}…`;
+    const meta = {titulo: porSubir.length === 1 && $('dTit').value.trim() ? $('dTit').value.trim() : f.name.replace(/\.[^.]+$/, ''), archivo: f.name, rev: $('dRev').value.trim(),
+      fecha: dmy($('dFecha').value), origen: 'manual', codigo: p ? p.codigo : '', mandante: p ? p.mandante || '' : '', proyecto: p ? p.proyecto || '' : ''};
+    try { await A.subir($('dTipo').value, meta, f); ok++; } catch (e) { toast('No se pudo subir ' + f.name + ': ' + e.message, 8000); break; }
+  }
+  b.disabled = false; b.textContent = 'Subir';
+  if (ok) { $('dSubir').close(); toast(ok + (ok === 1 ? ' documento subido.' : ' documentos subidos.')); cargar(); }
+};
+
+/* ---------- sesión ---------- */
+function mostrarLogin(msg) { $('app').hidden = true; $('login').hidden = false; $('salir').hidden = true; $('quien').textContent = ''; $('lMsg').textContent = msg && msg !== 'Sin sesión' ? msg : ''; }
+function mostrarApp() { $('login').hidden = true; $('app').hidden = false; $('salir').hidden = false; $('quien').textContent = A.email || ''; cargar(); }
+$('fLogin').onsubmit = async e => {
+  e.preventDefault(); $('lBtn').disabled = true; $('lMsg').textContent = '';
+  try { await A.login($('lEmail').value.trim(), $('lPass').value); $('lPass').value = ''; mostrarApp(); }
+  catch (er) { $('lMsg').textContent = er.message; } finally { $('lBtn').disabled = false; }
+};
+$('salir').onclick = () => { A.logout(); DOCS = []; cerrarVisor(); mostrarLogin(); };
+$('bAct').onclick = cargar;
+if (A.conectado) mostrarApp(); else mostrarLogin();
+</script>
+</body>
+</html>
