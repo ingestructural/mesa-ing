@@ -51,6 +51,10 @@ tr.doc{cursor:pointer}
 tr.doc:hover{background:#f4f7fc}
 tr.doc.sel{background:#e8eefa}
 td.tit{font-weight:600}
+td.c-del{width:1%;white-space:nowrap;text-align:right}
+.x{border:1px solid transparent;background:none;color:var(--sub);border-radius:6px;padding:2px 8px;font-size:15px;line-height:1.2}
+.x:hover{color:var(--warn);border-color:var(--borde);background:#fff}
+.x.ok{color:#fff;background:var(--warn);border-color:var(--warn);font-size:12px;font-weight:600}
 td.tit small{display:block;font-weight:400;color:var(--sub);font-size:12px;word-break:break-all}
 .tag{display:inline-block;font-size:11px;font-weight:700;color:#fff;border-radius:4px;padding:2px 6px;white-space:nowrap}
 .tag.planos_pdf{background:var(--plano)}.tag.memorias_pdf{background:var(--memoria)}.tag.informes_pdf{background:var(--informe)}.tag.cotizaciones_pdf{background:var(--cot)}
@@ -83,7 +87,7 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
 </head>
 <body>
 <header>
-  <h1>🗂 Archivo ING</h1><span class="sub">Documentos emitidos: planos PDF, memorias y cotizaciones</span>
+  <h1>🗂 Archivo ING</h1><span class="sub">Documentos emitidos: planos PDF, memorias, informes y cotizaciones</span>
   <span class="sp"></span>
   <span id="quien" class="sub"></span>
   <a href="../" title="Volver a la Mesa de Cálculo">Mesa de Cálculo</a>
@@ -122,7 +126,7 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
   <h3>Subir documento al archivo</h3>
   <div class="drop" id="drop">Arrastre aquí los archivos (PDF, Word o Excel) o <button class="btn" type="button" id="dElegir">elija archivos…</button><input type="file" id="dFile" multiple accept=".pdf,.docx,.xlsx" hidden></div>
   <div id="dLista" style="font-size:13px;color:var(--sub);margin-bottom:8px"></div>
-  <label>Tipo<select id="dTipo"><option value="planos_pdf">Plano (PDF)</option><option value="memorias_pdf">Memoria de cálculo</option><option value="informes_pdf">Informe / documento general</option></select></label>
+  <label>Tipo<select id="dTipo"><option value="" disabled>— Elija el tipo —</option><option value="planos_pdf">Plano (PDF)</option><option value="memorias_pdf">Memoria de cálculo</option><option value="informes_pdf">Informe / documento general</option></select></label>
   <label>Proyecto (POWER)<select id="dProy"><option value="">(sin proyecto)</option></select></label>
   <div class="grid2"><label>Título (vacío = nombre del archivo)<input id="dTit"></label><label>Revisión<input id="dRev"></label></div>
   <label>Fecha de emisión<input id="dFecha" type="date"></label>
@@ -132,6 +136,7 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
 <dialog id="dEdit">
   <h3>Datos del documento</h3>
   <label>Título<input id="eTit"></label>
+  <label>Tipo<select id="eTipo"><option value="planos_pdf">Plano (PDF)</option><option value="memorias_pdf">Memoria de cálculo</option><option value="informes_pdf">Informe / documento general</option></select></label>
   <label>Proyecto (POWER)<select id="eProy"><option value="">(sin proyecto)</option></select></label>
   <div class="grid2"><label>Revisión<input id="eRev"></label><label>Fecha de emisión<input id="eFecha" placeholder="dd-mm-aaaa"></label></div>
   <div class="row"><button class="btn x" type="button" id="eDel">Eliminar del archivo</button><span style="flex:1"></span><button class="btn" type="button" data-cerrar>Cancelar</button><button class="btn pri" type="button" id="eOk">Guardar</button></div>
@@ -223,16 +228,28 @@ function render() {
   const kb = DOCS.reduce((s, v) => s + (+v.d.kb || 0), 0);
   $('eCuenta').textContent = `${DOCS.length} documentos en el archivo (${(kb / 1024).toLocaleString('es-CL', {maximumFractionDigits: 1})} MB)` + (F.length !== DOCS.length ? ` · ${F.length} con los filtros` : '');
   if (!F.length) { $('lista').innerHTML = `<div class="vacio card">${DOCS.length ? 'Sin resultados con estos filtros.' : 'Aún no hay documentos archivados. Se agregan solos al emitir un PDF en AutoCAD (comando PDF), una memoria en la Mesa, al guardar una cotización o al dejar un informe en Documentos\\Archivo ING\\Bandeja.'}</div>`; return; }
-  $('lista').innerHTML = `<table><thead><tr><th>Tipo</th><th>Documento</th><th class="c-proy">Proyecto</th><th>Rev.</th><th>Emisión</th><th class="c-kb">Tamaño</th></tr></thead><tbody>${F.slice(0, 600).map(v => {
+  $('lista').innerHTML = `<table><thead><tr><th>Tipo</th><th>Documento</th><th class="c-proy">Proyecto</th><th>Rev.</th><th>Emisión</th><th class="c-kb">Tamaño</th><th class="c-del"></th></tr></thead><tbody>${F.slice(0, 600).map(v => {
     const key = v.d.col + '|' + v.d.id, pr = [v.p.codigo, v.p.mandante, v.p.proyecto].filter(Boolean).join(' · ');
     return `<tr class="doc${sel === key ? ' sel' : ''}" data-k="${esc(key)}"><td><span class="tag ${v.d.col}">${esc(A.COLS[v.d.col].split(' ')[0])}</span></td>
       <td class="tit">${esc(v.titulo)}<span class="ext">${esc(ext(v.archivo) || 'PDF')}</span>${v.det ? `<small>${esc(v.det)}</small>` : ''}<span class="mov">${esc(pr)}</span></td>
-      <td class="c-proy">${esc(pr) || '<span style="color:var(--sub)">—</span>'}</td><td class="num">${esc(v.rev)}</td><td class="num">${esc(dmy(v.fe))}</td><td class="num c-kb">${v.d.kb != null ? esc(v.d.kb.toLocaleString('es-CL')) + ' kB' : ''}</td></tr>`;
+      <td class="c-proy">${esc(pr) || '<span style="color:var(--sub)">—</span>'}</td><td class="num">${esc(v.rev)}</td><td class="num">${esc(dmy(v.fe))}</td><td class="num c-kb">${v.d.kb != null ? esc(v.d.kb.toLocaleString('es-CL')) + ' kB' : ''}</td><td class="c-del"><button type="button" class="x" data-del="${esc(key)}" title="Eliminar del archivo">✕</button></td></tr>`;
   }).join('')}</tbody></table>${F.length > 600 ? '<p class="estado">Se muestran los 600 más recientes: afine la búsqueda.</p>' : ''}`;
 }
 $('chips').addEventListener('click', e => { const b = e.target.closest('[data-tipo]'); if (!b) return; tipo = b.dataset.tipo; render(); });
 ['q', 'fProy', 'fDesde', 'fHasta'].forEach(id => $(id).addEventListener('input', render));
-$('lista').addEventListener('click', e => { const tr = e.target.closest('tr.doc'); if (tr) ver(tr.dataset.k); });
+$('lista').addEventListener('click', async e => {
+  const x = e.target.closest('[data-del]');
+  if (x) {   // primer clic: pide confirmar; segundo clic: elimina
+    if (!x.classList.contains('ok')) { document.querySelectorAll('.x.ok').forEach(b => { b.classList.remove('ok'); b.textContent = '✕'; });
+      x.classList.add('ok'); x.textContent = '¿Eliminar?'; setTimeout(() => { if (x.isConnected && x.classList.contains('ok')) { x.classList.remove('ok'); x.textContent = '✕'; } }, 4000); return; }
+    const v = buscar(x.dataset.del); if (!v) return; x.disabled = true;
+    try { await A.borrar(v.d.col, v.d.id); DOCS = DOCS.filter(d => d !== v); if (sel === x.dataset.del) cerrarVisor(); else render();
+      toast(v.d.col === 'cotizaciones_pdf' ? 'PDF eliminado del archivo (la cotización sigue en el Cotizador).' : 'Documento eliminado del archivo.'); }
+    catch (er) { x.disabled = false; toast('No se pudo eliminar: ' + er.message); }
+    return;
+  }
+  const tr = e.target.closest('tr.doc'); if (tr) ver(tr.dataset.k);
+});
 
 /* ---------- visor ---------- */
 const buscar = k => DOCS.find(v => v.d.col + '|' + v.d.id === k);
@@ -269,14 +286,21 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('visor'
 /* ---------- editar / eliminar ---------- */
 let editando = null;
 function editar(v) {
-  editando = v; $('eTit').value = v.d.titulo || ''; $('eProy').value = v.p.codigo && PROY.some(p => p.codigo === v.p.codigo) ? v.p.codigo : '';
+  editando = v; $('eTit').value = v.d.titulo || ''; $('eTipo').value = v.d.col; $('eProy').value = v.p.codigo && PROY.some(p => p.codigo === v.p.codigo) ? v.p.codigo : '';
   $('eRev').value = v.d.rev || ''; $('eFecha').value = v.d.fecha || ''; $('eDel').dataset.ok = ''; $('eDel').textContent = 'Eliminar del archivo'; $('dEdit').showModal();
 }
 $('eOk').onclick = async () => {
   const v = editando, p = PROY.find(x => x.codigo === $('eProy').value);
-  const c = {titulo: $('eTit').value.trim(), rev: $('eRev').value.trim(), fecha: $('eFecha').value.trim(), codigo: p ? p.codigo : '', mandante: p ? p.mandante || '' : '', proyecto: p ? p.proyecto || '' : ''};
+  const c = {titulo: $('eTit').value.trim(), rev: $('eRev').value.trim(), fecha: $('eFecha').value.trim()};
+  // proyecto: el elegido de POWER; «(sin proyecto)» conserva un código que no está en POWER (p. ej. ficha de la bandeja)
+  if (p) Object.assign(c, {codigo: p.codigo, mandante: p.mandante || '', proyecto: p.proyecto || ''});
+  else if (!v.d.codigo || PROY.some(x => x.codigo === v.d.codigo)) Object.assign(c, {codigo: '', mandante: '', proyecto: ''});
+  const col = $('eTipo').value;
   $('eOk').disabled = true;
-  try { const m = await A.editarMeta(v.d.col, v.d.id, c); const nv = vista(Object.assign({id: v.d.id, col: v.d.col}, m)); DOCS[DOCS.indexOf(v)] = nv; $('dEdit').close(); llenarProyectos(); ver(v.d.col + '|' + v.d.id); toast('Datos guardados.'); }
+  try { const m = await A.editarMeta(v.d.col, v.d.id, c);
+    if (col !== v.d.col) await A.mover(v.d.col, v.d.id, col);
+    const nv = vista(Object.assign({id: v.d.id, col}, m)); DOCS[DOCS.indexOf(v)] = nv; $('dEdit').close(); llenarProyectos(); ver(col + '|' + v.d.id);
+    toast(col !== v.d.col ? 'Datos guardados; ahora es ' + A.COLS[col] + '.' : 'Datos guardados.'); }
   catch (e) { toast('No se pudo guardar: ' + e.message); } finally { $('eOk').disabled = false; }
 };
 $('eDel').onclick = async () => {
@@ -291,7 +315,7 @@ document.querySelectorAll('[data-cerrar]').forEach(b => b.onclick = () => b.clos
 let porSubir = [];
 function listaSubir() { $('dLista').textContent = porSubir.length ? porSubir.map(f => f.name + ' (' + Math.round(f.size / 1024).toLocaleString('es-CL') + ' kB)').join(' · ') : 'Ningún archivo elegido.'; }
 function agregar(fs) { porSubir.push(...[...fs].filter(f => /\.(pdf|docx|xlsx)$/i.test(f.name))); listaSubir(); }
-$('bSubir').onclick = () => { porSubir = []; listaSubir(); $('dTit').value = $('dRev').value = ''; $('dFecha').value = new Date().toISOString().slice(0, 10); $('dSubir').showModal(); };
+$('bSubir').onclick = () => { porSubir = []; listaSubir(); $('dTit').value = $('dRev').value = ''; $('dFecha').value = new Date().toISOString().slice(0, 10); $('dTipo').value = tipo && tipo !== 'cotizaciones_pdf' ? tipo : ''; $('dSubir').showModal(); };
 $('dElegir').onclick = () => $('dFile').click();
 $('dFile').onchange = e => { agregar(e.target.files); e.target.value = ''; };
 const drop = $('drop');
@@ -300,6 +324,7 @@ drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); agregar(e.dataTransfer.files); });
 $('dOk').onclick = async () => {
   if (!porSubir.length) return toast('Elija al menos un archivo.');
+  if (!$('dTipo').value) { $('dTipo').focus(); return toast('Elija el tipo: plano, memoria o informe.'); }
   const p = PROY.find(x => x.codigo === $('dProy').value), b = $('dOk'); b.disabled = true;
   let ok = 0;
   for (const f of porSubir) {
