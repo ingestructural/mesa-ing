@@ -114,16 +114,12 @@
       body: JSON.stringify({data: d, updated_at: new Date().toISOString()})});
     return d.meta;
   }
-  // cambia el tipo de un documento (p. ej. subido como plano y era informe): copia la fila a la otra colección y borra la original
+  // cambia el tipo de un documento (p. ej. subido como plano y era informe): solo cambia la columna col de la fila
   async function mover(col, id, nueva) {
     if (col === 'cotizaciones_pdf' || nueva === 'cotizaciones_pdf' || !COLS[nueva]) throw err('No se puede cambiar a ese tipo');
     if (col === nueva) return;
-    await ensure();
-    var r = await req('docs?select=data&col=eq.' + encodeURIComponent(col) + '&id=eq.' + encodeURIComponent(id));
-    var j = await r.json(); if (!j[0]) throw err('Documento no encontrado');
-    await req('docs?on_conflict=owner,col,id', {method: 'POST', headers: {Prefer: 'resolution=merge-duplicates,return=minimal'},
-      body: JSON.stringify([{owner: sess.uid, col: nueva, id: id, data: j[0].data, updated_at: new Date().toISOString()}])});
-    await borrar(col, id);
+    await req('docs?col=eq.' + encodeURIComponent(col) + '&id=eq.' + encodeURIComponent(id), {method: 'PATCH', headers: {Prefer: 'return=minimal'},
+      body: JSON.stringify({col: nueva, updated_at: new Date().toISOString()})});
   }
   async function proyectos() {
     var r = await req('docs?select=id,data&col=eq.proyectos&limit=5000');
