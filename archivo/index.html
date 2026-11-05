@@ -102,7 +102,7 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
 
   <div id="app" hidden>
     <div class="bar">
-      <input type="search" id="q" placeholder="Buscar por título, proyecto, código, mandante, archivo…" aria-label="Buscar">
+      <input type="search" id="q" placeholder="Buscar: título, proyecto, código, mandante…" aria-label="Buscar">
       <select id="fProy" aria-label="Proyecto"><option value="">Todos los proyectos</option></select>
       <input type="date" id="fDesde" aria-label="Desde" title="Desde">
       <input type="date" id="fHasta" aria-label="Hasta" title="Hasta">
@@ -169,8 +169,9 @@ function proyDe(d) {
 }
 function vista(d) {
   const p = proyDe(d) || {};
-  const titulo = d.col === 'cotizaciones_pdf' ? 'Cotización ' + (d.numero || '(sin N°)') + (d.documento ? ' — ' + d.documento : '') : (d.titulo || d.archivo || '(sin título)');
-  const det = d.col === 'cotizaciones_pdf' ? [d.estado, d.neto != null ? Number(d.neto).toLocaleString('es-CL', {maximumFractionDigits: 2}) + ' UF neto' : ''].filter(Boolean).join(' · ')
+  const titulo = d.col === 'cotizaciones_pdf' ? 'Cotización ' + (d.numero || '(sin N°)') : (d.titulo || d.archivo || '(sin título)');
+  // documento de cobro del Cotizador: F = factura (monto neto), B = boleta (monto bruto)
+  const det = d.col === 'cotizaciones_pdf' ? [d.estado, d.neto != null ? Number(d.neto).toLocaleString('es-CL', {maximumFractionDigits: 2}) + (d.documento === 'B' ? ' UF bruto' : ' UF neto') : '', d.documento === 'B' ? 'Boleta' : d.documento === 'F' ? 'Factura' : ''].filter(Boolean).join(' · ')
     : d.col === 'planos_pdf' ? [d.escala, d.dibujo].filter(Boolean).join(' · ')
     : [d.clase === 'verificacion' ? 'Verificación individual' : d.clase === 'general' ? 'Memoria general' : '', d.planilla].filter(Boolean).join(' · ');
   const fe = iso(d.fecha) || iso(d.guardado);
