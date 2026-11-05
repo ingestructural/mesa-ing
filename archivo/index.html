@@ -12,7 +12,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="arch-192.png">
 <style>
 :root{--azul:#1F3864;--azul2:#2E5597;--fondo:#F1F3F6;--panel:#fff;--txt:#1d2433;--sub:#5b6577;--borde:#d9dee7;--ok:#1b7a3d;--warn:#b42318;
-  --plano:#0e7490;--memoria:#6d28d9;--cot:#b45309;}
+  --plano:#0e7490;--memoria:#6d28d9;--informe:#be185d;--cot:#b45309;}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;font:15px/1.4 system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:var(--fondo);color:var(--txt)}
@@ -53,7 +53,7 @@ tr.doc.sel{background:#e8eefa}
 td.tit{font-weight:600}
 td.tit small{display:block;font-weight:400;color:var(--sub);font-size:12px;word-break:break-all}
 .tag{display:inline-block;font-size:11px;font-weight:700;color:#fff;border-radius:4px;padding:2px 6px;white-space:nowrap}
-.tag.planos_pdf{background:var(--plano)}.tag.memorias_pdf{background:var(--memoria)}.tag.cotizaciones_pdf{background:var(--cot)}
+.tag.planos_pdf{background:var(--plano)}.tag.memorias_pdf{background:var(--memoria)}.tag.informes_pdf{background:var(--informe)}.tag.cotizaciones_pdf{background:var(--cot)}
 .ext{font-size:11px;color:var(--sub);border:1px solid var(--borde);border-radius:4px;padding:1px 4px;margin-left:4px}
 .num{white-space:nowrap}
 .vacio{padding:30px;text-align:center;color:var(--sub)}
@@ -122,7 +122,7 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
   <h3>Subir documento al archivo</h3>
   <div class="drop" id="drop">Arrastre aquí los archivos (PDF, Word o Excel) o <button class="btn" type="button" id="dElegir">elija archivos…</button><input type="file" id="dFile" multiple accept=".pdf,.docx,.xlsx" hidden></div>
   <div id="dLista" style="font-size:13px;color:var(--sub);margin-bottom:8px"></div>
-  <label>Tipo<select id="dTipo"><option value="planos_pdf">Plano (PDF)</option><option value="memorias_pdf">Memoria de cálculo</option></select></label>
+  <label>Tipo<select id="dTipo"><option value="planos_pdf">Plano (PDF)</option><option value="memorias_pdf">Memoria de cálculo</option><option value="informes_pdf">Informe / documento general</option></select></label>
   <label>Proyecto (POWER)<select id="dProy"><option value="">(sin proyecto)</option></select></label>
   <div class="grid2"><label>Título (vacío = nombre del archivo)<input id="dTit"></label><label>Revisión<input id="dRev"></label></div>
   <label>Fecha de emisión<input id="dFecha" type="date"></label>
@@ -145,6 +145,7 @@ const A = window.INGArchivo, $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 let DOCS = [], PROY = [], tipo = '', sel = null, verUrl = null;
+const PLURAL = {planos_pdf: 'Planos (AutoCAD)', memorias_pdf: 'Memorias', informes_pdf: 'Informes', cotizaciones_pdf: 'Cotizaciones'};
 function toast(t, ms) { const d = $('toast'); d.textContent = t; d.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => d.style.display = 'none', ms || 4000); }
 
 /* ---------- fechas: dd-mm-aaaa, aaaa-mm-dd o ISO → aaaa-mm-dd ---------- */
@@ -216,12 +217,12 @@ function filtrados(sinTipo) {
 }
 function render() {
   const base = filtrados(true), cnt = c => base.filter(v => v.d.col === c).length;
-  $('chips').innerHTML = [['', 'Todos', base.length], ...Object.entries(A.COLS).map(([c, n]) => [c, n === 'Plano (AutoCAD)' ? 'Planos (AutoCAD)' : n === 'Cotización' ? 'Cotizaciones' : 'Memorias', cnt(c)])]
+  $('chips').innerHTML = [['', 'Todos', base.length], ...Object.keys(A.COLS).map(c => [c, PLURAL[c] || A.COLS[c], cnt(c)])]
     .map(([c, n, k]) => `<button type="button" class="chip${tipo === c ? ' on' : ''}" data-tipo="${c}">${esc(n)}<b>${k}</b></button>`).join('');
   const F = tipo ? base.filter(v => v.d.col === tipo) : base;
   const kb = DOCS.reduce((s, v) => s + (+v.d.kb || 0), 0);
   $('eCuenta').textContent = `${DOCS.length} documentos en el archivo (${(kb / 1024).toLocaleString('es-CL', {maximumFractionDigits: 1})} MB)` + (F.length !== DOCS.length ? ` · ${F.length} con los filtros` : '');
-  if (!F.length) { $('lista').innerHTML = `<div class="vacio card">${DOCS.length ? 'Sin resultados con estos filtros.' : 'Aún no hay documentos archivados. Se agregan solos al emitir un PDF en AutoCAD (comando PDF), una memoria en la Mesa o al guardar una cotización.'}</div>`; return; }
+  if (!F.length) { $('lista').innerHTML = `<div class="vacio card">${DOCS.length ? 'Sin resultados con estos filtros.' : 'Aún no hay documentos archivados. Se agregan solos al emitir un PDF en AutoCAD (comando PDF), una memoria en la Mesa, al guardar una cotización o al dejar un informe en Documentos\\Archivo ING\\Bandeja.'}</div>`; return; }
   $('lista').innerHTML = `<table><thead><tr><th>Tipo</th><th>Documento</th><th class="c-proy">Proyecto</th><th>Rev.</th><th>Emisión</th><th class="c-kb">Tamaño</th></tr></thead><tbody>${F.slice(0, 600).map(v => {
     const key = v.d.col + '|' + v.d.id, pr = [v.p.codigo, v.p.mandante, v.p.proyecto].filter(Boolean).join(' · ');
     return `<tr class="doc${sel === key ? ' sel' : ''}" data-k="${esc(key)}"><td><span class="tag ${v.d.col}">${esc(A.COLS[v.d.col].split(' ')[0])}</span></td>

@@ -6,6 +6,8 @@
    Colecciones (columna col de la tabla docs, una fila por documento emitido):
      planos_pdf        PDF del comando PDF de AutoCAD (los sube ING_ARCHIVO.ps1)
      memorias_pdf      memorias de la Mesa de Cálculo (PDF y Word)
+     informes_pdf      informes y documentos generales (los sube ING_ARCHIVO.ps1 desde
+                       Documentos\Archivo ING\Bandeja, o a mano desde la app)
      cotizaciones_pdf  PDF del Cotizador (las archiva el propio Cotizador)
    Cada fila: data = {meta:{...}, b64:"<archivo en base64>"}; el listado lee solo meta.
 
@@ -18,7 +20,7 @@
   'use strict';
   var CFG = {url: 'https://tayuwtdfeworgvnzmwkz.supabase.co', key: 'sb_publishable_bjPqOTlpvh2GdhlZyH9PjQ_CI8G-71h'};
   var K_S = 'ing_archivo_sess';
-  var COLS = {planos_pdf: 'Plano (AutoCAD)', memorias_pdf: 'Memoria de cálculo', cotizaciones_pdf: 'Cotización'};
+  var COLS = {planos_pdf: 'Plano (AutoCAD)', memorias_pdf: 'Memoria de cálculo', informes_pdf: 'Informe', cotizaciones_pdf: 'Cotización'};
 
   function lsGet(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
   function lsSet(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
