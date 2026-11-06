@@ -1939,6 +1939,9 @@ if (!FS_SUPPORTED) {
    DATOS DE LAS 29 PLANILLAS
    ========================================================================= */
 const TOOLS = [
+  { id:'informes', cat:'Documentos', name:'Informes', file:null,
+    desc:'Encarga a Claude un informe, carta o documento general en formato ING Estructural, vinculado a un proyecto de POWER (código, mandante y proyecto), y sube el informe terminado a Archivo ING como Informe con esos datos.',
+    tag:'Formato ING · POWER · Archivo ING', calc:'informes' },
   { id:'memorias', cat:'Documentos', name:'Constructor de Memorias de Cálculo', file:null,
     desc:'Arma la memoria de cálculo completa en formato ING Estructural (portada, índice, descripción, normativa, materiales, cargas, sismo, análisis, verificaciones, figuras y conclusiones) a partir de paneles y casillas, y la emite en Word y PDF.',
     tag:'Formato ING · Word · PDF', calc:'memorias' },
@@ -48118,6 +48121,156 @@ async function archMemoria(archivos, P, extra) {
   else if (cola) fsToast('Memoria pendiente para Archivo ING: abra Archivo ING e inicie sesión con su cuenta de POWER para subirla.');
   else if (malo) fsToast('No se pudo guardar la memoria en Archivo ING.');
 }
+/* =========================================================================
+   INFORMES (Documentos): encargo de un informe a Claude, vinculado a un proyecto de POWER
+   1) Proyecto de POWER (lista de proyectos de la misma cuenta del Archivo ING) o datos a mano.
+   2) Datos del documento y lo que se necesita.
+   3) «Copiar encargo»: texto para pegar en Claude con el formato ING y la ficha de la Bandeja,
+      para que el informe entre a Archivo ING con el código del proyecto.
+   4) Informe terminado: se sube a Archivo ING (Informes) con el código del proyecto, o se
+      descarga su ficha .txt para dejarlo en Documentos\Archivo ING\Bandeja.
+   ========================================================================= */
+const INF_LS = 'mesaInforme.v1';
+const INF_TIPOS = ['Informe técnico', 'Informe de inspección', 'Informe de revisión', 'Carta / oficio', 'Minuta', 'Otro documento'];
+function infHoy() { const d = new Date(); return String(d.getDate()).padStart(2, '0') + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + d.getFullYear(); }
+function infDef() { return {codigo:'', mandante:'', proyecto:'', tipo:INF_TIPOS[0], titulo:'', rev:'A', fecha:infHoy(), pedido:'', antecedentes:''}; }
+function infLoad() { try { return Object.assign(infDef(), JSON.parse(localStorage.getItem(INF_LS) || 'null') || {}); } catch (e) { return infDef(); } }
+function infSave(I) { try { localStorage.setItem(INF_LS, JSON.stringify(I)); } catch (e) {} }
+function infFicha(I) {
+  return ['titulo=' + (I.titulo || I.tipo), 'codigo=' + I.codigo, 'mandante=' + I.mandante, 'proyecto=' + I.proyecto,
+    'rev=' + I.rev, 'fecha=' + I.fecha, 'origen=claude'].join('\n');
+}
+function infEncargo(I) {
+  const ant = String(I.antecedentes || '').split('\n').map(s => s.trim()).filter(Boolean);
+  return [
+    'ENCARGO DE ' + I.tipo.toUpperCase() + ' — ING Estructural',
+    '',
+    'Título: ' + (I.titulo || '(proponer)'),
+    'Proyecto POWER: ' + ([I.codigo, I.mandante, I.proyecto].filter(Boolean).join(' · ') || '(sin proyecto)'),
+    'Revisión: ' + (I.rev || '0') + ' · Fecha: ' + I.fecha,
+    '',
+    'Lo que necesito:',
+    I.pedido || '(describir)',
+    '',
+    'Antecedentes que adjunto en este chat:',
+    ant.length ? ant.map(a => '- ' + a).join('\n') : '- (ninguno)',
+    '',
+    'Formato: hoja tipo de ING Estructural (skill formato-ing): portada, encabezado con logo, pie, Arial y firma de J. Germán Aguilera Hafner. Entregar en Word y PDF.',
+    'Criterio: en español, tono profesional directo; cada dato técnico basado en normas o estudios citados; no inventar datos (lo que falte, preguntarlo).',
+    '',
+    'Al terminar: dejar el PDF (y el Word) en C:\\Users\\German\\Documents\\Archivo ING\\Bandeja, cada uno con su ficha <archivo>.txt, para que entre a Archivo ING como Informe vinculado al proyecto:',
+    infFicha(I),
+  ].join('\n');
+}
+async function infCopiar(t) {
+  try { await navigator.clipboard.writeText(t); return true; } catch (e) {}
+  try { const a = document.createElement('textarea'); a.value = t; a.style.position = 'fixed'; a.style.opacity = '0'; document.body.appendChild(a); a.select(); const ok = document.execCommand('copy'); a.remove(); return ok; } catch (e) { return false; }
+}
+
+function renderInformes(container) {
+  let I = infLoad(), PROY = null, A = null, archivo = null;
+  const campo = (lbl, k, ph, ancho) => `<div class="field"${ancho ? ' style="grid-column:1/-1"' : ''}><label>${lbl}</label><input type="text" data-inf="${k}" data-noupper value="${esc(I[k] || '')}" placeholder="${esc(ph || '')}" style="${ancho ? 'width:100%;max-width:620px' : 'width:14rem;max-width:100%'};text-align:left"></div>`;
+  container.innerHTML = `
+    <div style="margin-bottom:1rem">
+      <h1>Informes</h1>
+      <div class="sub" style="color:var(--ink-muted);font-size:.88rem;max-width:62ch;line-height:1.5">Encargue a Claude un informe, carta o documento general en formato ING Estructural, vinculado a un proyecto de POWER. «Copiar encargo» deja el texto listo para pegar en Claude; el informe terminado entra a Archivo ING como Informe con el código del proyecto.</div>
+    </div>
+    <div class="panel">
+      <h3>1 · Proyecto de POWER</h3>
+      <div id="inf_cuenta" class="note"></div>
+      <div class="field-grid">
+        <div class="field" style="grid-column:1/-1"><label>Proyecto</label><select id="inf_proy" style="width:100%;max-width:620px"><option value="">(cargando proyectos…)</option></select></div>
+        ${campo('Código', 'codigo', 'Ej: BED-02-028-26')}${campo('Mandante', 'mandante')}${campo('Proyecto (nombre)', 'proyecto', '', true)}
+      </div>
+    </div>
+    <div class="panel">
+      <h3>2 · Documento</h3>
+      <div class="field-grid">
+        <div class="field"><label>Tipo</label><select id="inf_tipo">${INF_TIPOS.map(t => `<option${t === I.tipo ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+        ${campo('Revisión', 'rev')}${campo('Fecha (dd-mm-aaaa)', 'fecha')}
+        ${campo('Título (vacío = lo propone Claude)', 'titulo', '', true)}
+        <div class="field" style="grid-column:1/-1"><label>Lo que necesito</label><textarea data-inf="pedido" rows="6" style="width:100%;max-width:620px" placeholder="Objetivo, alcance, lo observado en terreno, preguntas a responder, normas a considerar…">${esc(I.pedido)}</textarea></div>
+        <div class="field" style="grid-column:1/-1"><label>Antecedentes que adjuntará (uno por línea)</label><textarea data-inf="antecedentes" rows="3" style="width:100%;max-width:620px" placeholder="Fotos de terreno, planos, correos, memoria anterior…">${esc(I.antecedentes)}</textarea></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>3 · Encargo para Claude</h3>
+      <div class="note">Copie el encargo, abra Claude, péguelo y adjunte los antecedentes. Claude entrega el informe en Word y PDF y lo deja en la Bandeja con esta ficha; la Bandeja lo sube a Archivo ING.</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin:.6rem 0">
+        <button type="button" class="btn-add" id="inf_copiar">📋 Copiar encargo</button>
+        <a class="btn-add" id="inf_claude" href="https://claude.ai/new" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block">Abrir Claude ↗</a>
+        <button type="button" class="btn-add" id="inf_nuevo">🗋 Nuevo informe</button>
+      </div>
+      <pre id="inf_texto" style="white-space:pre-wrap;font-size:.8rem;background:var(--panel-2, rgba(0,0,0,.03));border:1px solid var(--line, #ddd);border-radius:6px;padding:.6rem;max-height:22rem;overflow:auto"></pre>
+    </div>
+    <div class="panel">
+      <h3>4 · Informe terminado</h3>
+      <div class="note">Si ya tiene el archivo final (por ejemplo, uno hecho fuera de Claude), súbalo aquí: queda en Archivo ING como Informe, con el código, mandante, proyecto, revisión y fecha de arriba. También puede descargar la ficha .txt para dejarlo en Documentos\\Archivo ING\\Bandeja.</div>
+      <div class="field-grid">
+        <div class="field" style="grid-column:1/-1"><label>Archivo (PDF, Word o Excel)</label><input type="file" id="inf_file" accept=".pdf,.docx,.xlsx"></div>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.4rem">
+        <button type="button" class="btn-add" id="inf_subir">⬆ Subir a Archivo ING</button>
+        <button type="button" class="btn-add" id="inf_ficha">⬇ Descargar ficha .txt</button>
+        <a class="btn-add" href="archivo/" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block">🗂 Abrir Archivo ING ↗</a>
+      </div>
+      <div id="inf_estado" class="note" style="margin-top:.5rem"></div>
+    </div>`;
+  const $q = s => container.querySelector(s);
+  const pintar = () => { $q('#inf_texto').textContent = infEncargo(I); infSave(I); };
+  const opcProy = () => {
+    const sel = $q('#inf_proy');
+    if (!PROY) return;
+    const L = PROY.filter(p => p.codigo).sort((a, b) => String(b.creado || '').localeCompare(String(a.creado || '')) || String(b.codigo).localeCompare(String(a.codigo)));
+    sel.innerHTML = '<option value="">(sin proyecto de POWER / datos a mano)</option>' + L.map(p => `<option value="${esc(p.codigo)}"${p.codigo === I.codigo ? ' selected' : ''}>${esc([p.codigo, p.mandante, p.proyecto].filter(Boolean).join(' · '))}</option>`).join('');
+  };
+  async function cargarProy() {
+    const c = $q('#inf_cuenta'), sel = $q('#inf_proy');
+    try { A = await archCargar(); } catch (e) { c.textContent = 'Sin conexión con POWER: complete código, mandante y proyecto a mano.'; sel.innerHTML = '<option value="">(sin conexión)</option>'; return; }
+    if (!A.conectado) {
+      c.innerHTML = 'Para elegir el proyecto de la lista, inicie sesión con su cuenta de POWER (la misma de Archivo ING). <span id="inf_login" style="display:inline-flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem"><input type="email" id="inf_mail" data-noupper placeholder="correo" style="text-align:left"><input type="password" id="inf_pass" placeholder="contraseña" style="text-align:left"><button type="button" class="btn-add" id="inf_entrar" style="margin-top:0">Entrar</button></span>';
+      sel.innerHTML = '<option value="">(inicie sesión para ver los proyectos)</option>';
+      $q('#inf_entrar').onclick = async () => { try { await A.login($q('#inf_mail').value.trim(), $q('#inf_pass').value); cargarProy(); } catch (e) { fsToast('No se pudo iniciar sesión: ' + e.message); } };
+      return;
+    }
+    try { PROY = await A.proyectos(); c.textContent = 'Cuenta: ' + (A.email || 'POWER') + ' · ' + PROY.filter(p => p.codigo).length + ' proyectos.'; opcProy(); }
+    catch (e) { if (e.code === 'auth') { cargarProy(); return; } c.textContent = 'No se pudieron leer los proyectos: ' + e.message + '. Complete los datos a mano.'; }
+  }
+  container.addEventListener('input', e => {
+    const k = e.target.dataset && e.target.dataset.inf; if (k) { I[k] = e.target.value; pintar(); }
+    if (e.target.id === 'inf_tipo') { I.tipo = e.target.value; pintar(); }
+  });
+  container.addEventListener('change', e => {
+    if (e.target.id === 'inf_tipo') { I.tipo = e.target.value; pintar(); }
+    if (e.target.id === 'inf_proy') {
+      const p = (PROY || []).find(x => x.codigo === e.target.value);
+      I.codigo = p ? p.codigo : ''; I.mandante = p ? p.mandante || '' : ''; I.proyecto = p ? p.proyecto || '' : '';
+      ['codigo', 'mandante', 'proyecto'].forEach(k => { const f = container.querySelector(`[data-inf="${k}"]`); if (f) f.value = I[k]; });
+      pintar();
+    }
+    if (e.target.id === 'inf_file') archivo = e.target.files[0] || null;
+  });
+  $q('#inf_copiar').onclick = async () => { if (!String(I.pedido).trim()) { fsToast('Escriba primero lo que necesita.'); return; } fsToast(await infCopiar(infEncargo(I)) ? 'Encargo copiado: péguelo en Claude.' : 'No se pudo copiar: seleccione el texto del recuadro y cópielo.'); };
+  $q('#inf_nuevo').onclick = () => { I = infDef(); infSave(I); renderInformes(container); };
+  $q('#inf_ficha').onclick = () => {
+    const base = archivo ? archivo.name : ([I.codigo, (I.titulo || I.tipo)].filter(Boolean).join('_').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_Rev' + (I.rev || '0') + '.pdf');
+    mcmGuardarArchivo(base + '.txt', new Blob([infFicha(I)], {type:'text/plain;charset=utf-8'}), 'text/plain', 'Ficha de la Bandeja', '.txt');
+  };
+  $q('#inf_subir').onclick = async () => {
+    const st = $q('#inf_estado');
+    if (!archivo) { fsToast('Elija el archivo del informe.'); return; }
+    if (!/\.(pdf|docx|xlsx)$/i.test(archivo.name)) { fsToast('Solo PDF, Word (.docx) o Excel (.xlsx).'); return; }
+    try { A = A || await archCargar(); } catch (e) { st.textContent = 'Sin conexión con Archivo ING.'; return; }
+    st.textContent = 'Subiendo ' + archivo.name + '…';
+    const meta = {titulo:I.titulo || archivo.name.replace(/\.[^.]+$/, ''), codigo:I.codigo, mandante:I.mandante, proyecto:I.proyecto, rev:I.rev, fecha:I.fecha,
+      archivo:archivo.name, clase:I.tipo, origen:'mesa'};
+    try { const r = await A.archivar('informes_pdf', meta, archivo);
+      st.textContent = r === 'subido' ? 'Listo: ' + archivo.name + ' está en Archivo ING (Informes)' + (I.codigo ? ' con el código ' + I.codigo : '') + '.'
+        : 'Quedó pendiente en este equipo: abra Archivo ING e inicie sesión con su cuenta de POWER para subirlo.'; }
+    catch (e) { st.textContent = 'No se pudo subir: ' + e.message; }
+  };
+  pintar(); cargarProy();
+}
 function mcmImg(file) {
   return new Promise((ok, fail) => { const r = new FileReader(); r.onerror = fail; r.onload = () => { const im = new Image(); im.onerror = fail; im.onload = () => {
     const k = Math.min(1, 1600 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
@@ -54099,7 +54252,7 @@ function renderMetalcon(container) {
   recalc();
 }
 
-const CALC_RENDERERS = { murosTrafo: renderMurosTrafo, memorias: renderMemorias, eett: renderEETT, vigaFundTorsion: renderVigaFundTorsion, costaneras: renderCostaneras, perfilesH: renderPerfilesH, flexionAtiesadores: renderFlexionAtiesadores,
+const CALC_RENDERERS = { informes: renderInformes, murosTrafo: renderMurosTrafo, memorias: renderMemorias, eett: renderEETT, vigaFundTorsion: renderVigaFundTorsion, costaneras: renderCostaneras, perfilesH: renderPerfilesH, flexionAtiesadores: renderFlexionAtiesadores,
   estanqueAcero: renderEstanqueAcero, fundacionEquipoDinamico: renderFundacionEquipoDinamico,
   muroBerlines: renderMuroBerlines, costanerasMadera: renderCostanerasMadera,
   soldaduras: renderSoldaduras, placasBase: renderPlacasBase, anclajesHilti: renderAnclajesHilti,
@@ -54893,7 +55046,7 @@ route();
    ========================================================================= */
 const REV_EXCLUIR = n => /^(TOOLS|CATS|CALC_RENDERERS|TOOL_STATE_CACHE|CURRENT_ROUTE_ID|PENDING_RESTORE|route|renderHome|buildSidebar|renderFicha|renderMemorias|renderEETT)$/.test(n)
   || /^(fs|mcm|mvs|MCM_|MVS_|ett|ETT_|rev|REV_)/.test(n);
-const REV_SIN = ['memorias', 'eett', 'biblioteca-normas']; // documentos, no planillas de cálculo
+const REV_SIN = ['informes', 'memorias', 'eett', 'biblioteca-normas']; // documentos, no planillas de cálculo
 const REV_ID = '[A-Za-z_$\\u00C0-\\u024F][\\w$\\u00C0-\\u024F]*';
 const revSinComentarios = t => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[\s;{}])\/\/.*$/gm, '$1');
 // nombres declarados en «const a = 1, b = [..]»: solo los que están fuera de (), [], {} y textos
