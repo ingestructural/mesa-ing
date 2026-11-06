@@ -48331,7 +48331,17 @@ function renderInformes(container) {
     let raiz = null; try { raiz = await infCarpetaArchivo(pedir); } catch (e) { return; }
     if (!raiz) { L.innerHTML = ''; return; }
     const E = await infListarEncargos(raiz);
-    L.innerHTML = E.length ? '<div style="font-weight:600;margin-bottom:.2rem">Encargos en el PC</div>' + E.slice(0, 12).map(e => `<div style="display:flex;gap:.5rem;padding:.15rem 0;border-bottom:1px solid var(--line, #e3e7ee)"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.nom)}">${esc(e.nom)}</span><span style="font-weight:600;color:${e.hecho ? '#067647' : '#b54708'}">${e.hecho ? '✓ elaborado' : '⏳ pendiente'}</span></div>`).join('') : '';
+    L.innerHTML = E.length ? '<div style="font-weight:600;margin-bottom:.2rem">Encargos en el PC</div>' + E.slice(0, 12).map(e => `<div style="display:flex;gap:.5rem;padding:.15rem 0;border-bottom:1px solid var(--line, #e3e7ee)"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.nom)}">${esc(e.nom)}</span><span style="font-weight:600;color:${e.hecho ? '#067647' : '#b54708'}">${e.hecho ? '✓ elaborado' : '⏳ pendiente'}</span><button type="button" class="inf-encDel" data-nom="${esc(e.nom)}" title="Eliminar este encargo" style="border:none;background:none;color:#b42318;cursor:pointer;font-size:.95rem;padding:0 .2rem;line-height:1">✕</button></div>`).join('') : '';
+    L.querySelectorAll('.inf-encDel').forEach(btn => btn.onclick = async () => {
+      const nom = btn.dataset.nom;
+      if (!confirm('¿Eliminar el encargo «' + nom + '»?\n\nSe borra su carpeta en Documentos\\Archivo ING\\Encargos, con sus antecedentes, y deja de figurar como pendiente.')) return;
+      try {
+        const enc = await raiz.getDirectoryHandle('Encargos');
+        await enc.removeEntry(nom, {recursive:true});
+        fsToast('Encargo eliminado.');
+      } catch (e) { fsToast('No se pudo eliminar el encargo: ' + ((e && e.message) || e)); }
+      pintarEncargos(false);
+    });
   }
   $q('#inf_elaborar').onclick = async () => {
     if (!String(I.pedido).trim()) { fsToast('Escriba primero lo que necesita.'); return; }
