@@ -48140,8 +48140,9 @@ function infFicha(I) {
   return ['titulo=' + (I.titulo || I.tipo), 'codigo=' + I.codigo, 'mandante=' + I.mandante, 'proyecto=' + I.proyecto,
     'rev=' + I.rev, 'fecha=' + I.fecha, 'origen=claude'].join('\n');
 }
-function infEncargo(I) {
-  const ant = String(I.antecedentes || '').split('\n').map(s => s.trim()).filter(Boolean);
+function infEncargo(I, adj) {
+  const ant = (adj || []).map(f => f.name + ' (' + Math.max(1, Math.round(f.size / 1024)).toLocaleString('es-CL') + ' kB)')
+    .concat(String(I.antecedentes || '').split('\n').map(s => s.trim()).filter(Boolean));
   return [
     'ENCARGO DE ' + I.tipo.toUpperCase() + ' — ING Estructural',
     '',
@@ -48152,7 +48153,7 @@ function infEncargo(I) {
     'Lo que necesito:',
     I.pedido || '(describir)',
     '',
-    'Antecedentes que adjunto en este chat:',
+    'Antecedentes que adjunto en este chat (archivos y notas):',
     ant.length ? ant.map(a => '- ' + a).join('\n') : '- (ninguno)',
     '',
     'Formato: hoja tipo de ING Estructural (skill formato-ing): portada, encabezado con logo, pie, Arial y firma de J. Germán Aguilera Hafner. Entregar en Word y PDF.',
@@ -48169,6 +48170,7 @@ async function infCopiar(t) {
 
 function renderInformes(container) {
   let I = infLoad(), PROY = null, A = null, archivo = null;
+  const ADJ = [];   // antecedentes (archivos) del encargo: quedan en memoria mientras la página esté abierta
   const campo = (lbl, k, ph, ancho) => `<div class="field"${ancho ? ' style="grid-column:1/-1"' : ''}><label>${lbl}</label><input type="text" data-inf="${k}" data-noupper value="${esc(I[k] || '')}" placeholder="${esc(ph || '')}" style="${ancho ? 'width:100%;max-width:620px' : 'width:14rem;max-width:100%'};text-align:left"></div>`;
   container.innerHTML = `
     <div style="margin-bottom:1rem">
@@ -48190,14 +48192,18 @@ function renderInformes(container) {
         ${campo('Revisión', 'rev')}${campo('Fecha (dd-mm-aaaa)', 'fecha')}
         ${campo('Título (vacío = lo propone Claude)', 'titulo', '', true)}
         <div class="field" style="grid-column:1/-1"><label>Lo que necesito</label><textarea data-inf="pedido" rows="6" style="width:100%;max-width:620px" placeholder="Objetivo, alcance, lo observado en terreno, preguntas a responder, normas a considerar…">${esc(I.pedido)}</textarea></div>
-        <div class="field" style="grid-column:1/-1"><label>Antecedentes que adjuntará (uno por línea)</label><textarea data-inf="antecedentes" rows="3" style="width:100%;max-width:620px" placeholder="Fotos de terreno, planos, correos, memoria anterior…">${esc(I.antecedentes)}</textarea></div>
+        <div class="field" style="grid-column:1/-1;display:block"><label>Antecedentes (archivos)</label>
+          <div id="inf_drop" style="border:2px dashed var(--accent, #0060C1);border-radius:8px;padding:.9rem;text-align:center;max-width:620px;margin-top:.3rem;cursor:pointer">Arrastre aquí fotos, planos, PDF, Word, Excel o correos, o <button type="button" class="btn-add" id="inf_elegir" style="margin-top:0">elija archivos…</button><input type="file" id="inf_adj" multiple hidden></div>
+          <div id="inf_adjLista" style="max-width:620px;margin-top:.4rem;font-size:.85rem"></div></div>
+        <div class="field" style="grid-column:1/-1"><label>Notas sobre los antecedentes (opcional)</label><textarea data-inf="antecedentes" rows="2" style="width:100%;max-width:620px" placeholder="Ej: las fotos 3 a 7 muestran la fisura del muro eje B">${esc(I.antecedentes)}</textarea></div>
       </div>
     </div>
     <div class="panel">
       <h3>3 · Encargo para Claude</h3>
-      <div class="note">Copie el encargo, abra Claude, péguelo y adjunte los antecedentes. Claude entrega el informe en Word y PDF y lo deja en la Bandeja con esta ficha; la Bandeja lo sube a Archivo ING.</div>
+      <div class="note">Opción 1: «Copiar encargo», abra Claude, péguelo y arrastre al chat los mismos archivos de antecedentes. Opción 2: «Descargar paquete .zip» (encargo + todos los antecedentes en un solo archivo) y arrastre ese .zip al chat de Claude. Claude entrega el informe en Word y PDF y lo deja en la Bandeja con su ficha; la Bandeja lo sube a Archivo ING.</div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin:.6rem 0">
         <button type="button" class="btn-add" id="inf_copiar">📋 Copiar encargo</button>
+        <button type="button" class="btn-add" id="inf_zip">⬇ Descargar paquete .zip</button>
         <a class="btn-add" id="inf_claude" href="https://claude.ai/new" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block">Abrir Claude ↗</a>
         <button type="button" class="btn-add" id="inf_nuevo">🗋 Nuevo informe</button>
       </div>
@@ -48217,7 +48223,15 @@ function renderInformes(container) {
       <div id="inf_estado" class="note" style="margin-top:.5rem"></div>
     </div>`;
   const $q = s => container.querySelector(s);
-  const pintar = () => { $q('#inf_texto').textContent = infEncargo(I); infSave(I); };
+  const pintar = () => { $q('#inf_texto').textContent = infEncargo(I, ADJ); infSave(I); };
+  const kB = n => Math.max(1, Math.round(n / 1024)).toLocaleString('es-CL') + ' kB';
+  const pintarAdj = () => {
+    const tot = ADJ.reduce((a, f) => a + f.size, 0);
+    $q('#inf_adjLista').innerHTML = ADJ.length ? ADJ.map((f, i) => `<div style="display:flex;gap:.5rem;align-items:center;padding:.15rem 0;border-bottom:1px solid var(--line, #e3e7ee)"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 ${esc(f.name)}</span><span style="color:var(--ink-muted)">${kB(f.size)}</span><button type="button" data-adjx="${i}" title="Quitar" style="border:0;background:none;color:#b42318;cursor:pointer;font-size:1rem">✕</button></div>`).join('')
+      + `<div style="color:var(--ink-muted);margin-top:.2rem">${ADJ.length} archivo${ADJ.length === 1 ? '' : 's'} · ${kB(tot)}</div>` : '<span style="color:var(--ink-muted)">Sin archivos adjuntos.</span>';
+    pintar();
+  };
+  const agregarAdj = fs => { [...fs].forEach(f => { if (!ADJ.some(x => x.name === f.name && x.size === f.size)) ADJ.push(f); }); pintarAdj(); };
   const opcProy = () => {
     const sel = $q('#inf_proy');
     if (!PROY) return;
@@ -48250,7 +48264,29 @@ function renderInformes(container) {
     }
     if (e.target.id === 'inf_file') archivo = e.target.files[0] || null;
   });
-  $q('#inf_copiar').onclick = async () => { if (!String(I.pedido).trim()) { fsToast('Escriba primero lo que necesita.'); return; } fsToast(await infCopiar(infEncargo(I)) ? 'Encargo copiado: péguelo en Claude.' : 'No se pudo copiar: seleccione el texto del recuadro y cópielo.'); };
+  $q('#inf_copiar').onclick = async () => { if (!String(I.pedido).trim()) { fsToast('Escriba primero lo que necesita.'); return; } fsToast(await infCopiar(infEncargo(I, ADJ)) ? 'Encargo copiado: péguelo en Claude' + (ADJ.length ? ' y arrastre al chat los ' + ADJ.length + ' archivos de antecedentes.' : '.') : 'No se pudo copiar: seleccione el texto del recuadro y cópielo.'); };
+  const drop = $q('#inf_drop');
+  $q('#inf_elegir').onclick = e => { e.stopPropagation(); $q('#inf_adj').click(); };
+  drop.onclick = () => $q('#inf_adj').click();
+  $q('#inf_adj').onchange = e => { agregarAdj(e.target.files); e.target.value = ''; };
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.background = 'rgba(0,96,193,.07)'; });
+  drop.addEventListener('dragleave', () => { drop.style.background = ''; });
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.style.background = ''; if (e.dataTransfer && e.dataTransfer.files.length) agregarAdj(e.dataTransfer.files); });
+  $q('#inf_adjLista').addEventListener('click', e => { const b = e.target.closest('[data-adjx]'); if (!b) return; ADJ.splice(+b.dataset.adjx, 1); pintarAdj(); });
+  $q('#inf_zip').onclick = async () => {
+    if (!String(I.pedido).trim()) { fsToast('Escriba primero lo que necesita.'); return; }
+    const tot = ADJ.reduce((a, f) => a + f.size, 0);
+    if (tot > 400 * 1024 * 1024) { fsToast('Los antecedentes suman más de 400 MB: adjúntelos directamente en Claude.'); return; }
+    const b = $q('#inf_zip'), t0 = b.textContent; b.disabled = true; b.textContent = '⏳ Armando paquete…';
+    try {
+      const usados = new Set(['ENCARGO.txt']), files = [{name:'ENCARGO.txt', data:'\uFEFF' + infEncargo(I, ADJ).replace(/\n/g, '\r\n')}];
+      for (const f of ADJ) { let n = 'antecedentes/' + f.name, k = 2; while (usados.has(n)) n = 'antecedentes/' + f.name.replace(/(\.[^.]*)?$/, ' (' + (k++) + ')$1'); usados.add(n); files.push({name:n, data:new Uint8Array(await f.arrayBuffer())}); }
+      const z = new Blob([mvsZip(files)], {type:'application/zip'});
+      const nom = 'Encargo_' + ([I.codigo, I.titulo || I.tipo].filter(Boolean).join('_').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 60) || 'informe') + '.zip';
+      await mcmGuardarArchivo(nom, z, 'application/zip', 'Paquete de encargo (.zip)', '.zip');
+    } catch (e) { fsToast('No se pudo armar el paquete: ' + ((e && e.message) || e)); }
+    finally { b.disabled = false; b.textContent = t0; }
+  };
   $q('#inf_nuevo').onclick = () => { I = infDef(); infSave(I); renderInformes(container); };
   $q('#inf_ficha').onclick = () => {
     const base = archivo ? archivo.name : ([I.codigo, (I.titulo || I.tipo)].filter(Boolean).join('_').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_Rev' + (I.rev || '0') + '.pdf');
@@ -48269,7 +48305,7 @@ function renderInformes(container) {
         : 'Quedó pendiente en este equipo: abra Archivo ING e inicie sesión con su cuenta de POWER para subirlo.'; }
     catch (e) { st.textContent = 'No se pudo subir: ' + e.message; }
   };
-  pintar(); cargarProy();
+  pintarAdj(); cargarProy();
 }
 function mcmImg(file) {
   return new Promise((ok, fail) => { const r = new FileReader(); r.onerror = fail; r.onload = () => { const im = new Image(); im.onerror = fail; im.onload = () => {
