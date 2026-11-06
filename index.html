@@ -48168,6 +48168,39 @@ async function infCopiar(t) {
   try { const a = document.createElement('textarea'); a.value = t; a.style.position = 'fixed'; a.style.opacity = '0'; document.body.appendChild(a); a.select(); const ok = document.execCommand('copy'); a.remove(); return ok; } catch (e) { return false; }
 }
 
+/* Encargos en el PC: Documentos\Archivo ING\Encargos\<aaaa-mm-dd_hhmm>_<código>_<título>\
+   ENCARGO.txt + encargo.json + antecedentes\…  Claude los lee cuando ING escribe «elabora informe» y,
+   al terminar, deja HECHO.txt en la carpeta (y el informe en la Bandeja con su ficha). */
+async function infCarpetaArchivo(pedir) {
+  let h = null; try { h = await fsDbGet('archivoIngDir'); } catch (e) {}
+  if (h) {
+    let p = 'prompt'; try { p = await h.queryPermission({mode:'readwrite'}); } catch (e) {}
+    if (p !== 'granted' && pedir) { try { p = await h.requestPermission({mode:'readwrite'}); } catch (e) {} }
+    if (p === 'granted') return h;
+    if (!pedir) return null;
+  }
+  if (!pedir) return null;
+  if (typeof window.showDirectoryPicker !== 'function') throw new Error('Este navegador no permite elegir carpetas (use Chrome o Edge).');
+  fsToast('Elija la carpeta Documentos\\Archivo ING (solo esta vez).');
+  h = await window.showDirectoryPicker({id:'ingArchivo', mode:'readwrite', startIn:'documents'});
+  if (h.name !== 'Archivo ING' && !confirm('La carpeta elegida se llama «' + h.name + '», no «Archivo ING». ¿Usarla igual?')) throw new Error('Carpeta no confirmada');
+  try { await fsDbSet('archivoIngDir', h); } catch (e) {}
+  return h;
+}
+async function infEscribir(dir, nombre, data) { const fh = await dir.getFileHandle(nombre, {create:true}); const w = await fh.createWritable(); await w.write(data); await w.close(); }
+async function infListarEncargos(raiz) {
+  const out = []; let enc;
+  try { enc = await raiz.getDirectoryHandle('Encargos'); } catch (e) { return out; }
+  for await (const [nom, h] of enc.entries()) {
+    if (h.kind !== 'directory') continue;
+    let hecho = false, j = null;
+    try { await h.getFileHandle('HECHO.txt'); hecho = true; } catch (e) {}
+    try { j = JSON.parse(await (await (await h.getFileHandle('encargo.json')).getFile()).text()); } catch (e) {}
+    out.push({nom, hecho, j});
+  }
+  return out.sort((a, b) => b.nom.localeCompare(a.nom));
+}
+
 function renderInformes(container) {
   let I = infLoad(), PROY = null, A = null, archivo = null;
   const ADJ = [];   // antecedentes (archivos) del encargo: quedan en memoria mientras la página esté abierta
@@ -48200,8 +48233,12 @@ function renderInformes(container) {
     </div>
     <div class="panel">
       <h3>3 · Encargo para Claude</h3>
-      <div class="note">Opción 1: «Copiar encargo», abra Claude, péguelo y arrastre al chat los mismos archivos de antecedentes. Opción 2: «Descargar paquete .zip» (encargo + todos los antecedentes en un solo archivo) y arrastre ese .zip al chat de Claude. Claude entrega el informe en Word y PDF y lo deja en la Bandeja con su ficha; la Bandeja lo sube a Archivo ING.</div>
+      <div class="note"><b>«Elaborar informe»</b> guarda el encargo y todos los antecedentes en su PC, en Documentos\\Archivo ING\\Encargos (la primera vez Chrome pide elegir la carpeta Archivo ING). Después basta con escribirle a Claude <b>«elabora informe»</b>: Claude lo lee de esa carpeta, redacta el informe en formato ING y lo deja en la Bandeja con su ficha, de donde sube a Archivo ING con el código del proyecto.</div>
+      <div id="inf_encEstado" class="note" style="margin-top:.4rem"></div>
+      <div id="inf_encLista" style="max-width:620px;font-size:.85rem;margin-top:.3rem"></div>
+      <div class="note" style="margin-top:.6rem">Otras formas: «Copiar encargo», abra Claude, péguelo y arrastre al chat los mismos archivos de antecedentes. o «Descargar paquete .zip» (encargo + todos los antecedentes en un solo archivo) y arrastre ese .zip al chat de Claude. Claude entrega el informe en Word y PDF y lo deja en la Bandeja con su ficha; la Bandeja lo sube a Archivo ING.</div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin:.6rem 0">
+        <button type="button" class="btn-add" id="inf_elaborar" style="background:var(--accent, #0060C1);color:#fff;border-style:solid;font-weight:700">🚀 Elaborar informe</button>
         <button type="button" class="btn-add" id="inf_copiar">📋 Copiar encargo</button>
         <button type="button" class="btn-add" id="inf_zip">⬇ Descargar paquete .zip</button>
         <a class="btn-add" id="inf_claude" href="https://claude.ai/new" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block">Abrir Claude ↗</a>
@@ -48213,7 +48250,7 @@ function renderInformes(container) {
       <h3>4 · Informe terminado</h3>
       <div class="note">Si ya tiene el archivo final (por ejemplo, uno hecho fuera de Claude), súbalo aquí: queda en Archivo ING como Informe, con el código, mandante, proyecto, revisión y fecha de arriba. También puede descargar la ficha .txt para dejarlo en Documentos\\Archivo ING\\Bandeja.</div>
       <div class="field-grid">
-        <div class="field" style="grid-column:1/-1"><label>Archivo (PDF, Word o Excel)</label><input type="file" id="inf_file" accept=".pdf,.docx,.xlsx"></div>
+        <div class="field" style="grid-column:1/-1"><label>Archivo (PDF, Word o Excel)</label><input type="file" id="inf_file" accept=".pdf,.docx,.xlsx" style="width:100%;max-width:100%;min-width:0;box-sizing:border-box;font-size:.85rem"></div>
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.4rem">
         <button type="button" class="btn-add" id="inf_subir">⬆ Subir a Archivo ING</button>
@@ -48240,7 +48277,8 @@ function renderInformes(container) {
   };
   async function cargarProy() {
     const c = $q('#inf_cuenta'), sel = $q('#inf_proy');
-    try { A = await archCargar(); } catch (e) { c.textContent = 'Sin conexión con POWER: complete código, mandante y proyecto a mano.'; sel.innerHTML = '<option value="">(sin conexión)</option>'; return; }
+    if (!c || !sel || !document.body.contains(c)) return;   // se cambió de herramienta mientras cargaba
+    try { A = await archCargar(); if (!document.body.contains(c)) return; } catch (e) { c.textContent = 'Sin conexión con POWER: complete código, mandante y proyecto a mano.'; sel.innerHTML = '<option value="">(sin conexión)</option>'; return; }
     if (!A.conectado) {
       c.innerHTML = 'Para elegir el proyecto de la lista, inicie sesión con su cuenta de POWER (la misma de Archivo ING). <span id="inf_login" style="display:inline-flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem"><input type="email" id="inf_mail" data-noupper placeholder="correo" style="text-align:left"><input type="password" id="inf_pass" placeholder="contraseña" style="text-align:left"><button type="button" class="btn-add" id="inf_entrar" style="margin-top:0">Entrar</button></span>';
       sel.innerHTML = '<option value="">(inicie sesión para ver los proyectos)</option>';
@@ -48287,6 +48325,42 @@ function renderInformes(container) {
     } catch (e) { fsToast('No se pudo armar el paquete: ' + ((e && e.message) || e)); }
     finally { b.disabled = false; b.textContent = t0; }
   };
+  const slugI = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  async function pintarEncargos(pedir) {
+    const L = $q('#inf_encLista');
+    let raiz = null; try { raiz = await infCarpetaArchivo(pedir); } catch (e) { return; }
+    if (!raiz) { L.innerHTML = ''; return; }
+    const E = await infListarEncargos(raiz);
+    L.innerHTML = E.length ? '<div style="font-weight:600;margin-bottom:.2rem">Encargos en el PC</div>' + E.slice(0, 12).map(e => `<div style="display:flex;gap:.5rem;padding:.15rem 0;border-bottom:1px solid var(--line, #e3e7ee)"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.nom)}">${esc(e.nom)}</span><span style="font-weight:600;color:${e.hecho ? '#067647' : '#b54708'}">${e.hecho ? '✓ elaborado' : '⏳ pendiente'}</span></div>`).join('') : '';
+  }
+  $q('#inf_elaborar').onclick = async () => {
+    if (!String(I.pedido).trim()) { fsToast('Escriba primero lo que necesita.'); return; }
+    const b = $q('#inf_elaborar'), t0 = b.textContent, st = $q('#inf_encEstado');
+    b.disabled = true; b.textContent = '⏳ Guardando encargo…';
+    try {
+      const raiz = await infCarpetaArchivo(true);
+      const enc = await raiz.getDirectoryHandle('Encargos', {create:true});
+      const d = new Date(), p2 = n => String(n).padStart(2, '0');
+      const base = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}_${slugI(I.codigo) || 'sin_codigo'}_${slugI(I.titulo || I.tipo).slice(0, 40)}`;
+      let nom = base, k = 2; for (;;) { try { await enc.getDirectoryHandle(nom); nom = base + '_' + (k++); } catch (e) { break; } }
+      const dir = await enc.getDirectoryHandle(nom, {create:true});
+      await infEscribir(dir, 'ENCARGO.txt', '\uFEFF' + infEncargo(I, ADJ).replace(/\n/g, '\r\n'));
+      const usados = new Set();
+      const listaAdj = [];
+      if (ADJ.length) {
+        const ad = await dir.getDirectoryHandle('antecedentes', {create:true});
+        for (const f of ADJ) { let n = f.name, j = 2; while (usados.has(n.toLowerCase())) n = f.name.replace(/(\.[^.]*)?$/, ' (' + (j++) + ')$1'); usados.add(n.toLowerCase());
+          b.textContent = `⏳ Copiando ${listaAdj.length + 1} de ${ADJ.length}…`; await infEscribir(ad, n, f); listaAdj.push({archivo:n, kb:Math.max(1, Math.round(f.size / 1024))}); }
+      }
+      await infEscribir(dir, 'encargo.json', JSON.stringify(Object.assign({}, I, {carpeta:nom, creado:d.toISOString(), antecedentesArchivos:listaAdj, ficha:infFicha(I), estado:'pendiente'}), null, 2));
+      const frase = 'Elabora informe ' + nom;
+      const copiado = await infCopiar(frase);
+      st.innerHTML = `✓ Encargo guardado en <b>Documentos\\Archivo ING\\Encargos\\${esc(nom)}</b> (${listaAdj.length} antecedente${listaAdj.length === 1 ? '' : 's'}). Ahora escriba a Claude: <b>«elabora informe»</b>${copiado ? ' (la frase con el nombre de la carpeta quedó copiada)' : ''}.`;
+      fsToast('Encargo guardado: escriba a Claude «elabora informe».');
+      pintarEncargos(false);
+    } catch (e) { if (!(e && e.name === 'AbortError')) { st.textContent = 'No se pudo guardar el encargo: ' + ((e && e.message) || e); } }
+    finally { b.disabled = false; b.textContent = t0; }
+  };
   $q('#inf_nuevo').onclick = () => { I = infDef(); infSave(I); renderInformes(container); };
   $q('#inf_ficha').onclick = () => {
     const base = archivo ? archivo.name : ([I.codigo, (I.titulo || I.tipo)].filter(Boolean).join('_').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_Rev' + (I.rev || '0') + '.pdf');
@@ -48305,7 +48379,7 @@ function renderInformes(container) {
         : 'Quedó pendiente en este equipo: abra Archivo ING e inicie sesión con su cuenta de POWER para subirlo.'; }
     catch (e) { st.textContent = 'No se pudo subir: ' + e.message; }
   };
-  pintarAdj(); cargarProy();
+  pintarAdj(); cargarProy(); pintarEncargos(false);
 }
 function mcmImg(file) {
   return new Promise((ok, fail) => { const r = new FileReader(); r.onerror = fail; r.onload = () => { const im = new Image(); im.onerror = fail; im.onload = () => {
