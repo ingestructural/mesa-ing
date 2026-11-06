@@ -9,8 +9,8 @@
  "theme_color": "#1F3864",
  "lang": "es",
  "icons": [
-  {"src": "arch-192.png", "sizes": "192x192", "type": "image/png"},
-  {"src": "arch-512.png", "sizes": "512x512", "type": "image/png"},
-  {"src": "arch-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  {"src": "pdfs-192.png", "sizes": "192x192", "type": "image/png"},
+  {"src": "pdfs-512.png", "sizes": "512x512", "type": "image/png"},
+  {"src": "pdfs-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
  ]
 }
