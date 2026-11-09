@@ -16,8 +16,9 @@
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;font:15px/1.4 system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:var(--fondo);color:var(--txt)}
-header{background:var(--azul);color:#fff;padding:10px 16px;min-width:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-header h1{font-size:19px;margin:0;font-weight:700;letter-spacing:.3px}
+header{background:linear-gradient(90deg,#B30B00 0%,#7a1a2a 30%,var(--azul) 70%);color:#fff;padding:10px 16px;min-width:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{font-size:19px;margin:0;font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:9px}
+header h1 img{width:40px;height:40px;border-radius:5px;display:block;box-shadow:0 0 0 1px rgba(255,255,255,.25)}
 header .sub{font-size:13px;opacity:.8}
 header .sp{flex:1}
 header button,header a{color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:6px 10px;font:inherit;font-size:13px;cursor:pointer;text-decoration:none}
@@ -102,7 +103,7 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
 </head>
 <body>
 <header>
-  <h1>🗂 Archivo ING</h1><span class="sub">Documentos emitidos: planos PDF, memorias, informes y cotizaciones</span>
+  <h1><img src="pdfs-192.png" alt="" width="40" height="40">Archivo ING</h1><span class="sub">Documentos emitidos: planos PDF, memorias, informes y cotizaciones</span>
   <span class="sp"></span>
   <span id="quien" class="sub"></span>
   <a href="../" title="Volver a la Mesa de Cálculo">Mesa de Cálculo</a>
