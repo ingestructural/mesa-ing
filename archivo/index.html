@@ -126,6 +126,7 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
       <select id="fProy" aria-label="Proyecto"><option value="">Todos los proyectos</option></select>
       <input type="date" id="fDesde" aria-label="Desde" title="Desde">
       <input type="date" id="fHasta" aria-label="Hasta" title="Hasta">
+      <select id="fOrden" aria-label="Ordenar" title="Ordenar la lista"><option value="">Orden: recién archivados</option><option value="fd">Orden: emisión más reciente</option><option value="fa">Orden: emisión más antigua</option><option value="tipo">Orden: por tipo</option></select>
       <button class="btn" type="button" id="bSubir">⬆ Subir documento</button>
       <button class="btn" type="button" id="bAct">↻ Actualizar</button>
     </div>
@@ -237,11 +238,19 @@ function filtrados(sinTipo) {
   return DOCS.filter(v => (sinTipo || !tipo || v.d.col === tipo) && q.every(w => v.txt.includes(w))
     && (!fp || (fp === '-' ? !v.p.codigo : v.p.codigo === fp)) && (!d1 || v.fe >= d1) && (!d2 || v.fe <= d2));
 }
+const ORD_TIPO = ['planos_pdf', 'memorias_pdf', 'informes_pdf', 'cotizaciones_pdf'];
+function ordenar(L) {   // DOCS ya viene por fecha de archivado (más reciente primero)
+  const o = $('fOrden').value, fd = (a, b) => b.fe.localeCompare(a.fe) || b.guard.localeCompare(a.guard);
+  if (o === 'fd') return L.slice().sort(fd);
+  if (o === 'fa') return L.slice().sort((a, b) => fd(b, a));
+  if (o === 'tipo') return L.slice().sort((a, b) => ORD_TIPO.indexOf(a.d.col) - ORD_TIPO.indexOf(b.d.col) || fd(a, b));
+  return L;
+}
 function render() {
   const base = filtrados(true), cnt = c => base.filter(v => v.d.col === c).length;
   $('chips').innerHTML = [['', 'Todos', base.length], ...Object.keys(A.COLS).map(c => [c, PLURAL[c] || A.COLS[c], cnt(c)])]
     .map(([c, n, k]) => `<button type="button" class="chip${tipo === c ? ' on' : ''}" data-tipo="${c}">${esc(n)}<b>${k}</b></button>`).join('');
-  const F = tipo ? base.filter(v => v.d.col === tipo) : base;
+  const F = ordenar(tipo ? base.filter(v => v.d.col === tipo) : base);
   const kb = DOCS.reduce((s, v) => s + (+v.d.kb || 0), 0);
   $('eCuenta').textContent = `${DOCS.length} documentos en el archivo (${(kb / 1024).toLocaleString('es-CL', {maximumFractionDigits: 1})} MB)` + (F.length !== DOCS.length ? ` · ${F.length} con los filtros` : '');
   if (!F.length) { $('lista').innerHTML = `<div class="vacio card">${DOCS.length ? 'Sin resultados con estos filtros.' : 'Aún no hay documentos archivados. Se agregan solos al emitir un PDF en AutoCAD (comando PDF), una memoria en la Mesa, al guardar una cotización o al dejar un informe en Documentos\\Archivo ING\\Bandeja.'}</div>`; return; }
@@ -253,7 +262,9 @@ function render() {
   }).join('')}</tbody></table>${F.length > 600 ? '<p class="estado">Se muestran los 600 más recientes: afine la búsqueda.</p>' : ''}`;
 }
 $('chips').addEventListener('click', e => { const b = e.target.closest('[data-tipo]'); if (!b) return; tipo = b.dataset.tipo; render(); });
-['q', 'fProy', 'fDesde', 'fHasta'].forEach(id => $(id).addEventListener('input', render));
+['q', 'fProy', 'fDesde', 'fHasta', 'fOrden'].forEach(id => $(id).addEventListener('input', render));
+try { $('fOrden').value = localStorage.getItem('archivoOrden') || ''; } catch (e) {}
+$('fOrden').addEventListener('change', () => { try { localStorage.setItem('archivoOrden', $('fOrden').value); } catch (e) {} });
 $('lista').addEventListener('click', async e => {
   const x = e.target.closest('[data-del]');
   if (x) {   // primer clic: pide confirmar; segundo clic: elimina
