@@ -820,6 +820,7 @@
 
   // Inserta los campos "Título del proyecto" / "Título del cálculo" arriba de cada calculadora.
   function injectCalcMeta(main){
+    if (typeof firmaIngPlanilla === 'function') { try { firmaIngPlanilla(main); } catch (e) {} }   // pie de firma al final de la planilla
     var head = main.querySelector('.calc-head');
     if (!head || head.querySelector('.calc-meta')) { syncPrintMeta(); if (typeof injectSaveBar === 'function') injectSaveBar(main); return; }
     var wrap = document.createElement('div');
@@ -993,6 +994,7 @@
         wrap.querySelectorAll('.calc-save-bar, button, .print-actions, details, datalist').forEach(function(n){ n.remove(); });
         cont.appendChild(wrap);
       }
+      cont.insertAdjacentHTML('beforeend', firmaIngHtml({sinImagen:!!soloBlob}));   // pie de firma (sin la imagen en el paquete de revisión externa)
       pdfResolverColores(cont);
       var nombre = (titulo.replace(/\s*—\s*/g, ' - ').replace(/[\\/:*?"<>|()]+/g, '').replace(/\s+/g, '_').slice(0, 70) || 'Mesa') + (resumen ? '_Resumen' : '') + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
       var opt = {
@@ -1000,7 +1002,7 @@
         image: { type: 'jpeg', quality: 0.95 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0, logging: false, onclone: pdfLimpiarColores },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'svg', 'img', '.print-esq-bloque', '.xlsx-section', '.xlsx-title-bar', 'h3', '.global-verdict'] }
+        pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'svg', 'img', '.print-esq-bloque', '.xlsx-section', '.xlsx-title-bar', 'h3', '.global-verdict', '.firma-ing'] }
       };
       var pdf = await lib().set(opt).from(cont).toPdf().get('pdf');
       var n = pdf.internal.getNumberOfPages(), W = pdf.internal.pageSize.getWidth(), H = pdf.internal.pageSize.getHeight();
@@ -1073,6 +1075,267 @@
       } else descargar();
     };
   }
+</script>
+
+<script>
+/* =========================================================================
+   PIE DE FIRMA Y FIRMA (igual que en el Cotizador, repo ingestructural/COTIZADOR)
+   - Pie de firma fijo al final de cada memoria / informe: nombre en negrita, profesión y empresa.
+   - Firma escaneada opcional sobre el nombre, grande y cruzándolo, como se aplica a mano en el PDF.
+     Es la MISMA firma del Cotizador: se guarda en la cuenta de POWER (tabla docs, colección
+     cotizador_config, documento «firma»), nunca en el código del sitio. La Mesa la lee con la sesión
+     de POWER de Archivo ING (archivo/archivo-api.js) y la guarda en este navegador.
+   - Botón «Firmar» en cada planilla: pone o quita la firma (Alt+clic: cambiar el archivo de la firma).
+   - En pantalla se ve el pie al final de la planilla: la firma se mueve arrastrándola, se estira con la
+     esquina azul y vuelve a su lugar con doble clic; la posición se guarda con la firma (clave «mesa»).
+   Se aplica a: Imprimir completo, Resumen, PDF, informes de cada planilla, Constructor de Memorias
+   (vista, impresión, PDF y Word), verificación individual y Especificaciones Técnicas.
+   ========================================================================= */
+var FIRMA_ING = ['J. Germán Aguilera Hafner', 'Ingeniero Civil', 'ING Estructural'];   // la primera línea va en negrita
+// medidas del Cotizador (Express/Formal/Flexible), tomadas de la firma que el usuario aplica en Acrobat
+var FIRMA_ING_GEO = {alto:4.7, top:-3.05, left:0.5}, FIRMA_ING_MAXW = 7.5;
+var FIRMA_ING_IMG = null;
+var FIRMA_ING_K_IMG = 'mesa_firma', FIRMA_ING_K_ON = 'mesa_firmar';
+// rutas sin pie en pantalla (tienen su propio documento o no imprimen memoria)
+var FIRMA_ING_SIN_PIE = ['memorias', 'eett', 'informes', 'biblioteca-normas'];
+(function(){ try { FIRMA_ING_IMG = JSON.parse(localStorage.getItem(FIRMA_ING_K_IMG) || 'null'); } catch (e) {} })();
+
+function firmaIngOn(){ var on = false; try { on = localStorage.getItem(FIRMA_ING_K_ON) === '1'; } catch (e) {} return !!(on && FIRMA_ING_IMG && FIRMA_ING_IMG.png); }
+function firmaIngSetOn(v){ try { localStorage.setItem(FIRMA_ING_K_ON, v ? '1' : '0'); } catch (e) {} }
+function firmaIngGuardarLocal(){ try { if (FIRMA_ING_IMG) localStorage.setItem(FIRMA_ING_K_IMG, JSON.stringify(FIRMA_ING_IMG)); else localStorage.removeItem(FIRMA_ING_K_IMG); } catch (e) {} }
+// posición/tamaño: el de la Mesa si se ajustó aquí; si no, el que se dejó en el Cotizador
+function firmaIngPos(){ var u = (FIRMA_ING_IMG && FIRMA_ING_IMG.ubic) || {}; return Object.assign({dx:0, dy:0, k:1}, u.mesa || u.otros || {}); }
+function firmaIngCm(q){ q = q || firmaIngPos(); var r = FIRMA_ING_IMG.w / FIRMA_ING_IMG.h, h = FIRMA_ING_GEO.alto * q.k, w = h * r;
+  if (w > FIRMA_ING_MAXW * q.k) { w = FIRMA_ING_MAXW * q.k; h = w / r; } return {w:w, h:h}; }
+
+/* HTML del pie de firma. o.edit: con controles para mover/estirar (solo pantalla); o.sinImagen: solo el texto */
+function firmaIngHtml(o){
+  o = o || {};
+  var img = '';
+  if (firmaIngOn() && !o.sinImagen) {
+    var q = firmaIngPos(), z = firmaIngCm(q), T = FIRMA_ING_GEO.top + q.dy, L = FIRMA_ING_GEO.left + q.dx;
+    img = '<img class="fimg" src="' + FIRMA_ING_IMG.png + '" alt="" style="position:absolute;top:' + T.toFixed(3) + 'cm;left:' + L.toFixed(3) + 'cm;width:' + z.w.toFixed(3) + 'cm;height:' + z.h.toFixed(3) + 'cm;z-index:3;max-width:none"'
+      + (o.edit ? ' title="Arrastre para mover · esquina azul para cambiar el tamaño · doble clic para volver a la posición inicial"' : '') + '>'
+      + (o.edit ? '<span class="fhandle" title="Arrastre para cambiar el tamaño" style="left:' + (L + z.w).toFixed(3) + 'cm;top:' + (T + z.h).toFixed(3) + 'cm"></span>' : '');
+  }
+  return '<div class="firma-ing' + (o.edit ? ' firma-ing-edit' : '') + '"' + (o.edit ? ' id="firmaIngPie"' : '') + '>'
+    + (o.edit ? '<div class="firma-ing-nota">Pie de firma de la memoria (se imprime al final). ' + (firmaIngOn() ? 'Arrastre la firma para moverla; la esquina azul cambia el tamaño; doble clic la devuelve a su lugar.' : 'Use «Firmar» para poner su firma sobre el nombre.') + '</div>' : '')
+    + '<div class="firma-ing-txt">' + img + '<b>' + FIRMA_ING[0] + '</b><br>' + FIRMA_ING[1] + '<br>' + FIRMA_ING[2] + '</div></div>';
+}
+
+/* bloques del Constructor de Memorias: la firma va al final del cuerpo, antes de los anexos */
+function firmaIngBloques(B){
+  B = (B || []).slice();
+  if (B.some(function(b){ return b.t === 'firma'; })) return B;
+  var i = B.findIndex(function(b){ return b.t === 'ha'; });
+  if (i < 0) { B.push({t:'firma'}); return B; }
+  if (i > 0 && B[i - 1].t === 'pb') i--;
+  B.splice(i, 0, {t:'firma'});
+  return B;
+}
+
+/* Word (docx.iife.js): mismos párrafos que el Cotizador; firma flotante sobre el nombre (no desplaza el texto) */
+function firmaIngDocx(d, FONT){
+  var EMU = 360000, P = function(ch, o){ return new d.Paragraph({children:ch, alignment:d.AlignmentType.LEFT, spacing:{after:o.after || 0, line:276}, keepNext:o.keepNext, keepLines:true}); };
+  var run = function(t, b){ return new d.TextRun({text:t, font:FONT || 'Arial', size:24, bold:b}); };
+  var fImg = function(){ var q = firmaIngPos(), z = firmaIngCm(q), w = Math.round(z.w * 37.8), h = Math.round(z.h * 37.8);
+    var b = atob(FIRMA_ING_IMG.png.split(',')[1]), u = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+    return new d.ImageRun({type:'png', data:u, transformation:{width:w, height:h},
+      floating:{horizontalPosition:{relative:d.HorizontalPositionRelativeFrom.CHARACTER, offset:Math.round((FIRMA_ING_GEO.left + q.dx) * EMU)},
+        verticalPosition:{relative:d.VerticalPositionRelativeFrom.LINE, offset:Math.round((FIRMA_ING_GEO.top + q.dy) * EMU)},
+        allowOverlap:true, behindDocument:false, wrap:{type:d.TextWrappingType.NONE}, zIndex:5}}); };
+  return [P([], {after:1800, keepNext:true})].concat(FIRMA_ING.map(function(t, i){
+    return P(i === 0 && firmaIngOn() ? [fImg(), run(t, true)] : [run(t, i === 0)], {keepNext:i < 2}); }));
+}
+
+/* ---------- pie en pantalla al final de cada planilla ---------- */
+function firmaIngPlanilla(main){
+  main = main || document.getElementById('mainView'); if (!main) return;
+  var id = location.hash.replace('#', ''), viejo = document.getElementById('firmaIngPie');
+  if (!id || FIRMA_ING_SIN_PIE.indexOf(id) >= 0 || !main.querySelector('.calc-head')) { if (viejo) viejo.remove(); return; }
+  var tmp = document.createElement('div'); tmp.innerHTML = firmaIngHtml({edit:true}); var nuevo = tmp.firstChild;
+  if (viejo && viejo.parentNode === main) main.replaceChild(nuevo, viejo); else { if (viejo) viejo.remove(); main.appendChild(nuevo); }
+}
+function firmaIngRefrescar(){
+  firmaIngPlanilla();
+  var b = document.getElementById('firmaBtn');
+  if (b) { var on = firmaIngOn(); b.textContent = on ? '✓ Firmada' : '✍ Firmar'; b.classList.toggle('alt', !on); b.setAttribute('aria-pressed', String(on)); }
+  // vistas previas del Constructor de Memorias, verificación individual y EETT
+  document.querySelectorAll('.mem-prev-wrap .firma-ing').forEach(function(el){ el.outerHTML = firmaIngHtml(); });
+}
+
+/* ---------- POWER: la misma firma del Cotizador ---------- */
+function firmaIngApi(){ return (typeof archCargar === 'function') ? archCargar() : Promise.reject(new Error('Archivo ING no disponible')); }
+async function firmaIngTraer(){   // trae la firma de POWER; devuelve true si la encontró
+  var A = await firmaIngApi(); if (!A.conectado) return false;
+  var f = await A.configLeer('firma');
+  if (f && f.png) { FIRMA_ING_IMG = f; firmaIngGuardarLocal(); return true; }
+  return false;
+}
+var firmaIngTimer = null;
+function firmaIngSubir(inmediato){
+  firmaIngGuardarLocal(); clearTimeout(firmaIngTimer);
+  var go = function(){ return firmaIngApi().then(function(A){ if (!A.conectado) return 'local'; return A.configGuardar('firma', FIRMA_ING_IMG).then(function(){ return 'power'; }); }); };
+  if (inmediato) return go();
+  firmaIngTimer = setTimeout(function(){ go().catch(function(){ firmaIngAviso('La posición de la firma quedó en este computador'); }); }, 800);
+}
+function firmaIngAviso(t){ if (typeof fsToast === 'function') fsToast(t); else if (typeof alertaPDF === 'function') alertaPDF(t); }
+
+/* ---------- cargar la firma desde PDF o imagen (mismo proceso del Cotizador) ---------- */
+function firmaIngScript(src, glob){ return new Promise(function(ok, ko){ if (window[glob]) return ok(window[glob]); var s = document.createElement('script'); s.src = src;
+  s.onload = function(){ window[glob] ? ok(window[glob]) : ko(new Error('librería no disponible')); }; s.onerror = function(){ s.remove(); ko(new Error('sin conexión')); }; document.head.appendChild(s); }); }
+async function firmaIngCanvas(f){
+  if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+    var lib = await firmaIngScript('archivo/pdfjs.min.js', 'pdfjsLib'); lib.GlobalWorkerOptions.workerSrc = 'archivo/pdfjs.worker.min.js';
+    var pdf = await lib.getDocument({data:await f.arrayBuffer()}).promise, pg = await pdf.getPage(1), vp = pg.getViewport({scale:4});
+    var c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height; var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+    await pg.render({canvasContext:x, viewport:vp}).promise; return c;
+  }
+  var img = await new Promise(function(ok, ko){ var i = new Image(); i.onload = function(){ ok(i); }; i.onerror = function(){ ko(new Error('Imagen no válida')); }; i.src = URL.createObjectURL(f); });
+  var c2 = document.createElement('canvas'); c2.width = img.naturalWidth; c2.height = img.naturalHeight; var x2 = c2.getContext('2d'); x2.fillStyle = '#fff'; x2.fillRect(0, 0, c2.width, c2.height); x2.drawImage(img, 0, 0); return c2;
+}
+// separa el trazo del papel: fondo estimado por zonas, todo lo que no es tinta queda transparente, recorta al trazo y oscurece la tinta
+function firmaIngRecortar(src){
+  var k0 = Math.min(1, 1600 / Math.max(src.width, src.height)), W = Math.max(1, Math.round(src.width * k0)), H = Math.max(1, Math.round(src.height * k0));
+  var c = document.createElement('canvas'); c.width = W; c.height = H; var x = c.getContext('2d'); x.drawImage(src, 0, 0, W, H);
+  var d = x.getImageData(0, 0, W, H), p = d.data, L = new Float32Array(W * H), i, j, y;
+  for (i = 0; i < W * H; i++) L[i] = 0.299 * p[i * 4] + 0.587 * p[i * 4 + 1] + 0.114 * p[i * 4 + 2];
+  var T = Math.max(16, Math.round(Math.min(W, H) / 12)), gx = Math.ceil(W / T), gy = Math.ceil(H / T), G = new Float32Array(gx * gy), hist = new Uint32Array(256);
+  for (var ty = 0; ty < gy; ty++) for (var tx = 0; tx < gx; tx++) { hist.fill(0); var n = 0;
+    for (y = ty * T; y < Math.min(H, (ty + 1) * T); y++) for (i = tx * T; i < Math.min(W, (tx + 1) * T); i++) { hist[L[y * W + i] | 0]++; n++; }
+    var acc = 0, v = 255; for (j = 0; j < 256; j++) { acc += hist[j]; if (acc >= n * 0.9) { v = j; break; } } G[ty * gx + tx] = v; }
+  var bgAt = function(i, y){ var fx = Math.min(gx - 1, Math.max(0, i / T - 0.5)), fy = Math.min(gy - 1, Math.max(0, y / T - 0.5)), x0 = fx | 0, y0 = fy | 0, x1 = Math.min(gx - 1, x0 + 1), y1 = Math.min(gy - 1, y0 + 1), ax = fx - x0, ay = fy - y0;
+    return (G[y0 * gx + x0] * (1 - ax) + G[y0 * gx + x1] * ax) * (1 - ay) + (G[y1 * gx + x0] * (1 - ax) + G[y1 * gx + x1] * ax) * ay; };
+  var A = new Uint8ClampedArray(W * H), X0 = W, Y0 = H, X1 = -1, Y1 = -1;
+  for (y = 0; y < H; y++) for (i = 0; i < W; i++) { j = y * W + i; var bg = bgAt(i, y), thr = Math.max(28, bg * 0.22), dd = bg - L[j];
+    var a = Math.max(0, Math.min(1, (dd - thr * 0.6) / (thr * 0.9))); A[j] = Math.round(a * 255);
+    if (dd > thr) { if (i < X0) X0 = i; if (i > X1) X1 = i; if (y < Y0) Y0 = y; if (y > Y1) Y1 = y; } }
+  if (X1 < 0) throw new Error('No se encontró trazo de firma en el archivo');
+  for (j = 0; j < W * H; j++) { p[j * 4 + 3] = A[j]; p[j * 4] = p[j * 4] * 0.55; p[j * 4 + 1] = p[j * 4 + 1] * 0.55; p[j * 4 + 2] = p[j * 4 + 2] * 0.55; }
+  x.putImageData(d, 0, 0);
+  var m = Math.round(Math.max(X1 - X0, Y1 - Y0) * 0.03); X0 = Math.max(0, X0 - m); Y0 = Math.max(0, Y0 - m); X1 = Math.min(W - 1, X1 + m); Y1 = Math.min(H - 1, Y1 + m);
+  var w = X1 - X0 + 1, h = Y1 - Y0 + 1, e = Math.min(1, 700 / w), o = document.createElement('canvas'); o.width = Math.round(w * e); o.height = Math.round(h * e);
+  o.getContext('2d').drawImage(c, X0, Y0, w, h, 0, 0, o.width, o.height); return {png:o.toDataURL('image/png'), w:o.width, h:o.height};
+}
+async function firmaIngCargar(f){
+  if (!f) return; firmaIngAviso('Procesando firma…');
+  try {
+    var F = firmaIngRecortar(await firmaIngCanvas(f));
+    if (FIRMA_ING_IMG && FIRMA_ING_IMG.ubic) F.ubic = FIRMA_ING_IMG.ubic;
+    FIRMA_ING_IMG = F; firmaIngSetOn(true); firmaIngGuardarLocal(); firmaIngRefrescar(); firmaIngCerrarPanel();
+    var r = 'local'; try { r = await firmaIngSubir(true); } catch (e) { r = 'error'; }
+    firmaIngAviso(r === 'power' ? 'Firma guardada en su cuenta de POWER (la usan la Mesa y el Cotizador).' : 'Firma guardada en este computador. Inicie sesión de POWER para tenerla en todos sus equipos.');
+  } catch (e) { firmaIngAviso('No se pudo cargar la firma: ' + ((e && e.message) || e)); }
+}
+function firmaIngElegirArchivo(){
+  var inp = document.getElementById('firmaIngFile');
+  if (!inp) { inp = document.createElement('input'); inp.type = 'file'; inp.id = 'firmaIngFile'; inp.accept = 'application/pdf,image/*'; inp.hidden = true; document.body.appendChild(inp);
+    inp.addEventListener('change', function(){ firmaIngCargar(inp.files[0]); inp.value = ''; }); }
+  inp.click();
+}
+
+/* ---------- botón «Firmar» ---------- */
+function firmaIngCerrarPanel(){ var p = document.getElementById('firmaIngPanel'); if (p) p.remove(); }
+function firmaIngPanel(btn){
+  firmaIngCerrarPanel();
+  var p = document.createElement('div'); p.id = 'firmaIngPanel';
+  p.innerHTML = '<div style="font-weight:700;margin-bottom:.3rem">Firma</div>'
+    + '<div style="font-size:.8rem;margin-bottom:.5rem">Su firma está guardada en su cuenta de POWER (la que cargó en el Cotizador). Inicie sesión para traerla:</div>'
+    + '<input type="email" id="fiMail" placeholder="Correo de POWER" autocomplete="username" data-noupper>'
+    + '<input type="password" id="fiPass" placeholder="Clave" autocomplete="current-password">'
+    + '<button type="button" class="print-btn" id="fiTraer">Traer mi firma</button>'
+    + '<div style="font-size:.8rem;margin:.5rem 0 .3rem">o cargue el archivo de la firma (PDF o imagen; se separa del papel y queda con fondo transparente):</div>'
+    + '<button type="button" class="print-btn alt" id="fiArch">Cargar firma (PDF o imagen)…</button>'
+    + '<button type="button" class="print-btn alt" id="fiCerrar">Cerrar</button>'
+    + '<div id="fiMsg" style="font-size:.78rem;margin-top:.35rem;color:var(--ink-muted)"></div>';
+  document.body.appendChild(p);
+  var r = btn.getBoundingClientRect();
+  p.style.left = Math.max(8, Math.min(window.innerWidth - 300, r.right - 290)) + 'px';
+  if (r.top > window.innerHeight / 2) p.style.bottom = (window.innerHeight - r.top + 6) + 'px'; else p.style.top = (r.bottom + 6) + 'px';
+  var msg = function(t){ p.querySelector('#fiMsg').textContent = t; };
+  p.querySelector('#fiCerrar').onclick = firmaIngCerrarPanel;
+  p.querySelector('#fiArch').onclick = firmaIngElegirArchivo;
+  p.querySelector('#fiTraer').onclick = async function(){
+    var em = p.querySelector('#fiMail').value.trim(), pw = p.querySelector('#fiPass').value;
+    if (!em || !pw) return msg('Ingrese correo y clave de POWER.');
+    msg('Conectando con POWER…');
+    try {
+      var A = await firmaIngApi(); await A.login(em, pw);
+      try { A.vaciarCola(); } catch (e) {}
+      if (await firmaIngTraer()) { firmaIngSetOn(true); firmaIngCerrarPanel(); firmaIngRefrescar(); firmaIngAviso('Firma traída de su cuenta de POWER.'); }
+      else msg('Sesión iniciada, pero no hay firma guardada en POWER. Cárguela con el botón de abajo.');
+    } catch (e) { msg('No se pudo: ' + ((e && e.message) || e)); }
+  };
+}
+async function firmaIngClick(ev){
+  if (ev && ev.altKey) return firmaIngElegirArchivo();
+  if (firmaIngOn()) { firmaIngSetOn(false); firmaIngRefrescar(); return; }
+  if (!(FIRMA_ING_IMG && FIRMA_ING_IMG.png)) {
+    var ok = false; try { ok = await firmaIngTraer(); } catch (e) {}
+    if (!ok) return firmaIngPanel(document.getElementById('firmaBtn'));
+  }
+  firmaIngSetOn(true); firmaIngRefrescar();
+}
+
+/* ---------- mover / estirar la firma en la vista (mouse o dedo) ---------- */
+(function(){
+  var D = null;
+  document.addEventListener('pointerdown', function(e){
+    var t = e.target; if (!t.closest || !t.closest('#firmaIngPie') || !(t.classList.contains('fimg') || t.classList.contains('fhandle'))) return;
+    e.preventDefault();
+    var img = t.classList.contains('fimg') ? t : t.parentNode.querySelector('.fimg');
+    var pie = document.getElementById('firmaIngPie'), cm = 37.7953 * (pie.getBoundingClientRect().width / (pie.offsetWidth || 1) || 1);
+    D = {modo:t.classList.contains('fimg') ? 'mover' : 'tamano', img:img, h:img.parentNode.querySelector('.fhandle'), x:e.clientX, y:e.clientY, p0:firmaIngPos(), z0:firmaIngCm(), cm:cm};
+    if (t.setPointerCapture) try { t.setPointerCapture(e.pointerId); } catch (er) {}
+  });
+  document.addEventListener('pointermove', function(e){
+    if (!D) return; var dx = (e.clientX - D.x) / D.cm, dy = (e.clientY - D.y) / D.cm, q = Object.assign({}, D.p0);
+    if (D.modo === 'mover') { q.dx = D.p0.dx + dx; q.dy = D.p0.dy + dy; }
+    else q.k = Math.max(0.4, Math.min(2.5, D.p0.k * Math.max((D.z0.w + dx) / D.z0.w, (D.z0.h + dy) / D.z0.h)));
+    D.q = q; var z = firmaIngCm(q), T = FIRMA_ING_GEO.top + q.dy, L = FIRMA_ING_GEO.left + q.dx;
+    Object.assign(D.img.style, {top:T + 'cm', left:L + 'cm', width:z.w + 'cm', height:z.h + 'cm'});
+    if (D.h) Object.assign(D.h.style, {top:(T + z.h) + 'cm', left:(L + z.w) + 'cm'});
+  });
+  var fin = function(){ if (!D) return; var q = D.q; D = null; if (!q) return;
+    FIRMA_ING_IMG.ubic = Object.assign({}, FIRMA_ING_IMG.ubic || {}, {mesa:{dx:+q.dx.toFixed(2), dy:+q.dy.toFixed(2), k:+q.k.toFixed(3)}});
+    firmaIngSubir(false); firmaIngRefrescar(); };
+  document.addEventListener('pointerup', fin); document.addEventListener('pointercancel', fin);
+  document.addEventListener('dblclick', function(e){
+    if (!e.target.closest || !e.target.closest('#firmaIngPie') || !e.target.classList.contains('fimg')) return;
+    if (FIRMA_ING_IMG.ubic) delete FIRMA_ING_IMG.ubic.mesa; firmaIngSubir(false); firmaIngRefrescar();
+  });
+})();
+
+/* ---------- arranque: botón en la barra y firma al día desde POWER ---------- */
+(function(){
+  var st = document.createElement('style');
+  st.textContent = '.firma-ing{padding-top:3.2cm;break-inside:avoid;page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif;font-size:12pt;line-height:1.35;color:#111;text-align:left}'
+    + '.firma-ing-txt{position:relative;display:inline-block;font-weight:400}.firma-ing-txt b{font-weight:700}'
+    + '.firma-ing .fimg{user-select:none;-webkit-user-drag:none;touch-action:none;pointer-events:none}'
+    + '.firma-ing-edit{margin:1.2rem 0 .5rem;padding:4.1cm 1.2rem .9rem;background:#fff;border:1px dashed #9fb3c8;border-radius:6px;position:relative}'
+    + '.firma-ing-edit .fimg{pointer-events:auto;cursor:move}.firma-ing-edit .fimg:hover{outline:1px dashed #1f6feb}'
+    + '.firma-ing-nota{position:absolute;top:.5rem;left:.8rem;right:.8rem;font:500 .74rem/1.3 "IBM Plex Sans",system-ui,sans-serif;color:#5b6b7c}'
+    + '.firma-ing .fhandle{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;background:#1f6feb;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 1px #1f6feb;cursor:nwse-resize;z-index:4;touch-action:none}'
+    + '#firmaIngPanel{position:fixed;z-index:205;width:290px;background:var(--surface,#fff);color:var(--ink,#111);border:1px solid var(--line,#ccd6e0);border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.2);padding:.7rem;display:flex;flex-direction:column;gap:.35rem;font-size:.85rem}'
+    + '#firmaIngPanel input{font:inherit;padding:.4rem .5rem;border:1px solid var(--line,#ccd6e0);border-radius:5px;background:var(--surface,#fff);color:var(--ink,#111)}'
+    + '#firmaIngPanel .print-btn{box-shadow:none}'
+    + 'html.mcm-on .shell > .print-actions{display:flex !important}html.mcm-on .shell > .print-actions > :not(#firmaBtn){display:none !important}'
+    + '@media print{.firma-ing-edit{margin:0;padding:3.2cm 0 0;border:0;border-radius:0;background:none}.firma-ing-nota,.firma-ing .fhandle{display:none !important}.firma-ing .fimg{outline:none !important}'
+    + 'html.print-resumen-mode:not(.xlsx-print-active):not(.informe-print-active) .firma-ing{zoom:2.1739}#firmaIngPanel{display:none !important}}';
+  document.head.appendChild(st);
+  var pa = document.querySelector('.print-actions');
+  if (pa && !document.getElementById('firmaBtn')) {
+    var b = document.createElement('button'); b.type = 'button'; b.id = 'firmaBtn'; b.className = 'print-btn alt';
+    b.title = 'Pone o quita su firma sobre el nombre en el pie de firma de la memoria · Alt+clic: cambiar el archivo de la firma';
+    b.addEventListener('click', firmaIngClick);
+    pa.appendChild(b);
+  }
+  firmaIngRefrescar();
+  window.addEventListener('beforeprint', function(){ try { firmaIngPlanilla(); } catch (e) {} });   // por si la planilla se volvió a dibujar
+  // la firma puede haberse cambiado o movido en el Cotizador: se actualiza desde POWER al abrir (si hay sesión)
+  var conSesion = false; try { conSesion = !!localStorage.getItem('ing_archivo_sess'); } catch (e) {}
+  if (conSesion) setTimeout(function(){ firmaIngTraer().then(function(ok){ if (ok) firmaIngRefrescar(); }).catch(function(){}); }, 1500);
+})();
 </script>
 
 <script>
@@ -44825,6 +45088,7 @@ function memPortada(t1, t2, meta) {
       </table></div>`;
 }
 function memFirmas(meta) {
+  if (meta.autor && /aguilera/i.test(meta.autor)) meta = Object.assign({}, meta, {autor:'', autorProf:''});   // ya firma en el pie de firma (al final del informe)
   if (!meta.autor && !meta.revisor) return '';
   return `<table style="margin:2.5rem auto 0;text-align:center"><tr>${meta.autor ? `<td style="padding:0 2.5rem"><div style="border-top:1px solid #000;padding-top:.3rem;min-width:180px">${esc(meta.autor)}${meta.autorProf ? '<br><span style="font-size:9.5pt">' + esc(meta.autorProf) + '</span>' : ''}<br><span style="font-size:9pt">Preparado por</span></div></td>` : ''}${meta.revisor ? `<td style="padding:0 2.5rem"><div style="border-top:1px solid #000;padding-top:.3rem;min-width:180px">${esc(meta.revisor)}${meta.revisorProf ? '<br><span style="font-size:9.5pt">' + esc(meta.revisorProf) + '</span>' : ''}<br><span style="font-size:9pt">Revisado / aprobado por</span></div></td>` : ''}</tr></table>`;
 }
@@ -47895,6 +48159,7 @@ function mcmBuild(S) {
 /* ---------- vista previa / impresión (HTML) ---------- */
 function mcmLogo() { const l = document.querySelector('.brand-logo'); return l ? l.src : ''; }
 function mcmHtml(S, B) {
+  B = firmaIngBloques(B || mcmBuild(S));   // pie de firma al final del cuerpo, antes de los anexos
   const P = S.proy, e = t => esc(t).replace(/\[completar[^\]]*\]/g, m => `<mark>${m}</mark>`);
   const tbl = b => `<table class="mp-t"><thead><tr>${b.head.map((h, i) => `<th style="width:${(b.widths[i] / 99.2).toFixed(1)}%">${esc(h)}</th>`).join('')}</tr></thead><tbody>${b.rows.map(r => `<tr>${r.map((x, i) => `<td class="${b.align[i] === 'c' ? 'c' : ''}${x === 'NO CUMPLE' ? ' bad' : x === 'CUMPLE' ? ' ok' : ''}">${e(x)}</td>`).join('')}</tr>`).join('')}</tbody></table><div class="mp-cap">${esc(b.cap)}</div>`;
   const body = B.map(b => {
@@ -47909,6 +48174,7 @@ function mcmHtml(S, B) {
     if (b.t === 'fig') return b.src ? `<div class="mp-fig"><img src="${b.src}" style="width:${b.ancho || 100}%"></div><div class="mp-cap">${esc(b.cap)}</div>` : `<div class="mp-blank" style="height:${(+b.hcm || 8)}cm">Figura sin imagen</div><div class="mp-cap">${esc(b.cap)}</div>`;
     if (b.t === 'blank') return `<div class="mp-blank" style="height:${(+b.hcm || 8)}cm">Espacio para dibujo</div><div class="mp-cap">${esc(b.cap)}</div>`;
     if (b.t === 'pb') return `<div class="mp-pb"></div>`;
+    if (b.t === 'firma') return firmaIngHtml();
     return '';
   }).join('');
   const idx = B.filter(b => b.t === 'h1' || b.t === 'h2' || b.t === 'ha').map(b => `<div class="mp-ix ${b.t === 'h2' ? 'l2' : ''}">${b.num ? b.num + ' ' : ''}${esc(b.text)}</div>`).join('');
@@ -48043,7 +48309,8 @@ async function mcmDocx(S, Bx) {
   K.push(new Paragraph({spacing:{after:200}, children:[run('ÍNDICE', {size:30, bold:true, color:NAVY})]}));
   K.push(new TableOfContents('Índice', {hyperlink:true, headingStyleRange:'1-2'}));
   K.push(new Paragraph({children:[new PageBreak()]}));
-  for (const b of (Bx || mcmBuild(S))) {
+  for (const b of firmaIngBloques(Bx || mcmBuild(S))) {
+    if (b.t === 'firma') { K.push(...firmaIngDocx(d, FONT)); continue; }
     if (b.t === 'h1' || b.t === 'ha') K.push(new Paragraph({heading:HeadingLevel.HEADING_1, keepNext:true, spacing:{before:280, after:140}, children:[run((b.num ? b.num + ' ' : '') + b.text, {size:30, bold:true, color:NAVY})]}));
     else if (b.t === 'h2') K.push(new Paragraph({heading:HeadingLevel.HEADING_2, keepNext:true, spacing:{before:200, after:100}, children:[run(b.num + ' ' + b.text, {size:26, bold:true, color:BLUE})]}));
     else if (b.t === 'h3') K.push(new Paragraph({heading:HeadingLevel.HEADING_3, keepNext:true, spacing:{before:160, after:80}, children:[run(b.num + ' ' + b.text, {size:24, bold:true, color:BLUE})]}));
@@ -48104,7 +48371,7 @@ const mcmSlug = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').re
 let archLib = null;
 function archCargar() {
   if (window.INGArchivo) return Promise.resolve(window.INGArchivo);
-  if (!archLib) archLib = new Promise((ok, ko) => { const s = document.createElement('script'); s.src = 'archivo/archivo-api.js?v=4';
+  if (!archLib) archLib = new Promise((ok, ko) => { const s = document.createElement('script'); s.src = 'archivo/archivo-api.js?v=5';
     s.onload = () => window.INGArchivo ? ok(window.INGArchivo) : ko(new Error('módulo no disponible')); s.onerror = () => { archLib = null; s.remove(); ko(new Error('sin conexión')); }; document.head.appendChild(s); });
   return archLib;
 }
@@ -48706,7 +48973,7 @@ async function mcmHojaAPdf(hojaHtml, liviano) {   // liviano: copia para Archivo
   oc.appendChild(cont); document.body.appendChild(oc);
   try {
     const pdf = await lib().set({margin:[10, 8, 16, 8], image:{type:'jpeg', quality:liviano ? 0.8 : 0.95}, html2canvas:{scale:liviano ? 1.5 : 2, backgroundColor:'#ffffff', scrollX:0, scrollY:0, logging:false, onclone:pdfLimpiarColores},
-      jsPDF:{unit:'mm', format:'letter', orientation:'portrait'}, pagebreak:{mode:['css', 'legacy'], avoid:['tr', 'img', '.mp-fig', '.mp-h1', '.mp-h2', '.mp-cap', '.xlsx-section', '.xlsx-title-bar', '.print-esq-bloque']}}).from(cont).toPdf().get('pdf');
+      jsPDF:{unit:'mm', format:'letter', orientation:'portrait'}, pagebreak:{mode:['css', 'legacy'], avoid:['tr', 'img', '.mp-fig', '.mp-h1', '.mp-h2', '.mp-cap', '.xlsx-section', '.xlsx-title-bar', '.print-esq-bloque', '.firma-ing']}}).from(cont).toPdf().get('pdf');
     const n = pdf.internal.getNumberOfPages(), W = pdf.internal.pageSize.getWidth(), H = pdf.internal.pageSize.getHeight();
     for (let i = 1; i <= n; i++) { pdf.setPage(i); pdf.setDrawColor(31, 56, 100); pdf.setLineWidth(0.3); pdf.line(8, H - 13, W - 8, H - 13); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(31, 56, 100);
       pdf.text('ING ESTRUCTURAL — Proyectos Civiles e Industriales', 8, H - 9.5); pdf.setFont('helvetica', 'normal'); pdf.text('Angol 47, of. 404, Concepción · +56 9 9884 7164', 8, H - 6); pdf.text('Página ' + i + ' de ' + n, W - 8, H - 9.5, {align:'right'}); }
@@ -49100,7 +49367,7 @@ function ettHtml(E, mats) {
   const idx = B.filter(b => b.t === 'h1' || b.t === 'h2').map(b => `<div class="mp-ix ${b.t === 'h2' ? 'l2' : ''}">${b.num} ${esc(b.text)}</div>`).join('');
   return `<div class="mp-cover"><div class="mp-tit">ESPECIFICACIONES TÉCNICAS</div><div class="mp-sub">${esc(ettSub(mats))}</div>
     <table class="mp-t mp-ant"><thead><tr><th>Campo</th><th>Detalle</th></tr></thead><tbody>${ettCover(E, mats).map(r => `<tr><td class="k">${r[0]}</td><td>${e(r[1])}</td></tr>`).join('')}</tbody></table></div>
-    <div class="mp-pb"></div><h1 class="mp-h1">ÍNDICE</h1>${idx}<div class="mp-pb"></div>${body}`;
+    <div class="mp-pb"></div><h1 class="mp-h1">ÍNDICE</h1>${idx}<div class="mp-pb"></div>${body}${firmaIngHtml()}`;
 }
 function ettSheet(E, mats) { return `<div class="mem-sheet"><div class="mp-head"><img src="${mcmLogo()}" alt="ING Estructural"><div><b>ESPECIFICACIONES TÉCNICAS</b><br>${esc(ettSub(mats))}<br>${esc(ettV(E.proy.proyecto, ''))} · ${esc(E.proy.rev)}</div></div>${ettHtml(E, mats)}</div>`; }
 function ettImprimir(E, mats) {
@@ -49154,6 +49421,7 @@ async function ettDocx(E, mats) {
     else if (b.t === 'ul') b.items.forEach(x => K.push(P(x, {numbering:{reference:'vinetas', level:0}, after:60})));
     else if (b.t === 'table') { K.push(table(b.head, b.rows, b.widths, b.align)); K.push(new Paragraph({spacing:{after:120}, children:[]})); }
   }
+  K.push(...firmaIngDocx(d, FONT));   // pie de firma
   const doc = new Document({creator:'ING Estructural', title:'Especificaciones técnicas — ' + sub, features:{updateFields:true},
     styles:{default:{document:{run:{font:FONT, size:24}}}, paragraphStyles:[
       {id:'Heading1', name:'Heading 1', basedOn:'Normal', next:'Normal', quickFormat:true, run:{font:FONT, size:30, bold:true, color:NAVY}, paragraph:{spacing:{before:280, after:140}, outlineLevel:0}},

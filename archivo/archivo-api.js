@@ -126,6 +126,19 @@
     return (await r.json()).map(function (x) { return Object.assign({id: x.id}, x.data || {}); });
   }
 
+  /* ---------- configuración compartida con el Cotizador (colección cotizador_config) ----------
+     Hoy se usa para la firma escaneada (documento «firma»: {png, w, h, ubic}), la misma en la Mesa y el Cotizador. */
+  async function configLeer(id) {
+    var r = await req('docs?select=data&col=eq.cotizador_config&id=eq.' + encodeURIComponent(id));
+    var j = await r.json(); return j[0] ? j[0].data : null;
+  }
+  async function configGuardar(id, data) {
+    await ensure();
+    if (!sess.uid) throw err('Vuelva a iniciar sesión', 'auth');
+    await req('docs?on_conflict=owner,col,id', {method: 'POST', headers: {Prefer: 'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify([{owner: sess.uid, col: 'cotizador_config', id: id, data: data, updated_at: new Date().toISOString()}])});
+  }
+
   /* ---------- cola local (IndexedDB) ---------- */
   function idb() {
     return new Promise(function (ok, ko) {
@@ -173,6 +186,7 @@
     get email() { return sess && sess.email; },
     login: function (email, password) { return auth('password', {email: email, password: password}); },
     logout: function () { sess = null; lsSet(K_S, null); },
+    configLeer: configLeer, configGuardar: configGuardar,
     subir: subir, listar: listar, obtener: obtener, borrar: borrar, editarMeta: editarMeta, mover: mover, proyectos: proyectos,
     archivar: archivar, cola: cola, quitarCola: quitarCola, vaciarCola: vaciarCola,
     _cfg: CFG
