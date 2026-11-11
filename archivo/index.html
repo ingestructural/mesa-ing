@@ -39,6 +39,12 @@ input,select{font:inherit;width:100%;padding:7px 9px;border:1px solid var(--bord
 .bar select,.bar input[type=date]{width:auto}
 .bar .btn{white-space:nowrap}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
+.vista{display:flex;align-items:center;border:1px solid var(--borde);border-radius:8px;overflow:hidden;background:#fff;margin-right:8px}
+.vista span{font-size:12px;color:var(--sub);padding:0 10px;text-transform:uppercase;letter-spacing:.4px}
+.vista button{font:inherit;font-size:14px;font-weight:600;border:0;border-left:1px solid var(--borde);background:#fff;color:var(--txt);padding:7px 14px;cursor:pointer}
+.vista button.on{background:var(--azul);color:#fff}
+.car.pr{padding-left:22px}.car.pr b{font-weight:500;font-size:12.5px}.car.cli{padding-top:7px;padding-bottom:7px}
+.car .fl{font-size:10px;color:var(--sub);width:10px;display:inline-block}
 .chip{border:1px solid var(--borde);background:#fff;border-radius:999px;padding:5px 12px;font-size:13px}
 .chip.on{background:var(--azul);color:#fff;border-color:var(--azul)}
 .chip b{font-weight:600;margin-left:4px;opacity:.75}
@@ -147,16 +153,15 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
       <input type="search" id="q" placeholder="Buscar: título, proyecto, código, mandante…" aria-label="Buscar">
       <input type="date" id="fDesde" aria-label="Desde" title="Desde">
       <input type="date" id="fHasta" aria-label="Hasta" title="Hasta">
-      <select id="fOrden" aria-label="Ordenar" title="Ordenar la lista"><option value="">Orden: recién archivados</option><option value="fd">Orden: emisión reciente</option><option value="fa">Orden: emisión antigua</option><option value="tipo">Orden: por tipo</option></select>
       <button class="btn" type="button" id="bSubir">⬆ Subir documento</button>
       <button class="btn" type="button" id="bAct">↻ Actualizar</button>
     </div>
-    <div class="bar chips" id="chips"></div>
+    <div class="bar"><div class="vista" id="vista" role="tablist" aria-label="Ver por"><span>Ver por</span><button type="button" data-v="fecha">📅 Fecha</button><button type="button" data-v="tipo">📄 Tipo</button><button type="button" data-v="cliente">🏢 Cliente</button></div><div class="chips" id="chips"></div></div>
     <div class="estado"><span id="eCuenta"></span><span id="eCola" class="cola"></span></div>
     <div class="cuerpo">
     <aside id="carpetas" class="card">
-      <h2>Proyectos (POWER)</h2>
-      <input type="search" id="qProy" placeholder="Buscar proyecto o mandante…" aria-label="Buscar proyecto">
+      <h2>Clientes y proyectos (POWER)</h2>
+      <input type="search" id="qProy" placeholder="Buscar cliente o proyecto…" aria-label="Buscar proyecto">
       <div id="lcar"></div>
     </aside>
     <div>
@@ -275,42 +280,59 @@ function llenarProyectos() {
 function filtrados(sinTipo) {
   const q = norm($('q').value.trim()).split(/\s+/).filter(Boolean), fp = proySel, d1 = $('fDesde').value, d2 = $('fHasta').value;
   return DOCS.filter(v => (sinTipo || !tipo || v.d.col === tipo) && q.every(w => v.txt.includes(w))
-    && (!fp || (fp === '-' ? !v.p.codigo : v.p.codigo === fp)) && (!d1 || v.fe >= d1) && (!d2 || v.fe <= d2));
+    && (!fp || (fp === '-' ? !v.p.codigo : fp.startsWith('c:') ? v.p.codigo && v.p.codigo !== 'GENERAL' && cliK(v.p.mandante || v.p.proyecto || v.p.codigo) === fp.slice(2) : v.p.codigo === fp)) && (!d1 || v.fe >= d1) && (!d2 || v.fe <= d2));
 }
 const ORD_TIPO = ['planos_pdf', 'memorias_pdf', 'informes_pdf', 'cotizaciones_pdf'];
-function ordenarTipo(L) { const fd = (a, b) => b.fe.localeCompare(a.fe) || b.guard.localeCompare(a.guard); return L.slice().sort((a, b) => ORD_TIPO.indexOf(a.d.col) - ORD_TIPO.indexOf(b.d.col) || fd(a, b)); }
-function ordenar(L) {   // DOCS ya viene por fecha de archivado (más reciente primero)
-  const o = $('fOrden').value, fd = (a, b) => b.fe.localeCompare(a.fe) || b.guard.localeCompare(a.guard);
-  if (o === 'fd') return L.slice().sort(fd);
-  if (o === 'fa') return L.slice().sort((a, b) => fd(b, a));
-  if (o === 'tipo') return L.slice().sort((a, b) => ORD_TIPO.indexOf(a.d.col) - ORD_TIPO.indexOf(b.d.col) || fd(a, b));
-  return L;
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const fd = (a, b) => b.fe.localeCompare(a.fe) || b.guard.localeCompare(a.guard);
+const cliK = m => norm(m || '').replace(/[^a-z0-9]/g, '');
+let verPor = 'fecha'; try { verPor = localStorage.getItem('archivoVista') || 'fecha'; } catch (e) {}
+/* agrupa la lista según la pestaña «Ver por»: fecha (por mes), tipo o cliente/proyecto */
+function grupos(L) {
+  let key, tit, cmp;
+  if (verPor === 'tipo') { cmp = (a, b) => ORD_TIPO.indexOf(a.d.col) - ORD_TIPO.indexOf(b.d.col) || fd(a, b); key = v => v.d.col; tit = v => PLURAL[v.d.col] || A.COLS[v.d.col]; }
+  else if (verPor === 'cliente') {
+    const cn = v => v.p.codigo === 'GENERAL' ? '~General' : !v.p.codigo ? '~~Sin proyecto' : cap(v.p.mandante || v.p.proyecto || v.p.codigo);
+    const pn = v => v.p.codigo && v.p.codigo !== 'GENERAL' ? cap(v.p.mandante ? v.p.proyecto : '') || v.p.codigo : '';
+    const rk = v => v.p.codigo === 'GENERAL' ? 1 : !v.p.codigo ? 2 : 0;
+    cmp = (a, b) => rk(a) - rk(b) || cn(a).localeCompare(cn(b), 'es') || pn(a).localeCompare(pn(b), 'es') || fd(a, b);
+    key = v => cn(v) + '|' + (v.p.codigo || '');
+    tit = v => { const c = cn(v).replace(/^~+/, ''), q = pn(v); return proySel.startsWith('c:') ? q || c : [c, q].filter(Boolean).join(' › '); };
+  } else { cmp = fd; key = v => v.fe.slice(0, 7); tit = v => v.fe ? MESES[+v.fe.slice(5, 7) - 1] + ' ' + v.fe.slice(0, 4) : 'Sin fecha'; }
+  const S = L.slice().sort(cmp), out = [];
+  S.forEach(v => { const k = key(v); if (!out.length || out[out.length - 1].k !== k) out.push({k, t: tit(v), L: []}); out[out.length - 1].L.push(v); });
+  return out;
 }
 function render() {
   carpetas();
   const base = filtrados(true), cnt = c => base.filter(v => v.d.col === c).length;
   $('chips').innerHTML = [['', 'Todos', base.length], ...Object.keys(A.COLS).map(c => [c, PLURAL[c] || A.COLS[c], cnt(c)])]
     .map(([c, n, k]) => `<button type="button" class="chip${tipo === c ? ' on' : ''}" data-tipo="${c}">${esc(n)}<b>${k}</b></button>`).join('');
-  const enProy = proySel && proySel !== '-', agrupar = $('fOrden').value === 'tipo' || (enProy && !$('fOrden').value);
-  const F = agrupar ? ordenarTipo(tipo ? base.filter(v => v.d.col === tipo) : base) : ordenar(tipo ? base.filter(v => v.d.col === tipo) : base);
+  const enCli = proySel.startsWith('c:'), enProy = proySel && proySel !== '-' && !enCli;
+  const G = grupos(tipo ? base.filter(v => v.d.col === tipo) : base), F = [].concat(...G.map(g => g.L));
+  $('vista').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === verPor));
   const pp = enProy ? (proySel === 'GENERAL' ? {codigo: '🗄 General', proyecto: 'documentos que no son de un proyecto de POWER'} : proyLista().find(p => p.codigo === proySel) || {codigo: proySel}) : null;
   $('cab').className = proySel ? 'card si' : 'card';
-  $('lista').classList.toggle('enproy', !!enProy);
-  $('cab').innerHTML = pp ? `<b>${proySel === 'GENERAL' ? esc(pp.codigo) : '📁 ' + esc(cap(pp.mandante || pp.proyecto || pp.codigo))}</b> <span class="sub">${esc(proySel === 'GENERAL' ? pp.proyecto : [pp.mandante ? cap(pp.proyecto) : '', pp.codigo].filter(Boolean).join(' · '))} · ${base.length} documento${base.length === 1 ? '' : 's'}</span>`
+  if (enCli) $('cab').className = 'card si';
+  $('lista').classList.toggle('enproy', !!enProy || (enCli && verPor === 'cliente'));
+  const nd = `${base.length} documento${base.length === 1 ? '' : 's'}`, cl = enCli ? clientes().find(c => c.k === proySel.slice(2)) : null;
+  $('cab').innerHTML = cl ? `<b>🏢 ${esc(cl.nombre)}</b> <span class="sub">${cl.P.length} proyecto${cl.P.length === 1 ? '' : 's'} · ${nd}</span>`
+    : pp ? `<b>${proySel === 'GENERAL' ? esc(pp.codigo) : '📁 ' + esc(cap(pp.mandante || pp.proyecto || pp.codigo))}${proySel !== 'GENERAL' && pp.mandante ? ' › ' + esc(cap(pp.proyecto)) : ''}</b> <span class="sub">${esc(proySel === 'GENERAL' ? pp.proyecto : pp.codigo)} · ${nd}</span>`
     : proySel === '-' ? `<b>⚠ Sin proyecto</b> <span class="sub">${base.length} documento${base.length === 1 ? '' : 's'} sin asociar: ábralos y use Editar para elegir su proyecto de POWER.</span>` : '';
   const kb = DOCS.reduce((s, v) => s + (+v.d.kb || 0), 0);
   $('eCuenta').textContent = `${DOCS.length} documentos en el archivo (${(kb / 1024).toLocaleString('es-CL', {maximumFractionDigits: 1})} MB)` + (F.length !== DOCS.length ? ` · ${F.length} con los filtros` : '');
   if (!F.length) { $('lista').innerHTML = `<div class="vacio card">${DOCS.length ? 'Sin resultados con estos filtros.' : 'Aún no hay documentos archivados. Se agregan solos al emitir un PDF en AutoCAD (comando PDF), una memoria en la Mesa, al guardar una cotización o al dejar un informe en Documentos\\Archivo ING\\Bandeja.'}</div>`; return; }
-  $('lista').innerHTML = `<table><thead><tr><th>Tipo</th><th>Documento</th><th class="c-proy">Proyecto</th><th>Rev.</th><th>Emisión</th><th class="c-kb">Tamaño</th><th class="c-del"></th></tr></thead><tbody>${F.slice(0, 600).map((v, i, L) => {
+  $('lista').innerHTML = `<table><thead><tr><th>Tipo</th><th>Documento</th><th class="c-proy">Proyecto</th><th>Rev.</th><th>Emisión</th><th class="c-kb">Tamaño</th><th class="c-del"></th></tr></thead><tbody>${F.slice(0, 600).map((v, i) => {
     const key = v.d.col + '|' + v.d.id, pr = [v.p.codigo, v.p.mandante, v.p.proyecto].filter(Boolean).join(' · ');
-    const g = agrupar && (i === 0 || L[i - 1].d.col !== v.d.col) ? `<tr class="grp"><td colspan="7">${esc(PLURAL[v.d.col] || A.COLS[v.d.col])} (${F.filter(x => x.d.col === v.d.col).length})</td></tr>` : '';
+    const gr = G.find(g => g.L[0] === v), g = gr ? `<tr class="grp"><td colspan="7">${esc(gr.t)} (${gr.L.length})</td></tr>` : '';
     return g + `<tr class="doc${sel === key ? ' sel' : ''}" data-k="${esc(key)}"><td><span class="tag ${v.d.col}">${esc(A.COLS[v.d.col].split(' ')[0])}</span></td>
       <td class="tit">${esc(v.titulo)}<span class="ext">${esc(ext(v.archivo) || 'PDF')}</span>${v.det ? `<small>${esc(v.det)}</small>` : ''}<span class="mov">${esc(pr)}</span></td>
       <td class="c-proy">${esc(pr) || '<span style="color:var(--sub)">—</span>'}</td><td class="num">${esc(v.rev)}</td><td class="num fh">${esc(dmy(v.fe))}${v.hora ? `<small>${esc(v.hora)}</small>` : ''}</td><td class="num c-kb">${v.d.kb != null ? esc(v.d.kb.toLocaleString('es-CL')) + ' kB' : ''}</td><td class="c-del"><button type="button" class="x" data-del="${esc(key)}" title="Eliminar del archivo">✕</button></td></tr>`;
   }).join('')}</tbody></table>${F.length > 600 ? '<p class="estado">Se muestran los 600 más recientes: afine la búsqueda.</p>' : ''}`;
 }
 $('chips').addEventListener('click', e => { const b = e.target.closest('[data-tipo]'); if (!b) return; tipo = b.dataset.tipo; render(); });
-['q', 'fDesde', 'fHasta', 'fOrden'].forEach(id => $(id).addEventListener('input', render));
+['q', 'fDesde', 'fHasta'].forEach(id => $(id).addEventListener('input', render));
+$('vista').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; verPor = b.dataset.v; try { localStorage.setItem('archivoVista', verPor); } catch (er) {} render(); });
 /* ---------- carpetas de proyecto (todos los proyectos de POWER + los códigos usados en documentos) ---------- */
 function proyLista() {
   const m = new Map();
@@ -322,20 +344,32 @@ function proyLista() {
 const cap = t => String(t || '').trim().toLowerCase().replace(/(^|[\s(\-\/.])([a-záéíóúñü])/g, (m, a, b) => a + b.toUpperCase())
   .replace(/\b(De|Del|La|Las|Los|Y|E|En|Para|Por|Con|Al)\b/g, (m, w, i) => i ? w.toLowerCase() : w)
   .replace(/\b([A-Za-zÁÉÍÓÚÑ]{2,4})\b/g, (m, w, i, str) => /^(cmpc|aasa|sa|spa|ltda|eirl|mop|ing)$/i.test(w) ? w.toUpperCase() : m);
+let cliAb = '';   // cliente desplegado en la columna
+function clientes() {
+  const m = new Map();
+  proyLista().forEach(p => { const nom = cap(p.mandante || p.proyecto || p.codigo), k = cliK(p.mandante || p.proyecto || p.codigo);
+    if (!m.has(k)) m.set(k, {k, nombre: nom, P: []}); m.get(k).P.push(p); });
+  return [...m.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
 function carpetas() {
   const n = new Map(); let sin = 0;
   DOCS.forEach(v => { if (v.p.codigo) n.set(v.p.codigo, (n.get(v.p.codigo) || 0) + 1); else sin++; });
   const q = norm($('qProy').value.trim()).split(/\s+/).filter(Boolean);
   const item = (val, ic, b, sm, k, cls) => `<button type="button" class="car${proySel === val ? ' on' : ''}${cls ? ' ' + cls : ''}" data-p="${esc(val)}" title="${esc([b, sm].filter(Boolean).join(' · '))}"><span class="ic">${ic}</span><b>${esc(b)}</b><span class="n">${k}</span>${sm ? `<small>${esc(sm)}</small>` : ''}</button>`;
   let h = q.length ? '' : item('', '🗂', 'Todos los documentos', '', DOCS.length, '') + item('-', '⚠', 'Sin proyecto', sin ? 'Asígnelos desde Editar' : '', sin, 'sin') + item('GENERAL', '🗄', 'General', 'Documentos que no son de un proyecto', n.get('GENERAL') || 0, 'sep');
-  h += proyLista().filter(p => !q.length || q.every(w => norm([p.codigo, p.mandante, p.proyecto].join(' ')).includes(w)))
-    .map(p => item(p.codigo, '📁', cap(p.mandante || p.proyecto || p.codigo), p.mandante ? cap(p.proyecto) : '', n.get(p.codigo) || 0, n.get(p.codigo) ? '' : 'vacia')).join('');
-  $('lcar').innerHTML = h || '<p class="estado">Sin proyectos con ese texto.</p>';
+  clientes().forEach(c => {
+    const P = c.P.filter(p => !q.length || q.every(w => norm([c.nombre, p.codigo, p.proyecto].join(' ')).includes(w)));
+    if (!P.length) return;
+    const k = c.P.reduce((s, p) => s + (n.get(p.codigo) || 0), 0), ab = q.length || cliAb === c.k || c.P.some(p => p.codigo === proySel);
+    h += item('c:' + c.k, ab ? '📂' : '📁', c.nombre, '', k, 'cli' + (k ? '' : ' vacia'));
+    if (ab) h += P.map(p => item(p.codigo, '<span class="fl">└</span>', cap(p.mandante ? p.proyecto : '') || p.codigo, '', n.get(p.codigo) || 0, 'pr' + (n.get(p.codigo) ? '' : ' vacia'))).join('');
+  });
+  $('lcar').innerHTML = h || '<p class="estado">Sin clientes ni proyectos con ese texto.</p>';
 }
 $('qProy').addEventListener('input', carpetas);
-$('lcar').addEventListener('click', e => { const b = e.target.closest('[data-p]'); if (!b) return; proySel = b.dataset.p; cerrarVisor(); });
-try { $('fOrden').value = localStorage.getItem('archivoOrden') || ''; } catch (e) {}
-$('fOrden').addEventListener('change', () => { try { localStorage.setItem('archivoOrden', $('fOrden').value); } catch (e) {} });
+$('lcar').addEventListener('click', e => { const b = e.target.closest('[data-p]'); if (!b) return; const v = b.dataset.p;
+  if (v.startsWith('c:')) cliAb = cliAb === v.slice(2) && proySel === v ? '' : v.slice(2);
+  proySel = v; cerrarVisor(); });
 $('lista').addEventListener('click', async e => {
   const x = e.target.closest('[data-del]');
   if (x) {   // primer clic: pide confirmar; segundo clic: elimina
