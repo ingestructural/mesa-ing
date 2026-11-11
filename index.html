@@ -1534,15 +1534,42 @@ function fsRowCounts(main){
   });
   return counts;
 }
+// Campos que el guardado genérico no toma: los de archivo (el navegador no deja reponer su valor y la
+// restauración se cortaba ahí) y los de un bloque con guardado propio ([data-fs-extra]).
+function fsCampoOmitido(el){
+  return el.type === 'file' || !!(el.closest && el.closest('[data-fs-extra]'));
+}
+// Bloques con estado propio que no cabe en campos (p. ej. el modelo RAM de Fundación de Equipo Dinámico):
+// el elemento [data-fs-extra="clave"] expone el.__fsExtra = {capture: () => obj, restore: obj => promesa}.
+function fsCaptureExtras(main){
+  var out = null;
+  main.querySelectorAll('[data-fs-extra]').forEach(function(el){
+    if (!el.__fsExtra) return;
+    try { var v = el.__fsExtra.capture(); if (v != null) { out = out || {}; out[el.dataset.fsExtra] = v; } } catch(e) {}
+  });
+  return out;
+}
+function fsRestoreExtras(main, extra){
+  if (!extra) return;
+  main.querySelectorAll('[data-fs-extra]').forEach(function(el){
+    var v = extra[el.dataset.fsExtra];
+    if (v == null || !el.__fsExtra) return;
+    Promise.resolve().then(function(){ return el.__fsExtra.restore(v); }).catch(function(e){
+      fsToast('No se pudo reponer una parte del cálculo: ' + (e && e.message ? e.message : e));
+    });
+  });
+}
 function fsCaptureMain(main){
   var built = fsBuildFieldIndex(main);
-  var fields = {};
+  var fields = {}, order = [];
   built.order.forEach(function(key){
     var el = built.index[key];
+    if (fsCampoOmitido(el)) return;
+    order.push(key);
     if (el.type === 'checkbox' || el.type === 'radio') fields[key] = {t:'b', v: !!el.checked};
     else fields[key] = {t:'v', v: el.value};
   });
-  return {fields:fields, order:built.order, rowCounts: fsRowCounts(main)};
+  return {fields:fields, order:order, rowCounts: fsRowCounts(main), extra: fsCaptureExtras(main)};
 }
 function fsNativeSetter(tag, prop){
   var proto = tag === 'SELECT' ? window.HTMLSelectElement.prototype
@@ -1568,7 +1595,7 @@ function fsSetFieldValue(el, fv){
 // es hermano del contenedor, no un hijo suyo).
 function fsBuildAddButtonMap(main){
   var map = {};
-  var addButtons = Array.prototype.slice.call(main.querySelectorAll('.btn-add'));
+  var addButtons = Array.prototype.slice.call(main.querySelectorAll('.btn-add')).filter(function(b){ return !b.closest('[data-fs-extra]'); });
   addButtons.forEach(function(btn){
     var before = fsRowCounts(main);
     btn.click();
@@ -1605,9 +1632,11 @@ function fsRestoreMain(main, saved){
     // siguientes — un índice armado una sola vez al principio quedaría apuntando a nodos ya desconectados.
     var el = fsBuildFieldIndex(main).index[key];
     var fv = saved.fields ? saved.fields[key] : null;
+    if (el && fsCampoOmitido(el)) return; // archivos guardados con versiones anteriores
     if (!el || !fv) { missing.push(key); return; }
-    fsSetFieldValue(el, fv);
+    try { fsSetFieldValue(el, fv); } catch(e) { missing.push(key); }
   });
+  fsRestoreExtras(main, saved.extra);
   return missing;
 }
 
@@ -1636,7 +1665,7 @@ function fsBuildRecord(tool){
     toolId: tool.id, calc: tool.calc, toolName: tool.name,
     proyecto: PROYECTO_META.proyecto, calculo: PROYECTO_META.calculo,
     savedAt: new Date().toISOString(),
-    fields: snap.fields, order: snap.order, rowCounts: snap.rowCounts
+    fields: snap.fields, order: snap.order, rowCounts: snap.rowCounts, extra: snap.extra || undefined
   };
 }
 function fsCurrentTool(){
@@ -1758,7 +1787,7 @@ async function fsSaveCurrentCalc(){
     toolId: tool.id, calc: tool.calc, toolName: tool.name,
     proyecto: PROYECTO_META.proyecto, calculo: PROYECTO_META.calculo,
     savedAt: new Date().toISOString(),
-    fields: snap.fields, order: snap.order, rowCounts: snap.rowCounts
+    fields: snap.fields, order: snap.order, rowCounts: snap.rowCounts, extra: snap.extra || undefined
   };
   var base = fsTimestamp() + '_' + (fsSlug(PROYECTO_META.calculo) || fsSlug(tool.name) || 'calculo');
   var filename = base + '.json', i = 1;
@@ -41746,6 +41775,16 @@ function fmpRedisenoBloque(k, res, patas, P, op, base, libre) {
    fmpInitPanel(el, state, recalc): `state` y `recalc` son los de la planilla;
    los datos de suelo, criterios y H se toman de ella y todos los bloques se
    calculan a la vez con calcFundacionEquipoDinamico, sin tocar sus campos. */
+function fmpB64(buf) {
+  const u = new Uint8Array(buf); let t = '';
+  for (let i = 0; i < u.length; i += 0x8000) t += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+  return btoa(t);
+}
+function fmpDeB64(b64) {
+  const t = atob(b64), u = new Uint8Array(t.length);
+  for (let i = 0; i < t.length; i++) u[i] = t.charCodeAt(i);
+  return u;
+}
 function fmpInitPanel(el, state, recalc) {
   if (!document.getElementById('fmp_css')) {
     const css = document.createElement('style'); css.id = 'fmp_css';
@@ -41811,24 +41850,66 @@ function fmpInitPanel(el, state, recalc) {
   });
   const msg = (t, mal) => { $('fmp_msg').innerHTML = t ? `<span style="color:${mal ? 'var(--bad)' : 'var(--ink-muted)'}">${t}</span>` : ''; };
 
-  $('fmp_file').addEventListener('change', async ev => {
+  $('fmp_file').addEventListener('change', ev => {
     const f = ev.target.files && ev.target.files[0];
-    if (!f) return;
+    if (f) cargarModelo(f);
+  });
+  /* Lee el modelo y guarda sus bytes (base64) para que «Guardar cálculo» lo lleve en el .json. */
+  async function cargarModelo(f) {
     msg('Leyendo ' + esc(f.name) + '…');
     try {
+      const buf = await f.arrayBuffer();
       const m = await fmpLeerArchivo(f);
       const ests = fmpEstructuras(m);
       if (!ests.length) throw new Error('El modelo no tiene nudos con restricciones (apoyos).');
       st.total = m; st.estructuras = ests;
+      st.archivo = { nombre: f.name, b64: fmpB64(buf) };
       elegirEstructura(0);
       modo(true);
       msg('');
       $('fmp_cuerpo').hidden = false;
+      return true;
     } catch (e) {
-      st.modelo = null; $('fmp_cuerpo').hidden = true; modo(false);
+      st.modelo = null; st.archivo = null; $('fmp_cuerpo').hidden = true; modo(false);
       msg('No se pudo leer el modelo: ' + esc(e.message), true);
+      return false;
     }
-  });
+  }
+
+  /* Guardar / abrir cálculo (fsCaptureMain/fsRestoreMain): el modelo, la
+     estructura, las patas, las áreas escritas, las cargas y los bloques. */
+  el.dataset.fsExtra = 'fmp';
+  el.__fsExtra = {
+    capture: () => {
+      if (!st.modelo || !st.archivo) return null;
+      const v = id => $(id).value;
+      return {
+        archivo: st.archivo, est: st.est, usar: st.patas.map(p => !!p.usar),
+        areasManual: st.modelo.areasManual || null, fuente: st.fuente,
+        ramText: v('fmp_ramText'), combo: v('fmp_combo'), ramFuerza: v('fmp_ramFuerza'),
+        xcg: v('fmp_xcg'), zcg: v('fmp_zcg'), inclEst: v('fmp_inclEst'), hcg: v('fmp_hcg'), swap: v('fmp_swap'),
+        bloques: st.bloques.map(b => Object.assign({}, b)), calculado: !!st.res
+      };
+    },
+    restore: async g => {
+      if (!g || !g.archivo || !g.archivo.b64) return;
+      const bytes = fmpDeB64(g.archivo.b64);
+      if (!await cargarModelo(new File([bytes], g.archivo.nombre || 'modelo.zip'))) return;
+      if (g.est && st.estructuras[g.est]) { const se = $('fmp_est'); if (se) se.value = g.est; elegirEstructura(g.est); }
+      if (Array.isArray(g.usar)) st.patas.forEach((p, i) => { if (i < g.usar.length) p.usar = !!g.usar[i]; });
+      if (g.areasManual) { st.modelo.areasManual = Object.assign({}, g.areasManual); st.peso = fmpPesoEstructura(st.modelo, state.gammac || 2.4); }
+      pintarModelo();
+      const fb = el.querySelector(`[data-fmp="${g.fuente === 'tabla' ? 'tabla' : 'rigido'}"]`); if (fb) fb.click();
+      if (g.ramText) { $('fmp_ramText').value = g.ramText; $('fmp_ramText').dispatchEvent(new Event('input')); }
+      ['combo', 'ramFuerza', 'xcg', 'zcg', 'inclEst', 'hcg', 'swap'].forEach(k => { if (g[k] != null && g[k] !== '') $('fmp_' + k).value = g[k]; });
+      if (Array.isArray(g.bloques) && g.bloques.length) {
+        st.bloques = g.bloques.map(b => ({ nudos: b.nudos || '', L: b.L || '', B: b.B || '', ex: b.ex || '0', ez: b.ez || '0' }));
+        $('fmp_nb').value = st.bloques.length; $('fmp_bloques').innerHTML = ''; pintarBloques();
+      }
+      actualizarP();
+      if (g.calculado) calcular();
+    }
+  };
 
   /* Toma una de las estructuras independientes del modelo como la del equipo. */
   function elegirEstructura(k) {
