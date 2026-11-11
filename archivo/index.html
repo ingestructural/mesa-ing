@@ -44,14 +44,14 @@ input,select{font:inherit;width:100%;padding:7px 9px;border:1px solid var(--bord
 .chip b{font-weight:600;margin-left:4px;opacity:.75}
 .estado{font-size:13px;color:var(--sub);margin:4px 0 10px;display:flex;gap:12px;flex-wrap:wrap}
 .estado .cola{color:var(--cot);font-weight:600}
-.cuerpo{display:grid;grid-template-columns:240px minmax(0,1fr);gap:14px;align-items:start}
+.cuerpo{display:grid;grid-template-columns:340px minmax(0,1fr);gap:14px;align-items:start}
 #carpetas{position:sticky;top:10px;max-height:calc(100vh - 30px);display:flex;flex-direction:column;padding:10px;gap:8px}
 #carpetas h2{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--sub);margin:2px 2px 0}
 #lcar{overflow:auto;display:flex;flex-direction:column;gap:2px;margin:0 -4px}
 .car{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:2px 6px;align-items:center;text-align:left;border:0;background:none;border-radius:6px;padding:6px 8px;font:inherit;color:var(--txt);cursor:pointer}
 .car:hover{background:#eef2f8}.car.on{background:var(--azul);color:#fff}.car.on small{color:#dbe3f0}
-.car .ic{font-size:15px;line-height:1}.car b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.car small{grid-column:2/4;font-size:11.5px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.car .ic{font-size:15px;line-height:1}.car b{font-size:13px}
+.car small{grid-column:2/4;font-size:11.5px;color:var(--sub)}
 .car .n{font-size:12px;font-weight:700;background:rgba(0,0,0,.07);border-radius:99px;padding:0 7px}.car.on .n{background:rgba(255,255,255,.2)}
 .car.vacia{opacity:.55}.car.sin b{color:var(--warn)}.car.sin.on b{color:#fff}
 .car.sep{margin-bottom:6px;border-bottom:1px solid var(--borde);border-radius:6px 6px 0 0}
@@ -60,6 +60,7 @@ input,select{font:inherit;width:100%;padding:7px 9px;border:1px solid var(--bord
 #lista.enproy .c-proy{display:none}
 tr.grp td{background:#eef2f8;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--azul);padding-top:8px;padding-bottom:6px}
 #lista{overflow-x:auto}
+#lista th:first-child,#lista td:first-child{width:1%;white-space:nowrap;padding-right:6px}
 td.c-proy{max-width:380px}
 .lay{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
 .lay.ver{grid-template-columns:minmax(260px,var(--izq,48%)) 10px minmax(320px,1fr);gap:0}
