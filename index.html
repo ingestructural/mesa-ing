@@ -42309,7 +42309,8 @@ function fmpSvgPlanta(p, patas) {
   const W = 640, mL = 60, mR = 90, mT = 30, mB = 70;
   const s = Math.min((W - mL - mR) / Math.max(x1 - x0, 0.1), 420 / Math.max(z1 - z0, 0.1));
   const H = (z1 - z0) * s + mT + mB;
-  const X = x => mL + (x - x0) * s, Y = z => mT + (z1 - z) * s;
+  // Z hacia abajo: igual que la vista superior de RAM (Y vertical, ejes de mano derecha)
+  const X = x => mL + (x - x0) * s, Y = z => mT + (z - z0) * s;
   const f = v => fmt2(v);
   const txt = (x, y, t, col, anchor, fs, extra) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${fs || 10}" fill="${col}" font-family="IBM Plex Mono, monospace" text-anchor="${anchor || 'start'}" ${extra || ''}>${t}</text>`;
   const ln = (xa, ya, xb, yb, col, w, dash) => `<line x1="${xa.toFixed(1)}" y1="${ya.toFixed(1)}" x2="${xb.toFixed(1)}" y2="${yb.toFixed(1)}" stroke="${col}" stroke-width="${w || 1}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
@@ -42317,17 +42318,17 @@ function fmpSvgPlanta(p, patas) {
   rects.forEach(r => {
     const ev = p.ev && p.ev[r.k];
     const col = ev ? (ev.fallas.length ? 'var(--ink)' : 'var(--good)') : 'var(--accent)';
-    out += `<rect x="${X(r.x1).toFixed(1)}" y="${Y(r.z2).toFixed(1)}" width="${((r.x2 - r.x1) * s).toFixed(1)}" height="${((r.z2 - r.z1) * s).toFixed(1)}" fill="var(--surface-alt)" fill-opacity="0.55" stroke="${col}" stroke-width="2"/>`;
-    out += txt(X(r.x1) + 4, Y(r.z2) + 12, `B${r.k + 1}`, col, 'start', 11, 'font-weight="700"');
+    out += `<rect x="${X(r.x1).toFixed(1)}" y="${Y(r.z1).toFixed(1)}" width="${((r.x2 - r.x1) * s).toFixed(1)}" height="${((r.z2 - r.z1) * s).toFixed(1)}" fill="var(--surface-alt)" fill-opacity="0.55" stroke="${col}" stroke-width="2"/>`;
+    out += txt(X(r.x1) + 4, Y(r.z1) + 12, `B${r.k + 1}`, col, 'start', 11, 'font-weight="700"');
     // cota en X (bajo el bloque)
-    const yc = Y(r.z1) + 16;
-    out += ln(X(r.x1), Y(r.z1) + 3, X(r.x1), yc + 4, 'var(--ink-muted)') + ln(X(r.x2), Y(r.z1) + 3, X(r.x2), yc + 4, 'var(--ink-muted)') + ln(X(r.x1), yc, X(r.x2), yc, 'var(--ink)');
+    const yc = Y(r.z2) + 16;
+    out += ln(X(r.x1), Y(r.z2) + 3, X(r.x1), yc + 4, 'var(--ink-muted)') + ln(X(r.x2), Y(r.z2) + 3, X(r.x2), yc + 4, 'var(--ink-muted)') + ln(X(r.x1), yc, X(r.x2), yc, 'var(--ink)');
     out += txt((X(r.x1) + X(r.x2)) / 2, yc + 12, `${f(r.L)} m`, 'var(--ink)', 'middle', 10);
     // cota en Z: a la izquierda, o a la derecha si a la izquierda hay otro bloque cerca
     const vecino = rects.some(o => o !== r && o.x1 < r.x1 && o.x2 > r.x1 - 30 / s && o.z1 < r.z2 && o.z2 > r.z1);
     const sg = vecino ? 1 : -1, xb = vecino ? X(r.x2) : X(r.x1), xc = xb + sg * 16;
-    out += ln(xb + sg * 3, Y(r.z1), xc + sg * 4, Y(r.z1), 'var(--ink-muted)') + ln(xb + sg * 3, Y(r.z2), xc + sg * 4, Y(r.z2), 'var(--ink-muted)') + ln(xc, Y(r.z1), xc, Y(r.z2), 'var(--ink)');
-    const ym = (Y(r.z1) + Y(r.z2)) / 2, xt = xc + sg * 4;
+    out += ln(xb + sg * 3, Y(r.z2), xc + sg * 4, Y(r.z2), 'var(--ink-muted)') + ln(xb + sg * 3, Y(r.z1), xc + sg * 4, Y(r.z1), 'var(--ink-muted)') + ln(xc, Y(r.z2), xc, Y(r.z1), 'var(--ink)');
+    const ym = (Y(r.z2) + Y(r.z1)) / 2, xt = xc + sg * 4;
     out += txt(xt, ym, `${f(r.B)} m`, 'var(--ink)', 'middle', 10, `transform="rotate(-90 ${xt.toFixed(1)} ${ym.toFixed(1)})"`);
     // centro del bloque y centro de los nudos
     const c = 5;
@@ -42338,13 +42339,13 @@ function fmpSvgPlanta(p, patas) {
       out += txt(X(r.x0) + 6, Y(r.z0) + 12, `e = (${f(r.ex)}; ${f(r.ez)})`, 'var(--ink-muted)', 'start', 8.5);
     }
   });
-  (p.traslapes || []).forEach(t => { out += `<rect x="${X(t.x1).toFixed(1)}" y="${Y(t.z2).toFixed(1)}" width="${((t.x2 - t.x1) * s).toFixed(1)}" height="${((t.z2 - t.z1) * s).toFixed(1)}" fill="var(--bad)" fill-opacity="0.4" stroke="var(--bad)" stroke-width="1.5"/>`; });
+  (p.traslapes || []).forEach(t => { out += `<rect x="${X(t.x1).toFixed(1)}" y="${Y(t.z1).toFixed(1)}" width="${((t.x2 - t.x1) * s).toFixed(1)}" height="${((t.z2 - t.z1) * s).toFixed(1)}" fill="var(--bad)" fill-opacity="0.4" stroke="var(--bad)" stroke-width="1.5"/>`; });
   patas.forEach((pt, i) => {
     const en = asign.has(i), col = en ? 'var(--accent-warm)' : 'var(--ink-muted)';
     out += `<circle cx="${X(pt.x).toFixed(1)}" cy="${Y(pt.z).toFixed(1)}" r="4.5" fill="${en ? col : 'none'}" stroke="${col}" stroke-width="1.4"/>`;
     out += txt(X(pt.x) + 6, Y(pt.z) + 11, `${esc(pt.id)} (${f(pt.x)}; ${f(pt.z)})`, col, 'start', 8.5);
   });
-  out += txt(8, H - 18, 'Planta, ejes RAM: X → derecha, Z ↑ arriba (m).', 'var(--ink-muted)', 'start', 8.5);
+  out += txt(8, H - 18, 'Planta, ejes RAM: X → derecha, Z ↓ abajo (vista superior de RAM) (m).', 'var(--ink-muted)', 'start', 8.5);
   out += txt(8, H - 6, '● columna en bloque · ○ pata sin bloque · + centro del bloque · ◇ centro de los nudos', 'var(--ink-muted)', 'start', 8.5);
   return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" style="display:block; width:100%; max-width:${W}px; height:auto; margin:0 auto;" role="img" aria-label="Planta de los bloques de fundación con cotas y los nudos de las columnas">${out}</svg>`;
 }
