@@ -1549,11 +1549,17 @@ function fsCaptureExtras(main){
   });
   return out;
 }
-function fsRestoreExtras(main, extra){
-  if (!extra) return;
+function fsClavePropia(main, key){
+  return Array.prototype.some.call(main.querySelectorAll('[data-fs-extra]'), function(el){
+    return el.__fsExtra && el.__fsExtra.claves && el.__fsExtra.claves.test(key);
+  });
+}
+function fsRestoreExtras(main, extra, saved){
   main.querySelectorAll('[data-fs-extra]').forEach(function(el){
-    var v = extra[el.dataset.fsExtra];
-    if (v == null || !el.__fsExtra) return;
+    var v = extra ? extra[el.dataset.fsExtra] : null;
+    if (!el.__fsExtra) return;
+    // Archivo guardado antes de que existiera el bloque propio: sus campos van al bloque (legacy).
+    if (v == null) { if (el.__fsExtra.legacy && saved) { try { el.__fsExtra.legacy(saved); } catch(e) {} } return; }
     Promise.resolve().then(function(){ return el.__fsExtra.restore(v); }).catch(function(e){
       fsToast('No se pudo reponer una parte del cálculo: ' + (e && e.message ? e.message : e));
     });
@@ -1633,10 +1639,11 @@ function fsRestoreMain(main, saved){
     var el = fsBuildFieldIndex(main).index[key];
     var fv = saved.fields ? saved.fields[key] : null;
     if (el && fsCampoOmitido(el)) return; // archivos guardados con versiones anteriores
+    if (!el && fsClavePropia(main, key)) return; // la repone el bloque con guardado propio (legacy)
     if (!el || !fv) { missing.push(key); return; }
     try { fsSetFieldValue(el, fv); } catch(e) { missing.push(key); }
   });
-  fsRestoreExtras(main, saved.extra);
+  fsRestoreExtras(main, saved.extra, saved);
   return missing;
 }
 
@@ -41850,9 +41857,10 @@ function fmpInitPanel(el, state, recalc) {
   });
   const msg = (t, mal) => { $('fmp_msg').innerHTML = t ? `<span style="color:${mal ? 'var(--bad)' : 'var(--ink-muted)'}">${t}</span>` : ''; };
 
-  $('fmp_file').addEventListener('change', ev => {
+  $('fmp_file').addEventListener('change', async ev => {
     const f = ev.target.files && ev.target.files[0];
-    if (f) cargarModelo(f);
+    if (!f || !await cargarModelo(f)) return;
+    if (st.legado) { const g = st.legado; st.legado = null; aplicar(g); }
   });
   /* Lee el modelo y guarda sus bytes (base64) para que «Guardar cálculo» lo lleve en el .json. */
   async function cargarModelo(f) {
@@ -41880,6 +41888,7 @@ function fmpInitPanel(el, state, recalc) {
      estructura, las patas, las áreas escritas, las cargas y los bloques. */
   el.dataset.fsExtra = 'fmp';
   el.__fsExtra = {
+    claves: /^#?fmp_/,
     capture: () => {
       if (!st.modelo || !st.archivo) return null;
       const v = id => $(id).value;
@@ -41895,6 +41904,32 @@ function fmpInitPanel(el, state, recalc) {
       if (!g || !g.archivo || !g.archivo.b64) return;
       const bytes = fmpDeB64(g.archivo.b64);
       if (!await cargarModelo(new File([bytes], g.archivo.nombre || 'modelo.zip'))) return;
+      aplicar(g);
+    },
+    /* .json guardado con la versión anterior (sin modelo): sus campos de la
+       sección 0 quedan pendientes y se aplican al volver a cargar el .zip. */
+    legacy: saved => {
+      const F = saved.fields || {}, val = k => F[k] ? F[k].v : undefined;
+      if (val('#fmp_nb') === undefined) return;
+      const bl = (saved.order || []).filter(k => /^fmp_bloques>>INPUT/.test(k)).map(k => val(k));
+      const nb = Math.max(1, parseInt(val('#fmp_nb'), 10) || 1);
+      const bloques = [];
+      for (let k = 0; k < nb && 5 * k < bl.length; k++) bloques.push({ nudos: bl[5 * k] || '', L: bl[5 * k + 1] || '', B: bl[5 * k + 2] || '', ex: bl[5 * k + 3] || '0', ez: bl[5 * k + 4] || '0' });
+      const mod = (saved.order || []).filter(k => /^fmp_modelo>>INPUT/.test(k)).map(k => F[k]);
+      const g = {
+        est: parseInt(val('#fmp_est'), 10) || 0,
+        usar: mod.filter(f => f && f.t === 'b').map(f => !!f.v),
+        areasTxt: mod.filter(f => f && f.t === 'v').map(f => f.v),
+        fuente: String(val('#fmp_ramText') || '').trim() ? 'tabla' : 'rigido',
+        bloques, calculado: true
+      };
+      ['ramText', 'combo', 'ramFuerza', 'xcg', 'zcg', 'inclEst', 'hcg', 'swap'].forEach(k => { g[k] = val('#fmp_' + k); });
+      if (!bloques.some(b => String(b.nudos).trim())) return;
+      st.legado = g;
+      msg(`Este cálculo se guardó con una versión anterior que no incluía el modelo RAM. Vuelva a cargar el .zip o .etz y se aplicarán los ${bloques.length} bloques y datos de la sección 0 que quedaron en el archivo.`);
+    }
+  };
+  function aplicar(g) {
       if (g.est && st.estructuras[g.est]) { const se = $('fmp_est'); if (se) se.value = g.est; elegirEstructura(g.est); }
       if (Array.isArray(g.usar)) st.patas.forEach((p, i) => { if (i < g.usar.length) p.usar = !!g.usar[i]; });
       if (g.areasManual) { st.modelo.areasManual = Object.assign({}, g.areasManual); st.peso = fmpPesoEstructura(st.modelo, state.gammac || 2.4); }
@@ -41906,10 +41941,18 @@ function fmpInitPanel(el, state, recalc) {
         st.bloques = g.bloques.map(b => ({ nudos: b.nudos || '', L: b.L || '', B: b.B || '', ex: b.ex || '0', ez: b.ez || '0' }));
         $('fmp_nb').value = st.bloques.length; $('fmp_bloques').innerHTML = ''; pintarBloques();
       }
+      if (Array.isArray(g.areasTxt) && st.peso) {
+        st.modelo.areasManual = st.modelo.areasManual || {};
+        st.peso.tabla.forEach((t, k) => {
+          const v = parseFloat(String(g.areasTxt[k] || '').replace(',', '.'));
+          if (v > 0 && !(t.area && Math.abs(t.area * 1e4 - v) < 0.01)) st.modelo.areasManual[fmpNormSecc(t.secc)] = v * 1e-4;
+        });
+        st.peso = fmpPesoEstructura(st.modelo, state.gammac || 2.4);
+        pintarModelo();
+      }
       actualizarP();
       if (g.calculado) calcular();
-    }
-  };
+  }
 
   /* Toma una de las estructuras independientes del modelo como la del equipo. */
   function elegirEstructura(k) {
