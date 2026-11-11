@@ -195,6 +195,9 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
 const A = window.INGArchivo, $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+/* «General»: almacenamiento para documentos que no son de un proyecto de POWER (codigo GENERAL) */
+const GEN = {codigo: 'GENERAL', mandante: '', proyecto: 'Almacenamiento general'};
+const proyPor = c => c === 'GENERAL' ? GEN : PROY.find(x => x.codigo === c);
 let DOCS = [], PROY = [], tipo = '', sel = null, verUrl = null, proySel = '';
 const PLURAL = {planos_pdf: 'Planos (AutoCAD)', memorias_pdf: 'Memorias', informes_pdf: 'Informes', cotizaciones_pdf: 'Cotizaciones'};
 function toast(t, ms) { const d = $('toast'); d.textContent = t; d.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => d.style.display = 'none', ms || 4000); }
@@ -262,7 +265,7 @@ function llenarProyectos() {
   const opt = p => `<option value="${esc(p.codigo)}">${esc([p.codigo, p.mandante, p.proyecto].filter(Boolean).join(' · '))}</option>`;
   carpetas();
   const todos = PROY.slice().sort((a, b) => String(b.creado || '').localeCompare(String(a.creado || '')) || String(b.codigo).localeCompare(String(a.codigo))).map(opt).join('');
-  $('dProy').innerHTML = $('eProy').innerHTML = '<option value="">(sin proyecto)</option>' + todos;
+  $('dProy').innerHTML = $('eProy').innerHTML = '<option value="">(sin proyecto)</option><option value="GENERAL">General (no es de un proyecto de POWER)</option>' + todos;
 }
 
 /* ---------- lista ---------- */
@@ -287,10 +290,10 @@ function render() {
     .map(([c, n, k]) => `<button type="button" class="chip${tipo === c ? ' on' : ''}" data-tipo="${c}">${esc(n)}<b>${k}</b></button>`).join('');
   const enProy = proySel && proySel !== '-', agrupar = $('fOrden').value === 'tipo' || (enProy && !$('fOrden').value);
   const F = agrupar ? ordenarTipo(tipo ? base.filter(v => v.d.col === tipo) : base) : ordenar(tipo ? base.filter(v => v.d.col === tipo) : base);
-  const pp = enProy ? proyLista().find(p => p.codigo === proySel) || {codigo: proySel} : null;
+  const pp = enProy ? (proySel === 'GENERAL' ? {codigo: '🗄 General', proyecto: 'documentos que no son de un proyecto de POWER'} : proyLista().find(p => p.codigo === proySel) || {codigo: proySel}) : null;
   $('cab').className = proySel ? 'card si' : 'card';
   $('lista').classList.toggle('enproy', !!enProy);
-  $('cab').innerHTML = pp ? `<b>📁 ${esc(pp.codigo)}</b> <span class="sub">${esc([pp.mandante, pp.proyecto].filter(Boolean).join(' · '))} · ${base.length} documento${base.length === 1 ? '' : 's'}</span>`
+  $('cab').innerHTML = pp ? `<b>${proySel === 'GENERAL' ? '' : '📁 '}${esc(pp.codigo)}</b> <span class="sub">${esc([pp.mandante, pp.proyecto].filter(Boolean).join(' · '))} · ${base.length} documento${base.length === 1 ? '' : 's'}</span>`
     : proySel === '-' ? `<b>⚠ Sin proyecto</b> <span class="sub">${base.length} documento${base.length === 1 ? '' : 's'} sin asociar: ábralos y use Editar para elegir su proyecto de POWER.</span>` : '';
   const kb = DOCS.reduce((s, v) => s + (+v.d.kb || 0), 0);
   $('eCuenta').textContent = `${DOCS.length} documentos en el archivo (${(kb / 1024).toLocaleString('es-CL', {maximumFractionDigits: 1})} MB)` + (F.length !== DOCS.length ? ` · ${F.length} con los filtros` : '');
@@ -309,7 +312,7 @@ $('chips').addEventListener('click', e => { const b = e.target.closest('[data-ti
 function proyLista() {
   const m = new Map();
   PROY.slice().sort((a, b) => String(b.creado || '').localeCompare(String(a.creado || '')) || String(b.codigo).localeCompare(String(a.codigo))).forEach(p => m.set(p.codigo, p));
-  DOCS.forEach(v => { if (v.p.codigo && !m.has(v.p.codigo)) m.set(v.p.codigo, v.p); });
+  DOCS.forEach(v => { if (v.p.codigo && v.p.codigo !== 'GENERAL' && !m.has(v.p.codigo)) m.set(v.p.codigo, v.p); });
   return [...m.values()];
 }
 function carpetas() {
@@ -317,7 +320,7 @@ function carpetas() {
   DOCS.forEach(v => { if (v.p.codigo) n.set(v.p.codigo, (n.get(v.p.codigo) || 0) + 1); else sin++; });
   const q = norm($('qProy').value.trim()).split(/\s+/).filter(Boolean);
   const item = (val, ic, b, sm, k, cls) => `<button type="button" class="car${proySel === val ? ' on' : ''}${cls ? ' ' + cls : ''}" data-p="${esc(val)}" title="${esc([b, sm].filter(Boolean).join(' · '))}"><span class="ic">${ic}</span><b>${esc(b)}</b><span class="n">${k}</span>${sm ? `<small>${esc(sm)}</small>` : ''}</button>`;
-  let h = q.length ? '' : item('', '🗂', 'Todos los documentos', '', DOCS.length, '') + item('-', '⚠', 'Sin proyecto', sin ? 'Asígnelos desde Editar' : '', sin, 'sin sep');
+  let h = q.length ? '' : item('', '🗂', 'Todos los documentos', '', DOCS.length, '') + item('-', '⚠', 'Sin proyecto', sin ? 'Asígnelos desde Editar' : '', sin, 'sin') + item('GENERAL', '🗄', 'General', 'Documentos que no son de un proyecto', n.get('GENERAL') || 0, 'sep');
   h += proyLista().filter(p => !q.length || q.every(w => norm([p.codigo, p.mandante, p.proyecto].join(' ')).includes(w)))
     .map(p => item(p.codigo, '📁', p.codigo, [p.mandante, p.proyecto].filter(Boolean).join(' · '), n.get(p.codigo) || 0, n.get(p.codigo) ? '' : 'vacia')).join('');
   $('lcar').innerHTML = h || '<p class="estado">Sin proyectos con ese texto.</p>';
@@ -414,15 +417,15 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('visor'
 /* ---------- editar / eliminar ---------- */
 let editando = null;
 function editar(v) {
-  editando = v; $('eTit').value = v.d.titulo || ''; $('eTipo').value = v.d.col; $('eProy').value = v.p.codigo && PROY.some(p => p.codigo === v.p.codigo) ? v.p.codigo : '';
+  editando = v; $('eTit').value = v.d.titulo || ''; $('eTipo').value = v.d.col; $('eProy').value = v.p.codigo && proyPor(v.p.codigo) ? v.p.codigo : '';
   $('eRev').value = v.d.rev || ''; $('eFecha').value = v.d.fecha || ''; $('eDel').dataset.ok = ''; $('eDel').textContent = 'Eliminar del archivo'; $('dEdit').showModal();
 }
 $('eOk').onclick = async () => {
-  const v = editando, p = PROY.find(x => x.codigo === $('eProy').value);
+  const v = editando, p = proyPor($('eProy').value);
   const c = {titulo: $('eTit').value.trim(), rev: $('eRev').value.trim(), fecha: $('eFecha').value.trim()};
   // proyecto: el elegido de POWER; «(sin proyecto)» conserva un código que no está en POWER (p. ej. ficha de la bandeja)
   if (p) Object.assign(c, {codigo: p.codigo, mandante: p.mandante || '', proyecto: p.proyecto || ''});
-  else if (!v.d.codigo || PROY.some(x => x.codigo === v.d.codigo)) Object.assign(c, {codigo: '', mandante: '', proyecto: ''});
+  else if (!v.d.codigo || v.d.codigo === 'GENERAL' || PROY.some(x => x.codigo === v.d.codigo)) Object.assign(c, {codigo: '', mandante: '', proyecto: ''});
   const col = $('eTipo').value;
   $('eOk').disabled = true;
   try { const m = await A.editarMeta(v.d.col, v.d.id, c);
@@ -443,7 +446,7 @@ document.querySelectorAll('[data-cerrar]').forEach(b => b.onclick = () => b.clos
 let porSubir = [];
 function listaSubir() { $('dLista').textContent = porSubir.length ? porSubir.map(f => f.name + ' (' + Math.round(f.size / 1024).toLocaleString('es-CL') + ' kB)').join(' · ') : 'Ningún archivo elegido.'; }
 function agregar(fs) { porSubir.push(...[...fs].filter(f => /\.(pdf|docx|xlsx)$/i.test(f.name))); listaSubir(); }
-$('bSubir').onclick = () => { porSubir = []; listaSubir(); $('dTit').value = $('dRev').value = ''; $('dFecha').value = new Date().toISOString().slice(0, 10); $('dTipo').value = tipo && tipo !== 'cotizaciones_pdf' ? tipo : ''; $('dProy').value = proySel && proySel !== '-' && PROY.some(p => p.codigo === proySel) ? proySel : ''; $('dSubir').showModal(); };
+$('bSubir').onclick = () => { porSubir = []; listaSubir(); $('dTit').value = $('dRev').value = ''; $('dFecha').value = new Date().toISOString().slice(0, 10); $('dTipo').value = tipo && tipo !== 'cotizaciones_pdf' ? tipo : ''; $('dProy').value = proySel && proySel !== '-' && proyPor(proySel) ? proySel : ''; $('dSubir').showModal(); };
 $('dElegir').onclick = () => $('dFile').click();
 $('dFile').onchange = e => { agregar(e.target.files); e.target.value = ''; };
 const drop = $('drop');
@@ -453,7 +456,7 @@ drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('
 $('dOk').onclick = async () => {
   if (!porSubir.length) return toast('Elija al menos un archivo.');
   if (!$('dTipo').value) { $('dTipo').focus(); return toast('Elija el tipo: plano, memoria o informe.'); }
-  const p = PROY.find(x => x.codigo === $('dProy').value), b = $('dOk'); b.disabled = true;
+  const p = proyPor($('dProy').value), b = $('dOk'); b.disabled = true;
   let ok = 0;
   for (const f of porSubir) {
     b.textContent = `Subiendo ${ok + 1} de ${porSubir.length}…`;
