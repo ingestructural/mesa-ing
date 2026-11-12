@@ -71,7 +71,8 @@
   }
 
   async function subir(col, meta, blob) {
-    if (!COLS[col] || col === 'cotizaciones_pdf') throw err('Colección no válida: ' + col);
+    // cotizaciones: las del Cotizador las archiva el propio Cotizador; aquí solo las subidas a mano (origen manual)
+    if (!COLS[col] || (col === 'cotizaciones_pdf' && (meta || {}).origen !== 'manual')) throw err('Colección no válida: ' + col);
     await ensure();
     if (!sess.uid) throw err('Vuelva a iniciar sesión', 'auth');
     var m = Object.assign({}, meta || {});
@@ -106,9 +107,9 @@
     await req('docs?col=eq.' + encodeURIComponent(col) + '&id=eq.' + encodeURIComponent(id), {method: 'DELETE'});
   }
   async function editarMeta(col, id, cambios) {
-    if (col === 'cotizaciones_pdf') throw err('Las cotizaciones se administran en el Cotizador');
     var r = await req('docs?select=data&col=eq.' + encodeURIComponent(col) + '&id=eq.' + encodeURIComponent(id));
     var j = await r.json(); if (!j[0]) throw err('Documento no encontrado');
+    if (col === 'cotizaciones_pdf' && (j[0].data.meta || {}).origen !== 'manual') throw err('Las cotizaciones se administran en el Cotizador');
     var d = j[0].data; d.meta = Object.assign({}, d.meta, cambios);
     await req('docs?col=eq.' + encodeURIComponent(col) + '&id=eq.' + encodeURIComponent(id), {method: 'PATCH', headers: {Prefer: 'return=minimal'},
       body: JSON.stringify({data: d, updated_at: new Date().toISOString()})});

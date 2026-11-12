@@ -180,7 +180,7 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
   <h3>Subir documento al archivo</h3>
   <div class="drop" id="drop">Arrastre aquí los archivos (PDF, Word o Excel) o <button class="btn" type="button" id="dElegir">elija archivos…</button><input type="file" id="dFile" multiple accept=".pdf,.docx,.xlsx" hidden></div>
   <div id="dLista" style="font-size:13px;color:var(--sub);margin-bottom:8px"></div>
-  <label>Tipo<select id="dTipo"><option value="" disabled>— Elija el tipo —</option><option value="planos_pdf">Plano (PDF)</option><option value="memorias_pdf">Memoria de cálculo</option><option value="informes_pdf">Informe / documento general</option></select></label>
+  <label>Tipo<select id="dTipo"><option value="" disabled>— Elija el tipo —</option><option value="planos_pdf">Plano (PDF)</option><option value="memorias_pdf">Memoria de cálculo</option><option value="informes_pdf">Informe / documento general</option><option value="cotizaciones_pdf">Cotización (PDF)</option></select></label>
   <label>Proyecto (POWER)<select id="dProy"><option value="">(sin proyecto)</option></select></label>
   <div class="grid2"><label>Título (vacío = nombre del archivo)<input id="dTit"></label><label>Revisión<input id="dRev"></label></div>
   <label>Fecha de emisión<input id="dFecha" type="date"></label>
@@ -190,14 +190,14 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
 <dialog id="dEdit">
   <h3>Datos del documento</h3>
   <label>Título<input id="eTit"></label>
-  <label>Tipo<select id="eTipo"><option value="planos_pdf">Plano (PDF)</option><option value="memorias_pdf">Memoria de cálculo</option><option value="informes_pdf">Informe / documento general</option></select></label>
+  <label>Tipo<select id="eTipo"><option value="planos_pdf">Plano (PDF)</option><option value="memorias_pdf">Memoria de cálculo</option><option value="informes_pdf">Informe / documento general</option><option value="cotizaciones_pdf">Cotización (PDF)</option></select></label>
   <label>Proyecto (POWER)<select id="eProy"><option value="">(sin proyecto)</option></select></label>
   <div class="grid2"><label>Revisión<input id="eRev"></label><label>Fecha de emisión<input id="eFecha" placeholder="dd-mm-aaaa"></label></div>
   <div class="row"><button class="btn x" type="button" id="eDel">Eliminar del archivo</button><span style="flex:1"></span><button class="btn" type="button" data-cerrar>Cancelar</button><button class="btn pri" type="button" id="eOk">Guardar</button></div>
 </dialog>
 
 <div id="toast" role="status"></div>
-<script src="archivo-api.js?v=5"></script>
+<script src="archivo-api.js?v=6"></script>
 <script>
 'use strict';
 const A = window.INGArchivo, $ = id => document.getElementById(id);
@@ -238,7 +238,7 @@ function proyDe(d) {
 }
 function vista(d) {
   const p = proyDe(d) || {};
-  const titulo = d.col === 'cotizaciones_pdf' ? 'Cotización ' + (d.numero || '(sin N°)') : (d.titulo || d.archivo || '(sin título)');
+  const titulo = d.col === 'cotizaciones_pdf' && !(d.origen === 'manual' && d.titulo) ? 'Cotización ' + (d.numero || '(sin N°)') : (d.titulo || d.archivo || '(sin título)');
   // documento de cobro del Cotizador: F = factura (monto neto), B = boleta (monto bruto)
   const det = d.col === 'cotizaciones_pdf' ? [d.estado, d.neto != null ? Number(d.neto).toLocaleString('es-CL', {maximumFractionDigits: 2}) + (d.documento === 'B' ? ' UF bruto' : ' UF neto') : '', d.documento === 'B' ? 'Boleta' : d.documento === 'F' ? 'Factura' : ''].filter(Boolean).join(' · ')
     : d.col === 'planos_pdf' ? [d.escala, d.dibujo].filter(Boolean).join(' · ')
@@ -394,7 +394,7 @@ async function ver(k) {
   const v = buscar(k); if (!v) return; sel = k; render();
   const vis = $('visor'); vis.hidden = false; $('lay').classList.add('ver');
   const pr = [v.p.codigo, v.p.mandante, v.p.proyecto].filter(Boolean).join(' · ');
-  const editable = v.d.col !== 'cotizaciones_pdf';
+  const editable = v.d.col !== 'cotizaciones_pdf' || v.d.origen === 'manual';   // las del Cotizador se administran allá
   vis.innerHTML = `<div class="vh"><b>${esc(v.titulo)}</b><button class="btn" type="button" id="vAbrir" disabled>⤢ Ampliar</button><button class="btn pri" type="button" id="vBajar" disabled>Descargar</button>${editable ? '<button class="btn" type="button" id="vEdit">Editar datos</button>' : ''}<button class="btn" type="button" id="vCerrar">✕</button></div>
     <div class="meta">${esc(A.COLS[v.d.col])}${pr ? ' · ' + esc(pr) : ''}${v.rev ? ' · Rev. ' + esc(v.rev) : ''}${v.fe ? ' · emitido ' + esc(dmy(v.fe)) : ''} · archivado ${esc(new Date(v.guard).toLocaleString('es-CL', {dateStyle: 'short', timeStyle: 'short'}))}${v.d.carpeta ? '<br>Carpeta: ' + esc(v.d.carpeta) : ''}${v.d.equipo ? ' · equipo ' + esc(v.d.equipo) : ''}</div>
     <div class="noprev" id="vCuerpo">Descargando…</div>`;
@@ -458,7 +458,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('visor'
 /* ---------- editar / eliminar ---------- */
 let editando = null;
 function editar(v) {
-  editando = v; $('eTit').value = v.d.titulo || ''; $('eTipo').value = v.d.col; $('eProy').value = v.p.codigo && proyPor(v.p.codigo) ? v.p.codigo : '';
+  editando = v; $('eTit').value = v.d.titulo || ''; $('eTipo').value = v.d.col; $('eTipo').disabled = v.d.col === 'cotizaciones_pdf'; $('eProy').value = v.p.codigo && proyPor(v.p.codigo) ? v.p.codigo : '';
   $('eRev').value = v.d.rev || ''; $('eFecha').value = v.d.fecha || ''; $('eDel').dataset.ok = ''; $('eDel').textContent = 'Eliminar del archivo'; $('dEdit').showModal();
 }
 $('eOk').onclick = async () => {
@@ -467,7 +467,8 @@ $('eOk').onclick = async () => {
   // proyecto: el elegido de POWER; «(sin proyecto)» conserva un código que no está en POWER (p. ej. ficha de la bandeja)
   if (p) Object.assign(c, {codigo: p.codigo, mandante: p.mandante || '', proyecto: p.proyecto || ''});
   else if (!v.d.codigo || v.d.codigo === 'GENERAL' || PROY.some(x => x.codigo === v.d.codigo)) Object.assign(c, {codigo: '', mandante: '', proyecto: ''});
-  const col = $('eTipo').value;
+  if (v.d.col === 'cotizaciones_pdf') c.numero = c.codigo && c.codigo !== 'GENERAL' ? c.codigo : (c.codigo === '' ? '' : v.d.numero || '');
+  const col = v.d.col === 'cotizaciones_pdf' ? v.d.col : $('eTipo').value;
   $('eOk').disabled = true;
   try { const m = await A.editarMeta(v.d.col, v.d.id, c);
     if (col !== v.d.col) { if (typeof A.mover !== 'function') throw new Error('versión antigua en caché: presione Ctrl+F5 y vuelva a intentar'); await A.mover(v.d.col, v.d.id, col); }
@@ -487,7 +488,7 @@ document.querySelectorAll('[data-cerrar]').forEach(b => b.onclick = () => b.clos
 let porSubir = [];
 function listaSubir() { $('dLista').textContent = porSubir.length ? porSubir.map(f => f.name + ' (' + Math.round(f.size / 1024).toLocaleString('es-CL') + ' kB)').join(' · ') : 'Ningún archivo elegido.'; }
 function agregar(fs) { porSubir.push(...[...fs].filter(f => /\.(pdf|docx|xlsx)$/i.test(f.name))); listaSubir(); }
-$('bSubir').onclick = () => { porSubir = []; listaSubir(); $('dTit').value = $('dRev').value = ''; $('dFecha').value = new Date().toISOString().slice(0, 10); $('dTipo').value = tipo && tipo !== 'cotizaciones_pdf' ? tipo : ''; $('dProy').value = proySel && proySel !== '-' && proyPor(proySel) ? proySel : ''; $('dSubir').showModal(); };
+$('bSubir').onclick = () => { porSubir = []; listaSubir(); $('dTit').value = $('dRev').value = ''; $('dFecha').value = new Date().toISOString().slice(0, 10); $('dTipo').value = tipo || ''; $('dProy').value = proySel && proySel !== '-' && proyPor(proySel) ? proySel : ''; $('dSubir').showModal(); };
 $('dElegir').onclick = () => $('dFile').click();
 $('dFile').onchange = e => { agregar(e.target.files); e.target.value = ''; };
 const drop = $('drop');
@@ -496,13 +497,13 @@ drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); agregar(e.dataTransfer.files); });
 $('dOk').onclick = async () => {
   if (!porSubir.length) return toast('Elija al menos un archivo.');
-  if (!$('dTipo').value) { $('dTipo').focus(); return toast('Elija el tipo: plano, memoria o informe.'); }
+  if (!$('dTipo').value) { $('dTipo').focus(); return toast('Elija el tipo: plano, memoria, informe o cotización.'); }
   const p = proyPor($('dProy').value), b = $('dOk'); b.disabled = true;
   let ok = 0;
   for (const f of porSubir) {
     b.textContent = `Subiendo ${ok + 1} de ${porSubir.length}…`;
     const meta = {titulo: porSubir.length === 1 && $('dTit').value.trim() ? $('dTit').value.trim() : f.name.replace(/\.[^.]+$/, ''), archivo: f.name, rev: $('dRev').value.trim(),
-      fecha: dmy($('dFecha').value), origen: 'manual', codigo: p ? p.codigo : '', mandante: p ? p.mandante || '' : '', proyecto: p ? p.proyecto || '' : ''};
+      fecha: dmy($('dFecha').value), origen: 'manual', codigo: p ? p.codigo : '', numero: $('dTipo').value === 'cotizaciones_pdf' && p && p.codigo !== 'GENERAL' ? p.codigo : '', mandante: p ? p.mandante || '' : '', proyecto: p ? p.proyecto || '' : ''};
     try { await A.subir($('dTipo').value, meta, f); ok++; } catch (e) { toast('No se pudo subir ' + f.name + ': ' + e.message, 8000); break; }
   }
   b.disabled = false; b.textContent = 'Subir';
