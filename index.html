@@ -52075,7 +52075,7 @@ function cgParseDatos(s) {
     return { t: t === 'A' ? 'A' : t === 'P' ? 'P' : 'C', h: t === 'P' ? +k.slice(1) || 0 : 0, ab: +a || 0 }; };
   const letra = String.fromCharCode(65 + n), nv = vanos.length + 1;
   return { naves, vanos, muroA: cara(kv.muroa), muroB: cara(kv['muro' + letra.toLowerCase()]),
-    hasI: (kv.hastial1 || '').split('|').map(cara), hasF: (kv['hastial' + nv] || '').split('|').map(cara) };
+    hasI: (kv.fronton1 || kv.hastial1 || '').split('|').map(cara), hasF: (kv['fronton' + nv] || kv['hastial' + nv] || '').split('|').map(cara) };
 }
 function cgVanos(s) {
   const out = [];
@@ -52115,7 +52115,7 @@ function cgCerramiento(g, G) {
   const hast = (cs, nombre) => { let Ag = 0, Ao = 0; n.forEach((nv, k) => { const c = cs[k] || { t: 'C', h: 0, ab: 0 }, a = areaHast(nv); Ag += a; Ao += c.t === 'A' ? a : Math.min(a, (c.t === 'P' ? abiertaHast(nv, c.h) : 0) + c.ab); }); return { nombre, Ag, Ao }; };
   const letra = String.fromCharCode(65 + n.length);
   const muros = [muroLong(g.muroA, G.hp[0], 'Muro longitudinal eje A'), muroLong(g.muroB, G.hp[G.hp.length - 1], 'Muro longitudinal eje ' + letra),
-    hast(g.hasI, 'Hastial frontal'), hast(g.hasF, 'Hastial posterior')];
+    hast(g.hasI, 'Frontón frontal'), hast(g.hasF, 'Frontón posterior')];
   const Atecho = n.reduce((a, nv) => a + nv.L / Math.cos(nv.theta * Math.PI / 180) * G.Ltot, 0);
   const AgTot = muros.reduce((a, m) => a + m.Ag, 0) + Atecho, AoTot = muros.reduce((a, m) => a + m.Ao, 0);
   muros.forEach(m => { m.abierto = m.Ao >= 0.8 * m.Ag - 1e-9; m.Aoi = AoTot - m.Ao; m.Agi = AgTot - m.Ag;
@@ -52249,7 +52249,7 @@ function calcCargasGalpon(inp) {
           const ps = abS ? 0 : pMuro(CpS, s);
           sup.push(abS ? { nombre: (desdeDer ? 'Muro eje A' : `Muro eje ${letra}`) + ' (sotavento) — abierto, sin carga', tipo: 'muro', Cp: null, p: 0 }
             : { nombre: desdeDer ? 'Muro eje A (sotavento)' : `Muro eje ${letra} (sotavento)`, tipo: 'muro', Cp: CpS, p: ps });
-          if (!hastAb) sup.push({ nombre: 'Hastiales (laterales)', tipo: 'muro', Cp: -0.7, p: pMuro(-0.7, s) });
+          if (!hastAb) sup.push({ nombre: 'Frontones (laterales)', tipo: 'muro', Cp: -0.7, p: pMuro(-0.7, s) });
           let Fx = (abB ? 0 : bar.reduce((a, b) => a + b.p * b.A, 0)) - ps * G.Ltot * hSot;
           const txtC = [];
           // naves en orden de barlovento a sotavento
@@ -52281,10 +52281,10 @@ function calcCargasGalpon(inp) {
         const sup = [];
         const abB = g.hasI.every(c => c.t === 'A'), abS = g.hasF.every(c => c.t === 'A');
         const bar = muroBar(hastForma, s);
-        if (abB) sup.push({ nombre: 'Hastial frontal (barlovento) — abierto, sin carga', tipo: 'muro', Cp: null, p: 0 });
-        else sup.push({ nombre: 'Hastial frontal (barlovento)', tipo: 'muro', Cp: 0.8, bandas: bar, p: bar[bar.length - 1].p });
+        if (abB) sup.push({ nombre: 'Frontón frontal (barlovento) — abierto, sin carga', tipo: 'muro', Cp: null, p: 0 });
+        else sup.push({ nombre: 'Frontón frontal (barlovento)', tipo: 'muro', Cp: 0.8, bandas: bar, p: bar[bar.length - 1].p });
         const CpS = vtCpSotaMuro(G.Ltot / G.W), ps = abS ? 0 : pMuro(CpS, s);
-        sup.push(abS ? { nombre: 'Hastial posterior (sotavento) — abierto, sin carga', tipo: 'muro', Cp: null, p: 0 } : { nombre: 'Hastial posterior (sotavento)', tipo: 'muro', Cp: CpS, p: ps });
+        sup.push(abS ? { nombre: 'Frontón posterior (sotavento) — abierto, sin carga', tipo: 'muro', Cp: null, p: 0 } : { nombre: 'Frontón posterior (sotavento)', tipo: 'muro', Cp: CpS, p: ps });
         if (!(g.muroA.t === 'A' && g.muroB.t === 'A')) sup.push({ nombre: 'Muros longitudinales (laterales)' + (g.muroA.t === 'A' || g.muroB.t === 'A' ? ' — solo el cerrado' : ''), tipo: 'muro', Cp: -0.7, p: pMuro(-0.7, s) });
         const Fx = (abB ? 0 : bar.reduce((a, b) => a + b.p * b.A, 0)) - ps * hastForma.A;
         const txtC = [];
@@ -52293,7 +52293,7 @@ function calcCargasGalpon(inp) {
           const cts = [...new Set(ests.map(x => x.casoTxt))], ct = cts[Math.min(ci, cts.length - 1)];
           const est = ests.find(x => x.casoTxt === ct && x.s === s) || ests.find(x => x.casoTxt === ct);
           txtC.push(`nave ${nv.i + 1}: ${ct}`);
-          est.sup.filter(sp => sp.tipo === 'techo').forEach(sp => sup.push({ nombre: `Nave ${nv.i + 1} — ${sp.nombre} (desde el hastial de barlovento: ${vtTxt(sp.x1, 1)}–${vtTxt(sp.x2, 1)} m)`, tipo: 'techo', nave: nv.i, Cp: sp.Cp, p: sp.p }));
+          est.sup.filter(sp => sp.tipo === 'techo').forEach(sp => sup.push({ nombre: `Nave ${nv.i + 1} — ${sp.nombre} (desde el frontón de barlovento: ${vtTxt(sp.x1, 1)}–${vtTxt(sp.x2, 1)} m)`, tipo: 'techo', nave: nv.i, Cp: sp.Cp, p: sp.p }));
         });
         casos.push({ dir: 'L', dirTxt: 'Viento longitudinal (paralelo a la cumbrera)', s, casoTxt: txtC.join(' · '), sup, Fx, Aproj: hastForma.A });
       }
@@ -52340,7 +52340,7 @@ function calcCargasGalpon(inp) {
         const { qh } = vNaves[nv.i];
         const f = cgF25(nv.h, G.Ltot, flujo).find(z => z.caso === caso);
         txtC.push(`nave ${nv.i + 1}: Fig. 25, caso ${caso}`);
-        f.fr.forEach(fr => sup.push({ nombre: `Nave ${nv.i + 1} — franja ${fr.txt} desde el hastial de barlovento (${vtTxt(fr.x1, 1)}–${vtTxt(fr.x2, 1)} m)`, tipo: 'techo', nave: nv.i, Cp: fr.CN, p: qh * VT_G * fr.CN }));
+        f.fr.forEach(fr => sup.push({ nombre: `Nave ${nv.i + 1} — franja ${fr.txt} desde el frontón de barlovento (${vtTxt(fr.x1, 1)}–${vtTxt(fr.x2, 1)} m)`, tipo: 'techo', nave: nv.i, Cp: fr.CN, p: qh * VT_G * fr.CN }));
       });
       casos.push({ dir: 'L', dirTxt: 'Viento longitudinal (paralelo a la cumbrera)', s: 0, casoTxt: txtC.join(' · '), sup, Fx: null, Aproj: null, abierto: true });
     });
@@ -52628,8 +52628,8 @@ function renderCargasGalpon(container) {
         <td><input type="text" inputmode="decimal" id="${id}_h" data-cara value="${h}"></td><td><input type="text" inputmode="decimal" id="${id}_a" data-cara value="${a}"></td></tr>`; };
     $('cg_caras').innerHTML = `<table class="results"><tr><th>Cara</th><th>Condición</th><th>h abierta (m), si es parcial</th><th>Aberturas en la parte cerrada (m²)</th></tr>
       ${fila('cg_fA', 'Muro longitudinal eje A')}${fila('cg_fB', 'Muro longitudinal eje ' + letra)}
-      ${Array.from({ length: n }, (_, k) => fila('cg_fI' + k, `Hastial frontal, nave ${k + 1}`)).join('')}
-      ${Array.from({ length: n }, (_, k) => fila('cg_fF' + k, `Hastial posterior, nave ${k + 1}`)).join('')}</table>`;
+      ${Array.from({ length: n }, (_, k) => fila('cg_fI' + k, `Frontón frontal, nave ${k + 1}`)).join('')}
+      ${Array.from({ length: n }, (_, k) => fila('cg_fF' + k, `Frontón posterior, nave ${k + 1}`)).join('')}</table>`;
     container.querySelectorAll('#cg_naves input,#cg_naves select,#cg_caras input,#cg_caras select').forEach(el => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
   }
   const cara = id => ({ t: $(id + '_t').value, h: num(id + '_h') || 0, ab: num(id + '_a') || 0 });
