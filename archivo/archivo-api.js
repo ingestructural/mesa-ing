@@ -115,6 +115,16 @@
       body: JSON.stringify({data: d, updated_at: new Date().toISOString()})});
     return d.meta;
   }
+  // reemplaza el archivo de un documento ya archivado (p. ej. la versión firmada desde la app), mismo registro
+  async function reemplazarArchivo(col, id, blob, cambios) {
+    var r = await req('docs?select=data&col=eq.' + encodeURIComponent(col) + '&id=eq.' + encodeURIComponent(id));
+    var j = await r.json(); if (!j[0]) throw err('Documento no encontrado');
+    if (col === 'cotizaciones_pdf' && (j[0].data.meta || {}).origen !== 'manual') throw err('Las cotizaciones se administran en el Cotizador');
+    var d = j[0].data; d.meta = Object.assign({}, d.meta, cambios || {}, {kb: Math.round(blob.size / 1024)}); d.b64 = await blobB64(blob);
+    await req('docs?col=eq.' + encodeURIComponent(col) + '&id=eq.' + encodeURIComponent(id), {method: 'PATCH', headers: {Prefer: 'return=minimal'},
+      body: JSON.stringify({data: d, updated_at: new Date().toISOString()})});
+    return d.meta;
+  }
   // cambia el tipo de un documento (p. ej. subido como plano y era informe): solo cambia la columna col de la fila
   async function mover(col, id, nueva) {
     if (col === 'cotizaciones_pdf' || nueva === 'cotizaciones_pdf' || !COLS[nueva]) throw err('No se puede cambiar a ese tipo');
@@ -188,7 +198,7 @@
     login: function (email, password) { return auth('password', {email: email, password: password}); },
     logout: function () { sess = null; lsSet(K_S, null); },
     configLeer: configLeer, configGuardar: configGuardar,
-    subir: subir, listar: listar, obtener: obtener, borrar: borrar, editarMeta: editarMeta, mover: mover, proyectos: proyectos,
+    subir: subir, listar: listar, obtener: obtener, borrar: borrar, editarMeta: editarMeta, reemplazarArchivo: reemplazarArchivo, mover: mover, proyectos: proyectos,
     archivar: archivar, cola: cola, quitarCola: quitarCola, vaciarCola: vaciarCola,
     _cfg: CFG
   };

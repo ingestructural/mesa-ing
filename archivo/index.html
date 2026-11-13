@@ -103,6 +103,13 @@ td.tit small{display:block;font-weight:400;color:var(--sub);font-size:12px;word-
 #visor .meta{font-size:13px;color:var(--sub);margin-bottom:8px}
 #visor .hojas{flex:1;overflow:auto;border:1px solid var(--borde);border-radius:6px;background:#525659;padding:10px;display:flex;flex-direction:column;align-items:center;gap:10px}
 #visor .hojas canvas{width:100%;max-width:900px;height:auto;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+#visor .hojas .pag{position:relative;width:100%;max-width:900px;line-height:0}
+#visor .hojas .pag canvas{display:block}
+#visor.firmando .hojas .pag{cursor:copy}
+#visor .fsig{position:absolute;cursor:move;touch-action:none;outline:1px dashed #2E5597;outline-offset:1px;user-select:none;-webkit-user-drag:none;max-width:none}
+#visor .fsh{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;background:#2E5597;border:2px solid #fff;border-radius:3px;cursor:nwse-resize;touch-action:none}
+#visor .fbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#eef3fb;border:1px solid #c9d6ee;border-radius:6px;padding:7px 10px;margin-bottom:8px;font-size:13px;color:var(--azul)}
+#visor .fbar span{flex:1 1 220px}
 #visor .hojas .pie{color:#e5e7eb;font-size:13px}
 #visor.grande{position:fixed;inset:0;z-index:45;height:auto;border-radius:0}
 #visor .noprev{flex:1;display:flex;align-items:center;justify-content:center;border:1px dashed var(--borde);border-radius:6px;color:var(--sub);text-align:center;padding:20px}
@@ -197,7 +204,7 @@ td.tit .mov{display:none;font-weight:400;color:var(--sub);font-size:12px}
 </dialog>
 
 <div id="toast" role="status"></div>
-<script src="archivo-api.js?v=6"></script>
+<script src="archivo-api.js?v=7"></script>
 <script>
 'use strict';
 const A = window.INGArchivo, $ = id => document.getElementById(id);
@@ -395,8 +402,8 @@ async function ver(k) {
   const vis = $('visor'); vis.hidden = false; $('lay').classList.add('ver');
   const pr = [v.p.codigo, v.p.mandante, v.p.proyecto].filter(Boolean).join(' · ');
   const editable = v.d.col !== 'cotizaciones_pdf' || v.d.origen === 'manual';   // las del Cotizador se administran allá
-  vis.innerHTML = `<div class="vh"><b>${esc(v.titulo)}</b><button class="btn" type="button" id="vAbrir" disabled>⤢ Ampliar</button><button class="btn pri" type="button" id="vBajar" disabled>Descargar</button>${editable ? '<button class="btn" type="button" id="vEdit">Editar datos</button>' : ''}<button class="btn" type="button" id="vCerrar">✕</button></div>
-    <div class="meta">${esc(A.COLS[v.d.col])}${pr ? ' · ' + esc(pr) : ''}${v.rev ? ' · Rev. ' + esc(v.rev) : ''}${v.fe ? ' · emitido ' + esc(dmy(v.fe)) : ''} · archivado ${esc(new Date(v.guard).toLocaleString('es-CL', {dateStyle: 'short', timeStyle: 'short'}))}${v.d.carpeta ? '<br>Carpeta: ' + esc(v.d.carpeta) : ''}${v.d.equipo ? ' · equipo ' + esc(v.d.equipo) : ''}</div>
+  vis.innerHTML = `<div class="vh"><b>${esc(v.titulo)}</b><button class="btn" type="button" id="vAbrir" disabled>⤢ Ampliar</button><button class="btn pri" type="button" id="vBajar" disabled>Descargar</button>${editable ? '<button class="btn" type="button" id="vFirmar" disabled title="Poner su firma sobre el documento (la misma firma de la Mesa y el Cotizador)">✍ Firmar</button>' : ''}${editable ? '<button class="btn" type="button" id="vEdit">Editar datos</button>' : ''}<button class="btn" type="button" id="vCerrar">✕</button></div>
+    <div class="meta">${esc(A.COLS[v.d.col])}${pr ? ' · ' + esc(pr) : ''}${v.rev ? ' · Rev. ' + esc(v.rev) : ''}${v.fe ? ' · emitido ' + esc(dmy(v.fe)) : ''} · archivado ${esc(new Date(v.guard).toLocaleString('es-CL', {dateStyle: 'short', timeStyle: 'short'}))}${v.d.carpeta ? '<br>Carpeta: ' + esc(v.d.carpeta) : ''}${v.d.equipo ? ' · equipo ' + esc(v.d.equipo) : ''}${v.d.firmado ? ' · <b style="color:var(--ok)">firmado ' + esc(new Date(v.d.firmado).toLocaleString('es-CL', {dateStyle: 'short', timeStyle: 'short'})) + '</b>' : ''}</div>
     <div class="noprev" id="vCuerpo">Descargando…</div>`;
   $('vCerrar').onclick = cerrarVisor;
   if (editable) $('vEdit').onclick = () => editar(v);
@@ -409,8 +416,8 @@ async function ver(k) {
     $('vBajar').disabled = $('vAbrir').disabled = false;
     $('vBajar').onclick = () => { const a = document.createElement('a'); a.href = verUrl; a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); };
     $('vAbrir').onclick = () => { const g = $('visor').classList.toggle('grande'); $('vAbrir').textContent = g ? '⤡ Reducir' : '⤢ Ampliar'; };
-    if (mime === 'application/pdf') await mostrarPdf(blob, k);
-    else { $('vAbrir').hidden = true; $('vCuerpo').textContent = 'Vista previa disponible solo para PDF. Use «Descargar» para abrir el ' + (ext(v.archivo) === 'DOCX' ? 'Word' : ext(v.archivo) === 'XLSX' ? 'Excel' : 'archivo') + '.'; }
+    if (mime === 'application/pdf') { await mostrarPdf(blob, k); if (editable && sel === k) { $('vFirmar').disabled = false; $('vFirmar').onclick = () => firmar(v, k); } }
+    else { $('vAbrir').hidden = true; if ($('vFirmar')) $('vFirmar').hidden = true; $('vCuerpo').textContent = 'Vista previa disponible solo para PDF. Use «Descargar» para abrir el ' + (ext(v.archivo) === 'DOCX' ? 'Word' : ext(v.archivo) === 'XLSX' ? 'Excel' : 'archivo') + '.'; }
   } catch (e) { if (e.code === 'auth') return mostrarLogin(e.message); $('vCuerpo').textContent = 'No se pudo obtener el documento: ' + e.message; }
 }
 /* vista previa con pdf.js (no depende del visor de PDF del navegador, que puede estar configurado para descargar) */
@@ -425,15 +432,141 @@ function cargarPdfjs() {
 async function mostrarPdf(blob, k) {
   const lib = await cargarPdfjs(), pdf = await lib.getDocument({data: new Uint8Array(await blob.arrayBuffer())}).promise;
   if (sel !== k) return;
-  const box = document.createElement('div'); box.className = 'hojas'; $('vCuerpo').replaceWith(box);
+  const box = document.createElement('div'); box.className = 'hojas'; box.id = 'vCuerpo'; $('vCuerpo').replaceWith(box);
+  PAGS = []; PDFV = pdf;
   const esc2 = Math.min(2, Math.max(1.2, (window.devicePixelRatio || 1) * 1.2));
   for (let n = 1; n <= pdf.numPages; n++) {
     if (sel !== k) return;
     const pg = await pdf.getPage(n), vp = pg.getViewport({scale: esc2}), c = document.createElement('canvas');
-    c.width = vp.width; c.height = vp.height; box.appendChild(c);
+    c.width = vp.width; c.height = vp.height;
+    const w = document.createElement('div'); w.className = 'pag'; w.dataset.n = n; w.appendChild(c); box.appendChild(w);
+    const v1 = pg.getViewport({scale: 1}); PAGS.push({n: n, wrap: w, pg: pg, w: v1.width, h: v1.height});
     await pg.render({canvasContext: c.getContext('2d'), viewport: vp}).promise;
   }
   const pie = document.createElement('div'); pie.className = 'pie'; pie.textContent = pdf.numPages + (pdf.numPages === 1 ? ' página' : ' páginas'); box.appendChild(pie);
+}
+/* ---------- firmar: la firma de la Mesa y el Cotizador (POWER, cotizador_config «firma») sobre el PDF ----------
+   La firma aparece sobre el nombre «J. Germán Aguilera Hafner» si el documento lo tiene (como en la Mesa); si no,
+   donde se dejó la última vez (o abajo a la derecha). Se arrastra a su lugar (pinchar otra hoja la lleva ahí),
+   la esquina azul cambia el tamaño. «Guardar firmado» la estampa en el PDF (pdf-lib) y reemplaza el documento
+   archivado por la versión firmada (mismo registro: meta.firmado = fecha). */
+let PAGS = [], PDFV = null, FIRMA = null, FS = null, PDFLIB = null;
+const CM = 72 / 2.54, K_FPOS = 'ing_archivo_firma_pos';
+const FGEO = {alto: 4.7, top: -3.05, left: 0.5, maxw: 7.5};   // cm, mismas medidas del pie de firma de la Mesa y el Cotizador
+function cargarPdfLib() {
+  if (PDFLIB) return PDFLIB;
+  PDFLIB = new Promise((ok, ko) => { const s = document.createElement('script'); s.src = 'pdf-lib.min.js';
+    s.onload = () => window.PDFLib ? ok(window.PDFLib) : ko(new Error('pdf-lib no disponible'));
+    s.onerror = () => { PDFLIB = null; ko(new Error('no se pudo cargar pdf-lib (¿sin conexión?)')); }; document.head.appendChild(s); });
+  return PDFLIB;
+}
+async function firmaTraer() {
+  if (FIRMA && FIRMA.png) return FIRMA;
+  const f = await A.configLeer('firma');
+  if (!f || !f.png) throw new Error('No hay firma guardada en POWER. Cárguela una vez con «Firmar» en la Mesa de Cálculo o en el Cotizador (Alt+clic elige el archivo de la firma) y vuelva a intentar.');
+  return (FIRMA = f);
+}
+// tamaño en puntos PDF (medidas del pie de firma, con la escala que se dejó en el Cotizador)
+function firmaTam(f) {
+  const u = (f.ubic && (f.ubic.otros || f.ubic.mesa)) || {}, k = u.k || 1, r = f.w / f.h;
+  let h = FGEO.alto * k * CM, w = h * r; if (w > FGEO.maxw * k * CM) { w = FGEO.maxw * k * CM; h = w / r; }
+  return {w, h};
+}
+// busca el nombre del pie de firma (de la última hoja a la primera)
+async function firmaBuscarNombre() {
+  for (let i = PAGS.length - 1; i >= 0; i--) {
+    const P = PAGS[i], vp = P.pg.getViewport({scale: 1});
+    let tc; try { tc = await P.pg.getTextContent(); } catch (e) { continue; }
+    const it = tc.items.find(t => /Aguilera\s*Hafner/i.test(t.str || ''));
+    if (it) { const [u, v] = vp.convertToViewportPoint(it.transform[4], it.transform[5]), fs = Math.hypot(it.transform[2], it.transform[3]) || 10;
+      return {P, u, v: v - fs * 0.72}; }
+  }
+  return null;
+}
+async function firmar(v, k) {
+  if (FS) return;
+  const b = $('vFirmar'); b.disabled = true;
+  try {
+    const f = await firmaTraer(); if (sel !== k || !PAGS.length) return;
+    const t = firmaTam(f), nom = await firmaBuscarNombre();
+    let P, x, y;   // x, y: esquina superior izquierda en puntos de la hoja tal como se ve
+    if (nom) { P = nom.P; x = nom.u + FGEO.left * CM; y = nom.v + FGEO.top * CM; }
+    else {
+      let g = null; try { g = JSON.parse(localStorage.getItem(K_FPOS) || 'null'); } catch (e) {}
+      P = PAGS[PAGS.length - 1];
+      if (g && g.rx != null) { x = g.rx * P.w; y = g.ry * P.h; }
+      else { x = P.w - 2.5 * CM - t.w; y = P.h - 4 * CM - t.h; }
+    }
+    FS = {v, k, P, x: Math.max(0, Math.min(P.w - t.w, x)), y: Math.max(0, Math.min(P.h - t.h, y)), w: t.w, h: t.h, r: f.w / f.h, nombre: !!nom};
+    firmaDibujar();
+    const bar = document.createElement('div'); bar.className = 'fbar'; bar.id = 'fBar';
+    bar.innerHTML = '<span>' + (nom ? 'Firma sobre el nombre.' : 'Lleve la firma a su lugar.') + ' Arrástrela para moverla (pinche otra hoja para llevarla ahí); la esquina azul cambia el tamaño.</span>'
+      + '<button class="btn" type="button" id="fCan">Cancelar</button><button class="btn pri" type="button" id="fOk">Guardar firmado</button>';
+    $('vCuerpo').before(bar); $('visor').classList.add('firmando');
+    $('fCan').onclick = () => { firmaFin(); $('vFirmar').disabled = false; };
+    $('fOk').onclick = firmaGuardar;
+    FS.P.wrap.scrollIntoView({block: 'nearest'});
+  } catch (e) { if (e.code === 'auth') return mostrarLogin(e.message); toast(e.message, 9000); b.disabled = false; }
+}
+function firmaDibujar() {
+  document.querySelectorAll('#visor .fsig,#visor .fsh').forEach(el => el.remove());
+  if (!FS) return;
+  const P = FS.P, img = document.createElement('img'), hd = document.createElement('span');
+  img.className = 'fsig'; img.src = FIRMA.png; img.alt = 'Firma'; img.draggable = false; hd.className = 'fsh';
+  const pos = () => { img.style.left = (FS.x / P.w * 100) + '%'; img.style.top = (FS.y / P.h * 100) + '%';
+    img.style.width = (FS.w / P.w * 100) + '%'; img.style.height = (FS.h / P.h * 100) + '%';
+    hd.style.left = ((FS.x + FS.w) / P.w * 100) + '%'; hd.style.top = ((FS.y + FS.h) / P.h * 100) + '%'; };
+  pos(); P.wrap.appendChild(img); P.wrap.appendChild(hd);
+  const arr = (el, fn) => el.addEventListener('pointerdown', e => {
+    e.preventDefault(); e.stopPropagation(); el.setPointerCapture(e.pointerId);
+    const r = P.wrap.getBoundingClientRect(), k = P.w / r.width, x0 = e.clientX, y0 = e.clientY, s0 = {x: FS.x, y: FS.y, w: FS.w, h: FS.h};
+    const mv = ev => { fn(s0, (ev.clientX - x0) * k, (ev.clientY - y0) * k); pos(); };
+    const up = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); };
+    el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  });
+  arr(img, (s0, dx, dy) => { FS.x = Math.max(-FS.w / 2, Math.min(P.w - FS.w / 2, s0.x + dx)); FS.y = Math.max(-FS.h / 2, Math.min(P.h - FS.h / 2, s0.y + dy)); });
+  arr(hd, (s0, dx) => { FS.w = Math.max(1 * CM, s0.w + dx); FS.h = FS.w / FS.r; });
+}
+// pinchar una hoja mientras se firma: la firma va ahí (centrada en el punto)
+document.addEventListener('click', e => {
+  if (!FS || e.target.closest('.fsig,.fsh')) return;
+  const w = e.target.closest('#visor .pag'); if (!w) return;
+  const P = PAGS.find(p => p.wrap === w); if (!P) return;
+  const r = w.getBoundingClientRect(), k = P.w / r.width;
+  FS.P = P; FS.x = (e.clientX - r.left) * k - FS.w / 2; FS.y = (e.clientY - r.top) * k - FS.h / 2; firmaDibujar();
+});
+function firmaFin() {
+  FS = null; document.querySelectorAll('#visor .fsig,#visor .fsh').forEach(el => el.remove());
+  const b = $('fBar'); if (b) b.remove(); $('visor').classList.remove('firmando');
+}
+// punto de la hoja tal como se ve (u, v desde arriba a la izquierda) -> coordenadas PDF de la página sin girar
+function firmaPdfXY(u, v, W, H, rot) {
+  if (rot === 90) return [v, u];
+  if (rot === 180) return [W - u, v];
+  if (rot === 270) return [W - v, H - u];
+  return [u, H - v];
+}
+async function firmaGuardar() {
+  if (!FS) return;
+  const S = FS, ok = $('fOk'); ok.disabled = true; ok.textContent = 'Firmando…';
+  try {
+    const L = await cargarPdfLib(), v = S.v;
+    const blob = await A.obtener(v.d.col, v.d.id, 'application/pdf');
+    const doc = await L.PDFDocument.load(await blob.arrayBuffer(), {ignoreEncryption: true});
+    const png = await doc.embedPng(FIRMA.png), pg = doc.getPage(S.P.n - 1);
+    const rot = ((pg.getRotation().angle % 360) + 360) % 360, sz = pg.getSize(), mb = pg.getMediaBox();
+    const W = sz.width, H = sz.height;
+    // esquina inferior izquierda de la firma tal como se ve; la imagen se gira con la hoja para verse derecha
+    const [x, y] = firmaPdfXY(S.x, S.y + S.h, W, H, rot);
+    pg.drawImage(png, {x: x + mb.x, y: y + mb.y, width: S.w, height: S.h, rotate: L.degrees(rot)});
+    const nuevo = new Blob([await doc.save()], {type: 'application/pdf'});
+    const cuando = new Date().toISOString();
+    await A.reemplazarArchivo(v.d.col, v.d.id, nuevo, {firmado: cuando});
+    v.d.firmado = cuando; v.d.kb = Math.round(nuevo.size / 1024);
+    if (!S.nombre) try { localStorage.setItem(K_FPOS, JSON.stringify({rx: S.x / S.P.w, ry: S.y / S.P.h})); } catch (e) {}
+    firmaFin(); toast('Documento firmado y guardado en el archivo. «Descargar» baja la versión firmada.', 6000);
+    if (sel === S.k) ver(S.k);
+  } catch (e) { if (e.code === 'auth') return mostrarLogin(e.message); toast('No se pudo firmar: ' + e.message, 9000); ok.disabled = false; ok.textContent = 'Guardar firmado'; }
 }
 /* separador arrastrable entre la lista y la vista previa (el ancho queda guardado) */
 (function () {
@@ -452,7 +585,7 @@ async function mostrarPdf(blob, k) {
   });
   sep.addEventListener('dblclick', () => { lay.style.removeProperty('--izq'); try { localStorage.removeItem(K); } catch (e) {} });
 })();
-function cerrarVisor() { sel = null; $('visor').hidden = true; $('visor').classList.remove('grande'); $('lay').classList.remove('ver'); if (verUrl) { URL.revokeObjectURL(verUrl); verUrl = null; } render(); }
+function cerrarVisor() { firmaFin(); sel = null; $('visor').hidden = true; $('visor').classList.remove('grande'); $('lay').classList.remove('ver'); if (verUrl) { URL.revokeObjectURL(verUrl); verUrl = null; } render(); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('visor').hidden && !document.querySelector('dialog[open]')) cerrarVisor(); });
 
 /* ---------- editar / eliminar ---------- */
