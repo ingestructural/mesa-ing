@@ -52585,6 +52585,10 @@ function cgEstadosMarco(r, nie, sis) {
     if (c.minimo521) cv.notas.unshift(`Atención: en esta dirección rige además el mínimo de 5.2.1 (0,48 kN/m² sobre el área proyectada normal al viento).`);
     E.push({ id: c.id, key: c.key, viento: true, caso: c, tit: `${c.id} — ${c.dirTxt}${gc}`, L: cv.L, notas: [esc(c.casoTxt)].concat(cv.notas, ['Columnas: + hacia el interior. Vigas: perpendicular a la viga, + hacia la viga (presión), − alejándose (succión).']) });
   });
+  if (sis && !sis.ok) {
+    E.push({ id: 'E', tit: `E — Sismo (${sis.normaTxt}): faltan datos para calcular las fuerzas en los nudos`, L: [], P: [],
+      notas: ['<b>Complete el panel 7 · Sismo:</b> ' + sis.pend.map(x => esc(x.replace(/^Sismo: /, ''))).join(' ')] });
+  }
   if (sis && sis.ok) {
     E.push({ id: 'E', tit: `E — Sismo horizontal (${sis.normaTxt}): C = ${vtTxt(sis.C, 3)}, I = ${vtTxt(sis.I, 2)}`, L: [],
       P: sis.nudos.filter(n => n.F > 0).map(n => ({ x: n.x, y: n.y, F: n.F })),
