@@ -52850,7 +52850,7 @@ function cgEstadosMarco(r, nie, sis) {
   const subLr = r.naves.map(nv => `${nn(nv)}Lr = ${k1(nv.Lm)} kgf/m² (L₀ = ${vtTxt(nv.L0t * CG_KPA_KGF, 0)} kgf/m² × ${vtTxt(nv.Lm / (nv.L0t * CG_KPA_KGF), 3)}) × s ${sT} m = ${k1(nv.wLr)} kgf/m`);
   const subL = [r.ent ? `Entrepiso: L = ${k1(r.ent.L)} kgf/m² (L₀ = ${vtTxt(r.ent.L0, 0)} kgf/m² × ${vtTxt(r.ent.L / r.ent.L0, 3)})` : 'Sin sobrecarga de uso sobre el marco de techo'];
   E.push({ id: 'D', sub: subD, tit: 'D — Peso propio', L: vigas.map(v => cgCargaVertical(G, v.nave, v.a, v.b, r.naves[v.nave].wMarco)).concat(LcolD), notas: ['Vigas: vertical, por metro en proyección horizontal; incluye cubierta, costaneras, cielo, instalaciones y el perfil de la viga.', notaCol] });
-  E.push({ id: 'L', sub: subL, tit: 'L — Sobrecarga de uso', L: [], notas: [r.ent ? `Entrepiso: L = ${vtTxt(r.ent.L, 1)} kgf/m² (${esc(r.ent.row[0] + ': ' + r.ent.row[1])}; ${cgTxtRedEnt(r.ent)}); se aplica al entrepiso, que no forma parte de este marco de techo.` : 'El marco de techo no recibe sobrecarga de uso (sin entrepiso). La sobrecarga del techo es Lr.'] });
+  if (r.ent) E.push({ id: 'L', sub: subL, dentro: [`Entrepiso: L = ${k1(r.ent.L)} kgf/m²`, `área ${vtTxt(r.ent.A, 1)} m² (ubicación esquemática)`], tit: 'L — Sobrecarga de uso (entrepiso)', L: [], notas: [r.ent ? `Entrepiso: L = ${vtTxt(r.ent.L, 1)} kgf/m² (${esc(r.ent.row[0] + ': ' + r.ent.row[1])}; ${cgTxtRedEnt(r.ent)}); se aplica al entrepiso, que no forma parte de este marco de techo.` : 'El marco de techo no recibe sobrecarga de uso (sin entrepiso). La sobrecarga del techo es Lr.'] });
   E.push({ id: 'Lr', sub: subLr, tit: 'Lr — Sobrecarga de techo (NCh1537)', L: vigas.map(v => cgCargaVertical(G, v.nave, v.a, v.b, r.naves[v.nave].wLr)), notas: ['Vertical, por metro en proyección horizontal.'] });
   if (nie && !nie.errores && !nie.cero) {
     E.push({ id: 'S', sub: r.naves.map(nv => { const n = nie.naves[nv.i], q = (n.ps + n.lluvia) * kp; return `${nn(nv)}${n.lluvia ? 'ps + lluvia' : 'ps'} = ${k1(q)} kgf/m² × s ${sT} m = ${k1(q * t)} kgf/m`; }), tit: 'S — Nieve balanceada (NCh431-2010)', L: vigas.map(v => { const n = nie.naves[v.nave]; return cgCargaVertical(G, v.nave, v.a, v.b, (n.ps + n.lluvia) * kp * t); }),
@@ -52874,9 +52874,11 @@ function cgEstadosMarco(r, nie, sis) {
   }
   return E;
 }
+// espacio fijo para las líneas de valores bajo el título: todos los esquemas (sección y estados) con el marco en la misma posición
+const cgDSub = G => 16 * Math.max(2, G.naves.length);
 function cgSvgMarco(r, est, idSvg) {
   const G = r.G, Wd = 700, pad = 128, hmax = Math.max(...G.naves.map(n => n.hc));
-  const sub = est.sub || [], dSub = sub.length * 16;
+  const sub = est.sub || [], dSub = cgDSub(G);
   const sc = Math.min((Wd - 2 * pad) / G.W, 200 / hmax), Hd = Math.round(hmax * sc + 150 + dSub);
   const X = x => pad + x * sc, Y = y => Hd - 34 - y * sc;
   const wmax = Math.max(1e-9, ...est.L.map(q => Math.max(Math.abs(q.w1), Math.abs(q.w2))));
@@ -52897,6 +52899,11 @@ function cgSvgMarco(r, est, idSvg) {
   G.xs.forEach((x, k) => { s += `<line x1="${X(x)}" y1="${Y(0)}" x2="${X(x)}" y2="${Y(G.hp[k])}" stroke="currentColor" stroke-width="2.2"/><text x="${X(x)}" y="${Y(0) + 14}" text-anchor="middle" font-size="13" font-weight="700">${String.fromCharCode(65 + k)}</text>`; });
   G.naves.forEach(nv => { const x0 = G.xs[nv.i]; const pts = nv.tipo === 'D' ? [[x0, nv.h1], [x0 + nv.L / 2, nv.hc], [x0 + nv.L, nv.h2]] : [[x0, nv.h1], [x0 + nv.L, nv.h2]];
     s += `<polyline points="${pts.map(p => X(p[0]) + ',' + Y(p[1])).join(' ')}" fill="none" stroke="currentColor" stroke-width="2.2"/>`; });
+  // sobrecarga de uso del entrepiso: valor dentro del galpón (ubicación esquemática)
+  if (est.dentro) { const yE = Y(Math.min(...G.hp) * 0.45), xa = X(G.xs[0]) + 4, xb = X(G.xs[G.xs.length - 1]) - 4;
+    s += `<line x1="${xa}" y1="${yE}" x2="${xb}" y2="${yE}" stroke="${COL.r}" stroke-width="2" stroke-dasharray="7 4"/>`;
+    for (let j = 0; j < 7; j++) { const x = xa + (xb - xa) * (j + 0.5) / 7; s += `<line x1="${x}" y1="${yE - 22}" x2="${x}" y2="${yE - 3}" stroke="${COL.r}" stroke-width="1.3" marker-end="url(#${idSvg}_ahr)"/>`; }
+    est.dentro.forEach((l, j) => { s += `<text x="${(xa + xb) / 2}" y="${yE - 30 - (est.dentro.length - 1 - j) * 16}" text-anchor="middle" font-size="13" font-weight="700" fill="${COL.r}" paint-order="stroke" stroke="var(--panel,#fff)" stroke-width="3">${l}</text>`; }); }
   // cargas
   (est.P || []).forEach(p => { const x = X(p.x), y = Y(p.y), La = 46;
     s += `<line x1="${(x - La - 4).toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x - 4).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${COL.p}" stroke-width="2.4" marker-end="url(#${idSvg}_ahp)"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="${COL.p}"/>`
@@ -52941,10 +52948,10 @@ function cgHtmlMarcos(r, E) {
 
 // ---------- esquema (sección transversal con caras abiertas) ----------
 function cgSvgSeccion(r) {
-  const G = r.G, Wd = 660, Hd = 280, pad = 80;
-  const hmax = Math.max(...G.naves.map(n => n.hc));
-  const sc = Math.min((Wd - 2 * pad) / G.W, (Hd - 2 * pad) / hmax);
-  const X = x => pad + x * sc, Y = y => Hd - pad - y * sc;
+  // misma escala, tamaño y posición del marco que los esquemas de los estados de carga (cgSvgMarco)
+  const G = r.G, Wd = 700, pad = 128, hmax = Math.max(...G.naves.map(n => n.hc));
+  const sc = Math.min((Wd - 2 * pad) / G.W, 200 / hmax), Hd = Math.round(hmax * sc + 150 + cgDSub(G));
+  const X = x => pad + x * sc, Y = y => Hd - 34 - y * sc;
   let s = `<svg id="cg_secSvg" viewBox="0 0 ${Wd} ${Hd}" style="width:100%;max-width:${Wd}px;background:var(--panel,#fff)" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">`;
   s += `<line x1="${X(0) - 10}" y1="${Y(0)}" x2="${X(G.W) + 10}" y2="${Y(0)}" stroke="#888"/>`;
   G.xs.forEach((x, k) => {
@@ -52970,7 +52977,8 @@ function cgSvgSeccion(r) {
   [[0, -1], [G.xs.length - 1, 1]].forEach(([k, sg]) => { const x = X(G.xs[k]) + sg * 16;
     s += `<line x1="${x}" y1="${Y(0)}" x2="${x}" y2="${Y(G.hp[k])}" stroke="#888"/><line x1="${x - 4}" y1="${Y(G.hp[k])}" x2="${x + 4}" y2="${Y(G.hp[k])}" stroke="#888"/>`
       + `<text x="${x + sg * 4}" y="${(Y(0) + Y(G.hp[k])) / 2}" text-anchor="${sg < 0 ? 'end' : 'start'}" font-size="13" font-weight="700">${vtTxt(G.hp[k], 2)} m</text>`; });
-  s += `<text x="${X(0)}" y="14">${esc(r.cerr.clase.toUpperCase())}${r.inp.muroA.t !== 'C' || r.inp.muroB.t !== 'C' ? ' — línea roja segmentada: muro abierto o parcial' : ''}</text></svg>`;
+  s += `<text x="8" y="20" font-weight="700" font-size="16">Sección transversal — ${esc(r.cerr.clase.toLowerCase())}</text>`
+    + (r.inp.muroA.t !== 'C' || r.inp.muroB.t !== 'C' ? `<text x="${Wd - 8}" y="41" text-anchor="end" font-size="13">línea roja segmentada: muro abierto o parcial</text>` : '') + `</svg>`;
   return s;
 }
 
@@ -53218,8 +53226,9 @@ function renderCargasGalpon(container) {
     $('cg_errores').innerHTML = r.pendientes.length ? `<div class="panel"><div class="global-verdict bad"><span class="label">CÁLCULO PRELIMINAR — condiciones sin acreditar: no se permite imprimir ni exportar</span></div><ul class="note">${r.pendientes.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
     const H = cgHtml(r, nie, sis);
     // estados de carga dibujados en el marco tipo + esquema lateral (sección, D, Lr, S, W+, W−, E)
-    const E = cgEstadosMarco(r, nie, sis);
-    const lat = E.filter(e => ['D', 'Lr', 'S', 'W+', 'W−', 'E'].includes(e.id));
+    // solo los estados con carga (sin esquemas vacíos: p. ej. sin entrepiso no hay L)
+    const E = cgEstadosMarco(r, nie, sis).filter(e => e.L.length || (e.P && e.P.length) || e.dentro);
+    const lat = E.filter(e => ['D', 'L', 'Lr', 'S', 'W+', 'W−', 'E'].includes(e.id));
     const secSvg = cgSvgSeccion(r);
     $('cg_fig').innerHTML = `<div id="cg_esqSec">${secSvg}</div>`;
     $('cg_esqSec').dataset.esqLateral = secSvg + lat.map(e => cgSvgMarco(r, e, 'cg_l' + (e.key || e.id))).join('');
