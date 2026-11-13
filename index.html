@@ -52845,11 +52845,15 @@ function cgEstadosMarco(r, nie, sis) {
     const conMuro = muroCols.some(([kk]) => kk === k), w = (r.pp.col || 0) + (conMuro ? r.muroPP * t : 0);
     return w > 0 ? { p1: [x, 0], p2: [x, G.hp[k]], w1: w, w2: w, d: [0, -1], sv: [k === nC - 1 ? 1 : -1, 0] } : null; }).filter(Boolean);
   const notaCol = `Columnas: perfil ${vtTxt(r.pp.col || 0, 1)} kgf/m${muroCols.length && r.muroPP > 0 ? ` + revestimiento ${vtTxt(r.muroPP * t, 1)} kgf/m en las columnas de eje ${muroCols.map(([k]) => String.fromCharCode(65 + k)).join(' y ')}` : ''}, vertical por metro de altura.`;
-  E.push({ id: 'D', tit: 'D — Peso propio', L: vigas.map(v => cgCargaVertical(G, v.nave, v.a, v.b, r.naves[v.nave].wMarco)).concat(LcolD), notas: ['Vigas: vertical, por metro en proyección horizontal; incluye cubierta, costaneras, cielo, instalaciones y el perfil de la viga.', notaCol] });
-  E.push({ id: 'L', tit: 'L — Sobrecarga de uso', L: [], notas: [r.ent ? `Entrepiso: L = ${vtTxt(r.ent.L, 1)} kgf/m² (${esc(r.ent.row[0] + ': ' + r.ent.row[1])}; ${cgTxtRedEnt(r.ent)}); se aplica al entrepiso, que no forma parte de este marco de techo.` : 'El marco de techo no recibe sobrecarga de uso (sin entrepiso). La sobrecarga del techo es Lr.'] });
-  E.push({ id: 'Lr', tit: 'Lr — Sobrecarga de techo (NCh1537)', L: vigas.map(v => cgCargaVertical(G, v.nave, v.a, v.b, r.naves[v.nave].wLr)), notas: ['Vertical, por metro en proyección horizontal.'] });
+  const k1 = x => vtTxt(x, 1), sT = vtTxt(t, 2), nn = nv => r.naves.length > 1 ? `Nave ${nv.i + 1}: ` : '';
+  const subD = r.naves.map(nv => `${nn(nv)}D = ${k1(nv.Dh)} kgf/m² × s ${sT} m + viga ${k1(r.pp.marco / nv.cos)} kgf/m = ${k1(nv.wMarco)} kgf/m`);
+  const subLr = r.naves.map(nv => `${nn(nv)}Lr = ${k1(nv.Lm)} kgf/m² (L₀ = ${vtTxt(nv.L0t * CG_KPA_KGF, 0)} kgf/m² × ${vtTxt(nv.Lm / (nv.L0t * CG_KPA_KGF), 3)}) × s ${sT} m = ${k1(nv.wLr)} kgf/m`);
+  const subL = [r.ent ? `Entrepiso: L = ${k1(r.ent.L)} kgf/m² (L₀ = ${vtTxt(r.ent.L0, 0)} kgf/m² × ${vtTxt(r.ent.L / r.ent.L0, 3)})` : 'Sin sobrecarga de uso sobre el marco de techo'];
+  E.push({ id: 'D', sub: subD, tit: 'D — Peso propio', L: vigas.map(v => cgCargaVertical(G, v.nave, v.a, v.b, r.naves[v.nave].wMarco)).concat(LcolD), notas: ['Vigas: vertical, por metro en proyección horizontal; incluye cubierta, costaneras, cielo, instalaciones y el perfil de la viga.', notaCol] });
+  E.push({ id: 'L', sub: subL, tit: 'L — Sobrecarga de uso', L: [], notas: [r.ent ? `Entrepiso: L = ${vtTxt(r.ent.L, 1)} kgf/m² (${esc(r.ent.row[0] + ': ' + r.ent.row[1])}; ${cgTxtRedEnt(r.ent)}); se aplica al entrepiso, que no forma parte de este marco de techo.` : 'El marco de techo no recibe sobrecarga de uso (sin entrepiso). La sobrecarga del techo es Lr.'] });
+  E.push({ id: 'Lr', sub: subLr, tit: 'Lr — Sobrecarga de techo (NCh1537)', L: vigas.map(v => cgCargaVertical(G, v.nave, v.a, v.b, r.naves[v.nave].wLr)), notas: ['Vertical, por metro en proyección horizontal.'] });
   if (nie && !nie.errores && !nie.cero) {
-    E.push({ id: 'S', tit: 'S — Nieve balanceada (NCh431-2010)', L: vigas.map(v => { const n = nie.naves[v.nave]; return cgCargaVertical(G, v.nave, v.a, v.b, (n.ps + n.lluvia) * kp * t); }),
+    E.push({ id: 'S', sub: r.naves.map(nv => { const n = nie.naves[nv.i], q = (n.ps + n.lluvia) * kp; return `${nn(nv)}${n.lluvia ? 'ps + lluvia' : 'ps'} = ${k1(q)} kgf/m² × s ${sT} m = ${k1(q * t)} kgf/m`; }), tit: 'S — Nieve balanceada (NCh431-2010)', L: vigas.map(v => { const n = nie.naves[v.nave]; return cgCargaVertical(G, v.nave, v.a, v.b, (n.ps + n.lluvia) * kp * t); }),
       notas: ['Vertical, por metro en proyección horizontal' + (nie.naves.some(n => n.lluvia) ? '; incluye la lluvia sobre nieve (12)' : '') + '.'] });
   }
   // viento: solo W+ (izquierda → derecha), W− (derecha → izquierda) y WL (longitudinal), elegidos en calcCargasGalpon
@@ -52857,7 +52861,7 @@ function cgEstadosMarco(r, nie, sis) {
     const cv = cgCargasViento(r, c);
     const gc = c.abierto ? '' : `, GCpi = ${vtSig(c.s * r.GCpi, 2)}`;
     if (c.minimo521) cv.notas.unshift(`Atención: en esta dirección rige además el mínimo de 5.2.1 (0,48 kN/m² sobre el área proyectada normal al viento).`);
-    E.push({ id: c.id, key: c.key, viento: true, caso: c, tit: `${c.id} — ${c.dirTxt}${gc}`, L: cv.L, notas: [esc(c.casoTxt)].concat(cv.notas, ['Columnas: + hacia el interior. Vigas: perpendicular a la viga, + hacia la viga (presión), − alejándose (succión).']) });
+    E.push({ id: c.id, key: c.key, viento: true, caso: c, sub: [`Presión básica qh = ${k1(r.qhB / CG_KGF)} kgf/m² (${vtTxt(r.qhB / 1000, 3)} kN/m²) a h = ${vtTxt(r.hEd, 2)} m`, `Carga lineal = presión de diseño p (kgf/m²) × s ${sT} m${c.abierto ? '' : '; muro de barlovento con qz por franja de altura'}`], tit: `${c.id} — ${c.dirTxt}${gc}`, L: cv.L, notas: [esc(c.casoTxt)].concat(cv.notas, ['Columnas: + hacia el interior. Vigas: perpendicular a la viga, + hacia la viga (presión), − alejándose (succión).']) });
   });
   if (sis && !sis.ok) {
     E.push({ id: 'E', tit: `E — Sismo (${sis.normaTxt}): faltan datos para calcular las fuerzas en los nudos`, L: [], P: [],
@@ -52872,7 +52876,8 @@ function cgEstadosMarco(r, nie, sis) {
 }
 function cgSvgMarco(r, est, idSvg) {
   const G = r.G, Wd = 700, pad = 128, hmax = Math.max(...G.naves.map(n => n.hc));
-  const sc = Math.min((Wd - 2 * pad) / G.W, 200 / hmax), Hd = Math.round(hmax * sc + 150);
+  const sub = est.sub || [], dSub = sub.length * 16;
+  const sc = Math.min((Wd - 2 * pad) / G.W, 200 / hmax), Hd = Math.round(hmax * sc + 150 + dSub);
   const X = x => pad + x * sc, Y = y => Hd - 34 - y * sc;
   const wmax = Math.max(1e-9, ...est.L.map(q => Math.max(Math.abs(q.w1), Math.abs(q.w2))));
   const len = w => 8 + 30 * Math.abs(w) / wmax, f1 = v => vtTxt(Math.abs(v) < 0.05 ? 0 : v, 1) + ' kgf/m';
@@ -52883,9 +52888,10 @@ function cgSvgMarco(r, est, idSvg) {
   const tt = est.tit.length > 62 ? [est.tit.slice(0, est.tit.lastIndexOf(' ', 62)), est.tit.slice(est.tit.lastIndexOf(' ', 62) + 1)] : [est.tit];
   tt.forEach((l, j) => { s += `<text x="8" y="${20 + j * 19}" font-weight="700" font-size="16">${esc(l)}</text>`; });
   s += `<text x="${Wd - 8}" y="${22 + tt.length * 19}" text-anchor="end" font-size="13">${est.P ? 'Fuerzas en kgf (marco tipo)' : 'Cargas en kgf/m'} · ancho tributario s = ${vtTxt(G.trib, 2)} m</text>`;
-  if (est.viento && est.caso.dir !== 'L') { const izq = est.caso.dir === 'TA', y0 = 30 + tt.length * 19, x1 = izq ? 14 : 150, x2 = izq ? 150 : 14;
+  sub.forEach((l, j) => { s += `<text x="${Wd - 8}" y="${40 + tt.length * 19 + j * 16}" text-anchor="end" font-size="12" fill="#333">${l}</text>`; });
+  if (est.viento && est.caso.dir !== 'L') { const izq = est.caso.dir === 'TA', y0 = 30 + tt.length * 19 + dSub, x1 = izq ? 14 : 150, x2 = izq ? 150 : 14;
     s += `<line x1="${x1}" y1="${y0}" x2="${x2}" y2="${y0}" stroke="#555" stroke-width="3" marker-end="url(#${idSvg}_ahk)"/><text x="82" y="${y0 - 6}" text-anchor="middle" font-size="13" font-weight="700" fill="#555">VIENTO</text>`; }
-  else if (est.viento) s += `<text x="8" y="${30 + tt.length * 19}" font-size="13" font-weight="700" fill="#555">VIENTO LONGITUDINAL (perpendicular al marco)</text>`;
+  else if (est.viento) s += `<text x="8" y="${30 + tt.length * 19 + dSub}" font-size="13" font-weight="700" fill="#555">VIENTO LONGITUDINAL (perpendicular al marco)</text>`;
   // marco
   s += `<line x1="${X(0) - 12}" y1="${Y(0)}" x2="${X(G.W) + 12}" y2="${Y(0)}" stroke="#888"/>`;
   G.xs.forEach((x, k) => { s += `<line x1="${X(x)}" y1="${Y(0)}" x2="${X(x)}" y2="${Y(G.hp[k])}" stroke="currentColor" stroke-width="2.2"/><text x="${X(x)}" y="${Y(0) + 14}" text-anchor="middle" font-size="13" font-weight="700">${String.fromCharCode(65 + k)}</text>`; });
@@ -53003,7 +53009,9 @@ function renderCargasGalpon(container) {
   const vOpts = VT_V_TABLA6.map(z => `<option value="${z.V}">Lat. ${z.lat} (${esc(z.ciu)}) — V = ${z.V} m/s</option>`).join('') + '<option value="manual">Otra (ingresar)</option>';
   const impOpts = Object.keys(TABLA2_IMPORTANCIA_VIENTO).map(k => `<option${k.startsWith('II ') ? ' selected' : ''}>${esc(k)}</option>`).join('');
   const tipos = [...new Set(CU_T4.map(r => r[0]))];
-  const inpL = (id, ops, val, lbl) => `<div class="field"><label>${lbl}</label><input type="text" inputmode="decimal" id="${id}" value="${val}" list="dl_${id}" placeholder="pinchar: valores típicos"><datalist id="dl_${id}">${ops.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('')}</datalist></div>`;
+  // valores típicos: lista propia bajo la casilla (sin datalist: Chrome mostraba su lista y además la de autocompletar, superpuestas)
+  const cgTips = {};
+  const inpL = (id, ops, val, lbl) => { cgTips[id] = ops; return `<div class="field"><label>${lbl}</label><input type="text" inputmode="decimal" id="${id}" value="${val}" autocomplete="off" placeholder="pinchar: valores típicos"></div>`; };
   const inp = (id, val, lbl, w, cls) => `<div class="field${cls ? ' ' + cls : ''}"${w ? ` style="${w}"` : ''}><label>${lbl}</label><input type="text" inputmode="decimal" id="${id}" value="${val}"></div>`;
   container.innerHTML = `
     <div class="calc-head">
@@ -53052,6 +53060,7 @@ function renderCargasGalpon(container) {
         <div class="field" id="cg_wEnt4"><label>Entrepiso: área tributaria AT del elemento (m²)</label><input type="text" inputmode="decimal" id="cg_entAT" value="30"></div>
         <div class="field" id="cg_wEnt5"><label>Entrepiso: pisos que soporta el elemento</label><select id="cg_entNp"><option value="1">Un piso</option><option value="2">Dos o más pisos</option></select></div>
       </div>
+      <div id="cg_resSC" style="margin-top:.6rem"></div>
     </div>
     <div class="panel">
       <h3>5 · Viento (NCh432.Of2010)</h3>
@@ -53163,7 +53172,10 @@ function renderCargasGalpon(container) {
       fill('cg_sz', o.zona); fill('cg_ss', o.suelo); fill('cg_scat', o.cat); fill('cg_sr', o.R); fill('cg_sxi', o.xi); st.sInd = ind;
     }
     $('cg_wXi').hidden = !ind; $('cg_wAglo').hidden = ind;
-    { const D = ind ? CG_SDESC_2369 : CG_SDESC_433; Object.entries(D).forEach(([k, t]) => { const el = $(k + '_d'); if (el) el.textContent = t; }); }
+    { const D = ind ? CG_SDESC_2369 : CG_SDESC_433; Object.entries(D).forEach(([k, t]) => { const el = $(k + '_d'); if (!el) return;
+      // valor elegido primero (la casilla puede cortar el texto de la opción), luego la descripción del parámetro
+      const sel = $(k), o = sel && sel.tagName === 'SELECT' && sel.value ? sel.options[sel.selectedIndex] : null;
+      el.innerHTML = (o ? `<b>Elegido: ${esc(o.text)}</b><br>` : '') + esc(t); }); }
     // % de sobrecarga en el peso sísmico: NCh2369 5.1.3 (techos: 0) o NCh433 5.5.1 (≥ 25 % / ≥ 50 %); se propone el valor de la norma al cambiar
     const aglo = $('cg_saglo').value === 'si', minLr = ind ? 0 : aglo ? 50 : 25;
     if (st.sMin !== minLr) { $('cg_spl').value = String(minLr); st.sMin = minLr; }
@@ -53188,7 +53200,7 @@ function renderCargasGalpon(container) {
     const I = leer();
     const r = calcCargasGalpon(I);
     ultimo = r;
-    const limpiar = msg => { ['cg_fig', 'cg_marcos', 'cg_res', 'cg_vto', 'cg_env', 'cg_niv', 'cg_not', 'cg_sis'].forEach(id => { $(id).innerHTML = msg; }); };
+    const limpiar = msg => { ['cg_fig', 'cg_marcos', 'cg_res', 'cg_resSC', 'cg_vto', 'cg_env', 'cg_niv', 'cg_not', 'cg_sis'].forEach(id => { $(id).innerHTML = msg; }); };
     if (r.errores) {
       $('cg_errores').innerHTML = `<div class="panel"><div class="global-verdict bad"><span class="label">DATOS INVÁLIDOS O FUERA DE ALCANCE — no se calcula ni se permite imprimir o exportar</span></div><ul class="note">${r.errores.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
       limpiar('<p class="note">Sin resultados: corregir los datos indicados arriba.</p>');
@@ -53214,6 +53226,7 @@ function renderCargasGalpon(container) {
     $('cg_marcos').innerHTML = cgHtmlMarcos(r, E);
     H.calcPrint = H.calcPrint.replace('<div class="xlsx-section">2.', `<div class="xlsx-section">1.1 ESTADOS DE CARGA SOBRE EL MARCO TIPO (kgf/m; sismo en kgf)</div><div class="note">Rojo: carga hacia el elemento (presión o gravedad). Azul: alejándose (succión). Morado: sismo.</div>${cgHtmlMarcos(r, E).replace(/(["#])cg_m/g, '$1cg_p')}<div class="xlsx-section">2.`);
     $('cg_res').innerHTML = H.resumen;
+    $('cg_resSC').innerHTML = cgTablaRed(r);
     $('cg_vto').innerHTML = H.viento;
     $('cg_env').innerHTML = H.env;
     $('cg_niv').innerHTML = H.nieve;
@@ -53221,10 +53234,31 @@ function renderCargasGalpon(container) {
     $('cg_not').innerHTML = `<ul class="note">${H.notas.map(x => `<li>${x}</li>`).join('')}</ul>`;
     xlsxSetPrintSheets(H.datosPrint, H.calcPrint, H.resPrint);
   }
-  // lista de valores típicos al pinchar la casilla (sin segundo control)
-  ['cg_cub', 'cg_cos', 'cg_cie', 'cg_ins', 'cg_rev'].forEach(id => { const el = $(id);
-    el.addEventListener('mousedown', () => { if (el.showPicker && document.activeElement === el) { try { el.showPicker(); } catch (e) {} } });
-    el.addEventListener('focus', () => { if (el.showPicker) { try { el.showPicker(); } catch (e) {} } }); });
+  // lista de valores típicos al pinchar la casilla (una sola lista, propia de la planilla)
+  {
+    let pop = document.getElementById('cgTipPop');
+    if (!pop) { pop = document.createElement('div'); pop.id = 'cgTipPop'; pop.setAttribute('role', 'listbox');
+      pop.style.cssText = 'position:absolute;z-index:9999;display:none;max-height:16rem;overflow:auto;background:var(--surface,#fff);color:var(--ink,#111);border:1px solid var(--input-border,#999);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.18);font-size:.85rem';
+      document.body.appendChild(pop); }
+    const cerrar = () => { pop.style.display = 'none'; pop.dataset.para = ''; };
+    const abrir = el => {
+      const ops = cgTips[el.id]; if (!ops || !ops.length) return;
+      pop.innerHTML = ops.map(([v, t]) => `<div data-v="${v}" style="padding:.35rem .6rem;cursor:pointer;white-space:nowrap" onmouseover="this.style.background='var(--t-hover,#eef)'" onmouseout="this.style.background=''"><b>${String(v).replace('.', ',')}</b> — ${esc(t)}</div>`).join('');
+      const r = el.getBoundingClientRect();
+      pop.style.left = (r.left + window.scrollX) + 'px'; pop.style.top = (r.bottom + window.scrollY + 2) + 'px'; pop.style.minWidth = r.width + 'px';
+      pop.style.display = 'block'; pop.dataset.para = el.id;
+    };
+    pop.onmousedown = ev => { const d = ev.target.closest('[data-v]'); if (!d) return; ev.preventDefault();
+      const el = $(pop.dataset.para); cerrar(); if (!el) return;
+      el.value = d.dataset.v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+    Object.keys(cgTips).forEach(id => { const el = $(id); if (!el) return;
+      el.addEventListener('focus', () => abrir(el));
+      el.addEventListener('click', () => { if (pop.dataset.para !== id) abrir(el); });
+      el.addEventListener('input', cerrar);
+      el.addEventListener('keydown', ev => { if (ev.key === 'Escape' || ev.key === 'Tab') cerrar(); });
+      el.addEventListener('blur', () => setTimeout(() => { if (pop.dataset.para === id) cerrar(); }, 150)); });
+    window.addEventListener('hashchange', cerrar);
+  }
   $('cg_n').addEventListener('change', () => { guardarNaves(); dibujarNaves(); recalc(); });
   $('cg_dxfBtn').addEventListener('click', () => $('cg_dxf').click());
   $('cg_dxf').addEventListener('change', ev => {
@@ -53248,6 +53282,16 @@ function renderCargasGalpon(container) {
   });
   container.querySelectorAll('.panel input:not(#cg_dxf),.panel select').forEach(el => { if (!['cg_n'].includes(el.id)) { el.addEventListener('input', recalc); el.addEventListener('change', recalc); } });
   dibujarNaves(); recalc();
+  // datos guardados en el navegador: al refrescar o volver a abrir la Mesa se reponen los últimos valores ingresados
+  // («Guardar cálculo» / «Abrir archivo…» siguen mandando: se aplican después y reemplazan estos valores)
+  const CG_LS = 'mesa_cargas_galpon_v1';
+  let cgRestaurando = true, cgTimer = null;
+  try { const g = JSON.parse(localStorage.getItem(CG_LS) || 'null'); if (g && g.fields) fsRestoreMain(container, g); } catch (e) {}
+  cgRestaurando = false;
+  const cgGuardarLocal = () => { if (cgRestaurando) return; clearTimeout(cgTimer);
+    cgTimer = setTimeout(() => { if (!container.isConnected || !document.getElementById('cg_cub')) return;
+      try { localStorage.setItem(CG_LS, JSON.stringify(fsCaptureMain(container))); } catch (e) {} }, 400); };
+  container.querySelectorAll('.panel').forEach(pn => { pn.addEventListener('input', cgGuardarLocal); pn.addEventListener('change', cgGuardarLocal); });
 }
 
 
@@ -53258,16 +53302,16 @@ function renderCargasGalpon(container) {
 // Sin T*: C = Cmáx (cota superior de la norma). Un solo nivel de masas: Fᵢ = C·I·Pᵢ y ΣFᵢ = Q₀ = C·I·P.
 function cgSismoOpciones(ind) {
   if (ind) return {
-    zona: Object.keys(AO_ZONA_2369).map(k => [k, `${k} — Ao = ${vtTxt(AO_ZONA_2369[k], 2)} g`]),
+    zona: Object.keys(AO_ZONA_2369).map(k => [k, `Ao = ${vtTxt(AO_ZONA_2369[k], 2)} g — ${k}`]),
     suelo: Object.keys(SUELO_2369).map(k => [k, k]),
-    cat: Object.keys(CATEGORIA_2369).map(k => [k, `${k} — I = ${vtTxt(CATEGORIA_2369[k], 2)}`]),
-    R: Object.keys(R_2369).map(k => [k, `${k} — R = ${R_2369[k]}`]),
-    xi: Object.keys(XI_2369).map(k => [k, `${k} — ξ = ${vtTxt(XI_2369[k], 2)}`]) };
+    cat: Object.keys(CATEGORIA_2369).map(k => [k, `I = ${vtTxt(CATEGORIA_2369[k], 2)} — ${k}`]),
+    R: Object.keys(R_2369).map(k => [k, `R = ${R_2369[k]} — ${k}`]),
+    xi: Object.keys(XI_2369).map(k => [k, `ξ = ${vtTxt(XI_2369[k], 2)} — ${k}`]) };
   return {
-    zona: Object.keys(ZONA_SISMICA_SISMO).map(k => [k, `${k} — Ao = ${vtTxt(ZONA_SISMICA_SISMO[k], 1)} g`]),
+    zona: Object.keys(ZONA_SISMICA_SISMO).map(k => [k, `Ao = ${vtTxt(ZONA_SISMICA_SISMO[k], 1)} g — ${k}`]),
     suelo: Object.keys(SUELO_SISMO).map(k => [k, sueloSismoTxt(k)]),
-    cat: Object.keys(CATEGORIA_EDIFICIO_SISMO).map(k => [k, `${k} — I = ${vtTxt(CATEGORIA_EDIFICIO_SISMO[k].I, 1)}`]),
-    R: Object.keys(SISTEMA_RESISTENTE_SISMO).map(k => [k, `${k} — R = ${vtTxt(SISTEMA_RESISTENTE_SISMO[k].R, 1)}`]), xi: [] };
+    cat: Object.keys(CATEGORIA_EDIFICIO_SISMO).map(k => [k, `I = ${vtTxt(CATEGORIA_EDIFICIO_SISMO[k].I, 1)} — ${k}`]),
+    R: Object.keys(SISTEMA_RESISTENTE_SISMO).map(k => [k, `R = ${vtTxt(SISTEMA_RESISTENTE_SISMO[k].R, 1)} — ${k}`]), xi: [] };
 }
 function cgSismoDecl(ind, s) {      // condiciones que el proyectista debe acreditar (NCh2369)
   if (!ind) return [];
@@ -53405,6 +53449,12 @@ function cgTxtRedEnt(en) {
   return `L₀ = ${vtTxt(en.L0, 0)} kgf/m²; 8.1: KLL = ${t.kll[2]}, AT = ${vtTxt(en.AT, 1)} m², KLL·AT = ${vtTxt(t.KA, 1)} m², ${en.np >= 2 ? 'dos o más pisos' : 'un piso'}`
     + (t.motivo ? ` → ${t.motivo}` : ` → factor 0,25 + 4,57/√(KLL·AT) = ${vtTxt(t.fBase, 3)}${t.f !== t.fBase ? `, límite ${vtTxt(t.f, 2)}` : ''}`);
 }
+// tabla de la reducción NCh1537:2009 junto a los datos de sobrecarga (pantalla)
+function cgTablaRed(r) {
+  const f = x => vtTxt(x, 1), filas = r.naves.map(nv => `<tr><td>Techo nave ${nv.i + 1} — ${cgTxtRedTecho(nv)}</td><td class="num">${f(nv.L0t * CG_KPA_KGF)}</td><td class="num"><b>${f(nv.Lm)}</b></td><td class="num">${vtTxt(nv.Lm / (nv.L0t * CG_KPA_KGF), 3)}</td></tr>`);
+  if (r.ent) filas.push(`<tr><td>Entrepiso — ${esc(r.ent.row[0] + ': ' + r.ent.row[1])}; ${cgTxtRedEnt(r.ent)}</td><td class="num">${f(r.ent.L0)}</td><td class="num"><b>${f(r.ent.L)}</b></td><td class="num">${vtTxt(r.ent.L / r.ent.L0, 3)}</td></tr>`);
+  return `<table class="results"><tr><th>Reducción de sobrecargas (NCh1537:2009)</th><th class="num">L₀ (kgf/m²)</th><th class="num">Reducida (kgf/m²)</th><th class="num">Factor</th></tr>${filas.join('')}</table>`;
+}
 // ---------- tablas (pantalla e impresión) ----------
 function cgHtml(r, nie, sis) {
   const G = r.G, k = x => vtTxt(x, 1), kN = x => vtTxt(x / CG_KGF, 1), sg = x => vtSig(x / CG_KGF, 1);
@@ -53481,7 +53531,9 @@ function cgHtml(r, nie, sis) {
     ${r.ent ? rr('Entrepiso (NCh1537 Tabla 4 y 8.1)', `${esc(r.ent.row[0] + ': ' + r.ent.row[1])}; área ${vtTxt(r.ent.A, 1)} m²; elemento KLL = ${r.ent.red.kll[2]} (${esc(r.ent.red.kll[1])}), AT = ${vtTxt(r.ent.AT, 1)} m², ${r.ent.np >= 2 ? 'dos o más pisos' : 'un piso'}`) : ''}
     ${rr('Viento', r.vOn ? `V = ${vtTxt(r.base.V, 1)} m/s, exposición ${esc(r.base.expo)}, ${esc(r.base.importancia)} (I = ${vtTxt(r.I, 2)}), Kzt = ${vtTxt(r.base.Kzt, 2)}` : 'No aplica')}
     ${rr('Nieve (NCh431-2010)', nOk ? `pg = ${vtTxt(nie.pg * 101.97, 1)} kgf/m² (${esc(nie.pgTxt)}), Ce = ${vtTxt(nie.Ce, 2)}, Ct = ${vtTxt(nie.Ct, 2)}, I = ${vtTxt(nie.I, 2)}` : !nie ? 'No aplica' : esc(nie.pgTxt || 'pg = 0'))}
-    ${sis && sis.ok ? rr('Sismo', `${esc(sis.normaTxt)}: ${esc(sis.s.zona)}, suelo ${esc(sis.ind ? sis.s.suelo.split(' ')[0] : sis.s.suelo)}, categoría ${esc(sis.s.cat.split(' ')[0])}, R = ${vtTxt(sis.R, 1)}${sis.ind ? `, ξ = ${vtTxt(sis.xi, 2)}` : ''}, T* = ${sis.Tstar ? vtTxt(sis.Tstar, 3) + ' s' : 'no ingresado'}`) : ''}
+    ${sis && sis.ok ? rr('Sismo', `${esc(sis.normaTxt)}: ${esc(sis.s.zona)}, suelo ${esc(sis.ind ? sis.s.suelo.split(' ')[0] : sis.s.suelo)}, categoría ${esc(sis.s.cat.split(' ')[0])}, T* = ${sis.Tstar ? vtTxt(sis.Tstar, 3) + ' s' : 'no ingresado'}`)
+      + rr('Sismo — sistema resistente', `R = ${vtTxt(sis.R, 1)} — ${esc(sis.s.R)}`)
+      + (sis.ind ? rr('Sismo — razón de amortiguamiento', `ξ = ${vtTxt(sis.xi, 2)} — ${esc(sis.s.xi)}`) : '') : ''}
   </tbody></table>`;
   const plano = h => h.replace(/class="results"/g, 'class="xlsx-table xlsx-calc-table"');
   const secs = [['RESUMEN DE CARGAS', resumen]];
