@@ -360,6 +360,30 @@
      en todas las calculadoras (el mismo problema que ya se había corregido para el breakpoint móvil/impresión). */
   .calc-meta .field label{flex:0 0 auto; width:100%;}
   .calc-meta .field input{width:100%; max-width:100%; text-align:left;}
+  /* proyecto de POWER al que está fijada la planilla (solo en pantalla) */
+  .calc-power{display:flex; flex-wrap:wrap; align-items:center; gap:.45rem .6rem; margin:.2rem 0 .7rem; padding:.45rem .7rem; border:1px solid #bcd3ee; border-left:4px solid #0060c1; border-radius:6px; background:rgba(0,96,193,.05); font-size:.88rem;}
+  .calc-power.sin{border-color:#e6c46b; border-left-color:#d49b00; background:rgba(212,155,0,.07);}
+  .calc-power .cp-lbl{font-size:.72rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-muted, #5b6573);}
+  .calc-power .cp-chip{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .calc-power .cp-chip b{color:#0b4a8f; font-size:.95rem;}
+  .calc-power .cp-man{color:var(--ink-muted, #5b6573);}
+  .calc-power .cp-nada{flex:1 1 14rem; color:#7a5a00;}
+  .cp-btn{font:inherit; font-size:.8rem; padding:.25rem .6rem; border:1px solid #9fb6d3; border-radius:5px; background:#fff; color:#0b4a8f; cursor:pointer;}
+  .cp-btn:hover{background:#eef4fb;} .cp-btn.cp-main{background:#0060c1; border-color:#0060c1; color:#fff;}
+  .calc-meta .field input.power-fijo{background:rgba(0,96,193,.06); color:#0b4a8f; font-weight:600; cursor:default;}
+  #powerSel{position:fixed; inset:0; z-index:9000; background:rgba(15,25,40,.35); display:flex; align-items:flex-start; justify-content:center; padding:8vh 16px 16px;}
+  #powerSel .ps-box{background:var(--panel, #fff); color:var(--ink, #1b2430); width:min(640px,100%); max-height:80vh; display:flex; flex-direction:column; border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,.25); padding:.9rem 1rem; gap:.5rem;}
+  #powerSel .ps-top{display:flex; justify-content:space-between; align-items:center; gap:.5rem;}
+  #powerSel .ps-x{border:0; background:none; font-size:1.1rem; cursor:pointer; color:inherit;}
+  #powerSel .ps-q{width:100%; max-width:100%; box-sizing:border-box; text-align:left; padding:.45rem .6rem; font-size:.95rem;}
+  #powerSel .ps-est{font-size:.8rem; color:var(--ink-muted, #5b6573);}
+  #powerSel .ps-login{display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.35rem;} #powerSel .ps-login input{text-align:left; min-width:0; flex:1 1 10rem;}
+  #powerSel .ps-lista{overflow:auto; display:flex; flex-direction:column; border-top:1px solid var(--line, #e3e7ee);}
+  #powerSel .ps-it{display:flex; gap:.8rem; align-items:baseline; text-align:left; font:inherit; padding:.5rem .4rem; border:0; border-bottom:1px solid var(--line, #e3e7ee); background:none; color:inherit; cursor:pointer;}
+  #powerSel .ps-it:hover{background:rgba(0,96,193,.07);} #powerSel .ps-it.sel{background:rgba(0,96,193,.12);}
+  #powerSel .ps-it b{flex:0 0 auto; min-width:6.5rem; color:#0b4a8f;}
+  #powerSel .ps-it span{display:flex; flex-direction:column;} #powerSel .ps-it small{color:var(--ink-muted, #5b6573);}
+  #powerSel .ps-vacio{padding:.8rem .4rem; color:var(--ink-muted, #5b6573);}
 
   /* margen de página reducido a propósito (antes 12mm 14mm): Chrome dibuja su propio encabezado/pie de
      impresión (fecha, título de la pestaña, URL) DENTRO del margen de la hoja — es un elemento del propio
@@ -455,7 +479,7 @@
     }
     .calc-head{ margin-bottom:1.1rem; }
     .calc-head h1{ color:#1F3864 !important; }
-    .calc-meta{display:none;} /* se reemplazan por .print-meta-line en el membrete */
+    .calc-meta, .calc-power, #powerSel{display:none !important;} /* se reemplazan por .print-meta-line en el membrete */
     .calc-save-bar, .fs-panel, .fs-overlay, .fs-toggle-btn, .fs-toast{display:none !important;} /* explorador de carpetas: solo en pantalla */
 
     /* resumen de una hoja: reduce escala e información al mínimo (títulos, inputs clave, resultados principales) */
@@ -823,7 +847,7 @@
   function injectCalcMeta(main){
     if (typeof firmaIngPlanilla === 'function') { try { firmaIngPlanilla(main); } catch (e) {} }   // pie de firma al final de la planilla
     var head = main.querySelector('.calc-head');
-    if (!head || head.querySelector('.calc-meta')) { syncPrintMeta(); if (typeof injectSaveBar === 'function') injectSaveBar(main); return; }
+    if (!head || head.querySelector('.calc-meta')) { if (head) powerBarra(main); syncPrintMeta(); if (typeof injectSaveBar === 'function') injectSaveBar(main); return; }
     var wrap = document.createElement('div');
     wrap.className = 'calc-meta';
     wrap.innerHTML =
@@ -835,8 +859,145 @@
     wrap.querySelector('#metaProyecto').addEventListener('input', function(e){ PROYECTO_META.proyecto = e.target.value; syncPrintMeta(); });
     wrap.querySelector('#metaCalculo').addEventListener('input', function(e){ PROYECTO_META.calculo = e.target.value; syncPrintMeta(); });
     wrap.querySelectorAll('#metaProyecto,#metaCalculo').forEach(function(el){ el.addEventListener('change', refreshCalcSheets); });
+    powerBarra(main);
     syncPrintMeta();
     if (typeof injectSaveBar === 'function') injectSaveBar(main);
+  }
+
+  /* ---------- PROYECTO DE POWER: cada planilla se fija a un proyecto de POWER y toma su código ----------
+     Lista: colección «proyectos» de la tabla docs de POWER ({codigo, mandante, proyecto, creado}), leída con la
+     misma sesión de Archivo ING (archivo/archivo-api.js → INGArchivo.proyectos()).
+     El proyecto fijado queda en localStorage («mesa_proyecto_power») y vale para todas las planillas hasta que se
+     cambie o se suelte. Mientras está fijado, «Título del proyecto» = «CÓDIGO — Proyecto» (solo lectura), y de ahí lo
+     toman los encabezados, impresiones, PDF, Excel y la memoria. También se copia a la memoria general (código,
+     mandante, proyecto: lo usa Archivo ING) y al encargo de Informes. */
+  var POWER_LS = 'mesa_proyecto_power', POWER_CACHE_LS = 'mesa_power_proyectos';
+  var POWER_PROY = null;   // lista leída de POWER en esta sesión
+  function powerLeer(){ try { var p = JSON.parse(localStorage.getItem(POWER_LS) || 'null'); return p && p.codigo ? p : null; } catch (e) { return null; } }
+  var PROYECTO_POWER = powerLeer();
+  function powerTexto(p){
+    if (!p || !p.codigo) return '';
+    var nom = String(p.proyecto || p.mandante || '').trim();
+    return nom ? p.codigo + ' — ' + nom : String(p.codigo);
+  }
+  if (PROYECTO_POWER) PROYECTO_META.proyecto = powerTexto(PROYECTO_POWER);
+  // copia código/mandante/proyecto a la memoria general (Constructor de Memorias) y al encargo de Informes
+  function powerCopiarADocumentos(p){
+    [['mesaMemoria.v1', 'proy'], ['mesaInforme.v1', null]].forEach(function(d){
+      try {
+        var s = JSON.parse(localStorage.getItem(d[0]) || 'null');
+        if (!s && !p) return;
+        s = s || {};
+        var o = d[1] ? (s[d[1]] = s[d[1]] || {}) : s;
+        o.codigo = p ? p.codigo : ''; o.mandante = p ? (p.mandante || '') : ''; o.proyecto = p ? (p.proyecto || '') : '';
+        localStorage.setItem(d[0], JSON.stringify(s));
+      } catch (e) {}
+    });
+  }
+  function powerFijar(p){
+    p = p && p.codigo ? {codigo: String(p.codigo), mandante: p.mandante || '', proyecto: p.proyecto || ''} : null;
+    var antes = PROYECTO_POWER;
+    PROYECTO_POWER = p;
+    try { if (p) localStorage.setItem(POWER_LS, JSON.stringify(p)); else localStorage.removeItem(POWER_LS); } catch (e) {}
+    if (p) PROYECTO_META.proyecto = powerTexto(p);
+    else if (antes && PROYECTO_META.proyecto === powerTexto(antes)) PROYECTO_META.proyecto = '';
+    if (p || antes) powerCopiarADocumentos(p);
+    var main = document.getElementById('mainView');
+    if (main) powerAplicar(main, true);
+  }
+  // deja «Título del proyecto» y la barra de la planilla visible de acuerdo con el proyecto fijado
+  function powerAplicar(main, recalcular){
+    var inp = main.querySelector('#metaProyecto');
+    if (inp) {
+      if (PROYECTO_POWER) { inp.value = powerTexto(PROYECTO_POWER); PROYECTO_META.proyecto = inp.value; }
+      else if (inp.readOnly) inp.value = PROYECTO_META.proyecto;
+      inp.readOnly = !!PROYECTO_POWER;
+      inp.title = PROYECTO_POWER ? 'Lo fija el proyecto de POWER elegido arriba' : '';
+      inp.classList.toggle('power-fijo', !!PROYECTO_POWER);
+    }
+    var bar = main.querySelector('.calc-power');
+    if (bar) powerPintarBarra(bar);
+    syncPrintMeta();
+    if (recalcular && inp) { try { inp.dispatchEvent(new Event('change', {bubbles: true})); } catch (e) {} }
+  }
+  function powerPintarBarra(bar){
+    var p = PROYECTO_POWER;
+    bar.classList.toggle('sin', !p);
+    bar.innerHTML = p
+      ? '<span class="cp-lbl">Proyecto POWER</span><span class="cp-chip" title="' + escapeHtmlAttr([p.codigo, p.mandante, p.proyecto].filter(Boolean).join(' · ')) + '"><b>' + escapeHtmlAttr(p.codigo) + '</b>'
+        + (p.proyecto ? ' · ' + escapeHtmlAttr(p.proyecto) : '') + (p.mandante ? ' <span class="cp-man">· ' + escapeHtmlAttr(p.mandante) + '</span>' : '') + '</span>'
+        + '<button type="button" class="cp-btn" data-cp="elegir">Cambiar</button><button type="button" class="cp-btn" data-cp="soltar" title="Soltar el proyecto de POWER (el título del proyecto vuelve a ser libre)">✕</button>'
+      : '<span class="cp-lbl">Proyecto POWER</span><span class="cp-nada">Planilla sin proyecto: fíjela a un proyecto de POWER para que tome su código.</span>'
+        + '<button type="button" class="cp-btn cp-main" data-cp="elegir">📁 Fijar proyecto</button>';
+  }
+  function powerBarra(main){
+    var head = main.querySelector('.calc-head'), meta = head && head.querySelector('.calc-meta');
+    if (!meta || head.querySelector('.calc-power')) { powerAplicar(main); return; }
+    var bar = document.createElement('div');
+    bar.className = 'calc-power';
+    head.insertBefore(bar, meta);
+    bar.addEventListener('click', function(e){
+      var b = e.target.closest('[data-cp]'); if (!b) return;
+      if (b.dataset.cp === 'soltar') { powerFijar(null); fsToast('Planilla sin proyecto de POWER.'); }
+      else powerSelector(b);
+    });
+    powerAplicar(main);
+  }
+  function powerOrden(L){
+    return L.filter(function(p){ return p && p.codigo; }).sort(function(a, b){
+      return String(b.creado || '').localeCompare(String(a.creado || '')) || String(b.codigo).localeCompare(String(a.codigo)); });
+  }
+  function powerNorm(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+  // ventana para elegir el proyecto: buscador + lista de POWER (pide iniciar sesión si hace falta)
+  function powerSelector(){
+    var v = document.getElementById('powerSel'); if (v) v.remove();
+    v = document.createElement('div'); v.id = 'powerSel';
+    v.innerHTML = '<div class="ps-box" role="dialog" aria-label="Proyecto de POWER"><div class="ps-top"><b>Fijar la planilla a un proyecto de POWER</b><button type="button" class="ps-x" title="Cerrar">✕</button></div>'
+      + '<input type="search" class="ps-q" data-noupper placeholder="Buscar por código, mandante o proyecto">'
+      + '<div class="ps-est"></div><div class="ps-lista"></div></div>';
+    document.body.appendChild(v);
+    var q = v.querySelector('.ps-q'), est = v.querySelector('.ps-est'), lista = v.querySelector('.ps-lista'), L = [];
+    function cerrar(){ v.remove(); document.removeEventListener('keydown', tecla); }
+    function tecla(e){ if (e.key === 'Escape') cerrar(); }
+    document.addEventListener('keydown', tecla);
+    v.addEventListener('click', function(e){
+      if (e.target === v || e.target.closest('.ps-x')) { cerrar(); return; }
+      var it = e.target.closest('[data-cod]'); if (!it) return;
+      var p = L.find(function(x){ return String(x.codigo) === it.dataset.cod; });
+      if (p) { powerFijar(p); cerrar(); fsToast('Planilla fijada al proyecto ' + powerTexto(p) + '.'); }
+    });
+    function pintar(){
+      var w = powerNorm(q.value).split(/\s+/).filter(Boolean);
+      var F = L.filter(function(p){ var t = powerNorm([p.codigo, p.mandante, p.proyecto].join(' ')); return w.every(function(x){ return t.indexOf(x) >= 0; }); });
+      lista.innerHTML = F.length ? F.slice(0, 300).map(function(p){
+        var sel = PROYECTO_POWER && String(PROYECTO_POWER.codigo) === String(p.codigo);
+        return '<button type="button" class="ps-it' + (sel ? ' sel' : '') + '" data-cod="' + escapeHtmlAttr(p.codigo) + '"><b>' + escapeHtmlAttr(p.codigo) + '</b>'
+          + '<span>' + escapeHtmlAttr(p.proyecto || '') + (p.mandante ? '<small>' + escapeHtmlAttr(p.mandante) + '</small>' : '') + '</span></button>';
+      }).join('') : (L.length ? '<div class="ps-vacio">Ningún proyecto coincide con la búsqueda.</div>' : '');
+    }
+    q.addEventListener('input', pintar);
+    function usar(lst, aviso){ L = powerOrden(lst); est.textContent = aviso || ''; pintar(); setTimeout(function(){ try { q.focus(); } catch (e) {} }, 0); }
+    // lista guardada de la última lectura: se muestra al tiro (sirve sin conexión) y se refresca desde POWER
+    var cache = null; try { cache = JSON.parse(localStorage.getItem(POWER_CACHE_LS) || 'null'); } catch (e) {}
+    if (POWER_PROY) usar(POWER_PROY); else if (cache && cache.length) usar(cache, 'Leyendo POWER…'); else est.textContent = 'Leyendo POWER…';
+    if (typeof archCargar !== 'function') { est.textContent = 'No se encontró el acceso a POWER.'; return; }
+    archCargar().then(function(A){
+      function leer(){
+        est.textContent = L.length ? 'Actualizando lista desde POWER…' : 'Leyendo POWER…';
+        A.proyectos().then(function(lst){
+          POWER_PROY = lst; try { localStorage.setItem(POWER_CACHE_LS, JSON.stringify(powerOrden(lst).map(function(p){ return {codigo: p.codigo, mandante: p.mandante || '', proyecto: p.proyecto || '', creado: p.creado || ''}; }))); } catch (e) {}
+          usar(lst, (A.email ? 'Cuenta ' + A.email + ' · ' : '') + powerOrden(lst).length + ' proyectos.');
+        }).catch(function(e){ if (e && e.code === 'auth') login(e.message); else est.textContent = 'No se pudo leer POWER: ' + ((e && e.message) || e) + (L.length ? ' (lista guardada)' : ''); });
+      }
+      function login(msg){
+        est.innerHTML = (msg && msg !== 'Sin sesión' ? escapeHtmlAttr(msg) + '. ' : '') + 'Inicie sesión con su cuenta de POWER (la misma de Archivo ING):'
+          + '<span class="ps-login"><input type="email" class="ps-mail" data-noupper placeholder="correo"><input type="password" class="ps-pass" placeholder="contraseña"><button type="button" class="cp-btn cp-main ps-entrar">Entrar</button></span>';
+        var entrar = function(){ A.login(est.querySelector('.ps-mail').value.trim(), est.querySelector('.ps-pass').value).then(leer).catch(function(e){ fsToast('No se pudo iniciar sesión: ' + ((e && e.message) || e)); }); };
+        est.querySelector('.ps-entrar').onclick = entrar;
+        est.querySelector('.ps-pass').addEventListener('keydown', function(e){ if (e.key === 'Enter') entrar(); });
+      }
+      if (!A.conectado) login(); else leer();
+    }).catch(function(){ est.textContent = 'Sin conexión con POWER' + (L.length ? ': se muestra la última lista leída.' : '.'); });
   }
 
   // Resumen de una hoja: conserva paneles con inputs, paneles de resumen/veredicto, y los marcados data-resumen="force".
@@ -1686,6 +1847,7 @@ function fsBuildRecord(tool){
     app: 'mesa_calculo_26', version: 1,
     toolId: tool.id, calc: tool.calc, toolName: tool.name,
     proyecto: PROYECTO_META.proyecto, calculo: PROYECTO_META.calculo,
+    power: (typeof PROYECTO_POWER !== 'undefined' && PROYECTO_POWER) ? PROYECTO_POWER : undefined,
     savedAt: new Date().toISOString(),
     fields: snap.fields, order: snap.order, rowCounts: snap.rowCounts, extra: snap.extra || undefined
   };
@@ -1808,6 +1970,7 @@ async function fsSaveCurrentCalc(){
     app: 'mesa_calculo_26', version: 1,
     toolId: tool.id, calc: tool.calc, toolName: tool.name,
     proyecto: PROYECTO_META.proyecto, calculo: PROYECTO_META.calculo,
+    power: (typeof PROYECTO_POWER !== 'undefined' && PROYECTO_POWER) ? PROYECTO_POWER : undefined,
     savedAt: new Date().toISOString(),
     fields: snap.fields, order: snap.order, rowCounts: snap.rowCounts, extra: snap.extra || undefined
   };
@@ -56033,12 +56196,15 @@ function route() {
   if (typeof PENDING_RESTORE !== 'undefined' && PENDING_RESTORE && PENDING_RESTORE.toolId === id) {
     var pending = PENDING_RESTORE;
     PENDING_RESTORE = null;
+    // el cálculo guardado recuerda su proyecto de POWER: al abrirlo, la Mesa vuelve a fijarse a ese proyecto
+    if (pending.power && pending.power.codigo && typeof powerFijar === 'function') powerFijar(pending.power);
     var missing = fsRestoreMain(main, pending);
     if (missing.length) fsToast('Cálculo abierto — ' + missing.length + ' campo(s) no se pudieron restaurar automáticamente. Revisa los valores.');
     else fsToast('Cálculo abierto: ' + (pending.calculo || pending.toolName));
   } else if (tool.calc && CALC_RENDERERS[tool.calc] && TOOL_STATE_CACHE[id]) {
     try { fsRestoreMain(main, TOOL_STATE_CACHE[id]); } catch (e) { /* si falla la restauración automática, se deja la planilla con sus valores por defecto */ }
   }
+  if (typeof powerAplicar === 'function') { try { powerAplicar(main); } catch (e) {} }   // el proyecto de POWER fijado manda sobre lo restaurado
 }
 
 // Todos los textos que se escriben en las planillas quedan en MAYÚSCULAS (campos de una línea; no aplica a
