@@ -52527,7 +52527,7 @@ function renderCargasGalpon(container) {
     <div class="panel">
       <h3>1 · Geometría</h3>
       <div class="field-grid">
-        <div class="field"><label>Cargar DXF del comando GALPON (AutoCAD)</label><input type="file" id="cg_dxf" accept=".dxf"></div>
+        <div class="field" style="grid-column:1/-1"><label>DXF del comando GALPON (AutoCAD)</label><div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap"><button type="button" class="btn-add" id="cg_dxfBtn">📂 Seleccionar archivo DXF…</button><span id="cg_dxfNom" style="font-size:.9rem">Ningún archivo seleccionado</span></div><input type="file" id="cg_dxf" accept=".dxf" hidden></div>
         <div class="field"><label>N° de naves adyacentes</label><select id="cg_n"><option>1</option><option>2</option><option>3</option></select></div>
         ${inp('cg_s', '6', 'Espaciamiento entre marcos (m) — ancho tributario')}
         ${inp('cg_lg', '48', 'Largo del galpón (m)')}
@@ -52619,7 +52619,7 @@ function renderCargasGalpon(container) {
     $('cg_naves').innerHTML = `<table class="results"><tr><th>Nave</th><th>Luz entre ejes (m)</th><th>Techo</th><th>Alero / h eje izquierdo (m)</th><th>Cumbrera / h eje derecho (m)</th></tr>
       ${Array.from({ length: n }, (_, k) => { const s = st.naves[k]; return `<tr><td>${k + 1} (ejes ${String.fromCharCode(65 + k)}–${String.fromCharCode(66 + k)})</td>
         <td><input type="text" inputmode="decimal" id="cg_L${k}" value="${s.L}"></td>
-        <td><select id="cg_t${k}"><option value="D"${s.tipo === 'D' ? ' selected' : ''}>Dos aguas</option><option value="U"${s.tipo === 'U' ? ' selected' : ''}>Una agua</option></select></td>
+        <td><select id="cg_t${k}" style="min-width:8.5rem"><option value="D"${s.tipo === 'D' ? ' selected' : ''}>Dos aguas</option><option value="U"${s.tipo === 'U' ? ' selected' : ''}>Una agua</option></select></td>
         <td><input type="text" inputmode="decimal" id="cg_a${k}" value="${s.a}"></td><td><input type="text" inputmode="decimal" id="cg_b${k}" value="${s.b}"></td></tr>`; }).join('')}</table>
       <div class="note">Dos aguas: altura de alero y de cumbrera (cumbrera al centro de la luz). Una agua: altura en el eje izquierdo y en el derecho.</div>`;
     const letra = String.fromCharCode(65 + n);
@@ -52685,7 +52685,9 @@ function renderCargasGalpon(container) {
   }
   $('cg_sis').addEventListener('click', () => { location.hash = $('cg_ind').value === 'si' ? 'sismo-nch2369' : 'sismo'; });
   $('cg_n').addEventListener('change', () => { guardarNaves(); dibujarNaves(); recalc(); });
+  $('cg_dxfBtn').addEventListener('click', () => $('cg_dxf').click());
   $('cg_dxf').addEventListener('change', ev => {
+    if (ev.target.files[0]) $('cg_dxfNom').textContent = ev.target.files[0].name;
     const f = ev.target.files[0]; if (!f) return;
     const rd = new FileReader();
     rd.onload = () => {
