@@ -2376,6 +2376,9 @@ const TOOLS = [
   { id:'cargas-uso', cat:'Cargas', name:'Cargas de Uso — Pisos y Techos (NCh1537)', file:null,
     desc:'Carga de uso L₀ y concentrada Qk por destino (Tabla 4), reducción por área tributaria con KLL (8.1) y sobrecarga de techo reducida por área tributaria y pendiente (8.2), en t/m² y kPa.',
     tag:'NCh1537:2009', calc:'cargasUso' },
+  { id:'cargas-galpon', cat:'Cargas', name:'Cargas de Galpón (NCh1537 · NCh432 · NCh431)', file:null,
+    desc:'Galpón de 1 a 3 naves adyacentes a 1 o 2 aguas, con caras abiertas o cerradas: peso propio, sobrecarga de techo y de uso (NCh1537:2009), viento en todas las caras (NCh432.Of2010, incluido edificio abierto 7.13) y nieve provisoria; geometría manual o desde el DXF del comando GALPON de AutoCAD.',
+    tag:'NCh1537 · NCh432 · NCh431', calc:'cargasGalpon' },
   { id:'combinaciones-carga', cat:'Cargas', name:'Combinaciones de Carga para RAM (Acero, Hormigón, Fundaciones, Madera)', file:null,
     desc:'Genera las combinaciones de carga para los estados que se marquen (peso propio, sobrecargas, techo, nieve, lluvia, temperatura, empuje de tierra, puente grúa, viento ±X/±Z, sismo ±X/±Z y vertical): NCh3171 o ASCE 7-16 / ACI 318-19, LRFD o ASD, con nombres A (acero), H (rotura hormigón y fundaciones), F (dimensionamiento de fundaciones) y MA (madera, con K_D), en formato para pegar en RAM Elements.',
     tag:'NCh3171 · ASCE 7-16 · ACI 318-19 · NCh1198', calc:'combinacionesCarga' },
@@ -51998,6 +52001,748 @@ function renderCargasUso(container) {
 }
 
 /* =========================================================================
+   CARGAS DE GALPÓN — 1 a 3 naves adyacentes, 1 o 2 aguas
+   Peso propio (datos del usuario), sobrecarga de techo NCh1537:2009 (Tabla 4, 8.2),
+   sobrecarga de uso de entrepisos (Tabla 4), viento NCh432.Of2010 (motor de «Cargas de Viento»:
+   Tablas 13, 14 y 15; 7.13 Figuras 22, 23 y 25 para edificios abiertos; clasificación 3.9, 3.10, 3.16).
+   Varias naves: criterio del calculista (NCh432 no lo cubre) — cada nave como galpón aislado para
+   el techo y muros con el edificio completo (decisión ING 13-11-2026).
+   Geometría: manual o desde el DXF del comando GALPON de AutoCAD (MTEXT capa GALPON_DATOS).
+   ========================================================================= */
+const CG_KGF = 9.807;              // N por kgf
+const CG_KPA_KGF = 1000 / CG_KGF;  // kgf/m² por kPa
+// NCh432.Of2010 7.13 — Figuras 22, 23 y 25 (SPRFV, edificios abiertos). [CNW, CNL] por caso A/B.
+// Fig. 22 (pendiente única): columnas γ=0° despejado, γ=0° obstruido, γ=180° despejado, γ=180° obstruido.
+const CG_F22_TH = [0, 7.5, 15, 22.5, 30, 37.5, 45];
+const CG_F22 = {
+  A: [[[1.2, 0.3], [-0.5, -1.2], [1.2, 0.3], [-0.5, -1.2]], [[-0.6, -1.0], [-1.0, -1.5], [0.9, 1.5], [-0.2, -1.2]],
+      [[-0.9, -1.3], [-1.1, -1.5], [1.3, 1.6], [0.4, -1.1]], [[-1.5, -1.6], [-1.5, -1.7], [1.7, 1.8], [0.5, -1.0]],
+      [[-1.8, -1.8], [-1.5, -1.8], [2.1, 2.1], [0.6, -1.0]], [[-1.8, -1.8], [-1.5, -1.8], [2.1, 2.2], [0.7, -0.9]],
+      [[-1.6, -1.8], [-1.3, -1.8], [2.2, 2.5], [0.8, -0.9]]],
+  B: [[[-1.1, -0.1], [-1.1, -0.6], [-1.1, -0.1], [-1.1, -0.6]], [[-1.4, 0.0], [-1.7, -0.8], [1.6, 0.3], [0.8, -0.3]],
+      [[-1.9, 0.0], [-2.1, -0.6], [1.8, 0.6], [1.2, -0.3]], [[-2.4, -0.3], [-2.3, -0.9], [2.2, 0.7], [1.3, 0.0]],
+      [[-2.5, -0.5], [-2.3, -1.1], [2.6, 1.0], [1.6, 0.1]], [[-2.4, -0.6], [-2.2, -1.1], [2.7, 1.1], [1.9, 0.3]],
+      [[-2.3, -0.7], [-1.9, -1.2], [2.6, 1.4], [2.1, 0.4]]]
+};
+// Fig. 23 (dos aguas, cumbrera hacia arriba; la norma la titula «cóncava»): columnas despejado, obstruido.
+const CG_F23_TH = [7.5, 15, 22.5, 30, 37.5, 45];
+const CG_F23 = {
+  A: [[[1.1, -0.3], [-1.6, -1.0]], [[1.1, -0.4], [-1.2, -1.0]], [[1.2, 0.1], [-1.2, -1.2]],
+      [[1.3, 0.3], [-0.7, -0.7]], [[1.3, 0.6], [-0.6, -0.6]], [[1.1, 0.9], [-0.5, -0.5]]],
+  B: [[[0.2, -1.2], [-0.9, -1.7]], [[0.1, -1.1], [-0.6, -1.6]], [[-0.1, -0.8], [-0.8, -1.7]],
+      [[-0.1, -0.9], [-0.2, -1.1]], [[-0.2, -0.6], [-0.3, -0.9]], [[-0.3, -0.5], [-0.3, -0.7]]]
+};
+// Fig. 25 (γ = 90°, todas las formas; nota 5: pendiente única θ < 5° también γ = 0° con 0,05 ≤ h/L ≤ 0,25)
+const CG_F25 = { A: [[-0.8, -1.2], [-0.6, -0.9], [-0.3, -0.6]], B: [[0.8, 0.5], [0.5, 0.5], [0.3, 0.3]] };
+const CG_F25_TXT = ['≤ h', '> h, ≤ 2h', '> 2h'];
+
+// --- lectura del texto de datos del DXF (comando GALPON) ---
+function cgLeerDxf(txt) {
+  const lineas = txt.split(/\r?\n/);
+  const out = [];
+  for (let i = 0; i + 1 < lineas.length; i += 2) {
+    if (lineas[i].trim() !== '0') continue;
+    const tipo = lineas[i + 1].trim();
+    if (tipo !== 'MTEXT' && tipo !== 'TEXT') continue;
+    let capa = '', s = '';
+    for (let j = i + 2; j + 1 < lineas.length; j += 2) {
+      const c = lineas[j].trim(), v = lineas[j + 1];
+      if (c === '0') break;
+      if (c === '8') capa = v.trim();
+      if (c === '1' || c === '3') s += v;
+    }
+    if (capa.toUpperCase() === 'GALPON_DATOS') out.push(s);
+  }
+  const t = out.find(s => /GALPON\s*v1/i.test(s));
+  if (!t) return { error: 'El DXF no contiene el texto de datos del comando GALPON (capa GALPON_DATOS). Dibuje el galpón con el comando GALPON de AutoCAD y guárdelo como DXF desde el mismo comando.' };
+  return cgParseDatos(t.replace(/\\[A-Za-z][^;\\]*;/g, '').replace(/[{}]/g, '').replace(/\\P/g, ' '));
+}
+function cgParseDatos(s) {
+  const kv = {};
+  s.split(';').forEach(p => { const i = p.indexOf('='); if (i > 0) kv[p.slice(0, i).trim().toLowerCase()] = p.slice(i + 1).trim(); });
+  const n = parseInt(kv.naves, 10);
+  if (!(n >= 1 && n <= 3)) return { error: 'Texto de datos del DXF sin un número de naves válido (1 a 3).' };
+  const naves = [];
+  for (let k = 1; k <= n; k++) {
+    const a = (kv['n' + k] || '').split(',');
+    const L = +a[0], tipo = a[1], h1 = +a[2], h2 = +a[3], hc = +a[4];
+    if (!(L > 0 && (tipo === 'D' || tipo === 'U') && h1 > 0 && h2 > 0 && hc > 0)) return { error: `Datos de la nave ${k} incompletos en el DXF.` };
+    naves.push(tipo === 'D' ? { L, tipo: 'D', ha: h1, hc } : { L, tipo: 'U', h1, h2 });
+  }
+  const vanos = (kv.vanos || '').split(',').map(Number).filter(x => x > 0);
+  if (!vanos.length) return { error: 'El DXF no trae los espaciamientos de marcos (vanos).' };
+  const cara = c => { const [k, a] = String(c || 'C,0').split(','); const t = k[0];
+    return { t: t === 'A' ? 'A' : t === 'P' ? 'P' : 'C', h: t === 'P' ? +k.slice(1) || 0 : 0, ab: +a || 0 }; };
+  const letra = String.fromCharCode(65 + n), nv = vanos.length + 1;
+  return { naves, vanos, muroA: cara(kv.muroa), muroB: cara(kv['muro' + letra.toLowerCase()]),
+    hasI: (kv.hastial1 || '').split('|').map(cara), hasF: (kv['hastial' + nv] || '').split('|').map(cara) };
+}
+function cgVanos(s) {
+  const out = [];
+  for (const tk of String(s).toLowerCase().split(/[\s;]+/).filter(Boolean)) {
+    const m = tk.match(/^(\d+)x([\d.,]+)$/);
+    if (m) { const v = +m[2].replace(',', '.'); if (!(v > 0)) return null; for (let i = 0; i < +m[1]; i++) out.push(v); }
+    else { const v = +tk.replace(',', '.'); if (!(v > 0)) return null; out.push(v); }
+  }
+  return out.length ? out : null;
+}
+
+// --- geometría derivada ---
+function cgGeo(g) {
+  const naves = g.naves.map((nv, i) => {
+    const h1 = nv.tipo === 'D' ? nv.ha : nv.h1, h2 = nv.tipo === 'D' ? nv.ha : nv.h2;
+    const hc = nv.tipo === 'D' ? nv.hc : Math.max(h1, h2), hb = Math.min(h1, h2);
+    const run = nv.tipo === 'D' ? nv.L / 2 : nv.L;
+    const theta = Math.atan((hc - hb) / run) * 180 / Math.PI;
+    const F = (hc - hb) / run * 100;
+    const h = theta <= 10 ? hc : (hb + hc) / 2;   // NCh432 3.3
+    return { ...nv, i, h1, h2, hc, hb, theta, F, h };
+  });
+  const xs = [0]; naves.forEach(n => xs.push(xs[xs.length - 1] + n.L));
+  const W = xs[xs.length - 1], Ltot = g.largo;
+  const hp = xs.map((x, k) => k === 0 ? naves[0].h1 : k === naves.length ? naves[naves.length - 1].h2 : Math.max(naves[k - 1].h2, naves[k].h1));
+  // ancho tributario máximo de un marco interior (o el de borde si hay un solo vano)
+  const trib = g.s, vMax = g.s;
+  return { naves, xs, W, Ltot, hp, trib, vMax, nMarcos: Math.round(Ltot / g.s) + 1 };
+}
+
+// --- clasificación del cerramiento: NCh432 3.9, 3.10, 3.16 ---
+function cgCerramiento(g, G) {
+  const n = G.naves;
+  const areaHast = nv => nv.tipo === 'D' ? nv.L * nv.ha + nv.L * (nv.hc - nv.ha) / 2 : nv.L * (nv.h1 + nv.h2) / 2;
+  const abiertaHast = (nv, hAb) => nv.L * Math.min(hAb, nv.hb) + (hAb > nv.hb ? Math.min(areaHast(nv) - nv.L * nv.hb, nv.L * (hAb - nv.hb)) : 0);
+  const muroLong = (c, h, nombre) => { const Ag = G.Ltot * h; const Ao = c.t === 'A' ? Ag : Math.min(Ag, (c.t === 'P' ? G.Ltot * Math.min(c.h, h) : 0) + c.ab); return { nombre, Ag, Ao }; };
+  const hast = (cs, nombre) => { let Ag = 0, Ao = 0; n.forEach((nv, k) => { const c = cs[k] || { t: 'C', h: 0, ab: 0 }, a = areaHast(nv); Ag += a; Ao += c.t === 'A' ? a : Math.min(a, (c.t === 'P' ? abiertaHast(nv, c.h) : 0) + c.ab); }); return { nombre, Ag, Ao }; };
+  const letra = String.fromCharCode(65 + n.length);
+  const muros = [muroLong(g.muroA, G.hp[0], 'Muro longitudinal eje A'), muroLong(g.muroB, G.hp[G.hp.length - 1], 'Muro longitudinal eje ' + letra),
+    hast(g.hasI, 'Hastial frontal'), hast(g.hasF, 'Hastial posterior')];
+  const Atecho = n.reduce((a, nv) => a + nv.L / Math.cos(nv.theta * Math.PI / 180) * G.Ltot, 0);
+  const AgTot = muros.reduce((a, m) => a + m.Ag, 0) + Atecho, AoTot = muros.reduce((a, m) => a + m.Ao, 0);
+  muros.forEach(m => { m.abierto = m.Ao >= 0.8 * m.Ag - 1e-9; m.Aoi = AoTot - m.Ao; m.Agi = AgTot - m.Ag;
+    m.c1 = m.Ao > 1.10 * m.Aoi; m.c2 = m.Ao > Math.min(0.37, 0.01 * m.Ag); m.c3 = m.Agi > 0 ? m.Aoi / m.Agi <= 0.20 : true; m.parcial = m.c1 && m.c2 && m.c3; });
+  const clase = muros.every(m => m.abierto) ? 'Abierto' : muros.some(m => m.parcial) ? 'Parcialmente cerrado' : 'Cerrado';
+  return { muros, Atecho, clase };
+}
+
+// --- viento: edificio abierto (7.13), una nave ---
+function cgCN(nv, flujo, hL, gamma) {
+  // devuelve [{caso, CNW, CNL, fig}] o { error }
+  const o = flujo === 'obstruido' ? 1 : 0, th = nv.theta, out = [];
+  const lin = (x, xs, ys) => vtLin(x, xs, ys);
+  if (nv.tipo === 'U' || th < 7.5) {
+    if (nv.tipo === 'U' && th < 5 && hL >= 0.05 && hL < 0.25) return { fig25: true };
+    if (hL < 0.25 - 1e-9 || hL > 1.0 + 1e-9) return { error: `h/L = ${vtTxt(hL, 3)} fuera del rango 0,25–1,0 de la Figura 22` + (nv.tipo === 'U' ? ' (con θ < 5° se admite 0,05 ≤ h/L < 0,25 por la nota 5 de la Figura 25)' : '') };
+    const col = gamma === 180 ? 2 + o : o, thE = th < 7.5 ? 0 : th;
+    if (thE > 45) return { error: 'θ > 45°: fuera del alcance de la Figura 22' };
+    ['A', 'B'].forEach(c => out.push({ caso: c, fig: th < 7.5 && nv.tipo === 'D' ? 'Fig. 22, θ < 7,5° (nota 3 de Fig. 23)' : 'Fig. 22',
+      CNW: vtR(lin(thE, CG_F22_TH, CG_F22[c].map(r => r[col][0]))), CNL: vtR(lin(thE, CG_F22_TH, CG_F22[c].map(r => r[col][1]))) }));
+    return out;
+  }
+  if (hL < 0.25 - 1e-9 || hL > 1.0 + 1e-9) return { error: `h/L = ${vtTxt(hL, 3)} fuera del rango 0,25–1,0 de la Figura 23` };
+  if (th > 45) return { error: 'θ > 45°: fuera del alcance de la Figura 23' };
+  ['A', 'B'].forEach(c => out.push({ caso: c, fig: 'Fig. 23',
+    CNW: vtR(lin(th, CG_F23_TH, CG_F23[c].map(r => r[o][0]))), CNL: vtR(lin(th, CG_F23_TH, CG_F23[c].map(r => r[o][1]))) }));
+  return out;
+}
+function cgF25(h, L, flujo) {
+  const o = flujo === 'obstruido' ? 1 : 0, lim = [0, h, 2 * h, Infinity], out = [];
+  ['A', 'B'].forEach(c => { const fr = [];
+    for (let i = 0; i < 3; i++) { const x1 = lim[i], x2 = Math.min(lim[i + 1], L); if (x1 >= L - 1e-9) break; fr.push({ txt: CG_F25_TXT[i], x1, x2, CN: CG_F25[c][i][o] }); }
+    out.push({ caso: c, fr }); });
+  return out;
+}
+
+// --- cálculo completo ---
+function calcCargasGalpon(inp) {
+  const e = [], pend = [], avisos = [];
+  const g = inp.geo;
+  if (!g || !g.naves || !g.naves.length) { e.push('Ingrese la geometría del galpón.'); return { errores: e }; }
+  g.naves.forEach((nv, k) => {
+    const t = `Nave ${k + 1}: `;
+    if (!(nv.L > 0)) e.push(t + 'luz mayor que 0 m.');
+    if (nv.tipo === 'D') { if (!(nv.ha > 0)) e.push(t + 'altura de alero mayor que 0 m.'); if (!(nv.hc >= nv.ha)) e.push(t + 'la cumbrera debe ser mayor o igual que el alero.'); }
+    else if (!(nv.h1 > 0 && nv.h2 > 0)) e.push(t + 'alturas de los dos aleros mayores que 0 m.');
+  });
+  if (!(g.s > 0)) e.push('Espaciamiento entre marcos: ingrese un valor mayor que 0 m.');
+  if (!(g.largo > 0)) e.push('Largo del galpón: ingrese un valor mayor que 0 m.');
+  else if (g.s > 0 && g.s > g.largo) e.push('El espaciamiento entre marcos no puede ser mayor que el largo del galpón.');
+  if (!(inp.sCost > 0)) e.push('Espaciamiento de costaneras mayor que 0 m.');
+  if (e.length) return { errores: e };
+  const G = cgGeo(g);
+  G.naves.forEach(nv => { if (nv.theta > 45) e.push(`Nave ${nv.i + 1}: θ = ${vtTxt(nv.theta, 1)}° > 45°, fuera del alcance de esta planilla.`); });
+  if (e.length) return { errores: e };
+
+  // ---- peso propio (kgf/m²; cubierta, costaneras y cielo sobre la superficie del techo → proyección horizontal)
+  const pp = inp.pp;
+  const naves = G.naves.map(nv => {
+    const c = Math.cos(nv.theta * Math.PI / 180);
+    const qSup = pp.cub + pp.costanera / inp.sCost + pp.cielo;    // kgf/m² de superficie inclinada
+    const Dh = qSup / c + pp.inst;                                   // kgf/m² en proyección horizontal
+    const wMarco = Dh * G.trib + pp.marco;                           // kgf/m sobre el marco (proyección horizontal)
+    // sobrecarga de techo
+    const tt = CU_TECHO.find(t => t[0] === inp.techo) || CU_TECHO[0];
+    const ATc = inp.sCost * G.vMax, ATm = nv.L * G.trib;
+    let Lc, Lm, rc = null, rm = null;
+    if (tt[0] === 'M') { rc = cuReduccionTecho(tt[2], ATc, nv.F); rm = cuReduccionTecho(tt[2], ATm, nv.F); Lc = rc.Lr; Lm = rm.Lr; }
+    else { Lc = Lm = tt[2]; }
+    return { ...nv, cos: c, qSup, Dh, wMarco, ATc, ATm, rc, rm, Lc: Lc * CG_KPA_KGF, Lm: Lm * CG_KPA_KGF, wLr: Lm * CG_KPA_KGF * G.trib };
+  });
+  const tt = CU_TECHO.find(t => t[0] === inp.techo) || CU_TECHO[0];
+  if (tt[0] !== 'M') avisos.push('Techo transitable: se usa L₀ sin la reducción por área tributaria de 8.1 (conservador).');
+  // 5.3.3 costaneras con la carga de los elementos principales que las soportan
+  // entrepiso
+  let ent = null;
+  if (inp.ent && inp.ent.on) {
+    const row = CU_T4[inp.ent.idx];
+    if (!row) e.push('Entrepiso: seleccione el destino (Tabla 4).');
+    else if (!(inp.ent.A > 0)) e.push('Entrepiso: ingrese el área (m²).');
+    else ent = { row, L0: row[2] * CG_KPA_KGF, Qk: row[3], A: inp.ent.A, P: row[2] * CG_KPA_KGF * inp.ent.A };
+  }
+  const muroPP = pp.rev;   // kgf/m² de muro
+
+  // ---- viento
+  const W = inp.viento, cerr = cgCerramiento(g, G);
+  const base = { V: W.V, expo: W.expo, importancia: W.importancia, Kzt: W.Kzt, n1Origen: 'geom', n1: null,
+    hRef: Math.max(...G.naves.map(n => n.hc)), bMin: Math.min(G.W, G.Ltot), comb3171: W.comb3171 };
+  const eB = [], pB = [];
+  const { ex, I } = vtValidarBase(base, eB, pB);
+  eB.forEach(x => e.push('Viento: ' + x)); pB.forEach(x => pend.push('Viento: ' + x));
+  if (e.length) return { errores: e };
+  const hEd = Math.max(...G.naves.map(n => n.h));
+  if (hEd > ex.zg) e.push('Altura mayor que zg: fuera del dominio de la Tabla 9.');
+  if (e.length) return { errores: e };
+  const GCpi = cerr.clase === 'Abierto' ? 0 : VT_GCPI[cerr.clase];
+  const ctxB = { ex, I, V: W.V, Kzt: W.Kzt, GCpi };
+  const qhB = vtQ(vtKz(hEd, ex), ctxB);
+  const letra = String.fromCharCode(65 + G.naves.length);
+  const casos = [];   // { id, dir, txt, s, sup: [{nombre, p, zona}] , Fx, Aproj }
+  const abierto = cerr.clase === 'Abierto';
+  let vNaves = [];
+  if (!abierto) {
+    // techo de cada nave: galpón aislado (calcGalponViento) con la misma V, exposición, I, Kzt y GCpi del edificio
+    vNaves = G.naves.map(nv => {
+      const r = calcGalponViento({ ...base, cerramiento: cerr.clase, tipoTecho: nv.tipo === 'D' ? 'Dos aguas' : 'Una agua',
+        Lx: G.Ltot, Ly: nv.L, hAlero: nv.hb, hCumbrera: nv.hc });
+      if (r.errores) r.errores.forEach(x => e.push(`Viento, nave ${nv.i + 1}: ${x}`));
+      return r;
+    });
+    if (e.length) return { errores: e };
+    // muros: Tabla 14 con el edificio completo, qh a la altura h del edificio (mayor de las naves)
+    const signos = [1, -1];
+    const muroBar = (forma, s) => { const pi = s * qhB * GCpi; return vtBandas(forma, ctxB).map(b => ({ z1: b.z1, z2: b.z2, A: b.A, qz: b.qz, p: b.qz * VT_G * 0.8 - pi })); };
+    const pMuro = (Cp, s) => qhB * VT_G * Cp - s * qhB * GCpi;
+    const hastForma = { H: Math.max(...G.naves.map(n => n.hc)), A: 0, area: (z1, z2) => G.naves.reduce((a, nv) => a + vtFormaHastial(nv.L, nv.hb, nv.hc).area(z1, z2), 0) };
+    hastForma.A = hastForma.area(0, hastForma.H);
+    const hastAb = g.hasI.every(c => c.t === 'A') && g.hasF.every(c => c.t === 'A');
+    // dirección transversal: desde el eje A (izquierda) y desde el último eje (derecha)
+    [['TA', 'Viento transversal desde el eje A', false], ['TX', `Viento transversal desde el eje ${letra}`, true]].forEach(([dk, dtxt, desdeDer]) => {
+      const hBar = desdeDer ? G.hp[G.hp.length - 1] : G.hp[0], hSot = desdeDer ? G.hp[0] : G.hp[G.hp.length - 1];
+      const CpS = vtCpSotaMuro(G.W / G.Ltot);
+      const nCasos = Math.max(...vNaves.map(r => r.dirs.filter(d => d.k[0] === 'N').reduce((a, d) => Math.max(a, d.casos.length), 0)));
+      signos.forEach(s => {
+        for (let ci = 0; ci < nCasos; ci++) {
+          const sup = [];
+          const abB = (desdeDer ? g.muroB : g.muroA).t === 'A', abS = (desdeDer ? g.muroA : g.muroB).t === 'A';
+          const bar = muroBar(vtFormaRect(G.Ltot, hBar), s);
+          if (abB) sup.push({ nombre: (desdeDer ? `Muro eje ${letra}` : 'Muro eje A') + ' (barlovento) — abierto, sin carga', tipo: 'muro', Cp: null, p: 0 });
+          else sup.push({ nombre: desdeDer ? `Muro eje ${letra} (barlovento)` : 'Muro eje A (barlovento)', tipo: 'muro', Cp: 0.8, bandas: bar, p: bar[bar.length - 1].p });
+          const ps = abS ? 0 : pMuro(CpS, s);
+          sup.push(abS ? { nombre: (desdeDer ? 'Muro eje A' : `Muro eje ${letra}`) + ' (sotavento) — abierto, sin carga', tipo: 'muro', Cp: null, p: 0 }
+            : { nombre: desdeDer ? 'Muro eje A (sotavento)' : `Muro eje ${letra} (sotavento)`, tipo: 'muro', Cp: CpS, p: ps });
+          if (!hastAb) sup.push({ nombre: 'Hastiales (laterales)', tipo: 'muro', Cp: -0.7, p: pMuro(-0.7, s) });
+          let Fx = (abB ? 0 : bar.reduce((a, b) => a + b.p * b.A, 0)) - ps * G.Ltot * hSot;
+          const txtC = [];
+          // naves en orden de barlovento a sotavento
+          const orden = desdeDer ? G.naves.slice().reverse() : G.naves;
+          orden.forEach(nv => {
+            const r = vNaves[nv.i];
+            let dk2 = 'N';
+            if (nv.tipo === 'U') { const bajoIzq = nv.h1 <= nv.h2; dk2 = (bajoIzq !== desdeDer) ? 'N1' : 'N2'; }
+            const ests = r.estados.filter(x => x.dir === dk2 && !x.minimo);
+            const casoTxts = [...new Set(ests.map(x => x.casoTxt))];
+            const ct = casoTxts[Math.min(ci, casoTxts.length - 1)];
+            const est = ests.find(x => x.casoTxt === ct && x.s === s) || ests.find(x => x.casoTxt === ct);
+            txtC.push(`nave ${nv.i + 1}: ${ct}`);
+            est.sup.filter(sp => sp.tipo === 'techo').forEach(sp => {
+              // posición global (m desde el eje A) de la franja o faldón
+              const x0 = G.xs[nv.i], a = desdeDer ? x0 + nv.L - sp.x2 : x0 + sp.x1, b = desdeDer ? x0 + nv.L - sp.x1 : x0 + sp.x2;
+              sup.push({ nombre: `Nave ${nv.i + 1} — ${sp.nombre}`, tipo: 'techo', nave: nv.i, xa: a, xb: b, Cp: sp.Cp, p: sp.p });
+              if (vtFin(sp.Fx)) Fx += sp.Fx;
+            });
+          });
+          casos.push({ dir: dk, dirTxt: dtxt, s, casoTxt: txtC.join(' · '), sup, Fx, Aproj: G.Ltot * Math.max(...G.naves.map(n => n.hc)) });
+        }
+      });
+    });
+    // dirección longitudinal (paralela a la cumbrera)
+    signos.forEach(s => {
+      const nC = Math.max(...vNaves.map(r => r.dirs.find(d => d.k === 'P').casos.length));
+      for (let ci = 0; ci < nC; ci++) {
+        const sup = [];
+        const abB = g.hasI.every(c => c.t === 'A'), abS = g.hasF.every(c => c.t === 'A');
+        const bar = muroBar(hastForma, s);
+        if (abB) sup.push({ nombre: 'Hastial frontal (barlovento) — abierto, sin carga', tipo: 'muro', Cp: null, p: 0 });
+        else sup.push({ nombre: 'Hastial frontal (barlovento)', tipo: 'muro', Cp: 0.8, bandas: bar, p: bar[bar.length - 1].p });
+        const CpS = vtCpSotaMuro(G.Ltot / G.W), ps = abS ? 0 : pMuro(CpS, s);
+        sup.push(abS ? { nombre: 'Hastial posterior (sotavento) — abierto, sin carga', tipo: 'muro', Cp: null, p: 0 } : { nombre: 'Hastial posterior (sotavento)', tipo: 'muro', Cp: CpS, p: ps });
+        if (!(g.muroA.t === 'A' && g.muroB.t === 'A')) sup.push({ nombre: 'Muros longitudinales (laterales)' + (g.muroA.t === 'A' || g.muroB.t === 'A' ? ' — solo el cerrado' : ''), tipo: 'muro', Cp: -0.7, p: pMuro(-0.7, s) });
+        const Fx = (abB ? 0 : bar.reduce((a, b) => a + b.p * b.A, 0)) - ps * hastForma.A;
+        const txtC = [];
+        G.naves.forEach(nv => {
+          const ests = vNaves[nv.i].estados.filter(x => x.dir === 'P' && !x.minimo);
+          const cts = [...new Set(ests.map(x => x.casoTxt))], ct = cts[Math.min(ci, cts.length - 1)];
+          const est = ests.find(x => x.casoTxt === ct && x.s === s) || ests.find(x => x.casoTxt === ct);
+          txtC.push(`nave ${nv.i + 1}: ${ct}`);
+          est.sup.filter(sp => sp.tipo === 'techo').forEach(sp => sup.push({ nombre: `Nave ${nv.i + 1} — ${sp.nombre} (desde el hastial de barlovento: ${vtTxt(sp.x1, 1)}–${vtTxt(sp.x2, 1)} m)`, tipo: 'techo', nave: nv.i, Cp: sp.Cp, p: sp.p }));
+        });
+        casos.push({ dir: 'L', dirTxt: 'Viento longitudinal (paralelo a la cumbrera)', s, casoTxt: txtC.join(' · '), sup, Fx, Aproj: hastForma.A });
+      }
+    });
+  } else {
+    // edificio abierto: 7.13, techo libre por nave, p = qh·G·CN (qh de cada nave a su altura h, 3.3)
+    const flujo = W.flujo;
+    G.naves.forEach(nv => {
+      const qh = vtQ(vtKz(nv.h, ex), ctxB), hL = nv.h / nv.L;
+      vNaves.push({ qh, hL });
+      if (nv.tipo === 'D' && nv.theta < 7.5) avisos.push(`Nave ${nv.i + 1}: θ < 7,5° — se usan los coeficientes de pendiente única (Fig. 22, θ = 0°) según la nota 3 de la Figura 23.`);
+    });
+    const dirsT = [['TA', 'Viento transversal desde el eje A', false], ['TX', `Viento transversal desde el eje ${letra}`, true]];
+    dirsT.forEach(([dk, dtxt, desdeDer]) => {
+      ['A', 'B'].forEach(caso => {
+        const sup = []; const txtC = [];
+        G.naves.forEach(nv => {
+          const { qh, hL } = vNaves[nv.i];
+          // γ = 0° si el viento sube por la pendiente (llega por el alero bajo), 180° si llega por el alto
+          const llegaBajo = nv.tipo === 'U' ? ((nv.h1 <= nv.h2) !== desdeDer) : true;
+          const r = cgCN(nv, flujo, hL, llegaBajo ? 0 : 180);
+          if (r.error) { e.push(`Viento, nave ${nv.i + 1} (edificio abierto): ${r.error}. FUERA DE ALCANCE.`); return; }
+          const x0 = G.xs[nv.i];
+          if (r.fig25) {
+            const f = cgF25(nv.h, nv.L, flujo).find(z => z.caso === caso);
+            txtC.push(`nave ${nv.i + 1}: Fig. 25 (nota 5), caso ${caso}`);
+            f.fr.forEach(fr => { const a = desdeDer ? x0 + nv.L - fr.x2 : x0 + fr.x1, b = desdeDer ? x0 + nv.L - fr.x1 : x0 + fr.x2;
+              sup.push({ nombre: `Nave ${nv.i + 1} — franja ${fr.txt} desde el borde de barlovento`, tipo: 'techo', nave: nv.i, xa: a, xb: b, Cp: fr.CN, p: qh * VT_G * fr.CN }); });
+            return;
+          }
+          const c = r.find(z => z.caso === caso);
+          txtC.push(`nave ${nv.i + 1}: ${c.fig}, caso ${caso}${nv.tipo === 'U' ? `, γ = ${llegaBajo ? 0 : 180}°` : ''}`);
+          const m = x0 + nv.L / 2;
+          const izq = { CN: desdeDer ? c.CNL : c.CNW, t: desdeDer ? 'CNL (sotavento)' : 'CNW (barlovento)' }, der = { CN: desdeDer ? c.CNW : c.CNL, t: desdeDer ? 'CNW (barlovento)' : 'CNL (sotavento)' };
+          sup.push({ nombre: `Nave ${nv.i + 1} — mitad izquierda, ${izq.t}`, tipo: 'techo', nave: nv.i, xa: x0, xb: m, Cp: izq.CN, p: qh * VT_G * izq.CN });
+          sup.push({ nombre: `Nave ${nv.i + 1} — mitad derecha, ${der.t}`, tipo: 'techo', nave: nv.i, xa: m, xb: x0 + nv.L, Cp: der.CN, p: qh * VT_G * der.CN });
+        });
+        casos.push({ dir: dk, dirTxt: dtxt, s: 0, casoTxt: txtC.join(' · '), sup, Fx: null, Aproj: null, abierto: true });
+      });
+    });
+    ['A', 'B'].forEach(caso => {
+      const sup = [], txtC = [];
+      G.naves.forEach(nv => {
+        const { qh } = vNaves[nv.i];
+        const f = cgF25(nv.h, G.Ltot, flujo).find(z => z.caso === caso);
+        txtC.push(`nave ${nv.i + 1}: Fig. 25, caso ${caso}`);
+        f.fr.forEach(fr => sup.push({ nombre: `Nave ${nv.i + 1} — franja ${fr.txt} desde el hastial de barlovento (${vtTxt(fr.x1, 1)}–${vtTxt(fr.x2, 1)} m)`, tipo: 'techo', nave: nv.i, Cp: fr.CN, p: qh * VT_G * fr.CN }));
+      });
+      casos.push({ dir: 'L', dirTxt: 'Viento longitudinal (paralelo a la cumbrera)', s: 0, casoTxt: txtC.join(' · '), sup, Fx: null, Aproj: null, abierto: true });
+    });
+    if (e.length) return { errores: e };
+    avisos.push('Edificio abierto: no se verifica el mínimo de 5.2.1 en esta planilla; el techo libre se carga con las presiones netas de 7.13 (superior + inferior).');
+  }
+  casos.forEach((c, i) => { c.id = 'W' + (i + 1); });
+  // mínimo 5.2.1 (edificio cerrado o parcialmente cerrado): resultante horizontal ≥ 0,48 kN/m² × área proyectada
+  const minimos = [];
+  if (!abierto) ['TA', 'TX', 'L'].forEach(dk => {
+    const cs = casos.filter(c => c.dir === dk); if (!cs.length) return;
+    const FxMax = Math.max(...cs.map(c => c.Fx)), Fmin = VT_PMIN * cs[0].Aproj;
+    minimos.push({ dir: dk, dirTxt: cs[0].dirTxt, FxMax, Fmin, cumple: FxMax >= Fmin - 1e-9 });
+  });
+  minimos.filter(m => !m.cumple).forEach(m => {
+    avisos.push(`${m.dirTxt}: la resultante horizontal (${vtTxt(m.FxMax / 1000, 1)} kN) es menor que el mínimo de 5.2.1 (${vtTxt(m.Fmin / 1000, 1)} kN = 0,48 kN/m² × área proyectada): se agrega el estado mínimo.`);
+    casos.push({ id: 'W' + (casos.length + 1), dir: m.dir, dirTxt: m.dirTxt, s: 0, minimo: true, casoTxt: 'Carga mínima 5.2.1: 0,48 kN/m² sobre el área proyectada en un plano normal al viento (muros y techo)',
+      sup: [{ nombre: 'Área proyectada normal al viento (muros y techo)', tipo: 'muro', Cp: null, p: VT_PMIN }], Fx: m.Fmin, Aproj: null });
+  });
+  if (G.naves.length > 1) avisos.push('Varias naves: NCh432.Of2010 no entrega coeficientes del SPRFV para techos de varios vanos. Criterio del calculista: cada nave se calcula como galpón aislado (Tabla 15, o 7.13 si es abierto) y los muros con el edificio completo (Tabla 14); se usa la envolvente.');
+  if (cerr.clase === 'Parcialmente cerrado') avisos.push('No se aplica el factor de reducción Ri de 7.11.1.1 (conservador).');
+  // envolvente por superficie (para diseño de costaneras, revestimientos y marcos por superficie)
+  const env = {};
+  casos.forEach(c => c.sup.forEach(sp => {
+    const key = sp.nombre.replace(/ \((barlovento|sotavento|laterales)\)/, '') + '|' + c.dir[0];
+    const o = env[key] || (env[key] = { nombre: sp.nombre, dir: c.dir[0] === 'T' ? 'Transversal' : 'Longitudinal', pMax: -Infinity, pMin: Infinity, eMax: '', eMin: '' });
+    const vals = sp.bandas ? sp.bandas.map(b => b.p) : [sp.p];
+    vals.forEach(p => { if (p > o.pMax) { o.pMax = p; o.eMax = c.id; } if (p < o.pMin) { o.pMin = p; o.eMin = c.id; } });
+  }));
+  // sismo: peso sísmico de referencia (el porcentaje de sobrecarga lo define la planilla de sismo)
+  const Ptecho = naves.reduce((a, nv) => a + nv.Dh * nv.L * G.Ltot, 0) + pp.marco * G.nMarcos * naves.reduce((a, nv) => a + nv.L / nv.cos, 0);
+  const Pmuros = muroPP * (G.Ltot * (G.hp[0] + G.hp[G.hp.length - 1]) + 2 * naves.reduce((a, nv) => a + (nv.tipo === 'D' ? nv.L * nv.ha + nv.L * (nv.hc - nv.ha) / 2 : nv.L * (nv.h1 + nv.h2) / 2), 0));
+  return { pendientes: pend, avisos, G, naves, ent, muroPP, tt, cerr, ex, I, GCpi, qhB, hEd, casos, minimos, envolvente: Object.values(env),
+    abierto, vNaves, flujo: W.flujo, base, Ptecho, Pmuros, sCost: inp.sCost, pp };
+}
+
+// --- nieve PROVISORIA (decisión ING 13-11-2026): pg ingresada; coeficientes de la «Guía técnica NCh431:2010»
+//     contrastados con ASCE 7-02 cap. 7 (base de NCh431:2010): Tablas 7-2, 7-3, 7-4, Fig. 7-2 (C7.4), 7.3.4, 7.4.4, 7.6.1, 7.6.3, Eq. 7-4.
+const CG_CE = { B: [0.9, 1.0, 1.2], C: [0.9, 1.0, 1.1], D: [0.8, 0.9, 1.0], M: [0.7, 0.8, null] };
+const CG_CT = [[1.0, 'Estructuras calefaccionadas y todas las no indicadas abajo'], [1.1, 'Justo sobre el punto de congelamiento, o techo frío ventilado con R > 4,4 K·m²/W'],
+  [1.2, 'No calefaccionadas o mantenidas bajo el punto de congelamiento'], [0.85, 'Invernaderos calefaccionados continuamente con cubierta R < 0,4 K·m²/W']];
+const CG_IS = { 'I (Instalaciones temporales)': 0.8, 'II (No incluidas I,III,IV)': 1.0, 'III (Uso público)': 1.1, 'IV (Instalaciones esenciales)': 1.2 };
+function cgCs(theta, Ct, lisa) {
+  const t0 = Ct <= 1.0 ? (lisa ? 5 : 30) : Ct <= 1.1 ? (lisa ? 10 : 37.5) : (lisa ? 15 : 45);
+  return theta <= t0 ? 1 : theta >= 70 ? 0 : 1 - (theta - t0) / (70 - t0);
+}
+function calcNieveGalpon(r, nv_) {
+  const n = nv_, e = [], avisos = [];
+  const pg = n.pg / 101.97;                       // kN/m²
+  if (!(n.pg >= 0)) { e.push('Nieve: ingrese pg ≥ 0 kgf/m².'); return { errores: e }; }
+  const ce = CG_CE[n.terreno]; const Ce = ce ? ce[n.expo] : null;
+  if (Ce == null) { e.push('Nieve: combinación de terreno y exposición sin valor en la Tabla 7-2 (montaña resguardada: N/A).'); return { errores: e }; }
+  const Ct = n.Ct, I = CG_IS[n.importancia] || 1.0;
+  const pf0 = 0.7 * Ce * Ct * I * pg;
+  const gamma = Math.min(0.426 * pg + 2.2, 4.7);  // kN/m³ (Eq. 7-4)
+  const multi = r.G.naves.length > 1;
+  const naves = r.G.naves.map(nv => {
+    const Wr = nv.tipo === 'D' ? nv.L / 2 : nv.L;
+    const limG = 21.3 / Wr + 0.5;
+    const bajaPend = nv.tipo === 'U' ? nv.theta < 15 : nv.theta <= limG;
+    const pmin = bajaPend ? (pg <= 0.96 ? I * pg : 0.96 * I) : 0;
+    const pf = Math.max(pf0, pmin);
+    const Cs = multi ? 1 : cgCs(nv.theta, Ct, n.lisa);
+    const ps = Cs * pf;
+    let desb = null;
+    if (!multi && nv.tipo === 'D' && pg > 0 && nv.theta > limG && nv.theta < 70) {
+      if (Wr <= 6.1) desb = { barlo: 0, sota: 1.5 * ps / Ce, txt: 'W ≤ 6,1 m: sotavento 1,5·ps/Ce, barlovento 0 (7.6.1)' };
+      else { const beta = pg <= 0.97 ? 1.0 : pg >= 1.93 ? 0.5 : 1.5 - 0.52 * pg;
+        desb = { barlo: 0.3 * ps, sota: 1.2 * (1 + beta / 2) * ps / Ce, beta, txt: `W > 6,1 m: sotavento 1,2·(1 + β/2)·ps/Ce con β = ${vtTxt(beta, 3)}, barlovento 0,3·ps (7.6.1)` }; }
+    }
+    return { i: nv.i, theta: nv.theta, Wr, limG, bajaPend, pmin, pf, Cs, ps, desb };
+  });
+  // varias naves: techos múltiples (7.4.4 Cs = 1; 7.6.3 desbalance en valles: 0,5·pf en cumbrera → 2·pf/Ce en valle,
+  // con la superficie de nieve del valle no más alta que la de la cumbrera)
+  const valles = [];
+  if (multi) {
+    for (let k = 0; k < r.G.naves.length - 1; k++) {
+      const a = r.G.naves[k], b = r.G.naves[k + 1];
+      if (Math.abs(a.h2 - b.h1) > 0.01) { avisos.push(`Eje ${String.fromCharCode(66 + k)}: cambio de nivel entre naves ${k + 1} y ${k + 2} — la acumulación de 7.7 (techos más bajos) no está implementada; verifíquela aparte.`); continue; }
+      const pf = Math.max(naves[k].pf, naves[k + 1].pf);
+      const dh = Math.min(Math.max(a.hc, a.h2) - a.h2, Math.max(b.hc, b.h1) - b.h1);   // desnivel cumbrera–valle
+      const pv = Math.min(2 * pf / Ce, gamma * dh + 0.5 * pf);
+      valles.push({ eje: String.fromCharCode(66 + k), pf, pCumbrera: 0.5 * pf, pValle: pv, limitado: pv < 2 * pf / Ce - 1e-9, dh });
+    }
+  }
+  if (pg > 0 && pg <= 0.96) avisos.push('ASCE 7-02 7.10 (sobrecarga por lluvia sobre nieve, 0,24 kN/m² en techos con pendiente < 2,38°) no se incluye: verificar si NCh431:2010 la exige.');
+  avisos.push('7.5 Carga parcial (vanos con media carga balanceada) en costaneras continuas: verificar en el diseño de costaneras.');
+  return { pg, Ce, Ct, I, pf0, gamma, naves, valles, multi, avisos, lisa: n.lisa, terreno: n.terreno, expo: n.expo };
+}
+
+// ---------- esquema (sección transversal con caras abiertas) ----------
+function cgSvgSeccion(r) {
+  const G = r.G, Wd = 640, Hd = 250, pad = 40;
+  const hmax = Math.max(...G.naves.map(n => n.hc));
+  const sc = Math.min((Wd - 2 * pad) / G.W, (Hd - 2 * pad) / hmax);
+  const X = x => pad + x * sc, Y = y => Hd - pad - y * sc;
+  let s = `<svg id="cg_esq" viewBox="0 0 ${Wd} ${Hd}" style="width:100%;max-width:${Wd}px;background:var(--panel,#fff)" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="11">`;
+  s += `<line x1="${X(0) - 10}" y1="${Y(0)}" x2="${X(G.W) + 10}" y2="${Y(0)}" stroke="#888"/>`;
+  G.xs.forEach((x, k) => {
+    const abierta = (k === 0 && r.inp.muroA.t !== 'C') || (k === G.xs.length - 1 && r.inp.muroB.t !== 'C');
+    s += `<line x1="${X(x)}" y1="${Y(0)}" x2="${X(x)}" y2="${Y(G.hp[k])}" stroke="${abierta ? '#c0392b' : 'currentColor'}" stroke-width="2"${abierta ? ' stroke-dasharray="6 4"' : ''}/>`;
+    s += `<text x="${X(x)}" y="${Y(0) + 16}" text-anchor="middle">${String.fromCharCode(65 + k)}</text>`;
+  });
+  G.naves.forEach(nv => {
+    const x0 = G.xs[nv.i];
+    const pts = nv.tipo === 'D' ? [[x0, nv.h1], [x0 + nv.L / 2, nv.hc], [x0 + nv.L, nv.h2]] : [[x0, nv.h1], [x0 + nv.L, nv.h2]];
+    s += `<polyline points="${pts.map(p => X(p[0]) + ',' + Y(p[1])).join(' ')}" fill="none" stroke="currentColor" stroke-width="2.5"/>`;
+    s += `<text x="${X(x0 + nv.L / 2)}" y="${Y(nv.hc) - 8}" text-anchor="middle">Nave ${nv.i + 1}: L = ${vtTxt(nv.L, 2)} m, θ = ${vtTxt(nv.theta, 1)}°</text>`;
+  });
+  s += `<text x="${X(0)}" y="14">${esc(r.cerr.clase.toUpperCase())}${r.inp.muroA.t !== 'C' || r.inp.muroB.t !== 'C' ? ' — línea roja segmentada: muro abierto o parcial' : ''}</text></svg>`;
+  return s;
+}
+
+function renderCargasGalpon(container) {
+  const vOpts = VT_V_TABLA6.map(z => `<option value="${z.V}">Lat. ${z.lat} (${esc(z.ciu)}) — V = ${z.V} m/s</option>`).join('') + '<option value="manual">Otra (ingresar)</option>';
+  const impOpts = Object.keys(TABLA2_IMPORTANCIA_VIENTO).map(k => `<option${k.startsWith('II ') ? ' selected' : ''}>${esc(k)}</option>`).join('');
+  const tipos = [...new Set(CU_T4.map(r => r[0]))];
+  const inp = (id, val, lbl, w) => `<div class="field"${w ? ` style="${w}"` : ''}><label>${lbl}</label><input type="text" inputmode="decimal" id="${id}" value="${val}"></div>`;
+  container.innerHTML = `
+    <div class="calc-head">
+      <h1>Cargas de Galpón (NCh1537 · NCh432 · NCh431)</h1>
+      <div class="sub">Peso propio, sobrecarga de techo y de uso (NCh1537:2009), viento en todas las caras (NCh432.Of2010) y nieve (provisoria) de un galpón de 1 a 3 naves adyacentes, a 1 o 2 aguas, con caras abiertas o cerradas.</div>
+    </div>
+    <div class="panel">
+      <h3>1 · Geometría</h3>
+      <div class="field-grid">
+        <div class="field"><label>Cargar DXF del comando GALPON (AutoCAD)</label><input type="file" id="cg_dxf" accept=".dxf"></div>
+        <div class="field"><label>N° de naves adyacentes</label><select id="cg_n"><option>1</option><option>2</option><option>3</option></select></div>
+        ${inp('cg_s', '6', 'Espaciamiento entre marcos (m) — ancho tributario')}
+        ${inp('cg_lg', '48', 'Largo del galpón (m)')}
+        ${inp('cg_sc', '1.2', 'Espaciamiento de costaneras (m)')}
+      </div>
+      <div class="note" id="cg_dxfMsg">El DXF se genera con el comando GALPON de AutoCAD (menú Dibujo, «Cargas galpón»). También puede ingresar la geometría a mano.</div>
+      <div id="cg_naves" style="margin-top:.5rem"></div>
+    </div>
+    <div class="panel">
+      <h3>2 · Cerramientos (caras abiertas o cerradas)</h3>
+      <div id="cg_caras"></div>
+      <div class="note">Parcial: abierta desde el piso hasta la altura h. Aberturas: portones y ventanas en la parte cerrada. Con esto se clasifica el edificio según NCh432 3.9, 3.10 y 3.16.</div>
+    </div>
+    <div class="panel">
+      <h3>3 · Peso propio (valores de la ficha del fabricante)</h3>
+      <div class="field-grid">
+        ${inp('cg_cub', '6', 'Cubierta (kgf/m² de superficie)')}
+        ${inp('cg_cos', '4.5', 'Costaneras (kgf/m)')}
+        ${inp('cg_cie', '0', 'Aislación / cielo (kgf/m² de superficie)')}
+        ${inp('cg_ins', '5', 'Instalaciones colgadas (kgf/m² en planta)')}
+        ${inp('cg_rev', '6', 'Revestimiento de muros (kgf/m²)')}
+        ${inp('cg_mar', '40', 'Marco: peso del perfil (kgf/m)')}
+      </div>
+    </div>
+    <div class="panel">
+      <h3>4 · Sobrecargas de techo y de uso (NCh1537:2009)</h3>
+      <div class="field-grid">
+        <div class="field"><label>Acceso al techo (Tabla 4)</label><select id="cg_tt">${CU_TECHO.map(t => `<option value="${t[0]}">${esc(t[1])} — L₀ = ${vtTxt(t[2] * CG_KPA_KGF, 0)} kgf/m²</option>`).join('')}</select></div>
+        <div class="field"><label><input type="checkbox" id="cg_ent" style="width:auto;min-width:0;margin-right:.4rem">Hay entrepiso, altillo o pasarela</label></div>
+        <div class="field" id="cg_wEnt1"><label>Destino del entrepiso (Tabla 4)</label><select id="cg_entT">${CU_T4.map((r, i) => `<option value="${i}"${r[0] === 'Bodegas' && i === 4 ? ' selected' : ''}>${esc(r[0] + ' — ' + r[1])} (${vtTxt(r[2] * CG_KPA_KGF, 0)} kgf/m²)</option>`).join('')}</select></div>
+        <div class="field" id="cg_wEnt2">${''}<label>Área del entrepiso (m²)</label><input type="text" inputmode="decimal" id="cg_entA" value="50"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>5 · Viento (NCh432.Of2010)</h3>
+      <div class="field-grid">
+        <div class="field"><label>Velocidad básica V (Tabla 6)</label><select id="cg_Vs">${vOpts}</select></div>
+        <div class="field" id="cg_wV"><label>V ingresada (m/s)</label><input type="text" inputmode="decimal" id="cg_V" value="35"></div>
+        <div class="field"><label>Exposición (7.6)</label><select id="cg_ex">${Object.keys(VT_EXPO).map(k => `<option value="${k}"${k === 'C' ? ' selected' : ''}>${esc(VT_EXPO[k].txt)}</option>`).join('')}</select></div>
+        <div class="field"><label>Categoría de ocupación (factor I)</label><select id="cg_imp">${impOpts}</select></div>
+        ${inp('cg_kzt', '1', 'Kzt — factor topográfico (7.7)')}
+        <div class="field" id="cg_wFl"><label>Flujo bajo el techo (edificio abierto, 7.13)</label><select id="cg_fl"><option value="despejado">Despejado (bloqueo ≤ 50 %)</option><option value="obstruido">Obstruido (bloqueo > 50 %)</option></select></div>
+        <div class="field"><label><input type="checkbox" id="cg_comb" checked style="width:auto;min-width:0;margin-right:.4rem">Se usará con las combinaciones de NCh3171 (Kd = 0,85)</label></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>6 · Nieve — PROVISORIA (pg ingresada; coeficientes según ASCE 7-02 cap. 7, hasta verificar con NCh431:2010)</h3>
+      <div class="field-grid">
+        ${inp('cg_pg', '0', 'Carga básica de nieve pg (kgf/m²)')}
+        <div class="field"><label>Terreno (Tabla 7-2)</label><select id="cg_nt"><option value="B">B — urbano, suburbano, boscoso</option><option value="C" selected>C — abierto con obstáculos dispersos</option><option value="D">D — planicies sin obstáculos, costa</option><option value="M">Montaña sobre la línea de árboles, azotada por viento</option></select></div>
+        <div class="field"><label>Exposición del techo</label><select id="cg_ne"><option value="0">Totalmente expuesto</option><option value="1" selected>Parcialmente expuesto</option><option value="2">Resguardado</option></select></div>
+        <div class="field"><label>Factor térmico Ct (Tabla 7-3)</label><select id="cg_ct">${CG_CT.map((c, i) => `<option value="${c[0]}"${i === 2 ? ' selected' : ''}>${vtTxt(c[0], 2)} — ${esc(c[1])}</option>`).join('')}</select></div>
+        <div class="field"><label><input type="checkbox" id="cg_lisa" style="width:auto;min-width:0;margin-right:.4rem">Cubierta lisa sin obstrucciones (la nieve desliza libre por el alero)</label></div>
+      </div>
+      <div class="note">Tabla de referencia (no vigente): NCh431.Of77 Tabla 2 da n₀ por latitud y altitud; la norma vigente es NCh431:2010 (Tabla 1). Con pg = 0 no se calcula nieve.</div>
+    </div>
+    <div class="panel">
+      <h3>7 · Sismo</h3>
+      <div class="field-grid">
+        <div class="field"><label>¿Galpón industrial?</label><select id="cg_ind"><option value="si">Sí — NCh2369.Of2003</option><option value="no">No — NCh433 + DS61</option></select></div>
+        <div class="field"><label>&nbsp;</label><button type="button" class="btn" id="cg_sis">Abrir planilla de sismo</button></div>
+      </div>
+      <div id="cg_sisRes"></div>
+    </div>
+    <div id="cg_errores"></div>
+    <div class="panel"><h3>Esquema</h3><div id="cg_fig"></div></div>
+    <div class="panel" data-resumen="force"><h3>Resumen de cargas</h3><div id="cg_res" style="overflow-x:auto"></div></div>
+    <div class="panel"><h3>Viento — cargas lineales sobre el marco tipo, por estado</h3><div id="cg_vto" style="overflow-x:auto"></div></div>
+    <div class="panel"><h3>Viento — envolvente por superficie</h3><div id="cg_env" style="overflow-x:auto"></div></div>
+    <div class="panel"><h3>Nieve (provisoria)</h3><div id="cg_niv" style="overflow-x:auto"></div></div>
+    <div class="panel"><h3>Notas</h3><div id="cg_not"></div></div>
+    <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>`;
+  const $ = id => document.getElementById(id);
+  const num = id => { const el = $(id); if (!el) return NaN; const x = parseFloat(String(el.value).replace(',', '.')); return isNaN(x) ? NaN : x; };
+  const kg = x => vtTxt(x, 1);
+  const st = { naves: [{ L: 20, tipo: 'D', a: 6, b: 7 }, { L: 20, tipo: 'D', a: 6, b: 7 }, { L: 20, tipo: 'D', a: 6, b: 7 }], caras: {} };
+  function guardarNaves() {
+    for (let k = 0; k < 3; k++) if ($('cg_L' + k)) st.naves[k] = { L: num('cg_L' + k), tipo: $('cg_t' + k).value, a: num('cg_a' + k), b: num('cg_b' + k) };
+    container.querySelectorAll('[data-cara]').forEach(el => { st.caras[el.id] = el.value; });
+  }
+  function dibujarNaves() {
+    const n = +$('cg_n').value;
+    $('cg_naves').innerHTML = `<table class="results"><tr><th>Nave</th><th>Luz entre ejes (m)</th><th>Techo</th><th>Alero / h eje izquierdo (m)</th><th>Cumbrera / h eje derecho (m)</th></tr>
+      ${Array.from({ length: n }, (_, k) => { const s = st.naves[k]; return `<tr><td>${k + 1} (ejes ${String.fromCharCode(65 + k)}–${String.fromCharCode(66 + k)})</td>
+        <td><input type="text" inputmode="decimal" id="cg_L${k}" value="${s.L}"></td>
+        <td><select id="cg_t${k}"><option value="D"${s.tipo === 'D' ? ' selected' : ''}>Dos aguas</option><option value="U"${s.tipo === 'U' ? ' selected' : ''}>Una agua</option></select></td>
+        <td><input type="text" inputmode="decimal" id="cg_a${k}" value="${s.a}"></td><td><input type="text" inputmode="decimal" id="cg_b${k}" value="${s.b}"></td></tr>`; }).join('')}</table>
+      <div class="note">Dos aguas: altura de alero y de cumbrera (cumbrera al centro de la luz). Una agua: altura en el eje izquierdo y en el derecho.</div>`;
+    const letra = String.fromCharCode(65 + n);
+    const fila = (id, nombre) => { const t = st.caras[id + '_t'] || 'C', h = st.caras[id + '_h'] || '3', a = st.caras[id + '_a'] || '0';
+      return `<tr><td>${nombre}</td><td><select id="${id}_t" data-cara><option value="C"${t === 'C' ? ' selected' : ''}>Cerrada</option><option value="A"${t === 'A' ? ' selected' : ''}>Abierta</option><option value="P"${t === 'P' ? ' selected' : ''}>Parcial</option></select></td>
+        <td><input type="text" inputmode="decimal" id="${id}_h" data-cara value="${h}"></td><td><input type="text" inputmode="decimal" id="${id}_a" data-cara value="${a}"></td></tr>`; };
+    $('cg_caras').innerHTML = `<table class="results"><tr><th>Cara</th><th>Condición</th><th>h abierta (m), si es parcial</th><th>Aberturas en la parte cerrada (m²)</th></tr>
+      ${fila('cg_fA', 'Muro longitudinal eje A')}${fila('cg_fB', 'Muro longitudinal eje ' + letra)}
+      ${Array.from({ length: n }, (_, k) => fila('cg_fI' + k, `Hastial frontal, nave ${k + 1}`)).join('')}
+      ${Array.from({ length: n }, (_, k) => fila('cg_fF' + k, `Hastial posterior, nave ${k + 1}`)).join('')}</table>`;
+    container.querySelectorAll('#cg_naves input,#cg_naves select,#cg_caras input,#cg_caras select').forEach(el => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
+  }
+  const cara = id => ({ t: $(id + '_t').value, h: num(id + '_h') || 0, ab: num(id + '_a') || 0 });
+  function leer() {
+    const n = +$('cg_n').value;
+    const naves = Array.from({ length: n }, (_, k) => { const t = $('cg_t' + k).value, L = num('cg_L' + k), a = num('cg_a' + k), b = num('cg_b' + k);
+      return t === 'D' ? { L, tipo: 'D', ha: a, hc: b } : { L, tipo: 'U', h1: a, h2: b }; });
+    const geo = { naves, s: num('cg_s'), largo: num('cg_lg'), muroA: cara('cg_fA'), muroB: cara('cg_fB'),
+      hasI: Array.from({ length: n }, (_, k) => cara('cg_fI' + k)), hasF: Array.from({ length: n }, (_, k) => cara('cg_fF' + k)) };
+    const Vs = $('cg_Vs').value;
+    $('cg_wV').hidden = Vs !== 'manual';
+    $('cg_wEnt1').hidden = $('cg_wEnt2').hidden = !$('cg_ent').checked;
+    return { geo, sCost: num('cg_sc'),
+      pp: { cub: num('cg_cub') || 0, costanera: num('cg_cos') || 0, cielo: num('cg_cie') || 0, inst: num('cg_ins') || 0, rev: num('cg_rev') || 0, marco: num('cg_mar') || 0 },
+      techo: $('cg_tt').value, ent: { on: $('cg_ent').checked, idx: +$('cg_entT').value, A: num('cg_entA') },
+      viento: { V: Vs === 'manual' ? num('cg_V') : +Vs, expo: $('cg_ex').value, importancia: $('cg_imp').value, Kzt: num('cg_kzt'), flujo: $('cg_fl').value, comb3171: $('cg_comb').checked },
+      nieve: { pg: num('cg_pg'), terreno: $('cg_nt').value, expo: +$('cg_ne').value, Ct: +$('cg_ct').value, lisa: $('cg_lisa').checked, importancia: $('cg_imp').value } };
+  }
+  let ultimo = null;
+  function recalc() {
+    guardarNaves();
+    const I = leer();
+    const r = calcCargasGalpon(I);
+    ultimo = r;
+    const limpiar = msg => { ['cg_fig', 'cg_res', 'cg_vto', 'cg_env', 'cg_niv', 'cg_not', 'cg_sisRes'].forEach(id => { $(id).innerHTML = msg; }); };
+    if (r.errores) {
+      $('cg_errores').innerHTML = `<div class="panel"><div class="global-verdict bad"><span class="label">DATOS INVÁLIDOS O FUERA DE ALCANCE — no se calcula ni se permite imprimir o exportar</span></div><ul class="note">${r.errores.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+      limpiar('<p class="note">Sin resultados: corregir los datos indicados arriba.</p>');
+      xlsxSetPrintSheets('<div class="xlsx-title-bar">DATOS INVÁLIDOS</div>', '', '');
+      return;
+    }
+    r.inp = I.geo;
+    const nie = I.nieve.pg > 0 ? calcNieveGalpon(r, I.nieve) : null;
+    $('cg_wFl').hidden = !r.abierto;
+    $('cg_errores').innerHTML = r.pendientes.length ? `<div class="panel"><div class="global-verdict bad"><span class="label">CÁLCULO PRELIMINAR — condiciones sin acreditar: no se permite imprimir ni exportar</span></div><ul class="note">${r.pendientes.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
+    $('cg_fig').innerHTML = cgSvgSeccion(r);
+    const H = cgHtml(r, nie);
+    $('cg_res').innerHTML = H.resumen;
+    $('cg_vto').innerHTML = H.viento;
+    $('cg_env').innerHTML = H.env;
+    $('cg_niv').innerHTML = H.nieve;
+    $('cg_not').innerHTML = `<ul class="note">${H.notas.map(x => `<li>${x}</li>`).join('')}</ul>`;
+    const ind = $('cg_ind').value === 'si';
+    $('cg_sisRes').innerHTML = `<table class="results"><tr><th>Peso de referencia para el sismo</th><th class="num">tonf</th></tr>
+      <tr><td>Peso propio del techo y marcos (cubierta, costaneras, cielo, instalaciones y marcos)</td><td class="num">${vtTxt(r.Ptecho / 1000, 2)}</td></tr>
+      <tr><td>Peso propio de revestimientos de muros (total; al nivel del techo corresponde aprox. la mitad)</td><td class="num">${vtTxt(r.Pmuros / 1000, 2)}</td></tr>
+      ${r.ent ? `<tr><td>Sobrecarga de uso del entrepiso (L₀ × área)</td><td class="num">${vtTxt(r.ent.P / 1000, 2)}</td></tr>` : ''}</table>
+      <div class="note">El porcentaje de sobrecarga que entra al peso sísmico y el resto del cálculo se definen en la planilla ${ind ? 'Fuerzas Sísmicas NCh2369.Of2003 (Industrial)' : 'Fuerzas Sísmicas NCh433 + DS61'}.</div>`;
+    xlsxSetPrintSheets(H.datosPrint, H.calcPrint, H.resPrint);
+  }
+  $('cg_sis').addEventListener('click', () => { location.hash = $('cg_ind').value === 'si' ? 'sismo-nch2369' : 'sismo'; });
+  $('cg_n').addEventListener('change', () => { guardarNaves(); dibujarNaves(); recalc(); });
+  $('cg_dxf').addEventListener('change', ev => {
+    const f = ev.target.files[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      const d = cgLeerDxf(String(rd.result));
+      if (d.error) { $('cg_dxfMsg').textContent = d.error; return; }
+      $('cg_n').value = String(d.naves.length);
+      d.naves.forEach((nv, k) => { st.naves[k] = nv.tipo === 'D' ? { L: nv.L, tipo: 'D', a: nv.ha, b: nv.hc } : { L: nv.L, tipo: 'U', a: nv.h1, b: nv.h2 }; });
+      const cc = (id, c) => { st.caras[id + '_t'] = c.t; st.caras[id + '_h'] = String(c.h || 3); st.caras[id + '_a'] = String(c.ab || 0); };
+      cc('cg_fA', d.muroA); cc('cg_fB', d.muroB);
+      d.hasI.forEach((c, k) => cc('cg_fI' + k, c)); d.hasF.forEach((c, k) => cc('cg_fF' + k, c));
+      const vv = d.vanos, sMax = vv.length === 1 ? vv[0] : Math.max(...vv.slice(0, -1).map((a, i) => (a + vv[i + 1]) / 2));
+      $('cg_lg').value = String(+vv.reduce((a, b) => a + b, 0).toFixed(3)); $('cg_s').value = String(+sMax.toFixed(3));
+      $('cg_dxfMsg').textContent = `DXF cargado: ${f.name} — ${d.naves.length} nave(s); largo y espaciamiento (mayor ancho tributario de un marco interior) tomados de los vanos del DXF.`;
+      dibujarNaves(); recalc();
+    };
+    rd.readAsText(f);
+  });
+  container.querySelectorAll('.panel input:not(#cg_dxf),.panel select').forEach(el => { if (!['cg_n'].includes(el.id)) { el.addEventListener('input', recalc); el.addEventListener('change', recalc); } });
+  dibujarNaves(); recalc();
+}
+
+
+// ---------- cargas lineales sobre los elementos del marco tipo (columnas y vigas de techo) ----------
+function cgVigas(G) {
+  const out = [];
+  G.naves.forEach(nv => { const x0 = G.xs[nv.i];
+    if (nv.tipo === 'D') { out.push({ nave: nv.i, nombre: `Viga nave ${nv.i + 1}, izquierda`, a: x0, b: x0 + nv.L / 2 }); out.push({ nave: nv.i, nombre: `Viga nave ${nv.i + 1}, derecha`, a: x0 + nv.L / 2, b: x0 + nv.L }); }
+    else out.push({ nave: nv.i, nombre: `Viga nave ${nv.i + 1}`, a: x0, b: x0 + nv.L }); });
+  return out;
+}
+function cgElemViento(r, c) {
+  const G = r.G, t = G.trib, n = G.naves.length, letra = String.fromCharCode(65 + n), filas = [];
+  const sg = x => vtSig(x / CG_KGF, 1);
+  if (c.minimo) { filas.push(['Marco (columnas y vigas)', 'área proyectada normal al viento', sg(c.sup[0].p * t), 'horizontal, en el sentido del viento']); return filas; }
+  // columnas exteriores
+  [[0, 'A'], [n, letra]].forEach(([k, L]) => {
+    const sp = c.sup.find(x => x.tipo === 'muro' && (x.nombre.startsWith(`Muro eje ${L} `) || x.nombre.startsWith('Muros longitudinales')));
+    const nom = `Columna eje ${L}`;
+    if (!sp) { filas.push([nom, '—', '0,0', 'muro abierto o sin muro']); return; }
+    if (sp.Cp === null) { filas.push([nom, 'muro abierto', '0,0', '—']); return; }
+    if (sp.bandas) sp.bandas.forEach(b => filas.push([nom, `z = ${vtTxt(b.z1, 2)}–${vtTxt(b.z2, 2)} m`, sg(b.p * t), '+ hacia el interior']));
+    else filas.push([nom, 'toda la altura del muro', sg(sp.p * t), '+ hacia el interior']);
+  });
+  // vigas de techo
+  cgVigas(G).forEach(v => {
+    const roofs = c.sup.filter(x => x.tipo === 'techo' && x.nave === v.nave).slice().sort((p, q) => (p.xa != null && q.xa != null) ? p.xa - q.xa : 0);
+    roofs.forEach(sp => {
+      if (sp.xa != null) {
+        const a = Math.max(sp.xa, v.a), b = Math.min(sp.xb, v.b);
+        if (b - a > 1e-6) filas.push([v.nombre, `x = ${vtTxt(a, 2)}–${vtTxt(b, 2)} m desde el eje A`, sg(sp.p * t), '⊥ a la viga, + hacia la viga']);
+      } else filas.push([v.nombre, sp.nombre.replace(/^Nave \d+ — /, 'marco en la ').replace('Techo, ', ''), sg(sp.p * t), '⊥ a la viga, + hacia la viga']);
+    });
+  });
+  return filas;
+}
+// ---------- tablas (pantalla e impresión) ----------
+function cgHtml(r, nie) {
+  const G = r.G, k = x => vtTxt(x, 1), kN = x => vtTxt(x / CG_KGF, 1), sg = x => vtSig(x / CG_KGF, 1);
+  const tab = (cls, head, rows) => `<table class="${cls}"><tr>${head.map((h, i) => `<th${i ? ' class="num"' : ''}>${h}</th>`).join('')}</tr>${rows.map(f => `<tr>${f.map((c, i) => `<td${i ? ' class="num"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</table>`;
+  const letra = String.fromCharCode(65 + G.naves.length);
+  // resumen
+  const filas = [];
+  r.naves.forEach(nv => {
+    const t = `Nave ${nv.i + 1}`;
+    filas.push([`<b>Vigas ${t.toLowerCase()}</b> — peso propio D: cubierta, costaneras, cielo e instalaciones vertical (la carga lineal incluye el perfil, ${k(r.pp.marco)} kgf/m)`, k(nv.Dh), k(nv.wMarco)]);
+    filas.push([`Vigas ${t.toLowerCase()} — sobrecarga de techo Lr, vertical (AT del marco = ${vtTxt(nv.ATm, 1)} m²${nv.rm ? `, R₁ = ${vtTxt(nv.rm.R1, 3)}, R₂ = ${vtTxt(nv.rm.R2, 3)}` : ''})`, k(nv.Lm), k(nv.wLr)]);
+    if (nie && !nie.errores) { const n = nie.naves[nv.i]; filas.push([`Vigas ${t.toLowerCase()} — nieve balanceada ps (provisoria), vertical`, k(n.ps * 101.97), k(n.ps * 101.97 * G.trib)]); }
+  });
+  filas.push(['Columnas exteriores con muro — peso del revestimiento (vertical, por m de altura)', k(r.muroPP), k(r.muroPP * G.trib)]);
+  if (r.ent) filas.push([`Entrepiso — sobrecarga de uso L₀ (${esc(r.ent.row[0] + ': ' + r.ent.row[1])})`, k(r.ent.L0), `Qk = ${r.ent.Qk != null ? vtTxt(r.ent.Qk * 101.97, 0) + ' kgf' : '—'}`]);
+  const resumen = tab('results', ['Carga', 'kgf/m²', `Carga lineal sobre el marco tipo (kgf/m, ancho tributario ${vtTxt(G.trib, 2)} m)`], filas)
+    + `<div class="note">Viento: edificio <b>${esc(r.cerr.clase.toLowerCase())}</b>${r.abierto ? ' (7.13, techos libres, flujo ' + r.flujo + ')' : `, GCpi = ±${vtTxt(r.GCpi, 2)}`}, qh = ${kN(r.qhB)} kgf/m² a h = ${vtTxt(r.hEd, 2)} m. Estados y envolvente en las tablas de viento.</div>`;
+  // viento
+  const vRows = c => c.sup.flatMap(sp => sp.bandas
+    ? sp.bandas.map(b => [`${esc(sp.nombre)}, z = ${vtTxt(b.z1, 2)}–${vtTxt(b.z2, 2)} m`, vtSig(sp.Cp, 2), sg(b.p), c.dir === 'L' ? '—' : sg(b.p * G.trib)])
+    : [[esc(sp.nombre) + (sp.xa != null ? ` <span style="font-size:.85em">(x = ${vtTxt(sp.xa, 2)}–${vtTxt(sp.xb, 2)} m desde el eje A)</span>` : ''), vtSig(sp.Cp, 2), sg(sp.p), c.dir === 'L' ? '—' : sg(sp.p * G.trib)]]);
+  const cab = c => `<div style="font-weight:600">${c.id} — ${esc(c.dirTxt)}${c.abierto || c.minimo ? '' : `, GCpi = ${vtSig(c.s * r.GCpi, 2)}`}</div><div class="note" style="margin:.1rem 0 .3rem">${esc(c.casoTxt)}</div>`;
+  const viento = r.casos.map(c => `<div style="margin:.4rem 0 .9rem">${cab(c)}
+    ${tab('results', ['Elemento del marco tipo', 'Tramo', 'w (kgf/m)', 'Dirección'], cgElemViento(r, c))}
+    <details><summary style="cursor:pointer;font-size:.85em">Presiones por superficie (kgf/m²)</summary>${tab('results', ['Superficie', r.abierto ? 'CN' : 'Cp', 'p (kgf/m²)', 'Sobre el marco (kgf/m)'], vRows(c))}</details></div>`).join('')
+    + `<div class="note">Muros parciales: la presión indicada actúa sobre la parte cerrada. Signo +: presión hacia la superficie; −: succión. p = qz·G·Cp − qh·GCpi (Tablas 13, 14 y 15)${r.abierto ? '; edificio abierto: p = qh·G·CN (7.13.2, ecuación 31)' : ''}. G = 0,85 (estructura rígida). Carga sobre el marco = p × ancho tributario del marco tipo.</div>`;
+  const vientoPrint = r.casos.map(c => `<div style="margin:.3rem 0 .6rem">${cab(c).replace(/ class="note"/, '')}${tab('results', ['Elemento del marco tipo', 'Tramo', 'w (kgf/m)', 'Dirección'], cgElemViento(r, c))}</div>`).join('');
+  const env = tab('results', ['Dirección / superficie', 'Presión máx. (kgf/m²)', 'Estado', 'Succión máx. (kgf/m²)', 'Estado'],
+    r.envolvente.map(o => [`${o.dir} — ${esc(o.nombre.replace(/ \((barlovento|sotavento|laterales)\)/, ''))}`, o.pMax > 0 ? sg(o.pMax) : '—', o.pMax > 0 ? o.eMax : '', o.pMin < 0 ? sg(o.pMin) : '—', o.pMin < 0 ? o.eMin : '']));
+  // nieve
+  let nieve = '<p class="note">pg = 0: sin carga de nieve.</p>';
+  if (nie && nie.errores) nieve = `<ul class="note">${nie.errores.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  else if (nie) {
+    const kp = x => vtTxt(x * 101.97, 1);
+    nieve = `<div class="global-verdict bad"><span class="label">PROVISORIO — coeficientes según ASCE 7-02 cap. 7, pendiente de verificar con NCh431:2010</span></div>`
+      + tab('results', ['Parámetro', 'Valor'], [['pg (dato)', kp(nie.pg) + ' kgf/m²'], ['Ce (Tabla 7-2)', vtTxt(nie.Ce, 2)], ['Ct (Tabla 7-3)', vtTxt(nie.Ct, 2)], ['I (Tabla 7-4)', vtTxt(nie.I, 2)],
+        ['pf = 0,7·Ce·Ct·I·pg (Eq. 7-1)', kp(nie.pf0) + ' kgf/m²'], ['γ nieve = 0,426·pg + 2,2 ≤ 4,7 (Eq. 7-4)', vtTxt(nie.gamma, 2) + ' kN/m³']])
+      + tab('results', ['Nave', 'θ (°)', 'Mínimo 7.3.4 (kgf/m²)', 'pf (kgf/m²)', 'Cs', 'ps (kgf/m²)', 'ps sobre las vigas (kgf/m)', 'Desbalance sobre las vigas (kgf/m)'],
+        nie.naves.map(n => [`Nave ${n.i + 1}`, vtTxt(n.theta, 1), n.bajaPend ? kp(n.pmin) : 'no aplica', kp(n.pf), vtTxt(n.Cs, 3), kp(n.ps), `<b>${kp(n.ps * G.trib)}</b>`,
+          n.desb ? `viga de barlovento ${kp(n.desb.barlo * G.trib)} / viga de sotavento ${kp(n.desb.sota * G.trib)}` : (nie.multi ? 'ver valles' : 'no requerido')]))
+      + (nie.valles.length ? tab('results', ['Valle (eje)', 'pf (kgf/m²)', 'En las cumbreras 0,5·pf (kgf/m sobre la viga)', 'En el valle (kgf/m sobre la viga)', ''], nie.valles.map(v => [v.eje, kp(v.pf), kp(v.pCumbrera * G.trib), `<b>${kp(v.pValle * G.trib)}</b>`, v.limitado ? 'limitado: la nieve del valle no sube sobre la de la cumbrera' : 'variación lineal entre cumbrera y valle, en las dos vigas que llegan al valle'])) : '')
+      + `<ul class="note">${(nie.multi ? ['Varias naves: techos múltiples (7.4.4, Cs = 1) y desbalance en los valles con variación lineal desde 0,5·pf en la cumbrera hasta la carga del valle (7.6.3).'] : []).concat(nie.avisos).map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  }
+  const notas = r.avisos.map(esc).concat([
+    `Clasificación del cerramiento: ${r.cerr.muros.map(m => `${esc(m.nombre)}: Ao = ${vtTxt(m.Ao, 1)} m² de Ag = ${vtTxt(m.Ag, 1)} m²${m.abierto ? ' (≥ 80 %: abierto)' : ''}${m.parcial ? ' (cumple 3.16)' : ''}`).join('; ')}. Resultado: <b>${esc(r.cerr.clase)}</b>.`,
+    'Peso propio: cubierta, costaneras (peso/espaciamiento) y cielo se dan por m² de superficie inclinada y se pasan a proyección horizontal dividiendo por cos θ; las instalaciones se dan en planta.',
+    'Sobrecarga de techo: NCh1537:2009 Tabla 4 y 8.2 (R₁ por área tributaria, R₂ por pendiente F en %), sobre la proyección horizontal, con el área tributaria del marco. 5.3.3: las costaneras se diseñan con la misma carga de uso de los elementos principales que las soportan.']);
+  // impresión (sin notas de uso del programa)
+  const rr = (l, v) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${v}</td></tr>`;
+  const datosPrint = `<div class="xlsx-title-bar">DATOS DE ENTRADA</div><table class="xlsx-table"><tbody>
+    ${G.naves.map(nv => rr(`Nave ${nv.i + 1}`, `L = ${vtTxt(nv.L, 2)} m, ${nv.tipo === 'D' ? `2 aguas, alero ${vtTxt(nv.h1, 2)} m, cumbrera ${vtTxt(nv.hc, 2)} m` : `1 agua, h eje izq. ${vtTxt(nv.h1, 2)} m, h eje der. ${vtTxt(nv.h2, 2)} m`}, θ = ${vtTxt(nv.theta, 2)}°`)).join('')}
+    ${rr('Largo del galpón / espaciamiento entre marcos', `${vtTxt(G.Ltot, 2)} m / ${vtTxt(G.trib, 2)} m`)}
+    ${rr('Espaciamiento de costaneras', vtTxt(r.sCost, 2) + ' m')}
+    ${rr('Cerramiento', r.cerr.muros.map(m => `${esc(m.nombre)}: Ao/Ag = ${vtTxt(m.Ao, 1)}/${vtTxt(m.Ag, 1)} m²`).join('; ') + ' → ' + esc(r.cerr.clase))}
+    ${rr('Peso propio (kgf/m², kgf/m)', `cubierta ${k(r.pp.cub)}; costaneras ${k(r.pp.costanera)} kgf/m; cielo ${k(r.pp.cielo)}; instalaciones ${k(r.pp.inst)}; muros ${k(r.pp.rev)}; marco ${k(r.pp.marco)} kgf/m`)}
+    ${rr('Techo (NCh1537 Tabla 4)', esc(r.tt[1]))}
+    ${rr('Viento', `V = ${vtTxt(r.base.V, 1)} m/s, exposición ${esc(r.base.expo)}, ${esc(r.base.importancia)} (I = ${vtTxt(r.I, 2)}), Kzt = ${vtTxt(r.base.Kzt, 2)}`)}
+    ${nie && !nie.errores ? rr('Nieve (provisoria)', `pg = ${vtTxt(nie.pg * 101.97, 1)} kgf/m², Ce = ${vtTxt(nie.Ce, 2)}, Ct = ${vtTxt(nie.Ct, 2)}, I = ${vtTxt(nie.I, 2)}`) : ''}
+  </tbody></table>`;
+  const plano = h => h.replace(/class="results"/g, 'class="xlsx-table xlsx-calc-table"');
+  const calcPrint = `<div class="xlsx-title-bar">CÁLCULO</div><div class="xlsx-section">1. RESUMEN DE CARGAS</div>${plano(resumen)}
+    <div class="xlsx-section">2. VIENTO — NCh432.Of2010, CARGAS LINEALES SOBRE EL MARCO TIPO</div>${plano(vientoPrint)}
+    <div class="xlsx-section">3. VIENTO — ENVOLVENTE POR SUPERFICIE</div>${plano(env)}
+    <div class="xlsx-section">4. NIEVE (PROVISORIA)</div>${plano(nieve)}
+    <div class="xlsx-section">5. NOTAS</div><ul style="font-size:.85em">${notas.map(x => `<li>${x}</li>`).join('')}</ul>`;
+  const resPrint = `<div class="xlsx-title-bar">RESUMEN</div>${plano(resumen)}${plano(env)}`;
+  return { resumen, viento, env, nieve, notas, datosPrint, calcPrint, resPrint };
+}
+
+
+/* =========================================================================
    COMBINACIONES DE CARGA — generador para RAM Elements
    Familias (nomenclatura ING): A = acero, H = rotura de hormigón y fundaciones,
    F = dimensionamiento de fundaciones (servicio: suelo, volcamiento, deslizamiento),
@@ -54783,6 +55528,7 @@ const CALC_RENDERERS = { informes: renderInformes, murosTrafo: renderMurosTrafo,
   dosificacion: renderDosificacion,
   fuegoLosas: renderFuegoLosas,
   cargasUso: renderCargasUso,
+  cargasGalpon: renderCargasGalpon,
   combinacionesCarga: renderCombinacionesCarga,
   inoxidable: renderIxInox,
   metalcon: renderMetalcon };
