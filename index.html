@@ -52779,11 +52779,12 @@ function renderCargasGalpon(container) {
         <div class="field"><label>Sistema resistente (R)</label><select id="cg_sr"></select></div>
         <div class="field" id="cg_wXi"><label>Razón de amortiguamiento ξ (Tabla 5.5)</label><select id="cg_sxi"></select></div>
         ${inp('cg_st', '', 'T* — período fundamental (s), opcional; vacío: C = Cmáx')}
+        <div class="field" id="cg_wAglo"><label>Aglomeración de personas o cosas (NCh433 5.5.1)</label><select id="cg_saglo"><option value="no">No es usual — mínimo 25 % de la sobrecarga</option><option value="si">Es usual — mínimo 50 % de la sobrecarga</option></select></div>
         ${inp('cg_spl', '0', '% de Lr en el peso sísmico')}
         ${inp('cg_sps', '0', '% de la nieve en el peso sísmico', '', 'cg-n')}
         <div class="field" id="cg_wDecl" style="grid-column:1/-1"><label><input type="checkbox" id="cg_sdecl" style="width:auto;min-width:0;margin-right:.4rem">El proyectista acredita: <span id="cg_sdeclTxt"></span></label></div>
       </div>
-      <div class="note">Peso sísmico del marco tipo concentrado en hombros y cumbreras; los porcentajes de sobrecarga los fija el proyectista según ${'NCh2369 5.1.3 o NCh433 5.5.1'}.</div>
+      <div class="note" id="cg_sNota"></div>
       <div id="cg_sisRes"></div>
     </div>
     <div id="cg_errores"></div>
@@ -52845,9 +52846,14 @@ function renderCargasGalpon(container) {
       const o = cgSismoOpciones(ind), fill = (id, arr) => { const v = $(id).value; $(id).innerHTML = '<option value="">— seleccione —</option>' + arr.map(([k, t]) => `<option value="${esc(k)}">${esc(t)}</option>`).join(''); if (arr.some(x => x[0] === v)) $(id).value = v; };
       fill('cg_sz', o.zona); fill('cg_ss', o.suelo); fill('cg_scat', o.cat); fill('cg_sr', o.R); fill('cg_sxi', o.xi); st.sInd = ind;
     }
-    $('cg_wXi').hidden = !ind;
+    $('cg_wXi').hidden = !ind; $('cg_wAglo').hidden = ind;
+    // % de sobrecarga en el peso sísmico: NCh2369 5.1.3 (techos: 0) o NCh433 5.5.1 (≥ 25 % / ≥ 50 %); se propone el valor de la norma al cambiar
+    const aglo = $('cg_saglo').value === 'si', minLr = ind ? 0 : aglo ? 50 : 25;
+    if (st.sMin !== minLr) { $('cg_spl').value = String(minLr); st.sMin = minLr; }
+    $('cg_sNota').textContent = ind ? 'Peso sísmico del marco tipo concentrado en hombros y cumbreras. NCh2369 5.1.3: la sobrecarga de uso de techos, plataformas y pasarelas se puede reducir con el coeficiente 0 (se propone 0 %). La norma no fija el porcentaje de nieve: lo define el proyectista.'
+      : 'Peso sísmico del marco tipo concentrado en hombros y cumbreras. NCh433 5.5.1: cargas permanentes más un porcentaje de la sobrecarga de uso no inferior a 25 % (sin aglomeración usual) o 50 % (con aglomeración usual). La norma no fija el porcentaje de nieve: lo define el proyectista.';
     const sis = { ind, zona: $('cg_sz').value, suelo: $('cg_ss').value, cat: $('cg_scat').value, R: $('cg_sr').value, xi: $('cg_sxi').value,
-      Tstar: String($('cg_st').value).trim() === '' ? null : num('cg_st'), pLr: num('cg_spl'), pS: nOn ? num('cg_sps') : 0, decl: $('cg_sdecl').checked };
+      Tstar: String($('cg_st').value).trim() === '' ? null : num('cg_st'), pLr: num('cg_spl'), pS: nOn ? num('cg_sps') : 0, decl: $('cg_sdecl').checked, aglo, minLr };
     const dcl = cgSismoDecl(ind, sis);
     $('cg_wDecl').hidden = !dcl.length; $('cg_sdeclTxt').textContent = dcl.join(' ');
     return { geo, sCost: num('cg_sc'),
@@ -52967,6 +52973,7 @@ function cgSismo(r, s, nie) {
   }
   if (s.Tstar !== null && !(s.Tstar > 0)) pend.push('Sismo: T* debe ser mayor que 0 s, o quedar vacío (se adopta Cmáx).');
   if (!(s.pLr >= 0 && s.pLr <= 100)) pend.push('Sismo: el porcentaje de Lr en el peso sísmico debe estar entre 0 y 100 %.');
+  else if (!ind && s.pLr < s.minLr) pend.push(`Sismo: NCh433 5.5.1 exige al menos ${s.minLr} % de la sobrecarga de uso en el peso sísmico (${s.aglo ? 'con' : 'sin'} aglomeración usual de personas o cosas).`);
   if (!(s.pS >= 0 && s.pS <= 100)) pend.push('Sismo: el porcentaje de nieve en el peso sísmico debe estar entre 0 y 100 %.');
   const H = Math.max(...G.naves.map(n => n.hc));
   out.H = H;
@@ -53018,7 +53025,7 @@ function cgHtmlSismo(r, sis) {
       ['C calculado = 2,75·S·Ao/(g·R)·(T\'/T*)ⁿ', sis.Ccalc === null ? 'T* no ingresado' : `T* = ${vtTxt(sis.Tstar, 3)} s → ${f3(sis.Ccalc)}`],
       ['Cmín = Ao·S/(6g)', f3(sis.Cmin)], ['Cmáx = k(R)·S·Ao/g (Tabla 6.4)', `${vtTxt(sis.kR, 3)} × ${vtTxt(sis.S, 2)} × ${vtTxt(sis.Ao, 1)} = ${f3(sis.Cmax)}`]];
   par.push(['<b>C adoptado</b>', `<b>${f3(sis.C)}</b> — ${sis.gob}`], ['I', vtTxt(sis.I, 2)],
-    ['Peso sísmico', `D + ${vtTxt(sis.pLr, 0)} % de Lr${sis.nOk ? ` + ${vtTxt(sis.pS, 0)} % de la nieve balanceada` : ''} (porcentajes adoptados por el proyectista según ${sis.ind ? 'NCh2369, 5.1.3' : 'NCh433, 5.5.1'})`]);
+    ['Peso sísmico', `D + ${vtTxt(sis.pLr, 0)} % de Lr${sis.nOk ? ` + ${vtTxt(sis.pS, 0)} % de la nieve balanceada` : ''} — ${sis.ind ? 'NCh2369 5.1.3: sobrecarga de uso de techos con coeficiente 0' : `NCh433 5.5.1: mínimo ${sis.s.minLr} % de la sobrecarga de uso (${sis.s.aglo ? 'con' : 'sin'} aglomeración usual)`}${sis.nOk ? '; el porcentaje de nieve lo define el proyectista (la norma no lo fija)' : ''}`]);
   if (sis.decl.length) par.push(['Condiciones acreditadas por el proyectista', sis.decl.map(esc).join(' ')]);
   const tab = (head, rows) => `<table class="results"><tr>${head.map((h, i) => `<th${i ? ' class="num"' : ''}>${h}</th>`).join('')}</tr>${rows.map(f => `<tr>${f.map((c, i) => `<td${i ? ' class="num"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</table>`;
   const filas = sis.nudos.map(q => [q.nom, vtTxt(q.y, 2), k0(q.D), k0(q.col), k0(q.rev), k0(q.Lr + q.S), `<b>${k0(q.P)}</b>`, `<b>${k0(q.F)}</b>`, vtTxt(q.F / 1000, 3)]);
