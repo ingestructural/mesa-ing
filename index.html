@@ -1646,12 +1646,13 @@ function fsChooseRoot(){
       return window.showDirectoryPicker({mode:'readwrite'});   // si 'documents' no se acepta, el diálogo por defecto
     });
   }).then(function(handle){
-    return fsDbSet('root', handle).then(function(){
-      FS_ROOT = handle; FS_STORED_NAME = handle.name || '';
-      FS_ACTIVE_PATH = [];
-      fsSaveActivePath();
-      return handle;
-    });
+    // la carpeta elegida se usa de inmediato; guardarla para la próxima sesión es aparte (si falla, se avisa)
+    FS_ROOT = handle; FS_STORED_NAME = handle.name || '';
+    FS_ACTIVE_PATH = [];
+    fsSaveActivePath();
+    var guardado = fsDbSet('root', handle).then(function(){ return true; }, function(e){ console.error('carpeta base: no se pudo recordar', e); return false; });
+    var plazo = new Promise(function(r){ setTimeout(function(){ r(false); }, 4000); });
+    return Promise.race([guardado, plazo]).then(function(ok){ fsChooseRoot.noGuardada = !ok; if (!ok) fsToast('Carpeta base: ' + handle.name + ' (no se pudo recordar para la próxima vez; vuelva a elegirla si al recargar no aparece).'); return handle; });
   });
 }
 
@@ -2402,7 +2403,7 @@ document.getElementById('fsChooseRootBtn').addEventListener('click', async funct
     var h = await fsChooseRoot();
     document.getElementById('fsReconnectRow').style.display = 'none';
     fsUpdateRootLabel(); fsRenderTree(); fsUpdateSaveBarLabel();
-    fsToast(h && h.name === antes ? ('Se eligió de nuevo «' + h.name + '». Para cambiarla, pinche la otra carpeta (que quede marcada) y luego «Seleccionar carpeta».') : ('Carpeta base: ' + (h ? h.name : '')));
+    if (!fsChooseRoot.noGuardada) fsToast(h && h.name === antes ? ('Se eligió de nuevo «' + h.name + '». Para cambiarla, pinche la otra carpeta (que quede marcada) y luego «Seleccionar carpeta».') : ('Carpeta base: ' + (h ? h.name : '')));
   } catch(e) {
     if (e && e.name === 'AbortError') return;   // cerró el selector sin elegir
     fsToast('No se pudo cambiar la carpeta base: ' + ((e && (e.message || e.name)) || 'error desconocido'));
