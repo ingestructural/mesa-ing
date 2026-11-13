@@ -608,7 +608,7 @@
   .ev-sugbar{margin-top:.5rem;font-size:.72rem;color:var(--ink-muted);opacity:.85;display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
   .ev-sugbar .btn-add{margin-top:0;font-size:.72rem;padding:.25rem .6rem} .evwarn{color:var(--bad);width:100%}
   @media print{ .evsug, .ev-sugbar{display:none !important;} }
-  @media print{ .cg-solo-web{display:none !important;} } .cg-sel-larga{font-size:.8rem !important;font-family:inherit !important;}
+  @media print{ .cg-solo-web{display:none !important;} } .cg-sdesc{font-size:.78rem;margin:.2rem 0 0;line-height:1.25} .cg-sel-larga{font-size:.8rem !important;font-family:inherit !important;}
   /* ===== Paleta POWER (tonos del logo ING: azul #0060C1 y celeste #0184C8) — vista de prueba ===== */
   :root{
     --logo1:#0060C1; --logo2:#0184C8;
@@ -52869,6 +52869,25 @@ const CG_TIP_COST = () => CATALOG_COSTANERAS.filter(p => (p.fam === 'CA' || p.fa
 // Aislación: Volcán, ficha Aislanglass (rollo 80 mm, 13,5 kg/m³ → 0,08 × 13,5 = 1,08 kg/m²).
 const CG_TIP_AISL = [[0, 'Sin aislación ni cielo'], [1.1, 'Lana de vidrio Aislanglass rollo 80 mm (13,5 kg/m³)']];
 const CG_TIP_INST = [[0, 'Sin instalaciones colgadas']];
+// Descripción breve de cada parámetro del panel de sismo (solo en pantalla)
+const CG_SDESC_2369 = {
+  cg_ind: 'Industrial: NCh2369.Of2003 (estructuras e instalaciones industriales). No industrial: NCh433 + DS61.',
+  cg_sz: 'Zona sísmica de la comuna del proyecto, NCh2369 Tabla 5.1. Define Ao (Tabla 5.2): zona 1 = 0,20 g, zona 2 = 0,30 g, zona 3 = 0,40 g.',
+  cg_ss: 'Tipo de suelo de fundación según NCh2369 Tabla 5.3, del informe de mecánica de suelos. Define T\' y n (Tabla 5.4).',
+  cg_scat: 'Categoría de la obra según NCh2369 4.3: C1 críticas (vitales, peligrosas o esenciales), C2 normales, C3 menores o provisionales. Define I.',
+  cg_sr: 'Factor de modificación de la respuesta R, NCh2369 Tabla 5.6, según el sistema que resiste el sismo (p. ej. 3.4 o 3.5 para galpones de acero de un piso). Mayor R, menor C.',
+  cg_sxi: 'Razón de amortiguamiento ξ, NCh2369 Tabla 5.5, según material y tipo de uniones (marcos de acero soldados 0,02; apernados en terreno 0,03; hormigón 0,05).',
+  cg_st: 'Período del modo con mayor masa traslacional en la dirección analizada, del modelo estructural. Vacío: se adopta C = Cmáx (Tabla 5.7), conservador.',
+  cg_spl: 'NCh2369 5.1.3: la sobrecarga de uso de techos se puede reducir con el coeficiente 0.' };
+const CG_SDESC_433 = {
+  cg_ind: 'Industrial: NCh2369.Of2003. No industrial (bodegas, comercio, galpones de uso general): NCh433 + DS61.',
+  cg_sz: 'Zona sísmica de la comuna del proyecto (NCh433, 4.1). Define Ao: zona 1 = 0,2 g, zona 2 = 0,3 g, zona 3 = 0,4 g.',
+  cg_ss: 'Tipo de suelo A a E según DS61 Tabla 6.3, del informe de mecánica de suelos. Define S, T\' y n. El tipo F requiere estudio especial.',
+  cg_scat: 'Categoría de ocupación según NCh433 4.3 (Tabla 4.3): I aisladas o provisionales de bajo riesgo, II normales, III gran valor o aglomeración, IV esenciales. Define I.',
+  cg_sr: 'Factor de modificación de la respuesta R para el método estático, NCh433 Tabla 5.1, según el sistema estructural (pórticos, marcos arriostrados, muros). Mayor R, menor C.',
+  cg_saglo: 'NCh433 5.5.1: con aglomeración usual de personas o cosas el peso sísmico lleva al menos 50 % de la sobrecarga de uso; sin ella, 25 %.',
+  cg_st: 'Período del modo con mayor masa traslacional en la dirección analizada, del modelo estructural. Vacío: se adopta C = Cmáx (Tabla 6.4), conservador.',
+  cg_spl: 'Porcentaje de la sobrecarga de techo Lr incluido en el peso sísmico; mínimo según la aglomeración (5.5.1).' };
 function renderCargasGalpon(container) {
   const vOpts = VT_V_TABLA6.map(z => `<option value="${z.V}">Lat. ${z.lat} (${esc(z.ciu)}) — V = ${z.V} m/s</option>`).join('') + '<option value="manual">Otra (ingresar)</option>';
   const impOpts = Object.keys(TABLA2_IMPORTANCIA_VIENTO).map(k => `<option${k.startsWith('II ') ? ' selected' : ''}>${esc(k)}</option>`).join('');
@@ -52953,15 +52972,15 @@ function renderCargasGalpon(container) {
     <div class="panel">
       <h3>7 · Sismo (método estático, fuerzas en hombros y cumbreras)</h3>
       <div class="field-grid">
-        <div class="field"><label>¿Galpón industrial?</label><select id="cg_ind"><option value="si">Sí — NCh2369.Of2003</option><option value="no">No — NCh433 + DS61</option></select></div>
-        <div class="field"><label>Zona sísmica</label><select id="cg_sz"></select></div>
-        <div class="field"><label>Tipo de suelo</label><select id="cg_ss"></select></div>
-        <div class="field"><label>Categoría</label><select id="cg_scat"></select></div>
-        <div class="field"><label>Sistema resistente (R)</label><select id="cg_sr"></select></div>
-        <div class="field" id="cg_wXi"><label>Razón de amortiguamiento ξ (Tabla 5.5)</label><select id="cg_sxi"></select></div>
-        ${inp('cg_st', '', 'T* — período fundamental (s), opcional; vacío: C = Cmáx')}
-        <div class="field" id="cg_wAglo"><label>Aglomeración de personas o cosas (NCh433 5.5.1)</label><select id="cg_saglo"><option value="no">No es usual — mínimo 25 % de la sobrecarga</option><option value="si">Es usual — mínimo 50 % de la sobrecarga</option></select></div>
-        ${inp('cg_spl', '0', '% de Lr en el peso sísmico')}
+        <div class="field"><label>¿Galpón industrial?</label><select id="cg_ind"><option value="si">Sí — NCh2369.Of2003</option><option value="no">No — NCh433 + DS61</option></select><div class="note cg-sdesc" id="cg_ind_d"></div></div>
+        <div class="field"><label>Zona sísmica</label><select id="cg_sz"></select><div class="note cg-sdesc" id="cg_sz_d"></div></div>
+        <div class="field"><label>Tipo de suelo</label><select id="cg_ss"></select><div class="note cg-sdesc" id="cg_ss_d"></div></div>
+        <div class="field"><label>Categoría</label><select id="cg_scat"></select><div class="note cg-sdesc" id="cg_scat_d"></div></div>
+        <div class="field"><label>Sistema resistente (R)</label><select id="cg_sr"></select><div class="note cg-sdesc" id="cg_sr_d"></div></div>
+        <div class="field" id="cg_wXi"><label>Razón de amortiguamiento ξ (Tabla 5.5)</label><select id="cg_sxi"></select><div class="note cg-sdesc" id="cg_sxi_d"></div></div>
+        ${inp('cg_st', '', 'T* — período fundamental (s), opcional; vacío: C = Cmáx')}<div class="note cg-sdesc" id="cg_st_d" style="margin-top:-.4rem"></div>
+        <div class="field" id="cg_wAglo"><label>Aglomeración de personas o cosas (NCh433 5.5.1)</label><select id="cg_saglo"><option value="no">No es usual — mínimo 25 % de la sobrecarga</option><option value="si">Es usual — mínimo 50 % de la sobrecarga</option></select><div class="note cg-sdesc" id="cg_saglo_d"></div></div>
+        ${inp('cg_spl', '0', '% de Lr en el peso sísmico')}<div class="note cg-sdesc" id="cg_spl_d" style="margin-top:-.4rem"></div>
         ${inp('cg_sps', '0', '% de la nieve en el peso sísmico', '', 'cg-n')}
         <div class="field" id="cg_wDecl" style="grid-column:1/-1"><label><input type="checkbox" id="cg_sdecl" style="width:auto;min-width:0;margin-right:.4rem">El proyectista acredita: <span id="cg_sdeclTxt"></span></label></div>
       </div>
@@ -53028,6 +53047,7 @@ function renderCargasGalpon(container) {
       fill('cg_sz', o.zona); fill('cg_ss', o.suelo); fill('cg_scat', o.cat); fill('cg_sr', o.R); fill('cg_sxi', o.xi); st.sInd = ind;
     }
     $('cg_wXi').hidden = !ind; $('cg_wAglo').hidden = ind;
+    { const D = ind ? CG_SDESC_2369 : CG_SDESC_433; Object.entries(D).forEach(([k, t]) => { const el = $(k + '_d'); if (el) el.textContent = t; }); }
     // % de sobrecarga en el peso sísmico: NCh2369 5.1.3 (techos: 0) o NCh433 5.5.1 (≥ 25 % / ≥ 50 %); se propone el valor de la norma al cambiar
     const aglo = $('cg_saglo').value === 'si', minLr = ind ? 0 : aglo ? 50 : 25;
     if (st.sMin !== minLr) { $('cg_spl').value = String(minLr); st.sMin = minLr; }
