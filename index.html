@@ -696,7 +696,7 @@
     </div>
     <div class="fs-panel-body">
       <div class="fs-root-row">
-        <span id="fsRootLabel">Sin carpeta base elegida</span>
+        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 17:00</small>
         <button type="button" class="fs-toggle-btn" style="width:auto" id="fsChooseRootBtn">Elegir carpeta base…</button>
       </div>
       <div id="fsReconnectRow" style="display:none; margin-bottom:.8rem;">
@@ -2413,12 +2413,13 @@ document.getElementById('fsToggleBtn').addEventListener('click', async function(
 document.getElementById('fsChooseRootBtn').addEventListener('click', async function(){
   try {
     var antes = FS_ROOT ? FS_ROOT.name : FS_STORED_NAME;
+    fsToast('Elija la carpeta y presione «Seleccionar carpeta»; si Chrome pide permiso para editar archivos, acepte.');
     var h = await fsChooseRoot();
     document.getElementById('fsReconnectRow').style.display = 'none';
     fsUpdateRootLabel(); fsRenderTree(); fsUpdateSaveBarLabel();
     if (!fsChooseRoot.noGuardada) fsToast(h && h.name === antes ? ('Se eligió de nuevo «' + h.name + '». Para cambiarla, pinche la otra carpeta (que quede marcada) y luego «Seleccionar carpeta».') : ('Carpeta base: ' + (h ? h.name : '')));
   } catch(e) {
-    if (e && e.name === 'AbortError') return;   // cerró el selector sin elegir
+    if (e && e.name === 'AbortError') { fsToast('La carpeta base no cambió: el selector se cerró o no se aceptó el permiso «Editar archivos» de Chrome. Sigue: ' + (FS_ROOT ? FS_ROOT.name : '—')); return; }
     fsToast('No se pudo cambiar la carpeta base: ' + ((e && (e.message || e.name)) || 'error desconocido'));
   }
 });
