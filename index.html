@@ -696,9 +696,10 @@
     </div>
     <div class="fs-panel-body">
       <div class="fs-root-row">
-        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 17:00</small>
+        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 17:10</small>
         <button type="button" class="fs-toggle-btn" style="width:auto" id="fsChooseRootBtn">Elegir carpeta base…</button>
       </div>
+      <div id="fsEstadoBase" style="font-size:.78rem;margin:-.3rem 0 .7rem;color:var(--ink-muted)"></div>
       <div id="fsReconnectRow" style="display:none; margin-bottom:.8rem;">
         <button type="button" class="fs-toggle-btn" id="fsReconnectBtn">🔓 Reconectar carpeta</button>
       </div>
@@ -2410,15 +2411,19 @@ document.getElementById('fsToggleBtn').addEventListener('click', async function(
   fsUpdateRootLabel();
   fsRenderTree();
 });
+function fsEstadoBase(t, mal){ var el = document.getElementById('fsEstadoBase'); if (el) { el.textContent = t; el.style.color = mal ? 'var(--bad)' : 'var(--ink-muted)'; } }
 document.getElementById('fsChooseRootBtn').addEventListener('click', async function(){
+  fsEstadoBase('Abriendo el selector de carpetas… (' + new Date().toLocaleTimeString('es-CL') + ')');
   try {
     var antes = FS_ROOT ? FS_ROOT.name : FS_STORED_NAME;
     fsToast('Elija la carpeta y presione «Seleccionar carpeta»; si Chrome pide permiso para editar archivos, acepte.');
     var h = await fsChooseRoot();
+    fsEstadoBase('Elegida: ' + (h ? h.name : '?') + ' (' + new Date().toLocaleTimeString('es-CL') + ')');
     document.getElementById('fsReconnectRow').style.display = 'none';
     fsUpdateRootLabel(); fsRenderTree(); fsUpdateSaveBarLabel();
     if (!fsChooseRoot.noGuardada) fsToast(h && h.name === antes ? ('Se eligió de nuevo «' + h.name + '». Para cambiarla, pinche la otra carpeta (que quede marcada) y luego «Seleccionar carpeta».') : ('Carpeta base: ' + (h ? h.name : '')));
   } catch(e) {
+    fsEstadoBase('No cambió — ' + ((e && e.name) || 'Error') + ': ' + ((e && e.message) || '') + ' (' + new Date().toLocaleTimeString('es-CL') + ')', true);
     if (e && e.name === 'AbortError') { fsToast('La carpeta base no cambió: el selector se cerró o no se aceptó el permiso «Editar archivos» de Chrome. Sigue: ' + (FS_ROOT ? FS_ROOT.name : '—')); return; }
     fsToast('No se pudo cambiar la carpeta base: ' + ((e && (e.message || e.name)) || 'error desconocido'));
   }
