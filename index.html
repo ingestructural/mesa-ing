@@ -53577,6 +53577,7 @@ function renderCombinacionesCarga(container) {
       <div class="note">En RAM Elements (Loads → Load conditions): 1) en «Cases» cree los casos con los mismos ID y <b>en el mismo orden</b> de la tabla 2 (PP, SCr, VX, SX…); 2) aquí, «Copiar tabla para pegar en RAM»; 3) en «Combinations», pinche la primera celda vacía de la columna <b>ID</b> y pegue con Ctrl+V: cada fila trae el nombre (A1, H1, F1…) y un factor por caso, en el orden de las columnas de RAM. Alternativa, una por una: copie la expresión (columna «Expresión para RAM»), péguela en «Formula» y pinche el botón verde de agregar. El .txt trae Nombre=expresión y el .csv nombre, expresión, familia y ecuación.</div>
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin:.6rem 0">
         <button type="button" class="print-btn" id="cc_bCopTab">📋 Copiar tabla para pegar en RAM</button>
+        <label style="display:flex;align-items:center;gap:.3rem;font-size:.85rem">Decimal en la tabla <select id="cc_dec" style="width:auto"><option value=",">coma 0,8 (Windows en español)</option><option value=".">punto 0.8</option></select></label>
         <button type="button" class="print-btn" id="cc_bCopTxt">📋 Copiar Nombre=expresión</button>
         <button type="button" class="print-btn" id="cc_bTxt">⬇ Descargar .txt</button>
         <button type="button" class="print-btn" id="cc_bCsv">⬇ Descargar .csv</button>
@@ -53650,8 +53651,9 @@ function renderCombinacionesCarga(container) {
     // exportación
     const todas = [].concat(...res.map(r => r.lst.map(c => ({ c, r }))));
     const lineas = todas.map(({ c }) => `${c.nm}=${c.expr}`);
+    const dec = ($('cc_dec') || {}).value === '.' ? '.' : ',';
     // grilla «Combinations» de RAM Elements (Load conditions): ID y un factor por cada caso, en el orden de los casos (tabla 2)
-    const tabla = todas.map(({ c }) => [c.nm].concat(est.map(e => { const t = c.terms.find(x => x.e === e); return t ? ccFmt(t.f) : '0'; })).join('\t')).join('\r\n');
+    const tabla = todas.map(({ c }) => [c.nm].concat(est.map(e => { const t = c.terms.find(x => x.e === e); return t ? ccFmt(t.f).replace('.', dec) : '0'; })).join('\t')).join('\r\n');
     const csvEsc = s => /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     const csv = ['Nombre;Expresion RAM;Familia;Norma;Ecuacion;KD'].concat(todas.map(({ c, r }) => [c.nm, c.expr, r.f.p, r.set.n, c.eq, r.f.p === 'MA' ? c.KD.toFixed(3).replace('.', ',') : ''].map(csvEsc).join(';'))).join('\r\n');
     ult = { lineas, tabla, csv };
