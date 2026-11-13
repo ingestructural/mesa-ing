@@ -53705,7 +53705,15 @@ function renderCombinacionesCarga(container) {
   $('cc_bCopTxt').addEventListener('click', () => copiar(ult.lineas.join('\r\n'), 'Copiado: ' + ult.lineas.length + ' líneas Nombre=expresión.'));
   $('cc_bTxt').addEventListener('click', () => bajar(ult.lineas.join('\r\n'), 'Combinaciones_RAM.txt', 'text/plain'));
   $('cc_bCsv').addEventListener('click', () => bajar(ult.csv, 'Combinaciones_RAM.csv', 'text/csv'));
-  container.querySelectorAll('input,select').forEach(el => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
+  // los datos (estados marcados, nombres, familias, Type, decimal) se recuerdan en este navegador: al recargar (F5) vuelven
+  const CC_LS = 'mesa_combinaciones_v1';
+  const ccCampos = () => Array.from(container.querySelectorAll('input[id^="cc_"],select[id^="cc_"]')).filter(el => el.id !== 'cc_txt');
+  try {
+    const g = JSON.parse(localStorage.getItem(CC_LS) || 'null');
+    if (g) ccCampos().forEach(el => { if (!(el.id in g)) return; if (el.type === 'checkbox') el.checked = !!g[el.id]; else el.value = g[el.id]; });
+  } catch (e) {}
+  const ccGuardar = () => { try { const g = {}; ccCampos().forEach(el => { g[el.id] = el.type === 'checkbox' ? el.checked : el.value; }); localStorage.setItem(CC_LS, JSON.stringify(g)); } catch (e) {} };
+  container.querySelectorAll('input,select').forEach(el => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); el.addEventListener('change', ccGuardar); el.addEventListener('input', ccGuardar); });
   recalc();
 }
 
