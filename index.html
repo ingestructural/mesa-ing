@@ -696,7 +696,7 @@
     </div>
     <div class="fs-panel-body">
       <div class="fs-root-row">
-        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 17:10</small>
+        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 17:20</small>
         <button type="button" class="fs-toggle-btn" style="width:auto" id="fsChooseRootBtn">Elegir carpeta base…</button>
       </div>
       <div id="fsEstadoBase" style="font-size:.78rem;margin:-.3rem 0 .7rem;color:var(--ink-muted)"></div>
@@ -1624,6 +1624,8 @@ function fsTryReconnect(){
   return fsDbGet('root').then(function(stored){
     if (!stored) return false;
     return stored.queryPermission({mode:'readwrite'}).then(function(perm){
+      return perm === 'granted' ? perm : stored.queryPermission({mode:'read'});   // basta lectura para mostrarla
+    }).then(function(perm){
       if (perm === 'granted') { FS_ROOT = stored; return fsValidateActivePath().then(function(){ return true; }); }
       return false; // hace falta un gesto del usuario (clic) para volver a pedir permiso
     }).catch(function(){ return false; });
@@ -1632,7 +1634,9 @@ function fsTryReconnect(){
 function fsReconnectWithGesture(){
   return fsDbGet('root').then(function(stored){
     if (!stored) return false;
-    return stored.requestPermission({mode:'readwrite'}).then(function(perm){
+    return stored.requestPermission({mode:'readwrite'}).catch(function(){ return 'denied'; }).then(function(perm){
+      return perm === 'granted' ? perm : stored.requestPermission({mode:'read'}).catch(function(){ return 'denied'; });
+    }).then(function(perm){
       if (perm === 'granted') { FS_ROOT = stored; return fsValidateActivePath().then(function(){ return true; }); }
       return false;
     }).catch(function(){ return false; });
@@ -1643,9 +1647,11 @@ function fsChooseRoot(){
   return Promise.resolve().then(function(){
     // abrir en Documentos (no dentro de la base anterior) evita
     // que el diálogo parta dentro de la base anterior y «Seleccionar carpeta» la vuelva a elegir sin querer
-    return window.showDirectoryPicker({mode:'readwrite', startIn:'documents'}).catch(function(e){
+    // se elige solo con permiso de lectura: en algunos equipos el aviso «Editar archivos» que Chrome muestra al elegir
+    // con 'readwrite' se cierra solo y el selector termina en AbortError; el permiso de edición se pide al guardar
+    return window.showDirectoryPicker({startIn:'documents'}).catch(function(e){
       if (e && e.name === 'AbortError') throw e;
-      return window.showDirectoryPicker({mode:'readwrite'});   // si 'documents' no se acepta, el diálogo por defecto
+      return window.showDirectoryPicker({});   // si 'documents' no se acepta, el diálogo por defecto
     });
   }).then(function(handle){
     // la carpeta elegida se usa de inmediato; guardarla para la próxima sesión es aparte (si falla, se avisa)
@@ -1658,8 +1664,20 @@ function fsChooseRoot(){
   });
 }
 
+// permiso de edición sobre la carpeta base: se pide en el clic de guardar / crear / eliminar
+async function fsAsegurarEscritura(){
+  if (!FS_ROOT) return false;
+  try {
+    if ((await FS_ROOT.queryPermission({mode:'readwrite'})) === 'granted') return true;
+    return (await FS_ROOT.requestPermission({mode:'readwrite'})) === 'granted';
+  } catch(e){ return false; }
+}
 /* ---------- operaciones sobre carpetas/archivos ---------- */
-function fsCreateSubfolder(parentPath, name){
+async function fsCreateSubfolder(parentPath, name){
+  if (!(await fsAsegurarEscritura())) throw new Error('sin permiso de edición sobre la carpeta base');
+  return fsCreateSubfolder0(parentPath, name);
+}
+function fsCreateSubfolder0(parentPath, name){
   var clean = String(name || '').trim();
   if (!clean) return Promise.reject(new Error('Nombre vacío.'));
   return fsResolveDir(parentPath, true).then(function(dir){
@@ -2003,6 +2021,7 @@ async function fsSaveCurrentCalc(){
     if (ok) { var rr = document.getElementById('fsReconnectRow'); if (rr) rr.style.display = 'none'; fsUpdateRootLabel(); fsUpdateSaveBarLabel(); }
     if (!ok) { fsOpenPanel(); fsToast('Elige una carpeta base para poder guardar cálculos.'); return; }
   }
+  if (!(await fsAsegurarEscritura())) { fsToast('Chrome no dio permiso para guardar en «' + FS_ROOT.name + '». Presione de nuevo «Guardar cálculo» y elija «Editar archivos» / «Permitir».'); return; }
   var dir = await fsResolveDir(FS_ACTIVE_PATH, true);
   if (!dir) { fsToast('No se pudo abrir la carpeta activa — ábrela de nuevo desde el panel.'); fsOpenPanel(); return; }
   var snap = fsCaptureMain(main);
