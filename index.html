@@ -584,7 +584,7 @@
   .ev-sugbar{margin-top:.5rem;font-size:.72rem;color:var(--ink-muted);opacity:.85;display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
   .ev-sugbar .btn-add{margin-top:0;font-size:.72rem;padding:.25rem .6rem} .evwarn{color:var(--bad);width:100%}
   @media print{ .evsug, .ev-sugbar{display:none !important;} }
-  @media print{ .cg-solo-web{display:none !important;} }
+  @media print{ .cg-solo-web{display:none !important;} } .cg-sel-larga{font-size:.8rem !important;font-family:inherit !important;}
   /* ===== Paleta POWER (tonos del logo ING: azul #0060C1 y celeste #0184C8) — vista de prueba ===== */
   :root{
     --logo1:#0060C1; --logo2:#0184C8;
@@ -52695,8 +52695,10 @@ function cgSvgSeccion(r) {
 const CG_TIP_PLANCHA = [[4.0, 'PV-6 0,4 mm (Instapanel)'], [5.1, 'PV-6 0,5 mm (Instapanel)'], [6.1, 'PV-6 0,6 mm (Instapanel)'], [8.2, 'PV-6 0,8 mm (Instapanel)'],
   [3.6, 'PV-4 0,4 mm (Instapanel)'], [4.6, 'PV-4 0,5 mm (Instapanel)'], [5.5, 'PV-4 0,6 mm (Instapanel)'], [7.5, 'PV-4 0,8 mm (Instapanel)'],
   [4.6, 'Ondulado 0,5 mm (Instapanel)'], [5.5, 'Ondulado 0,6 mm (Instapanel)'], [7.5, 'Ondulado 0,8 mm (Instapanel)'], [0, 'Sin revestimiento']];
-// Costaneras: Cintac, «Catálogo general productos y sistemas» 2026, p. 5 (C) y p. 24 (Z Tubest).
-const CG_TIP_COST = [[3.4, 'C 100×50×15×2 (Cintac)'], [3.8, 'C 125×50×15×2 (Cintac)'], [4.19, 'C 150×50×15×2 (Cintac)'], [3.42, 'Z Tubest 100×50×15×2,0']];
+// Costaneras: catálogo de costaneras CA y Z de la Mesa (CATALOG_COSTANERAS, el mismo de la planilla «Costaneras»), alturas 100 a 175 mm (ING).
+const CG_TIP_COST = () => CATALOG_COSTANERAS.filter(p => (p.fam === 'CA' || p.fam === 'Z') && p.H >= 100 && p.H <= 175)
+  .sort((p, q) => p.fam.localeCompare(q.fam) || p.H - q.H || p.B - q.B || (p.clabio || 0) - (q.clabio || 0) || p.e - q.e)
+  .map(p => [+p.peso.toFixed(2), `${p.perfil} (costanera ${p.fam === 'Z' ? 'Z' : 'C atiesada'})`]);
 // Aislación: Volcán, ficha Aislanglass (rollo 80 mm, 13,5 kg/m³ → 0,08 × 13,5 = 1,08 kg/m²).
 const CG_TIP_AISL = [[0, 'Sin aislación ni cielo'], [1.1, 'Lana de vidrio Aislanglass rollo 80 mm (13,5 kg/m³)']];
 const CG_TIP_INST = [[0, 'Sin instalaciones colgadas']];
@@ -52732,21 +52734,21 @@ function renderCargasGalpon(container) {
       <h3>3 · Peso propio (valores de la ficha del fabricante)</h3>
       <div class="field-grid">
         ${inpL('cg_cub', CG_TIP_PLANCHA, '', 'Cubierta (kgf/m² de superficie)')}
-        ${inpL('cg_cos', CG_TIP_COST, '', 'Costaneras (kgf/m)')}
+        ${inpL('cg_cos', CG_TIP_COST(), '', 'Costaneras (kgf/m)')}
         ${inpL('cg_cie', CG_TIP_AISL, '', 'Aislación / cielo (kgf/m² de superficie)')}
         ${inpL('cg_ins', CG_TIP_INST, '', 'Instalaciones colgadas (kgf/m² en planta)')}
         ${inpL('cg_rev', CG_TIP_PLANCHA, '', 'Revestimiento de muros (kgf/m²)')}
         ${inp('cg_mar', '', 'Vigas del marco: peso del perfil (kgf/m)')}
         ${inp('cg_col', '', 'Columnas: peso del perfil (kgf/m)')}
       </div>
-      <div class="note">Valores típicos: pinchar la casilla y elegir, o ingresar el de la ficha del producto especificado. Planchas Instapanel (Cintac), zincalum o prepintado, mismo peso: PV-6 (avance útil 910 mm, nervio trapezoidal, cubierta de galpón), PV-4 (avance útil 1 000 mm) y Ondulado (avance útil 1 000 mm), según el catálogo «Instapanel — Cubiertas y revestimientos». Costaneras C de Cintac, «Catálogo general productos y sistemas» (2026), p. 5 y Z Tubest p. 24. Aislación: peso = densidad × espesor; lana de vidrio Aislanglass en rollo (Volcán) de 80 mm con 13,5 kg/m³ = 1,1 kgf/m². Instalaciones: dato del proyecto de especialidades (0 si no hay). Vigas y columnas: peso del perfil adoptado.</div>
+      <div class="note">Valores típicos: pinchar la casilla y elegir, o ingresar el de la ficha del producto especificado. Planchas Instapanel (Cintac), zincalum o prepintado, mismo peso: PV-6 (avance útil 910 mm, nervio trapezoidal, cubierta de galpón), PV-4 (avance útil 1 000 mm) y Ondulado (avance útil 1 000 mm), según el catálogo «Instapanel — Cubiertas y revestimientos». Costaneras CA y Z: catálogo de la planilla «Costaneras» de la Mesa. Aislación: peso = densidad × espesor; lana de vidrio Aislanglass en rollo (Volcán) de 80 mm con 13,5 kg/m³ = 1,1 kgf/m². Instalaciones: dato del proyecto de especialidades (0 si no hay). Vigas y columnas: peso del perfil adoptado.</div>
     </div>
     <div class="panel">
       <h3>4 · Sobrecargas de techo y de uso (NCh1537:2009)</h3>
       <div class="field-grid">
-        <div class="field"><label>Acceso al techo (Tabla 4)</label><select id="cg_tt">${CU_TECHO.map(t => `<option value="${t[0]}">${esc(t[1])} — L₀ = ${vtTxt(t[2] * CG_KPA_KGF, 0)} kgf/m²</option>`).join('')}</select></div>
+        <div class="field" style="grid-column:1/-1"><label>Acceso al techo (Tabla 4)</label><select id="cg_tt" style="width:100%;max-width:none;text-align:left" class="cg-sel-larga">${CU_TECHO.map(t => `<option value="${t[0]}">L₀ = ${vtTxt(t[2] * CG_KPA_KGF, 0)} kgf/m² — ${esc(t[1])}</option>`).join('')}</select></div>
         <div class="field"><label><input type="checkbox" id="cg_ent" style="width:auto;min-width:0;margin-right:.4rem">Hay entrepiso, altillo o pasarela</label></div>
-        <div class="field" id="cg_wEnt1"><label>Destino del entrepiso (Tabla 4)</label><select id="cg_entT">${CU_T4.map((r, i) => `<option value="${i}"${r[0] === 'Bodegas' && i === 4 ? ' selected' : ''}>${esc(r[0] + ' — ' + r[1])} (${vtTxt(r[2] * CG_KPA_KGF, 0)} kgf/m²)</option>`).join('')}</select></div>
+        <div class="field" id="cg_wEnt1" style="grid-column:1/-1"><label>Destino del entrepiso (Tabla 4)</label><select id="cg_entT" style="width:100%;max-width:none;text-align:left" class="cg-sel-larga">${CU_T4.map((r, i) => `<option value="${i}"${r[0] === 'Bodegas' && i === 4 ? ' selected' : ''}>${esc(r[0] + ' — ' + r[1])} (${vtTxt(r[2] * CG_KPA_KGF, 0)} kgf/m²)</option>`).join('')}</select></div>
         <div class="field" id="cg_wEnt2">${''}<label>Área del entrepiso (m²)</label><input type="text" inputmode="decimal" id="cg_entA" value="50"></div>
       </div>
     </div>
