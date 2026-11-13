@@ -1,0 +1,16 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prueba de carpeta</title>
+<style>body{font:16px system-ui,sans-serif;margin:2rem;max-width:44rem}button{font-size:1.1rem;padding:.6rem 1rem;margin:.3rem .3rem .3rem 0}#r{margin-top:1rem;padding:1rem;border-radius:6px;background:#f2f4f7;white-space:pre-wrap}</style></head><body>
+<h1>Prueba de selector de carpeta</h1>
+<p>Página aislada (sin código de la Mesa). Pinche un botón, elija cualquier carpeta y lea el resultado.</p>
+<button id="a">1 · Elegir carpeta (lectura)</button><button id="b">2 · Elegir carpeta (lectura y escritura)</button><button id="c">3 · Elegir archivo</button>
+<div id="r">Sin pruebas todavía.</div>
+<script>
+const r=document.getElementById('r'),t=()=>new Date().toLocaleTimeString('es-CL');
+const ok=(m)=>{r.style.background='#e3f6e8';r.textContent=t()+' — FUNCIONA: '+m;};
+const mal=(e)=>{r.style.background='#fde7e7';r.textContent=t()+' — FALLA: '+(e&&e.name)+': '+(e&&e.message);};
+const nav=navigator.userAgent;
+document.getElementById('a').onclick=async()=>{try{const h=await showDirectoryPicker();ok('carpeta «'+h.name+'»');}catch(e){mal(e);}};
+document.getElementById('b').onclick=async()=>{try{const h=await showDirectoryPicker({mode:'readwrite'});ok('carpeta «'+h.name+'» con escritura');}catch(e){mal(e);}};
+document.getElementById('c').onclick=async()=>{try{const [h]=await showOpenFilePicker();ok('archivo «'+h.name+'»');}catch(e){mal(e);}};
+r.textContent+='\n\nNavegador: '+nav;
+</script></body></html>
