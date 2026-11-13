@@ -52193,7 +52193,7 @@ function calcCargasGalpon(inp) {
     const c = Math.cos(nv.theta * Math.PI / 180);
     const qSup = pp.cub + pp.costanera / inp.sCost + pp.cielo;    // kgf/m² de superficie inclinada
     const Dh = qSup / c + pp.inst;                                   // kgf/m² en proyección horizontal
-    const wMarco = Dh * G.trib + pp.marco;                           // kgf/m sobre el marco (proyección horizontal)
+    const wMarco = Dh * G.trib + pp.marco / c;                       // kgf/m sobre el marco (proyección horizontal; el perfil pesa por m de viga)
     // sobrecarga de techo
     const tt = CU_TECHO.find(t => t[0] === inp.techo) || CU_TECHO[0];
     const ATc = inp.sCost * G.vMax, ATm = nv.L * G.trib;
@@ -52387,9 +52387,10 @@ function calcCargasGalpon(inp) {
   }));
   // sismo: peso sísmico de referencia (el porcentaje de sobrecarga lo define la planilla de sismo)
   const Ptecho = naves.reduce((a, nv) => a + nv.Dh * nv.L * G.Ltot, 0) + pp.marco * G.nMarcos * naves.reduce((a, nv) => a + nv.L / nv.cos, 0);
+  const Pcol = (pp.col || 0) * G.nMarcos * G.hp.reduce((a, h) => a + h, 0);
   const Pmuros = muroPP * (G.Ltot * (G.hp[0] + G.hp[G.hp.length - 1]) + 2 * naves.reduce((a, nv) => a + (nv.tipo === 'D' ? nv.L * nv.ha + nv.L * (nv.hc - nv.ha) / 2 : nv.L * (nv.h1 + nv.h2) / 2), 0));
   return { pendientes: pend, avisos, G, naves, ent, muroPP, tt, cerr, ex, I, GCpi, qhB, hEd, casos, minimos, envolvente: Object.values(env),
-    abierto, vNaves, flujo: W.flujo, base, Ptecho, Pmuros, sCost: inp.sCost, pp };
+    abierto, vNaves, flujo: W.flujo, base, Ptecho, Pcol, Pmuros, sCost: inp.sCost, pp };
 }
 
 // --- nieve: NCh431-2010 «Diseño estructural - Cargas de nieve» (texto entregado por ING el 13-11-2026).
@@ -52556,8 +52557,12 @@ function cgCargasViento(r, c) {
 function cgEstadosMarco(r, nie, Csis) {
   const G = r.G, t = G.trib, E = [], vigas = cgVigas(G), kp = 101.97;
   const muroCols = [[0, r.inp.muroA], [G.naves.length, r.inp.muroB]].filter(([, m]) => m.t !== 'A');
-  const notaMuro = r.muroPP > 0 && muroCols.length ? [`Columnas ${muroCols.map(([k]) => 'eje ' + String.fromCharCode(65 + k)).join(' y ')}: peso del revestimiento ${vtTxt(r.muroPP * t, 1)} kgf/m vertical por metro de altura (no dibujado).`] : [];
-  E.push({ id: 'D', tit: 'D — Peso propio', L: vigas.map(v => cgCargaVertical(G, v.nave, v.a, v.b, r.naves[v.nave].wMarco)), notas: ['Vertical, por metro en proyección horizontal; incluye el perfil del marco.'].concat(notaMuro) });
+  const nC = G.xs.length, LcolD = G.xs.map((x, k) => {
+    const conMuro = muroCols.some(([kk]) => kk === k), w = (r.pp.col || 0) + (conMuro ? r.muroPP * t : 0);
+    return w > 0 ? { p1: [x, 0], p2: [x, G.hp[k]], w1: w, w2: w, d: [0, -1], sv: [k === nC - 1 ? 1 : -1, 0] } : null; }).filter(Boolean);
+  const notaCol = `Columnas: perfil ${vtTxt(r.pp.col || 0, 1)} kgf/m${muroCols.length && r.muroPP > 0 ? ` + revestimiento ${vtTxt(r.muroPP * t, 1)} kgf/m en las columnas de eje ${muroCols.map(([k]) => String.fromCharCode(65 + k)).join(' y ')}` : ''}, vertical por metro de altura.`;
+  E.push({ id: 'D', tit: 'D — Peso propio', L: vigas.map(v => cgCargaVertical(G, v.nave, v.a, v.b, r.naves[v.nave].wMarco)).concat(LcolD), notas: ['Vigas: vertical, por metro en proyección horizontal; incluye cubierta, costaneras, cielo, instalaciones y el perfil de la viga.', notaCol] });
+  E.push({ id: 'L', tit: 'L — Sobrecarga de uso', L: [], notas: [r.ent ? `Entrepiso: L₀ = ${vtTxt(r.ent.L0, 1)} kgf/m² (${esc(r.ent.row[0] + ': ' + r.ent.row[1])}); se aplica al entrepiso, que no forma parte de este marco de techo.` : 'El marco de techo no recibe sobrecarga de uso (sin entrepiso). La sobrecarga del techo es Lr.'] });
   E.push({ id: 'Lr', tit: 'Lr — Sobrecarga de techo (NCh1537)', L: vigas.map(v => cgCargaVertical(G, v.nave, v.a, v.b, r.naves[v.nave].wLr)), notas: ['Vertical, por metro en proyección horizontal.'] });
   if (nie && !nie.errores && !nie.cero) {
     E.push({ id: 'S', tit: 'S — Nieve balanceada (NCh431-2010)', L: vigas.map(v => { const n = nie.naves[v.nave]; return cgCargaVertical(G, v.nave, v.a, v.b, (n.ps + n.lluvia) * kp * t); }),
@@ -52567,7 +52572,7 @@ function cgEstadosMarco(r, nie, Csis) {
       const x0 = G.xs[n.i], m = x0 + G.naves[n.i].L / 2, Lx = [cgCargaVertical(G, n.i, x0, m, n.desb.barlo * kp * t)];
       if (n.desb.sob) { const xe = Math.min(m + n.desb.lx, x0 + G.naves[n.i].L); Lx.push(cgCargaVertical(G, n.i, m, xe, (n.desb.sota + n.desb.sob) * kp * t)); if (xe < x0 + G.naves[n.i].L - 1e-6) Lx.push(cgCargaVertical(G, n.i, xe, x0 + G.naves[n.i].L, n.desb.sota * kp * t)); }
       else Lx.push(cgCargaVertical(G, n.i, m, x0 + G.naves[n.i].L, n.desb.sota * kp * t));
-      E.push({ id: 'Sd' + n.i, tit: `S — Nieve desbalanceada, nave ${n.i + 1}, viento desde el eje A (8.2)`, L: Lx, notas: ['Con viento desde el otro lado, simétrica.', esc(n.desb.txt)] });
+      E.push({ id: 'Sd' + n.i, anexo: true, tit: `S — Nieve desbalanceada, nave ${n.i + 1}, viento desde el eje A (8.2)`, L: Lx, notas: ['Con viento desde el otro lado, simétrica.', esc(n.desb.txt)] });
     });
     if (nie.valles.length) {
       const Lv = [];
@@ -52577,15 +52582,23 @@ function cgEstadosMarco(r, nie, Csis) {
         Lv.push(cgCargaVertical(G, k, xa, xv, v.pCumbrera * kp * t, v.pValle * kp * t));
         Lv.push(cgCargaVertical(G, k + 1, xv, xb, v.pValle * kp * t, v.pCumbrera * kp * t));
       });
-      E.push({ id: 'Sv', tit: 'S — Nieve desbalanceada en los valles (8.4)', L: Lv, notas: ['Variación lineal desde 0,5·pf en la cumbrera hasta la carga del valle; 8.4 no define carga en los demás tramos.'] });
+      E.push({ id: 'Sv', anexo: true, tit: 'S — Nieve desbalanceada en los valles (8.4)', L: Lv, notas: ['Variación lineal desde 0,5·pf en la cumbrera hasta la carga del valle; 8.4 no define carga en los demás tramos.'] });
     }
-    nie.parciales.forEach((c, j) => E.push({ id: 'Sp' + j, tit: 'S — Carga parcial: ' + c.txt, L: vigas.map(v => { const n = nie.naves[v.nave]; return cgCargaVertical(G, v.nave, v.a, v.b, (c.llenas.includes(v.nave) ? 1 : 0.5) * n.ps * kp * t); }), notas: [] }));
+    nie.parciales.forEach((c, j) => E.push({ id: 'Sp' + j, anexo: true, tit: 'S — Carga parcial: ' + c.txt, L: vigas.map(v => { const n = nie.naves[v.nave]; return cgCargaVertical(G, v.nave, v.a, v.b, (c.llenas.includes(v.nave) ? 1 : 0.5) * n.ps * kp * t); }), notas: [] }));
   }
+  // estados que se entregan (ING, 13-11-2026): D, L, Lr, nieve, W+ (izquierda → derecha), W− (derecha → izquierda) y WL
+  // (longitudinal). Para cada dirección se toma el estado de mayor levantamiento neto del techo (−Σ p·Δx en planta). Lo demás va al anexo.
+  const levant = c => -c.sup.filter(x => x.tipo === 'techo').reduce((a, sp) => a + sp.p * (sp.xa != null ? sp.xb - sp.xa : G.naves[sp.nave].L), 0);
+  const gob = {};
+  r.casos.filter(c => !c.minimo).forEach(c => { if (!gob[c.dir] || levant(c) > levant(gob[c.dir])) gob[c.dir] = c; });
+  const nomW = { TA: 'W+ (izquierda → derecha)', TX: 'W− (derecha → izquierda)', L: 'WL (longitudinal)' };
   r.casos.forEach(c => {
     if (c.minimo && c.dir === 'L') return;
     const cv = cgCargasViento(r, c);
     const gc = c.abierto || c.minimo ? '' : `, GCpi = ${vtSig(c.s * r.GCpi, 2)}`;
-    E.push({ id: c.id, viento: true, caso: c, tit: `${c.id} — ${c.dirTxt}${gc}`, L: cv.L, notas: [esc(c.casoTxt)].concat(cv.notas, ['Columnas: + hacia el interior. Vigas: perpendicular a la viga, + hacia la viga (presión), − alejándose (succión).']) });
+    const g = !c.minimo && gob[c.dir] === c;
+    if (g && r.casos.some(m => m.minimo && m.dir === c.dir)) cv.notas.unshift(`Atención: en esta dirección rige además el mínimo de 5.2.1 (${r.casos.find(m => m.minimo && m.dir === c.dir).id}, en el anexo).`);
+    E.push({ id: c.id, viento: true, gobierna: g, caso: c, tit: g ? `${nomW[c.dir]} = ${c.id}${gc}` : `${c.id} — ${c.dirTxt}${gc}`, L: cv.L, notas: [esc(c.casoTxt)].concat(cv.notas, ['Columnas: + hacia el interior. Vigas: perpendicular a la viga, + hacia la viga (presión), − alejándose (succión).']) });
   });
   if (Csis > 0) {
     const Ls = vigas.map(v => { const q = Csis * r.naves[v.nave].wMarco; const tr = cgTramo(G, v.nave, v.a, v.b); return { p1: tr.p1, p2: tr.p2, w1: q, w2: q, d: [1, 0], sv: [0, 1] }; });
@@ -52595,19 +52608,24 @@ function cgEstadosMarco(r, nie, Csis) {
   return E;
 }
 function cgSvgMarco(r, est, idSvg) {
-  const G = r.G, Wd = 640, pad = 70, hmax = Math.max(...G.naves.map(n => n.hc));
-  const sc = Math.min((Wd - 2 * pad) / G.W, 210 / hmax), Hd = Math.round(hmax * sc + 2 * pad + 20);
-  const X = x => pad + x * sc, Y = y => Hd - pad - y * sc;
+  const G = r.G, Wd = 700, pad = 128, hmax = Math.max(...G.naves.map(n => n.hc));
+  const sc = Math.min((Wd - 2 * pad) / G.W, 200 / hmax), Hd = Math.round(hmax * sc + 150);
+  const X = x => pad + x * sc, Y = y => Hd - 34 - y * sc;
   const wmax = Math.max(1e-9, ...est.L.map(q => Math.max(Math.abs(q.w1), Math.abs(q.w2))));
-  const len = w => 8 + 30 * Math.abs(w) / wmax, f1 = v => vtTxt(Math.abs(v) < 0.05 ? 0 : v, 1);
+  const len = w => 8 + 30 * Math.abs(w) / wmax, f1 = v => vtTxt(Math.abs(v) < 0.05 ? 0 : v, 1) + ' kgf/m';
   const rot = [];
   let s = `<svg id="${idSvg}" viewBox="0 0 ${Wd} ${Hd}" style="width:100%;max-width:${Wd}px;background:var(--panel,#fff)" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="11">`;
-  const COL = { r: '#c0392b', b: '#1f6feb', p: '#8e44ad', g: '#999' };
+  const COL = { r: '#c0392b', b: '#1f6feb', p: '#8e44ad', g: '#999', k: '#555' };
   s += `<defs>${Object.entries(COL).map(([k, c]) => `<marker id="${idSvg}_ah${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join('')}</defs>`;
-  s += `<text x="8" y="16" font-weight="700" font-size="12">${esc(est.tit)}</text><text x="${Wd - 8}" y="16" text-anchor="end" font-size="10">kgf/m · s = ${vtTxt(G.trib, 2)} m</text>`;
+  const tt = est.tit.length > 62 ? [est.tit.slice(0, est.tit.lastIndexOf(' ', 62)), est.tit.slice(est.tit.lastIndexOf(' ', 62) + 1)] : [est.tit];
+  tt.forEach((l, j) => { s += `<text x="8" y="${20 + j * 19}" font-weight="700" font-size="16">${esc(l)}</text>`; });
+  s += `<text x="${Wd - 8}" y="${22 + tt.length * 19}" text-anchor="end" font-size="13">Cargas en kgf/m · ancho tributario s = ${vtTxt(G.trib, 2)} m</text>`;
+  if (est.viento && est.caso.dir !== 'L') { const izq = est.caso.dir === 'TA', y0 = 30 + tt.length * 19, x1 = izq ? 14 : 150, x2 = izq ? 150 : 14;
+    s += `<line x1="${x1}" y1="${y0}" x2="${x2}" y2="${y0}" stroke="#555" stroke-width="3" marker-end="url(#${idSvg}_ahk)"/><text x="82" y="${y0 - 6}" text-anchor="middle" font-size="13" font-weight="700" fill="#555">VIENTO</text>`; }
+  else if (est.viento) s += `<text x="8" y="${30 + tt.length * 19}" font-size="13" font-weight="700" fill="#555">VIENTO LONGITUDINAL (perpendicular al marco)</text>`;
   // marco
   s += `<line x1="${X(0) - 12}" y1="${Y(0)}" x2="${X(G.W) + 12}" y2="${Y(0)}" stroke="#888"/>`;
-  G.xs.forEach((x, k) => { s += `<line x1="${X(x)}" y1="${Y(0)}" x2="${X(x)}" y2="${Y(G.hp[k])}" stroke="currentColor" stroke-width="2.2"/><text x="${X(x)}" y="${Y(0) + 14}" text-anchor="middle" font-size="10">${String.fromCharCode(65 + k)}</text>`; });
+  G.xs.forEach((x, k) => { s += `<line x1="${X(x)}" y1="${Y(0)}" x2="${X(x)}" y2="${Y(G.hp[k])}" stroke="currentColor" stroke-width="2.2"/><text x="${X(x)}" y="${Y(0) + 14}" text-anchor="middle" font-size="13" font-weight="700">${String.fromCharCode(65 + k)}</text>`; });
   G.naves.forEach(nv => { const x0 = G.xs[nv.i]; const pts = nv.tipo === 'D' ? [[x0, nv.h1], [x0 + nv.L / 2, nv.hc], [x0 + nv.L, nv.h2]] : [[x0, nv.h1], [x0 + nv.L, nv.h2]];
     s += `<polyline points="${pts.map(p => X(p[0]) + ',' + Y(p[1])).join(' ')}" fill="none" stroke="currentColor" stroke-width="2.2"/>`; });
   // cargas
@@ -52615,11 +52633,13 @@ function cgSvgMarco(r, est, idSvg) {
     const P1 = [X(q.p1[0]), Y(q.p1[1])], P2 = [X(q.p2[0]), Y(q.p2[1])], segPx = Math.hypot(P2[0] - P1[0], P2[1] - P1[1]);
     const sv = [q.sv[0], -q.sv[1]], nArr = Math.max(2, Math.min(9, Math.round(segPx / 26) + 1));
     const dsv = q.d[0] * q.sv[0] + q.d[1] * q.sv[1];
-    const ck = v => { const k = Math.sign(v) * dsv; return v === 0 ? 'g' : k < -0.2 ? 'r' : k > 0.2 ? 'b' : 'p'; }, color = v => COL[ck(v)];
+    const grav = q.d[0] === 0 && q.d[1] < 0;
+    const ck = v => { const k = Math.sign(v) * dsv; return v === 0 ? 'g' : grav && v > 0 ? 'r' : k < -0.2 ? 'r' : k > 0.2 ? 'b' : 'p'; }, color = v => COL[ck(v)];
     const tips = [];
     for (let j = 0; j < nArr; j++) {
-      const u = nArr === 1 ? 0.5 : j / (nArr - 1), w = q.w1 + (q.w2 - q.w1) * u; if (Math.abs(w) < 1e-6) continue;
-      const pt = [P1[0] + (P2[0] - P1[0]) * u, P1[1] + (P2[1] - P1[1]) * u], dv = [Math.sign(w) * q.d[0], -Math.sign(w) * q.d[1]], Lp = len(w);
+      const par = Math.abs(dsv) < 0.2 && Math.abs(q.d[0] * (q.p2[0] - q.p1[0]) + q.d[1] * (q.p2[1] - q.p1[1])) > 1e-9;   // carga a lo largo del elemento (peso de columna)
+      const u = nArr === 1 ? 0.5 : par ? 0.25 + 0.6 * j / (nArr - 1) : j / (nArr - 1), w = q.w1 + (q.w2 - q.w1) * u; if (Math.abs(w) < 1e-6) continue;
+      const pt = [P1[0] + (P2[0] - P1[0]) * u, P1[1] + (P2[1] - P1[1]) * u], dv = [Math.sign(w) * q.d[0], -Math.sign(w) * q.d[1]], Lp = par ? Math.min(18, segPx / (nArr + 1)) : len(w);
       const dot = dv[0] * sv[0] + dv[1] * sv[1];
       let a, b;
       if (Math.abs(dot) < 0.2) { a = [pt[0] + sv[0] * 6, pt[1] + sv[1] * 6]; b = [a[0] + dv[0] * Lp, a[1] + dv[1] * Lp]; }
@@ -52634,26 +52654,27 @@ function cgSvgMarco(r, est, idSvg) {
     const anc = sv[0] < -0.7 ? 'end' : sv[0] > 0.7 ? 'start' : 'middle';
     const lab = (u, v) => { const pt = [P1[0] + (P2[0] - P1[0]) * u, P1[1] + (P2[1] - P1[1]) * u], off = len(v) + (anc === 'middle' ? 12 : 5);
       const x = pt[0] + sv[0] * off; let y = pt[1] + sv[1] * off + 4; const tx = f1(v);
-      if (rot.some(o => o.t === tx && Math.abs(o.x - x) < 40 && Math.abs(o.y - y) < 12)) return;   // mismo valor en el mismo punto (p. ej. el valle)
-      for (let z = 0; z < 4 && rot.some(o => Math.abs(o.x - x) < 44 && Math.abs(o.y - y) < 11); z++) y -= 12;
+      if (rot.some(o => o.t === tx && Math.abs(o.x - x) < 60 && Math.abs(o.y - y) < 14)) return;   // mismo valor en el mismo punto (p. ej. el valle)
+      for (let z = 0; z < 4 && rot.some(o => Math.abs(o.x - x) < 80 && Math.abs(o.y - y) < 14); z++) y -= 15;
       rot.push({ x, y, t: tx });
-      s += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anc}" font-size="10.5" font-weight="600" fill="${color(v)}" paint-order="stroke" stroke="var(--panel,#fff)" stroke-width="3">${f1(v)}</text>`; };
+      s += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anc}" font-size="13" font-weight="700" fill="${color(v)}" paint-order="stroke" stroke="var(--panel,#fff)" stroke-width="3">${f1(v)}</text>`; };
     if (Math.abs(q.w1 - q.w2) < 0.05) lab(0.5, q.w1); else { lab(0.1, q.w1); lab(0.9, q.w2); }
   });
   s += `</svg>`;
   return s;
 }
-function cgHtmlMarcos(r, E) {
-  return E.map(e => `<div class="cg-marco">${cgSvgMarco(r, e, 'cg_m' + e.id)}${e.notas.length ? `<div class="note" style="margin:.1rem 0 0">${e.notas.join(' ')}</div>` : ''}</div>`).join('');
+function cgHtmlMarcos(r, E, anexo) {
+  const sel = anexo ? E.filter(e => e.anexo || (e.viento && !e.gobierna)) : E.filter(e => !e.anexo && (!e.viento || e.gobierna));
+  return sel.map(e => `<div class="cg-marco">${cgSvgMarco(r, e, 'cg_m' + e.id)}${e.notas.length ? `<div class="note" style="margin:.1rem 0 0">${e.notas.join(' ')}</div>` : ''}</div>`).join('');
 }
 
 // ---------- esquema (sección transversal con caras abiertas) ----------
 function cgSvgSeccion(r) {
-  const G = r.G, Wd = 640, Hd = 270, pad = 56;
+  const G = r.G, Wd = 660, Hd = 280, pad = 80;
   const hmax = Math.max(...G.naves.map(n => n.hc));
   const sc = Math.min((Wd - 2 * pad) / G.W, (Hd - 2 * pad) / hmax);
   const X = x => pad + x * sc, Y = y => Hd - pad - y * sc;
-  let s = `<svg id="cg_secSvg" viewBox="0 0 ${Wd} ${Hd}" style="width:100%;max-width:${Wd}px;background:var(--panel,#fff)" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="11">`;
+  let s = `<svg id="cg_secSvg" viewBox="0 0 ${Wd} ${Hd}" style="width:100%;max-width:${Wd}px;background:var(--panel,#fff)" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">`;
   s += `<line x1="${X(0) - 10}" y1="${Y(0)}" x2="${X(G.W) + 10}" y2="${Y(0)}" stroke="#888"/>`;
   G.xs.forEach((x, k) => {
     const abierta = (k === 0 && r.inp.muroA.t !== 'C') || (k === G.xs.length - 1 && r.inp.muroB.t !== 'C');
@@ -52666,18 +52687,18 @@ function cgSvgSeccion(r) {
     s += `<polyline points="${pts.map(p => X(p[0]) + ',' + Y(p[1])).join(' ')}" fill="none" stroke="currentColor" stroke-width="2.5"/>`;
     s += `<text x="${X(x0 + nv.L / 2)}" y="${Y(nv.hc) - 8}" text-anchor="middle">Nave ${nv.i + 1}: L = ${vtTxt(nv.L, 2)} m, θ = ${vtTxt(nv.theta, 1)}°</text>`;
     // cotas de altura: hombros (aleros) de la nave y cumbrera
-    const ct = (x, y, anc, txt) => `<text x="${x}" y="${y}" text-anchor="${anc}" font-size="10.5" font-weight="600" paint-order="stroke" stroke="var(--panel,#fff)" stroke-width="3">${txt}</text>`;
+    const ct = (x, y, anc, txt) => `<text x="${x}" y="${y}" text-anchor="${anc}" font-size="13" font-weight="700" paint-order="stroke" stroke="var(--panel,#fff)" stroke-width="3">${txt}</text>`;
     s += ct(X(x0) + 5, Y(nv.h1) + 14, 'start', `h = ${vtTxt(nv.h1, 2)} m`);
     s += ct(X(x0 + nv.L) - 5, Y(nv.h2) + (Math.abs(nv.h2 - nv.h1) < 0.3 ? 14 : 28), 'end', `h = ${vtTxt(nv.h2, 2)} m`);
     if (nv.tipo === 'D') s += ct(X(x0 + nv.L / 2), Y(nv.hc) + 16, 'middle', `hc = ${vtTxt(nv.hc, 2)} m`);
     // cota de la luz bajo el piso
     s += `<line x1="${X(x0)}" y1="${Y(0) + 26}" x2="${X(x0 + nv.L)}" y2="${Y(0) + 26}" stroke="#888"/><line x1="${X(x0)}" y1="${Y(0) + 21}" x2="${X(x0)}" y2="${Y(0) + 31}" stroke="#888"/><line x1="${X(x0 + nv.L)}" y1="${Y(0) + 21}" x2="${X(x0 + nv.L)}" y2="${Y(0) + 31}" stroke="#888"/>`
-      + `<text x="${X(x0 + nv.L / 2)}" y="${Y(0) + 24}" text-anchor="middle" font-size="10">${vtTxt(nv.L, 2)} m</text>`;
+      + `<text x="${X(x0 + nv.L / 2)}" y="${Y(0) + 24}" text-anchor="middle" font-size="12.5">${vtTxt(nv.L, 2)} m</text>`;
   });
   // altura de cada pilar (cota vertical a la izquierda del eje A y a la derecha del último eje)
   [[0, -1], [G.xs.length - 1, 1]].forEach(([k, sg]) => { const x = X(G.xs[k]) + sg * 16;
     s += `<line x1="${x}" y1="${Y(0)}" x2="${x}" y2="${Y(G.hp[k])}" stroke="#888"/><line x1="${x - 4}" y1="${Y(G.hp[k])}" x2="${x + 4}" y2="${Y(G.hp[k])}" stroke="#888"/>`
-      + `<text x="${x + sg * 4}" y="${(Y(0) + Y(G.hp[k])) / 2}" text-anchor="${sg < 0 ? 'end' : 'start'}" font-size="10.5" font-weight="600">${vtTxt(G.hp[k], 2)} m</text>`; });
+      + `<text x="${x + sg * 4}" y="${(Y(0) + Y(G.hp[k])) / 2}" text-anchor="${sg < 0 ? 'end' : 'start'}" font-size="13" font-weight="700">${vtTxt(G.hp[k], 2)} m</text>`; });
   s += `<text x="${X(0)}" y="14">${esc(r.cerr.clase.toUpperCase())}${r.inp.muroA.t !== 'C' || r.inp.muroB.t !== 'C' ? ' — línea roja segmentada: muro abierto o parcial' : ''}</text></svg>`;
   return s;
 }
@@ -52712,12 +52733,13 @@ function renderCargasGalpon(container) {
     <div class="panel">
       <h3>3 · Peso propio (valores de la ficha del fabricante)</h3>
       <div class="field-grid">
-        ${inp('cg_cub', '6', 'Cubierta (kgf/m² de superficie)')}
-        ${inp('cg_cos', '4.5', 'Costaneras (kgf/m)')}
-        ${inp('cg_cie', '0', 'Aislación / cielo (kgf/m² de superficie)')}
-        ${inp('cg_ins', '5', 'Instalaciones colgadas (kgf/m² en planta)')}
-        ${inp('cg_rev', '6', 'Revestimiento de muros (kgf/m²)')}
-        ${inp('cg_mar', '40', 'Marco: peso del perfil (kgf/m)')}
+        ${inp('cg_cub', '', 'Cubierta (kgf/m² de superficie)')}
+        ${inp('cg_cos', '', 'Costaneras (kgf/m)')}
+        ${inp('cg_cie', '', 'Aislación / cielo (kgf/m² de superficie)')}
+        ${inp('cg_ins', '', 'Instalaciones colgadas (kgf/m² en planta)')}
+        ${inp('cg_rev', '', 'Revestimiento de muros (kgf/m²)')}
+        ${inp('cg_mar', '', 'Vigas del marco: peso del perfil (kgf/m)')}
+        ${inp('cg_col', '', 'Columnas: peso del perfil (kgf/m)')}
       </div>
     </div>
     <div class="panel">
@@ -52771,9 +52793,8 @@ function renderCargasGalpon(container) {
     <div class="panel"><h3>Esquema</h3><div id="cg_fig"></div></div>
     <div class="panel" data-resumen="force"><h3>Resumen de cargas</h3><div id="cg_res" style="overflow-x:auto"></div></div>
     <div class="panel"><h3>Estados de carga sobre el marco tipo (kgf/m)</h3>
-      <div class="field-grid cg-solo-web"><div class="field"><label>Viento + / viento − en el esquema lateral</label><select id="cg_wLatSel"></select></div></div>
-      <div class="note">Rojo: carga hacia el elemento (presión o gravedad). Azul: alejándose (succión). Morado: horizontal sobre las vigas (sismo).</div>
-      <div id="cg_marcos" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:.8rem"></div></div>
+      <div class="note">Se entregan D, L, Lr, nieve balanceada, W+ (izquierda → derecha), W− (derecha → izquierda) y WL (longitudinal); para el viento, en cada dirección, el estado de mayor levantamiento del techo. Los demás quedan en el anexo. Rojo: carga hacia el elemento (presión o gravedad). Azul: alejándose (succión). Morado: horizontal sobre las vigas (sismo).</div>
+      <div id="cg_marcos" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:.8rem"></div><div id="cg_anexo" class="cg-solo-web" style="margin-top:.6rem"></div></div>
     <div class="panel"><h3>Viento — cargas lineales sobre el marco tipo, por estado</h3><div id="cg_vto" style="overflow-x:auto"></div></div>
     <div class="panel"><h3>Viento — envolvente por superficie</h3><div id="cg_env" style="overflow-x:auto"></div></div>
     <div class="panel"><h3>Nieve — NCh431-2010</h3><div id="cg_niv" style="overflow-x:auto"></div></div>
@@ -52818,7 +52839,8 @@ function renderCargasGalpon(container) {
     { const tb = $('cg_po').value === 'tabla'; $('cg_wLat').hidden = $('cg_wAlt').hidden = !tb; $('cg_wPm').hidden = $('cg_wPr').hidden = tb;
       $('cg_wLit').hidden = !(tb && $('cg_palt').value === '0' && +$('cg_plat').value >= 3 && +$('cg_plat').value <= 6); }
     return { geo, sCost: num('cg_sc'),
-      pp: { cub: num('cg_cub') || 0, costanera: num('cg_cos') || 0, cielo: num('cg_cie') || 0, inst: num('cg_ins') || 0, rev: num('cg_rev') || 0, marco: num('cg_mar') || 0 },
+      pp: { cub: num('cg_cub') || 0, costanera: num('cg_cos') || 0, cielo: num('cg_cie') || 0, inst: num('cg_ins') || 0, rev: num('cg_rev') || 0, marco: num('cg_mar') || 0, col: num('cg_col') || 0,
+        faltan: [['cg_cub', 'cubierta'], ['cg_cos', 'costaneras'], ['cg_cie', 'aislación / cielo (0 si no hay)'], ['cg_ins', 'instalaciones (0 si no hay)'], ['cg_rev', 'revestimiento de muros (0 si no hay)'], ['cg_mar', 'perfil de las vigas'], ['cg_col', 'perfil de las columnas']].filter(([id]) => !(num(id) >= 0)).map(x => x[1]) },
       techo: $('cg_tt').value, ent: { on: $('cg_ent').checked, idx: +$('cg_entT').value, A: num('cg_entA') },
       viento: { V: Vs === 'manual' ? num('cg_V') : +Vs, expo: $('cg_ex').value, importancia: $('cg_imp').value, Kzt: num('cg_kzt'), flujo: $('cg_fl').value, comb3171: $('cg_comb').checked },
       nieve: { origen: $('cg_po').value, lat: +$('cg_plat').value, alt: +$('cg_palt').value, litoral: $('cg_plit').checked, pgMan: num('cg_pg'), pgRef: $('cg_pref').value, vigasSA: $('cg_vsa').checked, terreno: $('cg_nt').value, expo: +$('cg_ne').value, Ct: +$('cg_ct').value, lisa: $('cg_lisa').checked, importancia: $('cg_imp').value } };
@@ -52838,6 +52860,7 @@ function renderCargasGalpon(container) {
     }
     r.inp = I.geo;
     let nie = calcNieveGalpon(r, I.nieve);
+    if (I.pp.faltan.length) r.pendientes = r.pendientes.concat([`Peso propio: ingrese ${I.pp.faltan.join(', ')} (kgf/m² o kgf/m, de la ficha del fabricante o del diseño). La planilla no trae valores por defecto.`]);
     if (nie.errores) r.pendientes = r.pendientes.concat(nie.errores);
     $('cg_wFl').hidden = !r.abierto;
     $('cg_errores').innerHTML = r.pendientes.length ? `<div class="panel"><div class="global-verdict bad"><span class="label">CÁLCULO PRELIMINAR — condiciones sin acreditar: no se permite imprimir ni exportar</span></div><ul class="note">${r.pendientes.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
@@ -52845,21 +52868,13 @@ function renderCargasGalpon(container) {
     // estados de carga dibujados en el marco tipo + esquema lateral (sección, D, Lr, S, viento + / −, E)
     const Csis = num('cg_csis') > 0 ? num('cg_csis') : 0;
     const E = cgEstadosMarco(r, nie, Csis);
-    const sel = $('cg_wLatSel'), prev = sel.value, opts = [];
-    E.filter(e => e.viento && !e.caso.minimo && e.caso.dir !== 'L').forEach(e => {
-      const key = r.abierto ? e.caso.dir : e.caso.dir + '|' + e.caso.casoTxt;
-      if (!opts.some(o => o.key === key)) opts.push({ key, txt: r.abierto ? e.caso.dirTxt : `${e.caso.dirTxt} — ${e.caso.casoTxt}` });
-    });
-    sel.innerHTML = opts.map((o, j) => `<option value="${esc(o.key)}">${j + 1}. ${esc(o.txt.length > 110 ? o.txt.slice(0, 107) + '…' : o.txt)}</option>`).join('');
-    if (opts.some(o => o.key === prev)) sel.value = prev;
-    const kSel = sel.value;
-    const par = E.filter(e => e.viento && !e.caso.minimo && (r.abierto ? e.caso.dir === kSel : e.caso.dir + '|' + e.caso.casoTxt === kSel)).sort((a, b) => b.caso.s - a.caso.s)
-      .map(e => ({ ...e, tit: (r.abierto ? 'Viento ' : e.caso.s > 0 ? 'Viento + ' : 'Viento − ') + e.tit }));
-    const lat = E.filter(e => ['D', 'Lr', 'S', 'E'].includes(e.id) && e.id !== 'E').concat(par, E.filter(e => e.id === 'E'));
+    const lat = E.filter(e => ['D', 'Lr', 'S'].includes(e.id)).concat(E.filter(e => e.gobierna && !e.caso.minimo && e.caso.dir !== 'L'), E.filter(e => e.id === 'E'));
+    const nAnx = E.filter(e => e.anexo || (e.viento && !e.gobierna)).length;
     const secSvg = cgSvgSeccion(r);
     $('cg_fig').innerHTML = `<div id="cg_esqSec">${secSvg}</div>`;
     $('cg_esqSec').dataset.esqLateral = secSvg + lat.map(e => cgSvgMarco(r, e, 'cg_l' + e.id)).join('');
     $('cg_marcos').innerHTML = cgHtmlMarcos(r, E);
+    $('cg_anexo').innerHTML = nAnx ? `<details><summary style="cursor:pointer">Anexo: ${nAnx} estados adicionales (mínimo 5.2.1, otros casos de la Tabla 15 y de GCpi; nieve desbalanceada y parcial). Siguen en las tablas y en la envolvente</summary><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:.8rem">${cgHtmlMarcos(r, E, true)}</div></details>` : '';
     H.calcPrint = H.calcPrint.replace('<div class="xlsx-section">2. VIENTO', `<div class="xlsx-section">1.1 ESTADOS DE CARGA SOBRE EL MARCO TIPO (kgf/m)</div><div class="note">Rojo: carga hacia el elemento (presión o gravedad). Azul: alejándose (succión). Morado: horizontal (sismo).</div>${cgHtmlMarcos(r, E).replace(/(["#])cg_m/g, '$1cg_p')}<div class="xlsx-section">2. VIENTO`);
     $('cg_res').innerHTML = H.resumen;
     $('cg_vto').innerHTML = H.viento;
@@ -52869,6 +52884,7 @@ function renderCargasGalpon(container) {
     const ind = $('cg_ind').value === 'si';
     $('cg_sisRes').innerHTML = `<table class="results"><tr><th>Peso de referencia para el sismo</th><th class="num">tonf</th></tr>
       <tr><td>Peso propio del techo y marcos (cubierta, costaneras, cielo, instalaciones y marcos)</td><td class="num">${vtTxt(r.Ptecho / 1000, 2)}</td></tr>
+      <tr><td>Peso propio de columnas (total; al nivel del techo corresponde aprox. la mitad)</td><td class="num">${vtTxt(r.Pcol / 1000, 2)}</td></tr>
       <tr><td>Peso propio de revestimientos de muros (total; al nivel del techo corresponde aprox. la mitad)</td><td class="num">${vtTxt(r.Pmuros / 1000, 2)}</td></tr>
       ${r.ent ? `<tr><td>Sobrecarga de uso del entrepiso (L₀ × área)</td><td class="num">${vtTxt(r.ent.P / 1000, 2)}</td></tr>` : ''}</table>
       <div class="note">El porcentaje de sobrecarga que entra al peso sísmico y el resto del cálculo se definen en la planilla ${ind ? 'Fuerzas Sísmicas NCh2369.Of2003 (Industrial)' : 'Fuerzas Sísmicas NCh433 + DS61'}.</div>`;
@@ -52944,7 +52960,7 @@ function cgHtml(r, nie) {
   const filas = [];
   r.naves.forEach(nv => {
     const t = `Nave ${nv.i + 1}`;
-    filas.push([`<b>Vigas ${t.toLowerCase()}</b> — peso propio D: cubierta, costaneras, cielo e instalaciones vertical (la carga lineal incluye el perfil, ${k(r.pp.marco)} kgf/m)`, k(nv.Dh), k(nv.wMarco)]);
+    filas.push([`<b>Vigas ${t.toLowerCase()}</b> — peso propio D: cubierta, costaneras, cielo e instalaciones vertical (la carga lineal incluye el perfil de la viga, ${k(r.pp.marco)} kgf/m de viga)`, k(nv.Dh), k(nv.wMarco)]);
     filas.push([`Vigas ${t.toLowerCase()} — sobrecarga de techo Lr, vertical (AT del marco = ${vtTxt(nv.ATm, 1)} m²${nv.rm ? `, R₁ = ${vtTxt(nv.rm.R1, 3)}, R₂ = ${vtTxt(nv.rm.R2, 3)}` : ''})`, k(nv.Lm), k(nv.wLr)]);
     if (nOk) { const n = nie.naves[nv.i], q = n.ps + n.lluvia; filas.push([`Vigas ${t.toLowerCase()} — nieve balanceada ps${n.lluvia ? ' + 0,25 kN/m² de lluvia sobre nieve (12)' : ''} (NCh431-2010), vertical sobre la proyección horizontal`, k(q * 101.97), k(q * 101.97 * G.trib)]); }
   });
@@ -52994,7 +53010,7 @@ function cgHtml(r, nie) {
     ${rr('Largo del galpón / espaciamiento entre marcos', `${vtTxt(G.Ltot, 2)} m / ${vtTxt(G.trib, 2)} m`)}
     ${rr('Espaciamiento de costaneras', vtTxt(r.sCost, 2) + ' m')}
     ${rr('Cerramiento', r.cerr.muros.map(m => `${esc(m.nombre)}: Ao/Ag = ${vtTxt(m.Ao, 1)}/${vtTxt(m.Ag, 1)} m²`).join('; ') + ' → ' + esc(r.cerr.clase))}
-    ${rr('Peso propio (kgf/m², kgf/m)', `cubierta ${k(r.pp.cub)}; costaneras ${k(r.pp.costanera)} kgf/m; cielo ${k(r.pp.cielo)}; instalaciones ${k(r.pp.inst)}; muros ${k(r.pp.rev)}; marco ${k(r.pp.marco)} kgf/m`)}
+    ${rr('Peso propio (kgf/m², kgf/m)', `cubierta ${k(r.pp.cub)}; costaneras ${k(r.pp.costanera)} kgf/m; cielo ${k(r.pp.cielo)}; instalaciones ${k(r.pp.inst)}; muros ${k(r.pp.rev)}; columnas ${k(r.pp.col)} kgf/m; vigas ${k(r.pp.marco)} kgf/m`)}
     ${rr('Techo (NCh1537 Tabla 4)', esc(r.tt[1]))}
     ${rr('Viento', `V = ${vtTxt(r.base.V, 1)} m/s, exposición ${esc(r.base.expo)}, ${esc(r.base.importancia)} (I = ${vtTxt(r.I, 2)}), Kzt = ${vtTxt(r.base.Kzt, 2)}`)}
     ${nOk ? rr('Nieve (NCh431-2010)', `pg = ${vtTxt(nie.pg * 101.97, 1)} kgf/m² (${esc(nie.pgTxt)}), Ce = ${vtTxt(nie.Ce, 2)}, Ct = ${vtTxt(nie.Ct, 2)}, I = ${vtTxt(nie.I, 2)}`) : ''}
