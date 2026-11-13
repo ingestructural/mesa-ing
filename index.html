@@ -1637,9 +1637,14 @@ function fsReconnectWithGesture(){
   }).catch(function(){ return false; });
 }
 function fsChooseRoot(){
-  return fsDbGet('root').catch(function(){ return null; }).then(function(prev){
-    var opt = {mode:'readwrite', id:'mesaBase'}; try { opt.startIn = prev || 'documents'; } catch(e){}
-    return window.showDirectoryPicker(opt);
+  // el selector se pide de inmediato (sin esperar IndexedDB) para no perder el gesto del clic
+  return Promise.resolve().then(function(){
+    // abrir en Documentos (no dentro de la base anterior) evita
+    // que el diálogo parta dentro de la base anterior y «Seleccionar carpeta» la vuelva a elegir sin querer
+    return window.showDirectoryPicker({mode:'readwrite', startIn:'documents'}).catch(function(e){
+      if (e && e.name === 'AbortError') throw e;
+      return window.showDirectoryPicker({mode:'readwrite'});   // si 'documents' no se acepta, el diálogo por defecto
+    });
   }).then(function(handle){
     return fsDbSet('root', handle).then(function(){
       FS_ROOT = handle; FS_STORED_NAME = handle.name || '';
@@ -2393,10 +2398,15 @@ document.getElementById('fsToggleBtn').addEventListener('click', async function(
 });
 document.getElementById('fsChooseRootBtn').addEventListener('click', async function(){
   try {
-    await fsChooseRoot();
+    var antes = FS_ROOT ? FS_ROOT.name : FS_STORED_NAME;
+    var h = await fsChooseRoot();
     document.getElementById('fsReconnectRow').style.display = 'none';
     fsUpdateRootLabel(); fsRenderTree(); fsUpdateSaveBarLabel();
-  } catch(e) { /* el usuario cerró el selector de carpeta sin elegir ninguna, u otro error — no hacer nada */ }
+    fsToast(h && h.name === antes ? ('Se eligió de nuevo «' + h.name + '». Para cambiarla, pinche la otra carpeta (que quede marcada) y luego «Seleccionar carpeta».') : ('Carpeta base: ' + (h ? h.name : '')));
+  } catch(e) {
+    if (e && e.name === 'AbortError') return;   // cerró el selector sin elegir
+    fsToast('No se pudo cambiar la carpeta base: ' + ((e && (e.message || e.name)) || 'error desconocido'));
+  }
 });
 document.getElementById('fsReconnectBtn').addEventListener('click', async function(){
   var ok = await fsReconnectWithGesture();
@@ -2427,7 +2437,9 @@ if (!FS_SUPPORTED) {
       FS_STORED_NAME = stored.name || '';
       fsUpdateRootLabel(); fsUpdateSaveBarLabel();
       // la carpeta base queda siempre la misma: al primer clic se vuelve a autorizar sola
-      var once = function(){
+      var once = function(ev){
+        // el clic en «Elegir carpeta base…» es para el selector: no gastarlo en reautorizar la base anterior
+        if (ev && ev.target && ev.target.closest && ev.target.closest('#fsChooseRootBtn')) return;
         document.removeEventListener('pointerdown', once, true); document.removeEventListener('keydown', once, true);
         if (FS_ROOT) return;
         fsReconnectWithGesture().then(function(ok2){
