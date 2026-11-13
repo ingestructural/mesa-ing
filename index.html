@@ -52704,7 +52704,7 @@ function renderCargasGalpon(container) {
   const vOpts = VT_V_TABLA6.map(z => `<option value="${z.V}">Lat. ${z.lat} (${esc(z.ciu)}) — V = ${z.V} m/s</option>`).join('') + '<option value="manual">Otra (ingresar)</option>';
   const impOpts = Object.keys(TABLA2_IMPORTANCIA_VIENTO).map(k => `<option${k.startsWith('II ') ? ' selected' : ''}>${esc(k)}</option>`).join('');
   const tipos = [...new Set(CU_T4.map(r => r[0]))];
-  const tip = (id, ops) => `<div class="field"><label>Típico…</label><select data-tip="${id}"><option value="">— elegir valor típico —</option>${ops.map(([v, t]) => `<option value="${v}">${vtTxt(v, 2)} — ${esc(t)}</option>`).join('')}</select></div>`;
+  const inpL = (id, ops, val, lbl) => `<div class="field"><label>${lbl}</label><input type="text" inputmode="decimal" id="${id}" value="${val}" list="dl_${id}" placeholder="pinchar: valores típicos"><datalist id="dl_${id}">${ops.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('')}</datalist></div>`;
   const inp = (id, val, lbl, w, cls) => `<div class="field${cls ? ' ' + cls : ''}"${w ? ` style="${w}"` : ''}><label>${lbl}</label><input type="text" inputmode="decimal" id="${id}" value="${val}"></div>`;
   container.innerHTML = `
     <div class="calc-head">
@@ -52731,15 +52731,15 @@ function renderCargasGalpon(container) {
     <div class="panel">
       <h3>3 · Peso propio (valores de la ficha del fabricante)</h3>
       <div class="field-grid">
-        ${inp('cg_cub', '', 'Cubierta (kgf/m² de superficie)')}${tip('cg_cub', CG_TIP_PLANCHA)}
-        ${inp('cg_cos', '', 'Costaneras (kgf/m)')}${tip('cg_cos', CG_TIP_COST)}
-        ${inp('cg_cie', '', 'Aislación / cielo (kgf/m² de superficie)')}${tip('cg_cie', CG_TIP_AISL)}
-        ${inp('cg_ins', '', 'Instalaciones colgadas (kgf/m² en planta)')}${tip('cg_ins', CG_TIP_INST)}
-        ${inp('cg_rev', '', 'Revestimiento de muros (kgf/m²)')}${tip('cg_rev', CG_TIP_PLANCHA)}
+        ${inpL('cg_cub', CG_TIP_PLANCHA, '', 'Cubierta (kgf/m² de superficie)')}
+        ${inpL('cg_cos', CG_TIP_COST, '', 'Costaneras (kgf/m)')}
+        ${inpL('cg_cie', CG_TIP_AISL, '', 'Aislación / cielo (kgf/m² de superficie)')}
+        ${inpL('cg_ins', CG_TIP_INST, '', 'Instalaciones colgadas (kgf/m² en planta)')}
+        ${inpL('cg_rev', CG_TIP_PLANCHA, '', 'Revestimiento de muros (kgf/m²)')}
         ${inp('cg_mar', '', 'Vigas del marco: peso del perfil (kgf/m)')}
         ${inp('cg_col', '', 'Columnas: peso del perfil (kgf/m)')}
       </div>
-      <div class="note">Valores típicos (elegir en «Típico…» o ingresar el de la ficha del producto especificado). Planchas Instapanel (Cintac), zincalum o prepintado, mismo peso: PV-6 (avance útil 910 mm, nervio trapezoidal, cubierta de galpón), PV-4 (avance útil 1 000 mm) y Ondulado (avance útil 1 000 mm), según el catálogo «Instapanel — Cubiertas y revestimientos». Costaneras C de Cintac, «Catálogo general productos y sistemas» (2026), p. 5 y Z Tubest p. 24. Aislación: peso = densidad × espesor; lana de vidrio Aislanglass en rollo (Volcán) de 80 mm con 13,5 kg/m³ = 1,1 kgf/m². Instalaciones: dato del proyecto de especialidades (0 si no hay). Vigas y columnas: peso del perfil adoptado.</div>
+      <div class="note">Valores típicos: pinchar la casilla y elegir, o ingresar el de la ficha del producto especificado. Planchas Instapanel (Cintac), zincalum o prepintado, mismo peso: PV-6 (avance útil 910 mm, nervio trapezoidal, cubierta de galpón), PV-4 (avance útil 1 000 mm) y Ondulado (avance útil 1 000 mm), según el catálogo «Instapanel — Cubiertas y revestimientos». Costaneras C de Cintac, «Catálogo general productos y sistemas» (2026), p. 5 y Z Tubest p. 24. Aislación: peso = densidad × espesor; lana de vidrio Aislanglass en rollo (Volcán) de 80 mm con 13,5 kg/m³ = 1,1 kgf/m². Instalaciones: dato del proyecto de especialidades (0 si no hay). Vigas y columnas: peso del perfil adoptado.</div>
     </div>
     <div class="panel">
       <h3>4 · Sobrecargas de techo y de uso (NCh1537:2009)</h3>
@@ -52915,7 +52915,10 @@ function renderCargasGalpon(container) {
     $('cg_not').innerHTML = `<ul class="note">${H.notas.map(x => `<li>${x}</li>`).join('')}</ul>`;
     xlsxSetPrintSheets(H.datosPrint, H.calcPrint, H.resPrint);
   }
-  container.querySelectorAll('select[data-tip]').forEach(el => el.addEventListener('change', () => { if (el.value !== '') { $(el.dataset.tip).value = el.value; el.value = ''; recalc(); } }));
+  // lista de valores típicos al pinchar la casilla (sin segundo control)
+  ['cg_cub', 'cg_cos', 'cg_cie', 'cg_ins', 'cg_rev'].forEach(id => { const el = $(id);
+    el.addEventListener('mousedown', () => { if (el.showPicker && document.activeElement === el) { try { el.showPicker(); } catch (e) {} } });
+    el.addEventListener('focus', () => { if (el.showPicker) { try { el.showPicker(); } catch (e) {} } }); });
   $('cg_n').addEventListener('change', () => { guardarNaves(); dibujarNaves(); recalc(); });
   $('cg_dxfBtn').addEventListener('click', () => $('cg_dxf').click());
   $('cg_dxf').addEventListener('change', ev => {
