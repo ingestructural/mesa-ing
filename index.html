@@ -2377,7 +2377,7 @@ const TOOLS = [
     desc:'Carga de uso L₀ y concentrada Qk por destino (Tabla 4), reducción por área tributaria con KLL (8.1) y sobrecarga de techo reducida por área tributaria y pendiente (8.2), en t/m² y kPa.',
     tag:'NCh1537:2009', calc:'cargasUso' },
   { id:'cargas-galpon', cat:'Cargas', name:'Cargas de Galpón (NCh1537 · NCh432 · NCh431)', file:null,
-    desc:'Galpón de 1 a 3 naves adyacentes a 1 o 2 aguas, con caras abiertas o cerradas: peso propio, sobrecarga de techo y de uso (NCh1537:2009), viento en todas las caras (NCh432.Of2010, incluido edificio abierto 7.13) y nieve provisoria; geometría manual o desde el DXF del comando GALPON de AutoCAD.',
+    desc:'Galpón de 1 a 3 naves adyacentes a 1 o 2 aguas, con caras abiertas o cerradas: peso propio, sobrecarga de techo y de uso (NCh1537:2009), viento en todas las caras (NCh432.Of2010, incluido edificio abierto 7.13) y nieve (NCh431-2010); geometría manual o desde el DXF del comando GALPON de AutoCAD.',
     tag:'NCh1537 · NCh432 · NCh431', calc:'cargasGalpon' },
   { id:'combinaciones-carga', cat:'Cargas', name:'Combinaciones de Carga para RAM (Acero, Hormigón, Fundaciones, Madera)', file:null,
     desc:'Genera las combinaciones de carga para los estados que se marquen (peso propio, sobrecargas, techo, nieve, lluvia, temperatura, empuje de tierra, puente grúa, viento ±X/±Z, sismo ±X/±Z y vertical): NCh3171 o ASCE 7-16 / ACI 318-19, LRFD o ASD, con nombres A (acero), H (rotura hormigón y fundaciones), F (dimensionamiento de fundaciones) y MA (madera, con K_D), en formato para pegar en RAM Elements.',
@@ -52377,58 +52377,118 @@ function calcCargasGalpon(inp) {
     abierto, vNaves, flujo: W.flujo, base, Ptecho, Pmuros, sCost: inp.sCost, pp };
 }
 
-// --- nieve PROVISORIA (decisión ING 13-11-2026): pg ingresada; coeficientes de la «Guía técnica NCh431:2010»
-//     contrastados con ASCE 7-02 cap. 7 (base de NCh431:2010): Tablas 7-2, 7-3, 7-4, Fig. 7-2 (C7.4), 7.3.4, 7.4.4, 7.6.1, 7.6.3, Eq. 7-4.
-const CG_CE = { B: [0.9, 1.0, 1.2], C: [0.9, 1.0, 1.1], D: [0.8, 0.9, 1.0], M: [0.7, 0.8, null] };
-const CG_CT = [[1.0, 'Estructuras calefaccionadas y todas las no indicadas abajo'], [1.1, 'Justo sobre el punto de congelamiento, o techo frío ventilado con R > 4,4 K·m²/W'],
-  [1.2, 'No calefaccionadas o mantenidas bajo el punto de congelamiento'], [0.85, 'Invernaderos calefaccionados continuamente con cubierta R < 0,4 K·m²/W']];
-const CG_IS = { 'I (Instalaciones temporales)': 0.8, 'II (No incluidas I,III,IV)': 1.0, 'III (Uso público)': 1.1, 'IV (Instalaciones esenciales)': 1.2 };
-function cgCs(theta, Ct, lisa) {
+// --- nieve: NCh431-2010 «Diseño estructural - Cargas de nieve» (texto entregado por ING el 13-11-2026).
+//     Tabla 1 pg; 5.1 Eq. 1 y mínimos; 5.2; Tabla 2 Ct; Tabla 3 I; Tabla 4 Ce; 6.1–6.3 y Figura 1 Cs; 6.5 techos múltiples;
+//     7 cargas parciales; 8.2 + Figuras 4 y 5 desbalance a dos aguas; 8.4 valles; Eq. 3 γ; 12 lluvia sobre nieve.
+const CG_N1_LAT = ['17° – 26°', '26° – 29°', '29° – 32°', '32° – 34°', '34° – 36°', '36° – 38°', '38° – 42°', '42° – 48°', '48° – 55°'];
+const CG_N1_ALT = ['0 a 300', '300 a 600', '600 a 800', '800 a 1 000', '1 000 a 1 250', '1 250 a 1 500', '1 500 a 1 750', '1 750 a 2 000', '2 000 a 2 500', '2 500 a 3 000', '3 000 a 3 500', '3 500 a 4 000', 'Sobre 4 000'];
+// kN/m²; null = nota 3) «No hay información» (pg por análisis especial del sitio, aprobado por la Autoridad Competente).
+const CG_N1 = [
+  [0, 0, 0, 0.25, 0.25, 0.25, 0.25, 0.25, 0.50],
+  [0, 0, 0, 0.25, 0.25, 0.25, 0.25, 0.25, 1.25],
+  [0, 0.25, 0.25, 0.50, 0.75, 0.75, 0.75, 0.50, 1.25],
+  [0, 0.25, 0.25, 0.75, 1.00, 1.00, 1.00, 1.00, 1.25],
+  [0, 0.25, 0.25, 1.00, 1.50, 1.50, 1.50, 1.50, null],
+  [0, 0.25, 0.25, 2.00, 3.00, 3.00, 3.00, 2.00, null],
+  [0, 0.25, 0.25, 3.00, 7.00, 14.5, 4.50, 3.00, null],
+  [0, 0.50, 0.50, 4.00, 8.60, 16.2, 6.00, null, null],
+  [null, 1.00, 2.00, 5.90, 11.00, 18.75, null, null, null],
+  [null, 2.00, 2.60, 8.80, null, 22.7, null, null, null],
+  [null, 3.00, 3.60, 13.00, null, null, null, null, null],
+  [null, null, 4.80, 19.50, null, null, null, null, null],
+  [null, null, 6.25, null, null, null, null, null, null]];
+const CG_CE = { B: [0.9, 1.0, 1.2], C: [0.9, 1.0, 1.1], D: [0.8, 0.9, 1.0], M: [0.7, 0.8, null] };   // Tabla 4
+const CG_CT = [[1.0, 'Todas las estructuras, excepto las indicadas a continuación'],                    // Tabla 2
+  [1.1, 'Justo sobre el punto de congelamiento y otras expuestas al frío; techos ventilados con R > 4,4 K·m²/W entre el espacio ventilado y el calefaccionado'],
+  [1.2, 'No calefaccionadas y/o mantenidas intencionalmente bajo el punto de congelamiento'],
+  [0.85, 'Invernaderos expuestos continuamente a altas temperaturas, con techo de R < 0,4 K·m²/W']];
+const CG_IS = { 'I (Instalaciones temporales)': 0.8, 'II (No incluidas I,III,IV)': 1.0, 'III (Uso público)': 1.1, 'IV (Instalaciones esenciales)': 1.2 };   // Tabla 3 (categorías NCh3171)
+function cgCs(theta, Ct, lisa) {                 // Figura 1 a), b) y c)
   const t0 = Ct <= 1.0 ? (lisa ? 5 : 30) : Ct <= 1.1 ? (lisa ? 10 : 37.5) : (lisa ? 15 : 45);
   return theta <= t0 ? 1 : theta >= 70 ? 0 : 1 - (theta - t0) / (70 - t0);
 }
+// Figura 4: hd (m). La ecuación impresa «hd = 0,132·∛lu·⁴√(pg+10) − 0,46» conserva lu en pies y pg en lb/pie² de la
+// fórmula de origen (ASCE/SEI 7-05, citada en el preámbulo); con lu en m y pg en kN/m² no reproduce el gráfico. Se usa la
+// forma con unidades consistentes, que coincide con las curvas (p. ej. lu = 30 m, pg = 1 kN/m² → 0,97 m). lu < 7,5 m → 7,5 m.
+function cgHd(lu, pg) {
+  const luFt = Math.max(lu, 7.5) / 0.3048, pgPsf = pg / 0.047880;
+  return Math.max(0, 0.3048 * (0.43 * Math.cbrt(luFt) * Math.pow(pgPsf + 10, 0.25) - 1.5));
+}
 function calcNieveGalpon(r, nv_) {
   const n = nv_, e = [], avisos = [];
-  const pg = n.pg / 101.97;                       // kN/m²
-  if (!(n.pg >= 0)) { e.push('Nieve: ingrese pg ≥ 0 kgf/m².'); return { errores: e }; }
+  let pg, pgTxt;
+  if (n.origen === 'tabla') {
+    const v = (CG_N1[n.alt] || [])[n.lat];
+    if (v === undefined) { e.push('Nieve: seleccione latitud y altitud de la Tabla 1.'); return { errores: e }; }
+    if (v === null) { e.push(`Nieve: Tabla 1 sin información para latitud ${CG_N1_LAT[n.lat]} y altitud ${CG_N1_ALT[n.alt]} m (nota 3). Según la cláusula 4, pg debe obtenerse de un análisis estadístico de valores extremos del sitio (2 % de probabilidad anual de excedencia) aprobado por la Autoridad Competente: elija «Análisis especial del sitio» e ingrese pg con su respaldo.`); return { errores: e }; }
+    const notaLit = n.alt === 0 && n.lat >= 3 && n.lat <= 6;
+    pg = notaLit && n.litoral ? 0 : v;
+    pgTxt = `Tabla 1: latitud ${CG_N1_LAT[n.lat]}, altitud ${CG_N1_ALT[n.alt]} m → ${vtTxt(v, 2)} kN/m²` + (notaLit && n.litoral ? '; en el litoral no se considera carga de nieve (nota 2)' : '');
+  } else {
+    if (!(n.pgMan >= 0)) { e.push('Nieve: ingrese pg ≥ 0 kgf/m² del análisis especial del sitio.'); return { errores: e }; }
+    if (!(n.pgRef || '').trim()) { e.push('Nieve: indique el respaldo del análisis especial del sitio (cláusula 4: debe ser aprobado por la Autoridad Competente).'); return { errores: e }; }
+    pg = n.pgMan / 101.97;
+    pgTxt = `Análisis especial del sitio: ${n.pgRef.trim()}`;
+  }
+  if (!(pg > 0)) return { cero: true, pgTxt };
   const ce = CG_CE[n.terreno]; const Ce = ce ? ce[n.expo] : null;
-  if (Ce == null) { e.push('Nieve: combinación de terreno y exposición sin valor en la Tabla 7-2 (montaña resguardada: N/A).'); return { errores: e }; }
+  if (Ce == null) { e.push('Nieve: Tabla 4 no da Ce para techos protegidos en áreas montañosas azotadas por vientos (N/A).'); return { errores: e }; }
   const Ct = n.Ct, I = CG_IS[n.importancia] || 1.0;
-  const pf0 = 0.7 * Ce * Ct * I * pg;
-  const gamma = Math.min(0.426 * pg + 2.2, 4.7);  // kN/m³ (Eq. 7-4)
+  const pf0 = 0.7 * Ce * Ct * I * pg;                       // Eq. 1
+  const pminV = pg <= 1.0 ? I * pg : 0.96 * I;              // 5.1
+  const gamma = Math.min(0.426 * pg + 2.2, 4.7);            // Eq. 3, kN/m³
   const multi = r.G.naves.length > 1;
   const naves = r.G.naves.map(nv => {
-    const Wr = nv.tipo === 'D' ? nv.L / 2 : nv.L;
-    const limG = 21.3 / Wr + 0.5;
-    const bajaPend = nv.tipo === 'U' ? nv.theta < 15 : nv.theta <= limG;
-    const pmin = bajaPend ? (pg <= 0.96 ? I * pg : 0.96 * I) : 0;
+    const Wr = nv.tipo === 'D' ? nv.L / 2 : nv.L;           // W: distancia horizontal alero–cumbrera
+    const limG = Math.max(2.38, 21.3 / Wr + 0.5);
+    const bajaPend = nv.tipo === 'U' ? nv.theta < 15 : nv.theta < limG;   // 5.2
+    const pmin = bajaPend ? pminV : 0;
     const pf = Math.max(pf0, pmin);
-    const Cs = multi ? 1 : cgCs(nv.theta, Ct, n.lisa);
+    const Cs = multi ? 1 : cgCs(nv.theta, Ct, n.lisa);       // 6.5 (techos múltiples) / Figura 1
+    const lluvia = pg <= 0.96 && nv.theta < Wr / 12.5 ? 0.25 : 0;   // 12
     const ps = Cs * pf;
     let desb = null;
-    if (!multi && nv.tipo === 'D' && pg > 0 && nv.theta > limG && nv.theta < 70) {
-      if (Wr <= 6.1) desb = { barlo: 0, sota: 1.5 * ps / Ce, txt: 'W ≤ 6,1 m: sotavento 1,5·ps/Ce, barlovento 0 (7.6.1)' };
-      else { const beta = pg <= 0.97 ? 1.0 : pg >= 1.93 ? 0.5 : 1.5 - 0.52 * pg;
-        desb = { barlo: 0.3 * ps, sota: 1.2 * (1 + beta / 2) * ps / Ce, beta, txt: `W > 6,1 m: sotavento 1,2·(1 + β/2)·ps/Ce con β = ${vtTxt(beta, 3)}, barlovento 0,3·ps (7.6.1)` }; }
+    if (!multi && nv.tipo === 'D' && nv.theta >= limG && nv.theta <= 70) {   // 8.2
+      if (Wr <= 6.1 && n.vigasSA) desb = { barlo: 0, sota: I * pg, txt: 'W ≤ 6,1 m con vigas simplemente apoyadas de cumbrera a alero: sotavento I·pg uniforme, barlovento descargado (8.2)' };
+      else {
+        const S = 1 / Math.tan(nv.theta * Math.PI / 180), hd = cgHd(Wr, pg);
+        const sob = hd * gamma / Math.sqrt(S), lx = Math.min(8 * Math.sqrt(S) * hd / 3, Wr);
+        desb = { barlo: 0.3 * ps, sota: ps, sob, lx, hd, S, txt: `barlovento 0,3·ps; sotavento ps más sobrecarga hd·γ/√S = ${vtTxt(sob * 101.97, 1)} kgf/m² en ${vtTxt(lx, 2)} m desde la cumbrera (hd = ${vtTxt(hd, 3)} m de la Figura 4 con lu = W = ${vtTxt(Wr, 2)} m, S = ${vtTxt(S, 2)}) (8.2, Figura 5)` };
+      }
     }
-    return { i: nv.i, theta: nv.theta, Wr, limG, bajaPend, pmin, pf, Cs, ps, desb };
+    return { i: nv.i, tipo: nv.tipo, theta: nv.theta, Wr, limG, bajaPend, pmin, pf, Cs, ps, lluvia, desb };
   });
-  // varias naves: techos múltiples (7.4.4 Cs = 1; 7.6.3 desbalance en valles: 0,5·pf en cumbrera → 2·pf/Ce en valle,
-  // con la superficie de nieve del valle no más alta que la de la cumbrera)
+  // 8.4: techos múltiples con pendiente > 1,79°: desde 0,5·pf en la cumbrera hasta 2·pf/Ce en el valle; la superficie de la
+  // nieve sobre el valle no puede quedar más alta que la cumbrera (profundidad = carga / γ, Eq. 3).
   const valles = [];
   if (multi) {
     for (let k = 0; k < r.G.naves.length - 1; k++) {
       const a = r.G.naves[k], b = r.G.naves[k + 1];
-      if (Math.abs(a.h2 - b.h1) > 0.01) { avisos.push(`Eje ${String.fromCharCode(66 + k)}: cambio de nivel entre naves ${k + 1} y ${k + 2} — la acumulación de 7.7 (techos más bajos) no está implementada; verifíquela aparte.`); continue; }
+      if (Math.abs(a.h2 - b.h1) > 0.01) { avisos.push(`Eje ${String.fromCharCode(66 + k)}: cambio de nivel entre naves ${k + 1} y ${k + 2}. La acumulación por arrastre del viento a techos más bajos (9.2) y la nieve caída por deslizamiento (11) no están implementadas: verificarlas aparte.`); continue; }
+      if (Math.max(a.theta, b.theta) <= 1.79) continue;
       const pf = Math.max(naves[k].pf, naves[k + 1].pf);
-      const dh = Math.min(Math.max(a.hc, a.h2) - a.h2, Math.max(b.hc, b.h1) - b.h1);   // desnivel cumbrera–valle
-      const pv = Math.min(2 * pf / Ce, gamma * dh + 0.5 * pf);
+      const dh = Math.min(Math.max(a.hc, a.h2) - a.h2, Math.max(b.hc, b.h1) - b.h1);   // altura cumbrera–valle
+      const pv = Math.min(2 * pf / Ce, gamma * dh);
       valles.push({ eje: String.fromCharCode(66 + k), pf, pCumbrera: 0.5 * pf, pValle: pv, limitado: pv < 2 * pf / Ce - 1e-9, dh });
     }
   }
-  if (pg > 0 && pg <= 0.96) avisos.push('ASCE 7-02 7.10 (sobrecarga por lluvia sobre nieve, 0,24 kN/m² en techos con pendiente < 2,38°) no se incluye: verificar si NCh431:2010 la exige.');
-  avisos.push('7.5 Carga parcial (vanos con media carga balanceada) en costaneras continuas: verificar en el diseño de costaneras.');
-  return { pg, Ce, Ct, I, pf0, gamma, naves, valles, multi, avisos, lisa: n.lisa, terreno: n.terreno, expo: n.expo };
+  // 7: cargas parciales (media carga balanceada en algunos vanos)
+  const parciales = [];
+  if (multi) {
+    const m = r.G.naves.length, nom = idx => idx.map(j => j + 1).join(' y ');
+    const caso = (txt, llenas) => parciales.push({ txt, llenas });
+    caso('Caso 1 (7.1): vano exterior izquierdo completo, resto a media carga', [0]);
+    caso('Caso 1 (7.1): vano exterior derecho completo, resto a media carga', [m - 1]);
+    caso('Caso 2 (7.1): vano exterior izquierdo a media carga, resto completo', [...Array(m).keys()].filter(j => j !== 0));
+    caso('Caso 2 (7.1): vano exterior derecho a media carga, resto completo', [...Array(m).keys()].filter(j => j !== m - 1));
+    for (let j = 0; j < m - 1; j++) caso(`Caso 3 (7.1): naves ${nom([j, j + 1])} completas, resto a media carga`, [j, j + 1]);
+    const vistos = new Set();      // sin repetidos ni el caso con todas las naves completas (= carga balanceada)
+    for (let q = 0; q < parciales.length; q++) { const key = parciales[q].llenas.join(',');
+      if (vistos.has(key) || parciales[q].llenas.length === m) parciales.splice(q--, 1); else vistos.add(key); }
+  }
+  if (r.G.naves.some(nv => nv.theta < 1.19)) avisos.push('Pendiente menor que 1,19°: investigar la inestabilidad por acumulación de agua (13).');
+  if (Ct <= 1.0) avisos.push('6.6: si el techo es cálido y drena sobre aleros en voladizo (no ventilado con R < 5,3 °C·m²/W, o ventilado con R < 3,5 °C·m²/W), los aleros deben resistir 2·pf uniforme, solo con carga muerta.');
+  return { pg, pgTxt, Ce, Ct, I, pf0, pminV, gamma, naves, valles, parciales, multi, avisos, lisa: n.lisa, terreno: n.terreno, expo: n.expo };
 }
 
 // ---------- esquema (sección transversal con caras abiertas) ----------
@@ -52462,7 +52522,7 @@ function renderCargasGalpon(container) {
   container.innerHTML = `
     <div class="calc-head">
       <h1>Cargas de Galpón (NCh1537 · NCh432 · NCh431)</h1>
-      <div class="sub">Peso propio, sobrecarga de techo y de uso (NCh1537:2009), viento en todas las caras (NCh432.Of2010) y nieve (provisoria) de un galpón de 1 a 3 naves adyacentes, a 1 o 2 aguas, con caras abiertas o cerradas.</div>
+      <div class="sub">Peso propio, sobrecarga de techo y de uso (NCh1537:2009), viento en todas las caras (NCh432.Of2010) y nieve (NCh431-2010) de un galpón de 1 a 3 naves adyacentes, a 1 o 2 aguas, con caras abiertas o cerradas.</div>
     </div>
     <div class="panel">
       <h3>1 · Geometría</h3>
@@ -52514,15 +52574,21 @@ function renderCargasGalpon(container) {
       </div>
     </div>
     <div class="panel">
-      <h3>6 · Nieve — PROVISORIA (pg ingresada; coeficientes según ASCE 7-02 cap. 7, hasta verificar con NCh431:2010)</h3>
+      <h3>6 · Nieve — NCh431-2010</h3>
       <div class="field-grid">
-        ${inp('cg_pg', '0', 'Carga básica de nieve pg (kgf/m²)')}
-        <div class="field"><label>Terreno (Tabla 7-2)</label><select id="cg_nt"><option value="B">B — urbano, suburbano, boscoso</option><option value="C" selected>C — abierto con obstáculos dispersos</option><option value="D">D — planicies sin obstáculos, costa</option><option value="M">Montaña sobre la línea de árboles, azotada por viento</option></select></div>
-        <div class="field"><label>Exposición del techo</label><select id="cg_ne"><option value="0">Totalmente expuesto</option><option value="1" selected>Parcialmente expuesto</option><option value="2">Resguardado</option></select></div>
-        <div class="field"><label>Factor térmico Ct (Tabla 7-3)</label><select id="cg_ct">${CG_CT.map((c, i) => `<option value="${c[0]}"${i === 2 ? ' selected' : ''}>${vtTxt(c[0], 2)} — ${esc(c[1])}</option>`).join('')}</select></div>
-        <div class="field"><label><input type="checkbox" id="cg_lisa" style="width:auto;min-width:0;margin-right:.4rem">Cubierta lisa sin obstrucciones (la nieve desliza libre por el alero)</label></div>
+        <div class="field"><label>Carga básica pg (cláusula 4)</label><select id="cg_po"><option value="tabla" selected>Tabla 1 (latitud y altitud)</option><option value="man">Análisis especial del sitio (ingresar)</option></select></div>
+        <div class="field" id="cg_wLat"><label>Latitud geográfica sur</label><select id="cg_plat">${CG_N1_LAT.map((t, i) => `<option value="${i}"${i === 3 ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+        <div class="field" id="cg_wAlt"><label>Altitud (m)</label><select id="cg_palt">${CG_N1_ALT.map((t, i) => `<option value="${i}">${t}</option>`).join('')}</select></div>
+        <div class="field" id="cg_wLit"><label><input type="checkbox" id="cg_plit" style="width:auto;min-width:0;margin-right:.4rem">En el litoral (Tabla 1, nota 2: sin carga de nieve)</label></div>
+        <div class="field" id="cg_wPm" hidden><label>pg del análisis especial (kgf/m²)</label><input type="text" inputmode="decimal" id="cg_pg" value="0"></div>
+        <div class="field" id="cg_wPr" hidden><label>Respaldo del análisis (estudio, aprobación)</label><input type="text" id="cg_pref" value=""></div>
+        <div class="field"><label>Categoría del terreno (Tabla 4)</label><select id="cg_nt"><option value="B">B — áreas urbanas, suburbanas y boscosas</option><option value="C" selected>C — terreno abierto con obstáculos dispersos</option><option value="D">D — planicies sin obstáculos, salares, superficies con agua</option><option value="M">Áreas montañosas azotadas por vientos</option></select></div>
+        <div class="field"><label>Exposición del techo (Tabla 4)</label><select id="cg_ne"><option value="0">Totalmente expuesto</option><option value="1" selected>Parcialmente expuesto</option><option value="2">Protegido (entre coníferos)</option></select></div>
+        <div class="field"><label>Factor térmico Ct (Tabla 2)</label><select id="cg_ct">${CG_CT.map((c, i) => `<option value="${c[0]}"${i === 2 ? ' selected' : ''}>${vtTxt(c[0], 2)} — ${esc(c[1])}</option>`).join('')}</select></div>
+        <div class="field"><label><input type="checkbox" id="cg_lisa" style="width:auto;min-width:0;margin-right:.4rem">Superficie lisa sin obstrucciones (metal, fibrocemento, vidrio, membrana suave) y espacio bajo el alero para la nieve que desliza (6.1)</label></div>
+        <div class="field"><label><input type="checkbox" id="cg_vsa" style="width:auto;min-width:0;margin-right:.4rem">Vigas de techo simplemente apoyadas de cumbrera a alero (8.2, solo con W ≤ 6,1 m)</label></div>
       </div>
-      <div class="note">Tabla de referencia (no vigente): NCh431.Of77 Tabla 2 da n₀ por latitud y altitud; la norma vigente es NCh431:2010 (Tabla 1). Con pg = 0 no se calcula nieve.</div>
+      <div class="note">El factor I (Tabla 3) se toma de la categoría de ocupación del panel de viento (NCh3171). Con pg = 0 no se calcula nieve.</div>
     </div>
     <div class="panel">
       <h3>7 · Sismo</h3>
@@ -52537,7 +52603,7 @@ function renderCargasGalpon(container) {
     <div class="panel" data-resumen="force"><h3>Resumen de cargas</h3><div id="cg_res" style="overflow-x:auto"></div></div>
     <div class="panel"><h3>Viento — cargas lineales sobre el marco tipo, por estado</h3><div id="cg_vto" style="overflow-x:auto"></div></div>
     <div class="panel"><h3>Viento — envolvente por superficie</h3><div id="cg_env" style="overflow-x:auto"></div></div>
-    <div class="panel"><h3>Nieve (provisoria)</h3><div id="cg_niv" style="overflow-x:auto"></div></div>
+    <div class="panel"><h3>Nieve — NCh431-2010</h3><div id="cg_niv" style="overflow-x:auto"></div></div>
     <div class="panel"><h3>Notas</h3><div id="cg_not"></div></div>
     <div id="printSheetCompleto"></div><div id="printSheetResumen"></div>`;
   const $ = id => document.getElementById(id);
@@ -52576,11 +52642,13 @@ function renderCargasGalpon(container) {
     const Vs = $('cg_Vs').value;
     $('cg_wV').hidden = Vs !== 'manual';
     $('cg_wEnt1').hidden = $('cg_wEnt2').hidden = !$('cg_ent').checked;
+    { const tb = $('cg_po').value === 'tabla'; $('cg_wLat').hidden = $('cg_wAlt').hidden = !tb; $('cg_wPm').hidden = $('cg_wPr').hidden = tb;
+      $('cg_wLit').hidden = !(tb && $('cg_palt').value === '0' && +$('cg_plat').value >= 3 && +$('cg_plat').value <= 6); }
     return { geo, sCost: num('cg_sc'),
       pp: { cub: num('cg_cub') || 0, costanera: num('cg_cos') || 0, cielo: num('cg_cie') || 0, inst: num('cg_ins') || 0, rev: num('cg_rev') || 0, marco: num('cg_mar') || 0 },
       techo: $('cg_tt').value, ent: { on: $('cg_ent').checked, idx: +$('cg_entT').value, A: num('cg_entA') },
       viento: { V: Vs === 'manual' ? num('cg_V') : +Vs, expo: $('cg_ex').value, importancia: $('cg_imp').value, Kzt: num('cg_kzt'), flujo: $('cg_fl').value, comb3171: $('cg_comb').checked },
-      nieve: { pg: num('cg_pg'), terreno: $('cg_nt').value, expo: +$('cg_ne').value, Ct: +$('cg_ct').value, lisa: $('cg_lisa').checked, importancia: $('cg_imp').value } };
+      nieve: { origen: $('cg_po').value, lat: +$('cg_plat').value, alt: +$('cg_palt').value, litoral: $('cg_plit').checked, pgMan: num('cg_pg'), pgRef: $('cg_pref').value, vigasSA: $('cg_vsa').checked, terreno: $('cg_nt').value, expo: +$('cg_ne').value, Ct: +$('cg_ct').value, lisa: $('cg_lisa').checked, importancia: $('cg_imp').value } };
   }
   let ultimo = null;
   function recalc() {
@@ -52596,7 +52664,8 @@ function renderCargasGalpon(container) {
       return;
     }
     r.inp = I.geo;
-    const nie = I.nieve.pg > 0 ? calcNieveGalpon(r, I.nieve) : null;
+    let nie = calcNieveGalpon(r, I.nieve);
+    if (nie.errores) r.pendientes = r.pendientes.concat(nie.errores);
     $('cg_wFl').hidden = !r.abierto;
     $('cg_errores').innerHTML = r.pendientes.length ? `<div class="panel"><div class="global-verdict bad"><span class="label">CÁLCULO PRELIMINAR — condiciones sin acreditar: no se permite imprimir ni exportar</span></div><ul class="note">${r.pendientes.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
     $('cg_fig').innerHTML = cgSvgSeccion(r);
@@ -52675,6 +52744,7 @@ function cgElemViento(r, c) {
 // ---------- tablas (pantalla e impresión) ----------
 function cgHtml(r, nie) {
   const G = r.G, k = x => vtTxt(x, 1), kN = x => vtTxt(x / CG_KGF, 1), sg = x => vtSig(x / CG_KGF, 1);
+  const nOk = !!(nie && !nie.errores && !nie.cero);
   const tab = (cls, head, rows) => `<table class="${cls}"><tr>${head.map((h, i) => `<th${i ? ' class="num"' : ''}>${h}</th>`).join('')}</tr>${rows.map(f => `<tr>${f.map((c, i) => `<td${i ? ' class="num"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</table>`;
   const letra = String.fromCharCode(65 + G.naves.length);
   // resumen
@@ -52683,7 +52753,7 @@ function cgHtml(r, nie) {
     const t = `Nave ${nv.i + 1}`;
     filas.push([`<b>Vigas ${t.toLowerCase()}</b> — peso propio D: cubierta, costaneras, cielo e instalaciones vertical (la carga lineal incluye el perfil, ${k(r.pp.marco)} kgf/m)`, k(nv.Dh), k(nv.wMarco)]);
     filas.push([`Vigas ${t.toLowerCase()} — sobrecarga de techo Lr, vertical (AT del marco = ${vtTxt(nv.ATm, 1)} m²${nv.rm ? `, R₁ = ${vtTxt(nv.rm.R1, 3)}, R₂ = ${vtTxt(nv.rm.R2, 3)}` : ''})`, k(nv.Lm), k(nv.wLr)]);
-    if (nie && !nie.errores) { const n = nie.naves[nv.i]; filas.push([`Vigas ${t.toLowerCase()} — nieve balanceada ps (provisoria), vertical`, k(n.ps * 101.97), k(n.ps * 101.97 * G.trib)]); }
+    if (nOk) { const n = nie.naves[nv.i], q = n.ps + n.lluvia; filas.push([`Vigas ${t.toLowerCase()} — nieve balanceada ps${n.lluvia ? ' + 0,25 kN/m² de lluvia sobre nieve (12)' : ''} (NCh431-2010), vertical sobre la proyección horizontal`, k(q * 101.97), k(q * 101.97 * G.trib)]); }
   });
   filas.push(['Columnas exteriores con muro — peso del revestimiento (vertical, por m de altura)', k(r.muroPP), k(r.muroPP * G.trib)]);
   if (r.ent) filas.push([`Entrepiso — sobrecarga de uso L₀ (${esc(r.ent.row[0] + ': ' + r.ent.row[1])})`, k(r.ent.L0), `Qk = ${r.ent.Qk != null ? vtTxt(r.ent.Qk * 101.97, 0) + ' kgf' : '—'}`]);
@@ -52704,16 +52774,21 @@ function cgHtml(r, nie) {
   // nieve
   let nieve = '<p class="note">pg = 0: sin carga de nieve.</p>';
   if (nie && nie.errores) nieve = `<ul class="note">${nie.errores.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  else if (nie && nie.cero) nieve = `<p class="note">${esc(nie.pgTxt)}. pg = 0: sin carga de nieve.</p>`;
   else if (nie) {
-    const kp = x => vtTxt(x * 101.97, 1);
-    nieve = `<div class="global-verdict bad"><span class="label">PROVISORIO — coeficientes según ASCE 7-02 cap. 7, pendiente de verificar con NCh431:2010</span></div>`
-      + tab('results', ['Parámetro', 'Valor'], [['pg (dato)', kp(nie.pg) + ' kgf/m²'], ['Ce (Tabla 7-2)', vtTxt(nie.Ce, 2)], ['Ct (Tabla 7-3)', vtTxt(nie.Ct, 2)], ['I (Tabla 7-4)', vtTxt(nie.I, 2)],
-        ['pf = 0,7·Ce·Ct·I·pg (Eq. 7-1)', kp(nie.pf0) + ' kgf/m²'], ['γ nieve = 0,426·pg + 2,2 ≤ 4,7 (Eq. 7-4)', vtTxt(nie.gamma, 2) + ' kN/m³']])
-      + tab('results', ['Nave', 'θ (°)', 'Mínimo 7.3.4 (kgf/m²)', 'pf (kgf/m²)', 'Cs', 'ps (kgf/m²)', 'ps sobre las vigas (kgf/m)', 'Desbalance sobre las vigas (kgf/m)'],
-        nie.naves.map(n => [`Nave ${n.i + 1}`, vtTxt(n.theta, 1), n.bajaPend ? kp(n.pmin) : 'no aplica', kp(n.pf), vtTxt(n.Cs, 3), kp(n.ps), `<b>${kp(n.ps * G.trib)}</b>`,
-          n.desb ? `viga de barlovento ${kp(n.desb.barlo * G.trib)} / viga de sotavento ${kp(n.desb.sota * G.trib)}` : (nie.multi ? 'ver valles' : 'no requerido')]))
-      + (nie.valles.length ? tab('results', ['Valle (eje)', 'pf (kgf/m²)', 'En las cumbreras 0,5·pf (kgf/m sobre la viga)', 'En el valle (kgf/m sobre la viga)', ''], nie.valles.map(v => [v.eje, kp(v.pf), kp(v.pCumbrera * G.trib), `<b>${kp(v.pValle * G.trib)}</b>`, v.limitado ? 'limitado: la nieve del valle no sube sobre la de la cumbrera' : 'variación lineal entre cumbrera y valle, en las dos vigas que llegan al valle'])) : '')
-      + `<ul class="note">${(nie.multi ? ['Varias naves: techos múltiples (7.4.4, Cs = 1) y desbalance en los valles con variación lineal desde 0,5·pf en la cumbrera hasta la carga del valle (7.6.3).'] : []).concat(nie.avisos).map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+    const kp = x => vtTxt(x * 101.97, 1), kw = x => vtTxt(x * 101.97 * G.trib, 1);
+    nieve = tab('results', ['Parámetro', 'Valor'], [['pg — carga básica de nieve', `<b>${kp(nie.pg)} kgf/m²</b> (${vtTxt(nie.pg, 2)} kN/m²) — ${esc(nie.pgTxt)}`],
+        ['Ce (Tabla 4)', vtTxt(nie.Ce, 2)], ['Ct (Tabla 2)', vtTxt(nie.Ct, 2)], ['I (Tabla 3)', vtTxt(nie.I, 2)],
+        ['pf = 0,7·Ce·Ct·I·pg (Ec. 1)', kp(nie.pf0) + ' kgf/m²'], [`Mínimo para pendiente baja (5.1): ${nie.pg <= 1.0 ? 'I·pg (pg ≤ 1,0 kN/m²)' : '0,96·I kN/m² (pg > 1,0 kN/m²)'}`, kp(nie.pminV) + ' kgf/m²'],
+        ['γ nieve = 0,426·pg + 2,2 ≤ 4,7 kN/m³ (Ec. 3)', vtTxt(nie.gamma, 2) + ' kN/m³']])
+      + tab('results', ['Nave', 'θ (°)', 'Mínimo 5.2', 'pf (kgf/m²)', `Cs ${nie.multi ? '(6.5)' : '(Figura 1)'}`, 'ps = Cs·pf (kgf/m²)', 'Lluvia sobre nieve (12)', '<b>Balanceada sobre las vigas (kgf/m)</b>', 'Media carga 0,5·ps (7) (kgf/m)'],
+        nie.naves.map(n => [`Nave ${n.i + 1}`, vtTxt(n.theta, 1), n.bajaPend ? 'aplica' : 'no aplica', kp(n.pf), vtTxt(n.Cs, 3), kp(n.ps), n.lluvia ? '+ 25,5 kgf/m²' : 'no aplica', `<b>${kw(n.ps + n.lluvia)}</b>`, kw(0.5 * n.ps)]))
+      + (nie.multi ? '' : tab('results', ['Desbalance (8.2)', 'Viga de barlovento (kgf/m)', 'Viga de sotavento (kgf/m)', 'Sobrecarga junto a la cumbrera (kgf/m)', 'Criterio'],
+        nie.naves.map(n => n.desb ? [`Nave ${n.i + 1}`, kw(n.desb.barlo), kw(n.desb.sota), n.desb.sob ? `${kw(n.desb.sob)} en ${vtTxt(n.desb.lx, 2)} m` : '—', esc(n.desb.txt)]
+          : [`Nave ${n.i + 1}`, '—', '—', '—', n.tipo === 'U' ? 'Una agua: 8.2 no aplica' : `No se requiere: θ = ${vtTxt(n.theta, 2)}° ${n.theta > 70 ? '> 70°' : `< ${vtTxt(n.limG, 2)}° = máx(2,38°; 21,3/W + 0,5)`}`])))
+      + (nie.valles.length ? tab('results', ['Valle (eje)', 'pf (kgf/m²)', 'En las cumbreras 0,5·pf (kgf/m sobre la viga)', 'En el valle (kgf/m sobre la viga)', ''], nie.valles.map(v => [v.eje, kp(v.pf), kw(v.pCumbrera), `<b>${kw(v.pValle)}</b>`, v.limitado ? `limitado por γ·Δh (Δh cumbrera–valle = ${vtTxt(v.dh, 2)} m): la nieve del valle no sube sobre la cumbrera` : 'variación lineal entre cumbrera y valle (2·pf/Ce), en las dos vigas que llegan al valle'])) : '')
+      + (nie.parciales.length ? tab('results', ['Carga parcial (7.1)', ...G.naves.map(nv => `Nave ${nv.i + 1} (kgf/m)`)], nie.parciales.map(c => [esc(c.txt), ...nie.naves.map(n => c.llenas.includes(n.i) ? `<b>${kw(n.ps)}</b>` : kw(0.5 * n.ps))])) : '')
+      + `<ul class="note">${(nie.multi ? ['Varias naves: techo múltiple, Cs = 1 (6.5); desbalance en los valles desde 0,5·pf en la cumbrera hasta 2·pf/Ce en el valle (8.4), separado de la carga balanceada (8.1). Las vigas del marco son continuas sobre las columnas interiores: se dan los casos de carga parcial de 7.1 (cada nave como un vano).'] : ['Nave única: carga parcial según 7.2, media carga balanceada en la zona que produzca el mayor efecto (por ejemplo, una de las aguas).']).concat(nie.avisos).map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
   }
   const notas = r.avisos.map(esc).concat([
     `Clasificación del cerramiento: ${r.cerr.muros.map(m => `${esc(m.nombre)}: Ao = ${vtTxt(m.Ao, 1)} m² de Ag = ${vtTxt(m.Ag, 1)} m²${m.abierto ? ' (≥ 80 %: abierto)' : ''}${m.parcial ? ' (cumple 3.16)' : ''}`).join('; ')}. Resultado: <b>${esc(r.cerr.clase)}</b>.`,
@@ -52729,13 +52804,13 @@ function cgHtml(r, nie) {
     ${rr('Peso propio (kgf/m², kgf/m)', `cubierta ${k(r.pp.cub)}; costaneras ${k(r.pp.costanera)} kgf/m; cielo ${k(r.pp.cielo)}; instalaciones ${k(r.pp.inst)}; muros ${k(r.pp.rev)}; marco ${k(r.pp.marco)} kgf/m`)}
     ${rr('Techo (NCh1537 Tabla 4)', esc(r.tt[1]))}
     ${rr('Viento', `V = ${vtTxt(r.base.V, 1)} m/s, exposición ${esc(r.base.expo)}, ${esc(r.base.importancia)} (I = ${vtTxt(r.I, 2)}), Kzt = ${vtTxt(r.base.Kzt, 2)}`)}
-    ${nie && !nie.errores ? rr('Nieve (provisoria)', `pg = ${vtTxt(nie.pg * 101.97, 1)} kgf/m², Ce = ${vtTxt(nie.Ce, 2)}, Ct = ${vtTxt(nie.Ct, 2)}, I = ${vtTxt(nie.I, 2)}`) : ''}
+    ${nOk ? rr('Nieve (NCh431-2010)', `pg = ${vtTxt(nie.pg * 101.97, 1)} kgf/m² (${esc(nie.pgTxt)}), Ce = ${vtTxt(nie.Ce, 2)}, Ct = ${vtTxt(nie.Ct, 2)}, I = ${vtTxt(nie.I, 2)}`) : ''}
   </tbody></table>`;
   const plano = h => h.replace(/class="results"/g, 'class="xlsx-table xlsx-calc-table"');
   const calcPrint = `<div class="xlsx-title-bar">CÁLCULO</div><div class="xlsx-section">1. RESUMEN DE CARGAS</div>${plano(resumen)}
     <div class="xlsx-section">2. VIENTO — NCh432.Of2010, CARGAS LINEALES SOBRE EL MARCO TIPO</div>${plano(vientoPrint)}
     <div class="xlsx-section">3. VIENTO — ENVOLVENTE POR SUPERFICIE</div>${plano(env)}
-    <div class="xlsx-section">4. NIEVE (PROVISORIA)</div>${plano(nieve)}
+    <div class="xlsx-section">4. NIEVE — NCh431-2010</div>${plano(nieve)}
     <div class="xlsx-section">5. NOTAS</div><ul style="font-size:.85em">${notas.map(x => `<li>${x}</li>`).join('')}</ul>`;
   const resPrint = `<div class="xlsx-title-bar">RESUMEN</div>${plano(resumen)}${plano(env)}`;
   return { resumen, viento, env, nieve, notas, datosPrint, calcPrint, resPrint };
