@@ -1613,6 +1613,7 @@ function fsResolveDir(path, create){
 // Carpeta donde se abren los selectores de archivo (Guardar como, Exportar, Abrir): la carpeta activa elegida en «Carpetas…»;
 // si no existe o no hay permiso, la carpeta base.
 async function fsStartIn(){
+  if (!FS_ROOT) { try { await fsTryReconnect(); } catch(e){} }
   if (!FS_ROOT) return null;
   try { var d = await fsResolveDir(FS_ACTIVE_PATH || [], false); return d || FS_ROOT; } catch(e){ return FS_ROOT; }
 }
@@ -1960,12 +1961,25 @@ function fsAskFilename(sugerido){
 }
 
 // "Abrir archivo…": abre un cálculo .json guardado en cualquier ubicación (no solo en la carpeta base).
-function fsOpenFromDisk(){
+async function fsOpenFromDisk(){
+  // con el selector de Chrome se parte en la carpeta activa de la Mesa (Base / subcarpeta); el <input type=file>
+  // de respaldo abre siempre la última carpeta que recordó Windows
+  if (typeof window.showOpenFilePicker === 'function') {
+    try {
+      var o = { types: [{ description: 'Cálculo de la Mesa de Cálculo (.json)', accept: {'application/json': ['.json']} }] };
+      var si = await fsStartIn(); if (si) o.startIn = si;
+      var hs = await window.showOpenFilePicker(o);
+      await fsAbrirRegistro(await hs[0].getFile());
+      return;
+    } catch(e) { if (e && e.name === 'AbortError') return; }
+  }
   var inp = document.createElement('input');
   inp.type = 'file'; inp.accept = '.json,application/json';
-  inp.addEventListener('change', async function(){
-    var f = inp.files && inp.files[0];
-    if (!f) return;
+  inp.addEventListener('change', function(){ var f = inp.files && inp.files[0]; if (f) fsAbrirRegistro(f); });
+  inp.click();
+}
+async function fsAbrirRegistro(f){
+  {
     var record;
     try { record = JSON.parse(await f.text()); } catch(e) { fsToast('No se pudo leer ese archivo.'); return; }
     if (!record || !record.toolId) { fsToast('Ese archivo no es un cálculo guardado reconocible.'); return; }
@@ -1974,8 +1988,7 @@ function fsOpenFromDisk(){
     PENDING_RESTORE = record;
     if (location.hash.replace('#','') === tool.id) { route(); } else { location.hash = tool.id; }
     fsToast('Cálculo abierto: ' + f.name);
-  });
-  inp.click();
+  }
 }
 
 async function fsSaveCurrentCalc(){
