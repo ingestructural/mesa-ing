@@ -53584,8 +53584,8 @@ function renderCombinacionesCarga(container) {
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin:.6rem 0">
         <button type="button" class="print-btn" id="cc_bCopTab">📋 Copiar tabla para pegar en RAM</button>
         <span style="display:flex;align-items:center;gap:.3rem;font-size:.85rem;flex-wrap:wrap">Type en RAM: A <input type="text" id="cc_tyA" value="Steel Design" style="width:8rem"> H <input type="text" id="cc_tyH" value="RC Design" style="width:7rem"> F <input type="text" id="cc_tyF" value="Service" style="width:6rem"> MA <input type="text" id="cc_tyMA" value="Wood Design" style="width:7.5rem"></span>
-        <label style="display:flex;align-items:center;gap:.3rem;font-size:.85rem"><input type="checkbox" id="cc_incTy" checked> Incluir columna Type</label>
-        <label style="display:flex;align-items:center;gap:.3rem;font-size:.85rem">Decimal en la tabla <select id="cc_dec" style="width:auto"><option value=",">coma 0,8 (Windows en español)</option><option value=".">punto 0.8</option></select></label>
+        <label style="display:flex;align-items:center;gap:.3rem;font-size:.85rem"><input type="checkbox" id="cc_incTyB"> Incluir columna Type (RAM no la acepta pegada; asígnela en RAM)</label>
+        <label style="display:flex;align-items:center;gap:.3rem;font-size:.85rem">Decimal en la tabla <select id="cc_dec" style="width:auto"><option value=".">punto 0.8 (RAM Elements)</option><option value=",">coma 0,8 (alternativa)</option></select></label>
         <button type="button" class="print-btn" id="cc_bCopTxt">📋 Copiar Nombre=expresión</button>
         <button type="button" class="print-btn" id="cc_bTxt">⬇ Descargar .txt</button>
         <button type="button" class="print-btn" id="cc_bCsv">⬇ Descargar .csv</button>
@@ -53660,9 +53660,9 @@ function renderCombinacionesCarga(container) {
     // exportación
     const todas = [].concat(...res.map(r => r.lst.map(c => ({ c, r }))));
     const lineas = todas.map(({ c }) => `${c.nm}=${c.expr}`);
-    const dec = ($('cc_dec') || {}).value === '.' ? '.' : ',';
+    const dec = ($('cc_dec') || {}).value === ',' ? ',' : '.';
     // grilla «Combinations» de RAM Elements (Load conditions): ID y un factor por cada caso, en el orden de los casos (tabla 2)
-    const incTy = !$('cc_incTy') || $('cc_incTy').checked;
+    const incTy = !!($('cc_incTyB') && $('cc_incTyB').checked);
     const tipoRAM = p => (($('cc_ty' + p) || {}).value || '').trim();
     const tabla = todas.map(({ c, r }) => [c.nm].concat(est.map(e => { const t = c.terms.find(x => x.e === e); return t ? ccFmt(t.f).replace('.', dec) : '0'; }), incTy ? [tipoRAM(r.f.p)] : []).join('\t')).join('\r\n');
     const csvEsc = s => /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -53670,7 +53670,7 @@ function renderCombinacionesCarga(container) {
     ult = { lineas, tabla, csv };
     // vista previa de lo que se pega en RAM: mismas columnas que la grilla «Combinations»
     const nPrev = 6, filasPrev = tabla ? tabla.split('\r\n') : [];
-    $('cc_prevRAM').innerHTML = filasPrev.length ? `<div class="note"><b>Lo que se pega en RAM</b> (${est.length} columnas de factores${incTy ? ' + Type' : ''}). En «Cases» de RAM deben existir exactamente estos ${est.length} casos y en este orden: <b>${est.map(e => esc(e.nm)).join(', ')}</b>. Si RAM tiene más o menos casos, los números quedan corridos y aparece «… is not a valid number»: desmarque o marque estados en la tabla 2 hasta que coincidan. Si RAM no acepta el Type pegado, desmarque «Incluir columna Type» y asígnelo en RAM.</div>
+    $('cc_prevRAM').innerHTML = filasPrev.length ? `<div class="note"><b>Lo que se pega en RAM</b> (${est.length} columnas de factores${incTy ? ' + Type' : ''}). En «Cases» de RAM deben existir exactamente estos ${est.length} casos y en este orden: <b>${est.map(e => esc(e.nm)).join(', ')}</b>. Si RAM tiene más o menos casos, los números quedan corridos y aparece «… is not a valid number»: desmarque o marque estados en la tabla 2 hasta que coincidan. RAM Elements no acepta el Type pegado como texto: asígnelo en RAM después de pegar.</div>
       <div style="overflow-x:auto"><table class="results"><tr><th>ID</th>${est.map(e => `<th class="num">${esc(e.nm)}</th>`).join('')}${incTy ? '<th>Type</th>' : ''}</tr>${filasPrev.slice(0, nPrev).map(l => '<tr>' + l.split('\t').map((v, i, arr) => `<td${i && (!incTy || i < arr.length - 1) ? ' class="num"' : ''}>${esc(v)}</td>`).join('') + '</tr>').join('')}${filasPrev.length > nPrev ? `<tr><td colspan="${est.length + (incTy ? 2 : 1)}"><small>… y ${filasPrev.length - nPrev} filas más</small></td></tr>` : ''}</table></div>` : '';
     $('cc_txt').value = lineas.join('\n');
     $('cc_fuente').textContent = 'Fuentes: ' + (nor === 'nch'
