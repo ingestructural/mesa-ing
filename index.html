@@ -1586,7 +1586,21 @@ function fsLoadActivePath(){
   } catch(e){ FS_ACTIVE_PATH = []; }
 }
 function fsSaveActivePath(){
-  try { localStorage.setItem('mesaCalculoFS.activePath', JSON.stringify(FS_ACTIVE_PATH)); } catch(e){}
+  try {
+    localStorage.setItem('mesaCalculoFS.activePath', JSON.stringify(FS_ACTIVE_PATH));
+    if (FS_ROOT && FS_ROOT.name) localStorage.setItem('mesaCalculoFS.activeRoot', FS_ROOT.name);
+  } catch(e){}
+}
+// La carpeta activa es relativa a la carpeta base: si la base cambió (otra ventana, otra carpeta elegida) o la
+// subcarpeta ya no existe dentro de ella, se vuelve a la base en vez de seguir mostrando una carpeta de la base anterior.
+async function fsValidateActivePath(){
+  if (!FS_ROOT) return;
+  var raiz = ''; try { raiz = localStorage.getItem('mesaCalculoFS.activeRoot') || ''; } catch(e){}
+  var ok = !raiz || raiz === FS_ROOT.name;
+  if (ok && FS_ACTIVE_PATH.length) { try { ok = !!(await fsResolveDir(FS_ACTIVE_PATH, false)); } catch(e){ ok = false; } }
+  if (!ok) FS_ACTIVE_PATH = [];
+  fsSaveActivePath();
+  fsUpdateRootLabel(); fsUpdateSaveBarLabel();
 }
 function fsResolveDir(path, create){
   var p = Promise.resolve(FS_ROOT);
@@ -1608,7 +1622,7 @@ function fsTryReconnect(){
   return fsDbGet('root').then(function(stored){
     if (!stored) return false;
     return stored.queryPermission({mode:'readwrite'}).then(function(perm){
-      if (perm === 'granted') { FS_ROOT = stored; return true; }
+      if (perm === 'granted') { FS_ROOT = stored; return fsValidateActivePath().then(function(){ return true; }); }
       return false; // hace falta un gesto del usuario (clic) para volver a pedir permiso
     }).catch(function(){ return false; });
   }).catch(function(){ return false; });
@@ -1617,7 +1631,7 @@ function fsReconnectWithGesture(){
   return fsDbGet('root').then(function(stored){
     if (!stored) return false;
     return stored.requestPermission({mode:'readwrite'}).then(function(perm){
-      if (perm === 'granted') { FS_ROOT = stored; return true; }
+      if (perm === 'granted') { FS_ROOT = stored; return fsValidateActivePath().then(function(){ return true; }); }
       return false;
     }).catch(function(){ return false; });
   }).catch(function(){ return false; });
@@ -1628,7 +1642,7 @@ function fsChooseRoot(){
     return window.showDirectoryPicker(opt);
   }).then(function(handle){
     return fsDbSet('root', handle).then(function(){
-      FS_ROOT = handle;
+      FS_ROOT = handle; FS_STORED_NAME = handle.name || '';
       FS_ACTIVE_PATH = [];
       fsSaveActivePath();
       return handle;
@@ -2019,7 +2033,8 @@ function fsUpdateRootLabel(){
 }
 function fsUpdateSaveBarLabel(){
   var el = document.querySelector('.calc-save-bar .fs-active-path');
-  if (el) el.textContent = FS_ACTIVE_PATH.length ? FS_ACTIVE_PATH.join(' / ') : (FS_ROOT ? ('(' + ((FS_ROOT.name)||'carpeta base') + ')') : 'ninguna — elige una carpeta');
+  var base = FS_ROOT ? (FS_ROOT.name || 'carpeta base') : (FS_STORED_NAME || '');
+  if (el) el.textContent = base ? [base].concat(FS_ACTIVE_PATH).join(' / ') : 'ninguna — elige una carpeta';
 }
 async function fsFileLabel(path, fname){
   try {
@@ -2389,6 +2404,16 @@ document.getElementById('fsReconnectBtn').addEventListener('click', async functi
   else fsToast('No se pudo reconectar la carpeta — elígela de nuevo con "Elegir carpeta base…".');
 });
 
+// otra ventana o pestaña de la Mesa cambió la carpeta base o la activa: tomar la misma
+window.addEventListener('storage', function(ev){
+  if (!ev.key || ev.key.indexOf('mesaCalculoFS.') !== 0) return;
+  fsLoadActivePath();
+  fsDbGet('root').then(function(stored){
+    if (!stored) return;
+    FS_STORED_NAME = stored.name || '';
+    return stored.queryPermission({mode:'readwrite'}).then(function(perm){ FS_ROOT = perm === 'granted' ? stored : null; });
+  }).catch(function(){}).then(function(){ fsUpdateRootLabel(); fsUpdateSaveBarLabel(); if (fsPanelIsOpen()) { try { fsRenderTree(); } catch(e){} } });
+});
 if (!FS_SUPPORTED) {
   var fsBtnUnsupported = document.getElementById('fsToggleBtn');
   if (fsBtnUnsupported) fsBtnUnsupported.style.display = 'none';
