@@ -696,7 +696,7 @@
     </div>
     <div class="fs-panel-body">
       <div class="fs-root-row">
-        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 19:10</small>
+        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 19:50</small>
         <button type="button" class="fs-toggle-btn" style="width:auto" id="fsChooseRootBtn">Elegir carpeta base…</button>
       </div>
       <div id="fsDropBase" style="border:2px dashed var(--line);border-radius:6px;padding:.55rem .7rem;margin:0 0 .7rem;font-size:.8rem;color:var(--ink-muted);text-align:center">o arrastre aquí la carpeta desde el Explorador de Windows para usarla como carpeta base</div>
@@ -2446,8 +2446,13 @@ document.getElementById('fsChooseRootBtn').addEventListener('click', async funct
     fsEstadoBase('No cambió — ' + ((e && e.name) || 'Error') + ': ' + ((e && e.message) || '') + ' (' + new Date().toLocaleTimeString('es-CL') + ')', true);
     // Chrome/Edge rechazan en este selector las carpetas de Dropbox («archivos en la nube» de Windows): al presionar
     // «Seleccionar carpeta» responden AbortError como si se hubiera cancelado. Arrastrar la carpeta sí funciona,
-    // así que se abre de inmediato el recuadro para soltarla (si el usuario solo cerró el diálogo, lo cierra con Esc).
-    if (e && e.name === 'AbortError') { fsEstadoBase('No cambió — si eligió una carpeta de Dropbox, arrástrela al recuadro.', true); fsAbrirSoltarBase(); return; }
+    // (desde Chrome/Edge 157, 11-11-2026). Las mismas carpetas sí se aceptan a través de una unión de Windows fuera de
+    // Dropbox (Documentos\ProyectosDropbox → Dropbox\00_Proyectos ING): se elige por ahí con este mismo botón.
+    if (e && e.name === 'AbortError') {
+      fsEstadoBase('No cambió. Si eligió una carpeta de Dropbox: Chrome no la acepta directamente; elíjala por Documentos › ProyectosDropbox (son los mismos archivos). Documentos y Escritorio no se pueden elegir solos: elija una subcarpeta.', true);
+      fsToast('Carpeta de Dropbox: elíjala por Documentos › ProyectosDropbox (mismos archivos de Dropbox).');
+      return;
+    }
     fsToast('No se pudo cambiar la carpeta base: ' + ((e && (e.message || e.name)) || 'error desconocido'));
   }
 });
