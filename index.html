@@ -53578,11 +53578,13 @@ function renderCombinacionesCarga(container) {
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin:.6rem 0">
         <button type="button" class="print-btn" id="cc_bCopTab">📋 Copiar tabla para pegar en RAM</button>
         <span style="display:flex;align-items:center;gap:.3rem;font-size:.85rem;flex-wrap:wrap">Type en RAM: A <input type="text" id="cc_tyA" value="Steel Design" style="width:8rem"> H <input type="text" id="cc_tyH" value="RC Design" style="width:7rem"> F <input type="text" id="cc_tyF" value="Service" style="width:6rem"> MA <input type="text" id="cc_tyMA" value="Wood Design" style="width:7.5rem"></span>
+        <label style="display:flex;align-items:center;gap:.3rem;font-size:.85rem"><input type="checkbox" id="cc_incTy" checked> Incluir columna Type</label>
         <label style="display:flex;align-items:center;gap:.3rem;font-size:.85rem">Decimal en la tabla <select id="cc_dec" style="width:auto"><option value=",">coma 0,8 (Windows en español)</option><option value=".">punto 0.8</option></select></label>
         <button type="button" class="print-btn" id="cc_bCopTxt">📋 Copiar Nombre=expresión</button>
         <button type="button" class="print-btn" id="cc_bTxt">⬇ Descargar .txt</button>
         <button type="button" class="print-btn" id="cc_bCsv">⬇ Descargar .csv</button>
       </div>
+      <div id="cc_prevRAM" style="margin:.3rem 0 .6rem"></div>
       <textarea id="cc_txt" readonly rows="8" style="width:100%;font-family:monospace;font-size:.85rem" spellcheck="false"></textarea>
       <div id="cc_msg" class="note"></div>
     </div>
@@ -53654,11 +53656,16 @@ function renderCombinacionesCarga(container) {
     const lineas = todas.map(({ c }) => `${c.nm}=${c.expr}`);
     const dec = ($('cc_dec') || {}).value === '.' ? '.' : ',';
     // grilla «Combinations» de RAM Elements (Load conditions): ID y un factor por cada caso, en el orden de los casos (tabla 2)
+    const incTy = !$('cc_incTy') || $('cc_incTy').checked;
     const tipoRAM = p => (($('cc_ty' + p) || {}).value || '').trim();
-    const tabla = todas.map(({ c, r }) => [c.nm].concat(est.map(e => { const t = c.terms.find(x => x.e === e); return t ? ccFmt(t.f).replace('.', dec) : '0'; }), [tipoRAM(r.f.p)]).join('\t')).join('\r\n');
+    const tabla = todas.map(({ c, r }) => [c.nm].concat(est.map(e => { const t = c.terms.find(x => x.e === e); return t ? ccFmt(t.f).replace('.', dec) : '0'; }), incTy ? [tipoRAM(r.f.p)] : []).join('\t')).join('\r\n');
     const csvEsc = s => /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     const csv = ['Nombre;Expresion RAM;Familia;Norma;Ecuacion;KD'].concat(todas.map(({ c, r }) => [c.nm, c.expr, r.f.p, r.set.n, c.eq, r.f.p === 'MA' ? c.KD.toFixed(3).replace('.', ',') : ''].map(csvEsc).join(';'))).join('\r\n');
     ult = { lineas, tabla, csv };
+    // vista previa de lo que se pega en RAM: mismas columnas que la grilla «Combinations»
+    const nPrev = 6, filasPrev = tabla ? tabla.split('\r\n') : [];
+    $('cc_prevRAM').innerHTML = filasPrev.length ? `<div class="note"><b>Lo que se pega en RAM</b> (${est.length} columnas de factores${incTy ? ' + Type' : ''}). En «Cases» de RAM deben existir exactamente estos ${est.length} casos y en este orden: <b>${est.map(e => esc(e.nm)).join(', ')}</b>. Si RAM tiene más o menos casos, los números quedan corridos y aparece «… is not a valid number»: desmarque o marque estados en la tabla 2 hasta que coincidan. Si RAM no acepta el Type pegado, desmarque «Incluir columna Type» y asígnelo en RAM.</div>
+      <div style="overflow-x:auto"><table class="results"><tr><th>ID</th>${est.map(e => `<th class="num">${esc(e.nm)}</th>`).join('')}${incTy ? '<th>Type</th>' : ''}</tr>${filasPrev.slice(0, nPrev).map(l => '<tr>' + l.split('\t').map((v, i, arr) => `<td${i && (!incTy || i < arr.length - 1) ? ' class="num"' : ''}>${esc(v)}</td>`).join('') + '</tr>').join('')}${filasPrev.length > nPrev ? `<tr><td colspan="${est.length + (incTy ? 2 : 1)}"><small>… y ${filasPrev.length - nPrev} filas más</small></td></tr>` : ''}</table></div>` : '';
     $('cc_txt').value = lineas.join('\n');
     $('cc_fuente').textContent = 'Fuentes: ' + (nor === 'nch'
       ? 'NCh3171.Of2010 Diseño estructural — Disposiciones generales y combinaciones de cargas (INN; D. Ex. N° 415 de 2010, MINVU), cláusula 9. 9.1.1 resistencia: (1) 1,4D; (2) 1,2D + 1,6L + 0,5(Lr o S o R); (3a) 1,2D + 1,6(Lr o S o R) + L; (3b) 1,2D + 1,6(Lr o S o R) + 0,8W; (4) 1,2D + 1,6W + L + 0,5(Lr o S o R); (5) 1,2D + 1,4E + L + 0,2S; (6) 0,9D + 1,6W; (7) 0,9D + 1,4E; excepciones: a) 0,5L en (3a), (4) y (5) si L₀ ≤ 5 kN/m², salvo estacionamientos y asamblea pública; b) F y T con el factor de D en (1), (2), (3a), (3b), (4), (5) y (7); c) H con 1,6 en (2) y (3a), y en (3b), (4), (5), (6) y (7) cuando se suma a E o W, 0 en (6) y (7) cuando se opone; e) 1,3W en (4) y (6) si W no fue reducido por Kd. 9.2.1 tensiones admisibles: (1) D; (2) D + L; (3) D + (Lr o S o R); (4) D + 0,75L + 0,75(Lr o S o R); (5a) D + W; (5b) D + E; (6a) D + 0,75W + 0,75L + 0,75(Lr o S o R); (6b) D + 0,75E + 0,75L + 0,75S; (7) 0,6D + W; (8) 0,6D + E; excepciones: a) F y T con el factor de D en todas excepto la (7); b) H con 1,0 en (2), (3) y (4), y en (5a), (5b), (6a) y (6b) cuando se suma a E o W, 0 cuando se opone; sin incremento de tensiones admisibles. H incluye el empuje sísmico del suelo en las combinaciones con sismo (3.2), por lo que el incremento sísmico del empuje lleva el factor de H. Criterio del programa: en tensiones admisibles H también se incluye con 1,0 en (7) y (8) cuando se suma (como en ASCE 7-05 2.4.1, base de la norma); con la opción «H se opone» se usa 0 en todas las combinaciones con viento o sismo; el sismo vertical se suma con el signo del peso en (5), (5b) y (6b) y se resta en (7) y (8).'
