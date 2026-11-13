@@ -52132,7 +52132,7 @@ function renderCargasUso(container) {
     <div class="panel" id="cu_pT">
       <h3 id="cu_hT">2 · Techo</h3>
       <div class="field-grid">
-        <div class="field"><label>Tipo de techo (Tabla 4 y 5.3)</label><select id="cu_tt">${CU_TECHO.map(t => `<option value="${t[0]}">${esc(t[1])} — L₀ = ${(t[2] * CU_TM2).toFixed(3).replace('.', ',')} t/m²</option>`).join('')}</select></div>
+        <div class="field"><label>Tipo de techo (Tabla 4 y 5.3)</label><select id="cu_tt" style="font-size:.82rem">${CU_TECHO.map(t => `<option value="${t[0]}" title="${esc(t[1])}">${{ M: 'Sólo mantención (cubierta liviana)', P: 'Peatonal — uso privado', U: 'Peatonal — uso público' }[t[0]]} — ${(t[2] * CU_TM2).toFixed(3).replace('.', ',')} t/m²</option>`).join('')}</select></div>
         <div class="field"><label>Área tributaria del elemento AT (m²)</label><input type="text" inputmode="decimal" id="cu_ATt" value="20"></div>
         <div class="field"><label>Pendiente del techo F (%)</label><input type="text" inputmode="decimal" id="cu_F" value="10"></div>
         <div class="field" id="cu_wKt"><label>Elemento (factor KLL) — techo transitable, reducción 8.1</label><select id="cu_kllt">${CU_KLL.slice(0, 7).map(k => `<option value="${k[0]}"${k[0] === '2c' ? ' selected' : ''}>${esc(k[1])} — KLL = ${k[2]}</option>`).join('')}</select></div>
@@ -52463,13 +52463,15 @@ function calcCargasGalpon(inp) {
     // sobrecarga de techo
     const tt = CU_TECHO.find(t => t[0] === inp.techo) || CU_TECHO[0];
     const ATc = inp.sCost * G.vMax, ATm = nv.L * G.trib;
-    let Lc, Lm, rc = null, rm = null;
+    let Lc, Lm, rc = null, rm = null, rt = null;
+    // 8.2: techo accesible sólo para mantención → R₁ (área tributaria) · R₂ (pendiente F)
     if (tt[0] === 'M') { rc = cuReduccionTecho(tt[2], ATc, nv.F); rm = cuReduccionTecho(tt[2], ATm, nv.F); Lc = rc.Lr; Lm = rm.Lr; }
-    else { Lc = Lm = tt[2]; }
-    return { ...nv, cos: c, qSup, Dh, wMarco, ATc, ATm, rc, rm, Lc: Lc * CG_KPA_KGF, Lm: Lm * CG_KPA_KGF, wLr: Lm * CG_KPA_KGF * G.trib };
+    // techo transitable: carga de su uso reducida por área tributaria según 8.1 (uso público ≤ 5 kPa: no se reduce)
+    else { const k = CU_KLL.find(x => x[0] === inp.kllTecho) || CU_KLL.find(x => x[0] === '2c');
+      rt = cuReduccionPiso(tt[2], tt[0] === 'U' ? 'R' : '', k[2], ATm, 1); rt.kll = k; Lc = Lm = rt.L; }
+    return { ...nv, cos: c, qSup, Dh, wMarco, ATc, ATm, rc, rm, rt, L0t: tt[2], Lc: Lc * CG_KPA_KGF, Lm: Lm * CG_KPA_KGF, wLr: Lm * CG_KPA_KGF * G.trib };
   });
   const tt = CU_TECHO.find(t => t[0] === inp.techo) || CU_TECHO[0];
-  if (tt[0] !== 'M') avisos.push('Techo transitable: se usa L₀ sin la reducción por área tributaria de 8.1 (conservador).');
   // 5.3.3 costaneras con la carga de los elementos principales que las soportan
   // entrepiso
   let ent = null;
@@ -52477,7 +52479,13 @@ function calcCargasGalpon(inp) {
     const row = CU_T4[inp.ent.idx];
     if (!row) e.push('Entrepiso: seleccione el destino (Tabla 4).');
     else if (!(inp.ent.A > 0)) e.push('Entrepiso: ingrese el área (m²).');
-    else ent = { row, L0: row[2] * CG_KPA_KGF, Qk: row[3], A: inp.ent.A, P: row[2] * CG_KPA_KGF * inp.ent.A };
+    else if (!(inp.ent.AT > 0)) e.push('Entrepiso: ingrese el área tributaria AT del elemento (m²).');
+    else {
+      // 8.1: L = L₀·(0,25 + 4,57/√(KLL·AT)) con sus límites y exclusiones por destino (Tabla 4)
+      const k = CU_KLL.find(x => x[0] === inp.ent.kll) || CU_KLL.find(x => x[0] === '2c');
+      const red = cuReduccionPiso(row[2], row[4], k[2], inp.ent.AT, inp.ent.np >= 2 ? 2 : 1); red.kll = k;
+      ent = { row, L0: row[2] * CG_KPA_KGF, L: red.L * CG_KPA_KGF, red, Qk: row[3], A: inp.ent.A, AT: inp.ent.AT, np: inp.ent.np, P: red.L * CG_KPA_KGF * inp.ent.A };
+    }
   }
   const muroPP = pp.rev;   // kgf/m² de muro
 
@@ -52838,7 +52846,7 @@ function cgEstadosMarco(r, nie, sis) {
     return w > 0 ? { p1: [x, 0], p2: [x, G.hp[k]], w1: w, w2: w, d: [0, -1], sv: [k === nC - 1 ? 1 : -1, 0] } : null; }).filter(Boolean);
   const notaCol = `Columnas: perfil ${vtTxt(r.pp.col || 0, 1)} kgf/m${muroCols.length && r.muroPP > 0 ? ` + revestimiento ${vtTxt(r.muroPP * t, 1)} kgf/m en las columnas de eje ${muroCols.map(([k]) => String.fromCharCode(65 + k)).join(' y ')}` : ''}, vertical por metro de altura.`;
   E.push({ id: 'D', tit: 'D — Peso propio', L: vigas.map(v => cgCargaVertical(G, v.nave, v.a, v.b, r.naves[v.nave].wMarco)).concat(LcolD), notas: ['Vigas: vertical, por metro en proyección horizontal; incluye cubierta, costaneras, cielo, instalaciones y el perfil de la viga.', notaCol] });
-  E.push({ id: 'L', tit: 'L — Sobrecarga de uso', L: [], notas: [r.ent ? `Entrepiso: L₀ = ${vtTxt(r.ent.L0, 1)} kgf/m² (${esc(r.ent.row[0] + ': ' + r.ent.row[1])}); se aplica al entrepiso, que no forma parte de este marco de techo.` : 'El marco de techo no recibe sobrecarga de uso (sin entrepiso). La sobrecarga del techo es Lr.'] });
+  E.push({ id: 'L', tit: 'L — Sobrecarga de uso', L: [], notas: [r.ent ? `Entrepiso: L = ${vtTxt(r.ent.L, 1)} kgf/m² (${esc(r.ent.row[0] + ': ' + r.ent.row[1])}; ${cgTxtRedEnt(r.ent)}); se aplica al entrepiso, que no forma parte de este marco de techo.` : 'El marco de techo no recibe sobrecarga de uso (sin entrepiso). La sobrecarga del techo es Lr.'] });
   E.push({ id: 'Lr', tit: 'Lr — Sobrecarga de techo (NCh1537)', L: vigas.map(v => cgCargaVertical(G, v.nave, v.a, v.b, r.naves[v.nave].wLr)), notas: ['Vertical, por metro en proyección horizontal.'] });
   if (nie && !nie.errores && !nie.cero) {
     E.push({ id: 'S', tit: 'S — Nieve balanceada (NCh431-2010)', L: vigas.map(v => { const n = nie.naves[v.nave]; return cgCargaVertical(G, v.nave, v.a, v.b, (n.ps + n.lluvia) * kp * t); }),
@@ -53036,9 +53044,13 @@ function renderCargasGalpon(container) {
       <h3>4 · Sobrecargas de techo y de uso (NCh1537:2009)</h3>
       <div class="field-grid">
         <div class="field" style="grid-column:1/-1"><label>Acceso al techo (Tabla 4)</label><select id="cg_tt" style="width:100%;max-width:none;text-align:left" class="cg-sel-larga">${CU_TECHO.map(t => `<option value="${t[0]}">L₀ = ${vtTxt(t[2] * CG_KPA_KGF, 0)} kgf/m² — ${esc(t[1])}</option>`).join('')}</select></div>
+        <div class="field" id="cg_wKt" style="grid-column:1/-1"><label>Techo transitable: elemento (factor KLL, Tabla 1) para la reducción 8.1</label><select id="cg_kllt" style="width:100%;max-width:none;text-align:left" class="cg-sel-larga">${CU_KLL.slice(4, 7).map(k => `<option value="${k[0]}"${k[0] === '2c' ? ' selected' : ''}>KLL = ${k[2]} — ${esc(k[1])}</option>`).join('')}</select></div>
         <div class="field"><label><input type="checkbox" id="cg_ent" style="width:auto;min-width:0;margin-right:.4rem">Hay entrepiso, altillo o pasarela</label></div>
         <div class="field" id="cg_wEnt1" style="grid-column:1/-1"><label>Destino del entrepiso (Tabla 4)</label><select id="cg_entT" style="width:100%;max-width:none;text-align:left" class="cg-sel-larga">${CU_T4.map((r, i) => `<option value="${i}"${r[0] === 'Bodegas' && i === 4 ? ' selected' : ''}>${esc(r[0] + ' — ' + r[1])} (${vtTxt(r[2] * CG_KPA_KGF, 0)} kgf/m²)</option>`).join('')}</select></div>
         <div class="field" id="cg_wEnt2">${''}<label>Área del entrepiso (m²)</label><input type="text" inputmode="decimal" id="cg_entA" value="50"></div>
+        <div class="field" id="cg_wEnt3" style="grid-column:1/-1"><label>Entrepiso: elemento (factor KLL, Tabla 1)</label><select id="cg_entK" style="width:100%;max-width:none;text-align:left" class="cg-sel-larga">${CU_KLL.slice(0, 7).map(k => `<option value="${k[0]}"${k[0] === '2c' ? ' selected' : ''}>KLL = ${k[2]} — ${esc(k[1])}</option>`).join('')}</select></div>
+        <div class="field" id="cg_wEnt4"><label>Entrepiso: área tributaria AT del elemento (m²)</label><input type="text" inputmode="decimal" id="cg_entAT" value="30"></div>
+        <div class="field" id="cg_wEnt5"><label>Entrepiso: pisos que soporta el elemento</label><select id="cg_entNp"><option value="1">Un piso</option><option value="2">Dos o más pisos</option></select></div>
       </div>
     </div>
     <div class="panel">
@@ -53140,7 +53152,8 @@ function renderCargasGalpon(container) {
     container.querySelectorAll('.cg-n').forEach(el => { el.hidden = !nOn; });
     $('cg_wImp').hidden = !vOn && !nOn;
     $('cg_wV').hidden = !vOn || Vs !== 'manual';
-    $('cg_wEnt1').hidden = $('cg_wEnt2').hidden = !$('cg_ent').checked;
+    ['cg_wEnt1', 'cg_wEnt2', 'cg_wEnt3', 'cg_wEnt4', 'cg_wEnt5'].forEach(id => { $(id).hidden = !$('cg_ent').checked; });
+    $('cg_wKt').hidden = $('cg_tt').value === 'M';
     { const tb = $('cg_po').value === 'tabla'; $('cg_wLat').hidden = $('cg_wAlt').hidden = !tb || !nOn; $('cg_wPm').hidden = $('cg_wPr').hidden = tb || !nOn;
       $('cg_wLit').hidden = !nOn || !(tb && $('cg_palt').value === '0' && +$('cg_plat').value >= 3 && +$('cg_plat').value <= 6); }
     // sismo: catálogos según la norma
@@ -53163,7 +53176,8 @@ function renderCargasGalpon(container) {
     return { geo, sCost: num('cg_sc'),
       pp: { cub: num('cg_cub') || 0, costanera: num('cg_cos') || 0, cielo: num('cg_cie') || 0, inst: num('cg_ins') || 0, rev: num('cg_rev') || 0, marco: num('cg_mar') || 0, col: num('cg_col') || 0,
         faltan: [['cg_cub', 'cubierta'], ['cg_cos', 'costaneras'], ['cg_cie', 'aislación / cielo (0 si no hay)'], ['cg_ins', 'instalaciones (0 si no hay)'], ['cg_rev', 'revestimiento de muros (0 si no hay)'], ['cg_mar', 'perfil de las vigas'], ['cg_col', 'perfil de las columnas']].filter(([id]) => !(num(id) >= 0)).map(x => x[1]) },
-      techo: $('cg_tt').value, ent: { on: $('cg_ent').checked, idx: +$('cg_entT').value, A: num('cg_entA') },
+      techo: $('cg_tt').value, kllTecho: $('cg_kllt').value,
+      ent: { on: $('cg_ent').checked, idx: +$('cg_entT').value, A: num('cg_entA'), kll: $('cg_entK').value, AT: num('cg_entAT'), np: +$('cg_entNp').value },
       sismo: sis, nieveOn: nOn,
       viento: { on: vOn, V: Vs === 'manual' ? num('cg_V') : +Vs, expo: $('cg_ex').value, importancia: $('cg_imp').value, Kzt: num('cg_kzt'), flujo: $('cg_fl').value, comb3171: $('cg_comb').checked },
       nieve: { origen: $('cg_po').value, lat: +$('cg_plat').value, alt: +$('cg_palt').value, litoral: $('cg_plit').checked, pgMan: num('cg_pg'), pgRef: $('cg_pref').value, vigasSA: $('cg_vsa').checked, terreno: $('cg_nt').value, expo: +$('cg_ne').value, Ct: +$('cg_ct').value, lisa: $('cg_lisa').checked, importancia: $('cg_imp').value } };
@@ -53376,6 +53390,21 @@ function cgElemViento(r, c) {
   });
   return filas;
 }
+// textos de la reducción NCh1537:2009 (8.1 / 8.2) para el resumen y la memoria
+function cgTxtRedTecho(nv) {
+  const L0 = vtTxt(nv.L0t * CG_KPA_KGF, 0);
+  if (nv.rm) { const m = nv.rm;
+    return `8.2: L₀ = ${L0} kgf/m², AT del marco = ${vtTxt(nv.ATm, 1)} m² → R₁ = ${vtTxt(m.R1, 3)}; pendiente F = ${vtTxt(nv.F, 1)} % → R₂ = ${vtTxt(m.R2, 3)}; R₁·R₂ = ${vtTxt(m.RR, 3)}`
+      + (m.caso === 'sin' ? ' ≥ 0,84 → Lr = L₀' : m.caso === 'min' ? ' ≤ 0,3 → Lr = 0,3·L₀' : ' → Lr = L₀·R₁·R₂'); }
+  const t = nv.rt;
+  return `8.1, techo transitable: L₀ = ${L0} kgf/m², KLL = ${t.kll[2]}, AT del marco = ${vtTxt(nv.ATm, 1)} m², KLL·AT = ${vtTxt(t.KA, 1)} m²`
+    + (t.motivo ? ` → ${t.motivo}` : ` → factor 0,25 + 4,57/√(KLL·AT) = ${vtTxt(t.fBase, 3)}${t.f !== t.fBase ? `, límite ${vtTxt(t.f, 2)}` : ''}`);
+}
+function cgTxtRedEnt(en) {
+  const t = en.red;
+  return `L₀ = ${vtTxt(en.L0, 0)} kgf/m²; 8.1: KLL = ${t.kll[2]}, AT = ${vtTxt(en.AT, 1)} m², KLL·AT = ${vtTxt(t.KA, 1)} m², ${en.np >= 2 ? 'dos o más pisos' : 'un piso'}`
+    + (t.motivo ? ` → ${t.motivo}` : ` → factor 0,25 + 4,57/√(KLL·AT) = ${vtTxt(t.fBase, 3)}${t.f !== t.fBase ? `, límite ${vtTxt(t.f, 2)}` : ''}`);
+}
 // ---------- tablas (pantalla e impresión) ----------
 function cgHtml(r, nie, sis) {
   const G = r.G, k = x => vtTxt(x, 1), kN = x => vtTxt(x / CG_KGF, 1), sg = x => vtSig(x / CG_KGF, 1);
@@ -53387,11 +53416,11 @@ function cgHtml(r, nie, sis) {
   r.naves.forEach(nv => {
     const t = `Nave ${nv.i + 1}`;
     filas.push([`<b>Vigas ${t.toLowerCase()}</b> — peso propio D: cubierta, costaneras, cielo e instalaciones vertical (la carga lineal incluye el perfil de la viga, ${k(r.pp.marco)} kgf/m de viga)`, k(nv.Dh), k(nv.wMarco)]);
-    filas.push([`Vigas ${t.toLowerCase()} — sobrecarga de techo Lr, vertical (AT del marco = ${vtTxt(nv.ATm, 1)} m²${nv.rm ? `, R₁ = ${vtTxt(nv.rm.R1, 3)}, R₂ = ${vtTxt(nv.rm.R2, 3)}` : ''})`, k(nv.Lm), k(nv.wLr)]);
+    filas.push([`Vigas ${t.toLowerCase()} — sobrecarga de techo Lr, vertical (${cgTxtRedTecho(nv)})`, k(nv.Lm), k(nv.wLr)]);
     if (nOk) { const n = nie.naves[nv.i], q = n.ps + n.lluvia; filas.push([`Vigas ${t.toLowerCase()} — nieve balanceada ps${n.lluvia ? ' + 0,25 kN/m² de lluvia sobre nieve (12)' : ''} (NCh431-2010), vertical sobre la proyección horizontal`, k(q * 101.97), k(q * 101.97 * G.trib)]); }
   });
   filas.push(['Columnas exteriores con muro — peso del revestimiento (vertical, por m de altura)', k(r.muroPP), k(r.muroPP * G.trib)]);
-  if (r.ent) filas.push([`Entrepiso — sobrecarga de uso L₀ (${esc(r.ent.row[0] + ': ' + r.ent.row[1])})`, k(r.ent.L0), `Qk = ${r.ent.Qk != null ? vtTxt(r.ent.Qk * 101.97, 0) + ' kgf' : '—'}`]);
+  if (r.ent) filas.push([`Entrepiso — sobrecarga de uso L (${esc(r.ent.row[0] + ': ' + r.ent.row[1])}; ${cgTxtRedEnt(r.ent)})`, k(r.ent.L), `Qk = ${r.ent.Qk != null ? vtTxt(r.ent.Qk * 101.97, 0) + ' kgf' : '—'}`]);
   // viento en el resumen: solo W+, W− y WL, por elemento del marco (kgf/m; varios tramos separados por « / »)
   let resV = '';
   if (r.vOn && r.casos.length) {
@@ -53438,7 +53467,8 @@ function cgHtml(r, nie, sis) {
   const notas = r.avisos.map(esc).concat(r.vOn ? [
     `Clasificación del cerramiento: ${r.cerr.muros.map(m => `${esc(m.nombre)}: Ao = ${vtTxt(m.Ao, 1)} m² de Ag = ${vtTxt(m.Ag, 1)} m²${m.abierto ? ' (≥ 80 %: abierto)' : ''}${m.parcial ? ' (cumple 3.16)' : ''}`).join('; ')}. Resultado: <b>${esc(r.cerr.clase)}</b>.`] : [], [
     'Peso propio: cubierta, costaneras (peso/espaciamiento) y cielo se dan por m² de superficie inclinada y se pasan a proyección horizontal dividiendo por cos θ; las instalaciones se dan en planta.',
-    'Sobrecarga de techo: NCh1537:2009 Tabla 4 y 8.2 (R₁ por área tributaria, R₂ por pendiente F en %), sobre la proyección horizontal, con el área tributaria del marco. 5.3.3: las costaneras se diseñan con la misma carga de uso de los elementos principales que las soportan.']);
+    'Sobrecarga de techo: NCh1537:2009 Tabla 4 (L₀ según el acceso al techo), sobre la proyección horizontal, con el área tributaria del marco (luz de la nave × espaciamiento). Techo accesible sólo para mantención, 8.2: Lr = L₀ si R₁·R₂ ≥ 0,84; Lr = L₀·R₁·R₂ si 0,3 < R₁·R₂ < 0,84; Lr = 0,3·L₀ si R₁·R₂ ≤ 0,3; R₁ = 1 − 0,008·AT (AT < 50 m²) o 0,6; R₂ = 1 − 0,0233·F (F < 30 %) o 0,3. Techo transitable: carga de su uso reducida según 8.1 (sin reducción en lugares públicos con L₀ ≤ 5 kPa). 5.3.3: las costaneras se diseñan con la misma carga de uso de los elementos principales que las soportan.',
+    ...(r.ent ? ['Sobrecarga de uso del entrepiso: NCh1537:2009 Tabla 4 (L₀ según el destino) y 8.1: L = L₀·(0,25 + 4,57/√(KLL·AT)) si KLL·AT ≥ 36 m², con L ≥ 0,5·L₀ (elementos que soportan un piso) o L ≥ 0,4·L₀ (dos o más); no se reducen las cargas mayores que 5 kPa ni las de estacionamientos (salvo elementos que soportan dos o más pisos, con reducción máxima de 20 %), ni las de lugares públicos con L₀ ≤ 5 kPa. KLL según la Tabla 1.'] : [])]);
   // impresión (sin notas de uso del programa)
   const rr = (l, v) => `<tr><td class="xv-label">${l}</td><td class="xv-input" colspan="3">${v}</td></tr>`;
   const datosPrint = `<div class="xlsx-title-bar">DATOS DE ENTRADA</div><table class="xlsx-table"><tbody>
@@ -53447,7 +53477,8 @@ function cgHtml(r, nie, sis) {
     ${rr('Espaciamiento de costaneras', vtTxt(r.sCost, 2) + ' m')}
     ${r.vOn ? rr('Cerramiento', r.cerr.muros.map(m => `${esc(m.nombre)}: Ao/Ag = ${vtTxt(m.Ao, 1)}/${vtTxt(m.Ag, 1)} m²`).join('; ') + ' → ' + esc(r.cerr.clase)) : ''}
     ${rr('Peso propio (kgf/m², kgf/m)', `cubierta ${k(r.pp.cub)}; costaneras ${k(r.pp.costanera)} kgf/m; cielo ${k(r.pp.cielo)}; instalaciones ${k(r.pp.inst)}; muros ${k(r.pp.rev)}; columnas ${k(r.pp.col)} kgf/m; vigas ${k(r.pp.marco)} kgf/m`)}
-    ${rr('Techo (NCh1537 Tabla 4)', esc(r.tt[1]))}
+    ${rr('Techo (NCh1537 Tabla 4)', esc(r.tt[1]) + (r.tt[0] !== 'M' && r.naves[0].rt ? ` — elemento KLL = ${r.naves[0].rt.kll[2]} (${esc(r.naves[0].rt.kll[1])})` : ''))}
+    ${r.ent ? rr('Entrepiso (NCh1537 Tabla 4 y 8.1)', `${esc(r.ent.row[0] + ': ' + r.ent.row[1])}; área ${vtTxt(r.ent.A, 1)} m²; elemento KLL = ${r.ent.red.kll[2]} (${esc(r.ent.red.kll[1])}), AT = ${vtTxt(r.ent.AT, 1)} m², ${r.ent.np >= 2 ? 'dos o más pisos' : 'un piso'}`) : ''}
     ${rr('Viento', r.vOn ? `V = ${vtTxt(r.base.V, 1)} m/s, exposición ${esc(r.base.expo)}, ${esc(r.base.importancia)} (I = ${vtTxt(r.I, 2)}), Kzt = ${vtTxt(r.base.Kzt, 2)}` : 'No aplica')}
     ${rr('Nieve (NCh431-2010)', nOk ? `pg = ${vtTxt(nie.pg * 101.97, 1)} kgf/m² (${esc(nie.pgTxt)}), Ce = ${vtTxt(nie.Ce, 2)}, Ct = ${vtTxt(nie.Ct, 2)}, I = ${vtTxt(nie.I, 2)}` : !nie ? 'No aplica' : esc(nie.pgTxt || 'pg = 0'))}
     ${sis && sis.ok ? rr('Sismo', `${esc(sis.normaTxt)}: ${esc(sis.s.zona)}, suelo ${esc(sis.ind ? sis.s.suelo.split(' ')[0] : sis.s.suelo)}, categoría ${esc(sis.s.cat.split(' ')[0])}, R = ${vtTxt(sis.R, 1)}${sis.ind ? `, ξ = ${vtTxt(sis.xi, 2)}` : ''}, T* = ${sis.Tstar ? vtTxt(sis.Tstar, 3) + ' s' : 'no ingresado'}`) : ''}
