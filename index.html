@@ -696,9 +696,10 @@
     </div>
     <div class="fs-panel-body">
       <div class="fs-root-row">
-        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 17:20</small>
+        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 17:30</small>
         <button type="button" class="fs-toggle-btn" style="width:auto" id="fsChooseRootBtn">Elegir carpeta base…</button>
       </div>
+      <div id="fsDropBase" style="border:2px dashed var(--line);border-radius:6px;padding:.55rem .7rem;margin:0 0 .7rem;font-size:.8rem;color:var(--ink-muted);text-align:center">o arrastre aquí la carpeta desde el Explorador de Windows para usarla como carpeta base</div>
       <div id="fsEstadoBase" style="font-size:.78rem;margin:-.3rem 0 .7rem;color:var(--ink-muted)"></div>
       <div id="fsReconnectRow" style="display:none; margin-bottom:.8rem;">
         <button type="button" class="fs-toggle-btn" id="fsReconnectBtn">🔓 Reconectar carpeta</button>
@@ -2452,6 +2453,29 @@ document.getElementById('fsReconnectBtn').addEventListener('click', async functi
   if (ok) { document.getElementById('fsReconnectRow').style.display = 'none'; fsUpdateRootLabel(); fsRenderTree(); fsUpdateSaveBarLabel(); }
   else fsToast('No se pudo reconectar la carpeta — elígela de nuevo con "Elegir carpeta base…".');
 });
+
+// carpeta base por arrastre (sin el selector de Chrome): DataTransferItem.getAsFileSystemHandle()
+(function(){
+  var z = document.getElementById('fsDropBase'); if (!z) return;
+  if (!(window.DataTransferItem && DataTransferItem.prototype.getAsFileSystemHandle)) { z.style.display = 'none'; return; }
+  ['dragenter','dragover'].forEach(function(t){ z.addEventListener(t, function(e){ e.preventDefault(); z.style.borderColor = 'var(--accent)'; }); });
+  z.addEventListener('dragleave', function(){ z.style.borderColor = ''; });
+  z.addEventListener('drop', async function(e){
+    e.preventDefault(); z.style.borderColor = '';
+    var it = e.dataTransfer && e.dataTransfer.items && e.dataTransfer.items[0];
+    if (!it || it.kind !== 'file') { fsEstadoBase('No cambió — arrastre una carpeta (no un archivo).', true); return; }
+    try {
+      var h = await it.getAsFileSystemHandle();
+      if (!h || h.kind !== 'directory') { fsEstadoBase('No cambió — lo arrastrado no es una carpeta.', true); return; }
+      FS_ROOT = h; FS_STORED_NAME = h.name || ''; FS_ACTIVE_PATH = []; fsSaveActivePath();
+      try { await fsDbSet('root', h); } catch(err) { console.error(err); }
+      fsEstadoBase('Elegida (arrastre): ' + h.name + ' (' + new Date().toLocaleTimeString('es-CL') + ')');
+      document.getElementById('fsReconnectRow').style.display = 'none';
+      fsUpdateRootLabel(); fsUpdateSaveBarLabel(); fsRenderTree();
+      fsToast('Carpeta base: ' + h.name);
+    } catch(err) { fsEstadoBase('No cambió — ' + (err.name || 'Error') + ': ' + (err.message || ''), true); }
+  });
+})();
 
 // otra ventana o pestaña de la Mesa cambió la carpeta base o la activa: tomar la misma
 window.addEventListener('storage', function(ev){
