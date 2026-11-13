@@ -696,7 +696,7 @@
     </div>
     <div class="fs-panel-body">
       <div class="fs-root-row">
-        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 17:40</small>
+        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 19:10</small>
         <button type="button" class="fs-toggle-btn" style="width:auto" id="fsChooseRootBtn">Elegir carpeta base…</button>
       </div>
       <div id="fsDropBase" style="border:2px dashed var(--line);border-radius:6px;padding:.55rem .7rem;margin:0 0 .7rem;font-size:.8rem;color:var(--ink-muted);text-align:center">o arrastre aquí la carpeta desde el Explorador de Windows para usarla como carpeta base</div>
@@ -1650,7 +1650,10 @@ function fsChooseRoot(){
     // que el diálogo parta dentro de la base anterior y «Seleccionar carpeta» la vuelva a elegir sin querer
     // se elige solo con permiso de lectura: en algunos equipos el aviso «Editar archivos» que Chrome muestra al elegir
     // con 'readwrite' se cierra solo y el selector termina en AbortError; el permiso de edición se pide al guardar
-    return window.showDirectoryPicker();   // sin opciones: lo más simple que acepta Chrome
+    // id propio y nuevo: Chrome recordaba como carpeta inicial (id por defecto / 'mesaBase') una carpeta de Dropbox,
+    // y el diálogo partía ahí y fallaba siempre, aunque se eligiera una carpeta local. Un id que nunca guardó Dropbox
+    // + partir en Documentos evita eso. (Un intento fallido no queda recordado en el id.)
+    return window.showDirectoryPicker({id:'mesaBaseLocal', startIn:'documents'});
   }).then(function(handle){
     // la carpeta elegida se usa de inmediato; guardarla para la próxima sesión es aparte (si falla, se avisa)
     FS_ROOT = handle; FS_STORED_NAME = handle.name || '';
@@ -2441,7 +2444,10 @@ document.getElementById('fsChooseRootBtn').addEventListener('click', async funct
     if (!fsChooseRoot.noGuardada) fsToast(h && h.name === antes ? ('Se eligió de nuevo «' + h.name + '». Para cambiarla, pinche la otra carpeta (que quede marcada) y luego «Seleccionar carpeta».') : ('Carpeta base: ' + (h ? h.name : '')));
   } catch(e) {
     fsEstadoBase('No cambió — ' + ((e && e.name) || 'Error') + ': ' + ((e && e.message) || '') + ' (' + new Date().toLocaleTimeString('es-CL') + ')', true);
-    if (e && e.name === 'AbortError') { fsToast('La carpeta base no cambió: el selector se cerró o no se aceptó el permiso «Editar archivos» de Chrome. Sigue: ' + (FS_ROOT ? FS_ROOT.name : '—')); return; }
+    // Chrome/Edge rechazan en este selector las carpetas de Dropbox («archivos en la nube» de Windows): al presionar
+    // «Seleccionar carpeta» responden AbortError como si se hubiera cancelado. Arrastrar la carpeta sí funciona,
+    // así que se abre de inmediato el recuadro para soltarla (si el usuario solo cerró el diálogo, lo cierra con Esc).
+    if (e && e.name === 'AbortError') { fsEstadoBase('No cambió — si eligió una carpeta de Dropbox, arrástrela al recuadro.', true); fsAbrirSoltarBase(); return; }
     fsToast('No se pudo cambiar la carpeta base: ' + ((e && (e.message || e.name)) || 'error desconocido'));
   }
 });
@@ -2452,27 +2458,53 @@ document.getElementById('fsReconnectBtn').addEventListener('click', async functi
 });
 
 // carpeta base por arrastre (sin el selector de Chrome): DataTransferItem.getAsFileSystemHandle()
+var FS_DROP_OK = !!(window.DataTransferItem && DataTransferItem.prototype.getAsFileSystemHandle);
+async function fsTomarBaseArrastrada(dt){
+  var it = dt && dt.items && dt.items[0];
+  if (!it || it.kind !== 'file') { fsEstadoBase('No cambió — arrastre una carpeta (no un archivo).', true); return false; }
+  try {
+    var h = await it.getAsFileSystemHandle();
+    if (!h || h.kind !== 'directory') { fsEstadoBase('No cambió — lo arrastrado no es una carpeta.', true); return false; }
+    FS_ROOT = h; FS_STORED_NAME = h.name || ''; FS_ACTIVE_PATH = []; fsSaveActivePath();
+    try { await fsDbSet('root', h); } catch(err) { console.error(err); }
+    fsEstadoBase('Elegida: ' + h.name + ' (' + new Date().toLocaleTimeString('es-CL') + ')');
+    document.getElementById('fsReconnectRow').style.display = 'none';
+    fsUpdateRootLabel(); fsUpdateSaveBarLabel(); fsRenderTree();
+    fsToast('Carpeta base: ' + h.name);
+    return true;
+  } catch(err) { fsEstadoBase('No cambió — ' + (err.name || 'Error') + ': ' + (err.message || ''), true); return false; }
+}
 (function(){
   var z = document.getElementById('fsDropBase'); if (!z) return;
-  if (!(window.DataTransferItem && DataTransferItem.prototype.getAsFileSystemHandle)) { z.style.display = 'none'; return; }
+  if (!FS_DROP_OK) { z.style.display = 'none'; return; }
   ['dragenter','dragover'].forEach(function(t){ z.addEventListener(t, function(e){ e.preventDefault(); z.style.borderColor = 'var(--accent)'; }); });
   z.addEventListener('dragleave', function(){ z.style.borderColor = ''; });
-  z.addEventListener('drop', async function(e){
-    e.preventDefault(); z.style.borderColor = '';
-    var it = e.dataTransfer && e.dataTransfer.items && e.dataTransfer.items[0];
-    if (!it || it.kind !== 'file') { fsEstadoBase('No cambió — arrastre una carpeta (no un archivo).', true); return; }
-    try {
-      var h = await it.getAsFileSystemHandle();
-      if (!h || h.kind !== 'directory') { fsEstadoBase('No cambió — lo arrastrado no es una carpeta.', true); return; }
-      FS_ROOT = h; FS_STORED_NAME = h.name || ''; FS_ACTIVE_PATH = []; fsSaveActivePath();
-      try { await fsDbSet('root', h); } catch(err) { console.error(err); }
-      fsEstadoBase('Elegida (arrastre): ' + h.name + ' (' + new Date().toLocaleTimeString('es-CL') + ')');
-      document.getElementById('fsReconnectRow').style.display = 'none';
-      fsUpdateRootLabel(); fsUpdateSaveBarLabel(); fsRenderTree();
-      fsToast('Carpeta base: ' + h.name);
-    } catch(err) { fsEstadoBase('No cambió — ' + (err.name || 'Error') + ': ' + (err.message || ''), true); }
-  });
+  z.addEventListener('drop', function(e){ e.preventDefault(); z.style.borderColor = ''; fsTomarBaseArrastrada(e.dataTransfer); });
 })();
+// recuadro grande que aparece solo cuando el selector de Chrome no acepta la carpeta (Dropbox)
+function fsAbrirSoltarBase(){
+  if (!FS_DROP_OK) { fsToast('La carpeta base no cambió. Sigue: ' + (FS_ROOT ? FS_ROOT.name : '—')); return; }
+  var ov = document.getElementById('fsSoltarBase');
+  if (!ov) {
+    ov = document.createElement('div'); ov.id = 'fsSoltarBase';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+    ov.innerHTML = '<div id="fsSoltarCaja" style="background:var(--paper,#fff);color:var(--ink,#111);border:3px dashed var(--accent,#2563eb);border-radius:12px;max-width:620px;width:100%;padding:2.2rem 1.6rem;text-align:center;font-size:1rem;line-height:1.45;box-shadow:0 10px 40px rgba(0,0,0,.35)">'
+      + '<div style="font-size:2.6rem;line-height:1">📂</div>'
+      + '<div style="font-weight:700;font-size:1.15rem;margin:.5rem 0 .4rem">Suelte aquí la carpeta base</div>'
+      + '<div style="color:var(--ink-muted,#555);font-size:.9rem">Chrome no acepta carpetas de Dropbox desde el selector. Abra el Explorador de Windows, busque la carpeta y arrástrela sobre este recuadro.</div>'
+      + '<button type="button" id="fsSoltarCancelar" class="fs-toggle-btn" style="width:auto;margin-top:1.2rem">Cancelar</button></div>';
+    document.body.appendChild(ov);
+    var caja = ov.querySelector('#fsSoltarCaja');
+    var cerrar = function(){ ov.style.display = 'none'; };
+    ov.querySelector('#fsSoltarCancelar').addEventListener('click', cerrar);
+    ov.addEventListener('click', function(e){ if (e.target === ov) cerrar(); });
+    document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && ov.style.display !== 'none') cerrar(); });
+    ['dragenter','dragover'].forEach(function(t){ ov.addEventListener(t, function(e){ e.preventDefault(); caja.style.background = 'var(--accent-soft,#e0ecff)'; }); });
+    ov.addEventListener('dragleave', function(e){ if (e.target === ov) caja.style.background = ''; });
+    ov.addEventListener('drop', async function(e){ e.preventDefault(); caja.style.background = ''; if (await fsTomarBaseArrastrada(e.dataTransfer)) cerrar(); });
+  }
+  ov.style.display = 'flex';
+}
 
 // otra ventana o pestaña de la Mesa cambió la carpeta base o la activa: tomar la misma
 window.addEventListener('storage', function(ev){
