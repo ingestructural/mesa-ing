@@ -696,7 +696,7 @@
     </div>
     <div class="fs-panel-body">
       <div class="fs-root-row">
-        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 17:30</small>
+        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 17:40</small>
         <button type="button" class="fs-toggle-btn" style="width:auto" id="fsChooseRootBtn">Elegir carpeta base…</button>
       </div>
       <div id="fsDropBase" style="border:2px dashed var(--line);border-radius:6px;padding:.55rem .7rem;margin:0 0 .7rem;font-size:.8rem;color:var(--ink-muted);text-align:center">o arrastre aquí la carpeta desde el Explorador de Windows para usarla como carpeta base</div>
@@ -1650,10 +1650,7 @@ function fsChooseRoot(){
     // que el diálogo parta dentro de la base anterior y «Seleccionar carpeta» la vuelva a elegir sin querer
     // se elige solo con permiso de lectura: en algunos equipos el aviso «Editar archivos» que Chrome muestra al elegir
     // con 'readwrite' se cierra solo y el selector termina en AbortError; el permiso de edición se pide al guardar
-    return window.showDirectoryPicker({startIn:'documents'}).catch(function(e){
-      if (e && e.name === 'AbortError') throw e;
-      return window.showDirectoryPicker({});   // si 'documents' no se acepta, el diálogo por defecto
-    });
+    return window.showDirectoryPicker();   // sin opciones: lo más simple que acepta Chrome
   }).then(function(handle){
     // la carpeta elegida se usa de inmediato; guardarla para la próxima sesión es aparte (si falla, se avisa)
     FS_ROOT = handle; FS_STORED_NAME = handle.name || '';
