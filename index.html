@@ -1596,6 +1596,12 @@ function fsResolveDir(path, create){
   return p;
 }
 
+// Carpeta donde se abren los selectores de archivo (Guardar como, Exportar, Abrir): la carpeta activa elegida en «Carpetas…»;
+// si no existe o no hay permiso, la carpeta base.
+async function fsStartIn(){
+  if (!FS_ROOT) return null;
+  try { var d = await fsResolveDir(FS_ACTIVE_PATH || [], false); return d || FS_ROOT; } catch(e){ return FS_ROOT; }
+}
 /* ---------- carpeta base: elegir / reconectar ---------- */
 function fsTryReconnect(){
   if (FS_ROOT) return Promise.resolve(true);
@@ -1870,7 +1876,7 @@ async function fsSaveAsCurrentCalc(){
   if (typeof window.showSaveFilePicker === 'function') {
     try {
       var opts = { suggestedName: sugerido, types: [{ description: 'Cálculo de la Mesa de Cálculo (.json)', accept: {'application/json': ['.json']} }] };
-      if (FS_ROOT) opts.startIn = FS_ROOT;
+      var si0 = await fsStartIn(); if (si0) opts.startIn = si0;
       var fh = await window.showSaveFilePicker(opts);
       var w = await fh.createWritable();
       await w.write(texto);
@@ -48646,7 +48652,7 @@ async function mcmDocx(S, Bx) {
 async function mcmGuardarEn(fh, nombre, data, mime, desc, ext, como) {
   if (fh && !como) { try { const w = await fh.createWritable(); await w.write(data); await w.close(); fsToast('Guardado: ' + fh.name); return fh; } catch (e) { /* sin permiso: se pide nombre */ } }
   if (typeof window.showSaveFilePicker === 'function') {
-    try { const o = {suggestedName: fh ? fh.name : nombre, types:[{description:desc, accept:{[mime]:[ext]}}]}; if (typeof FS_ROOT !== 'undefined' && FS_ROOT) o.startIn = FS_ROOT;
+    try { const o = {suggestedName: fh ? fh.name : nombre, types:[{description:desc, accept:{[mime]:[ext]}}]}; { const si0 = typeof fsStartIn === 'function' ? await fsStartIn() : null; if (si0) o.startIn = si0; }
       const h = await window.showSaveFilePicker(o); const w = await h.createWritable(); await w.write(data); await w.close(); fsToast('Guardado: ' + h.name); return h; }
     catch (e) { if (e && e.name === 'AbortError') return fh; }
   }
@@ -48654,7 +48660,7 @@ async function mcmGuardarEn(fh, nombre, data, mime, desc, ext, como) {
 }
 async function mcmAbrirJson(desc, inputEl) {
   if (typeof window.showOpenFilePicker === 'function') {
-    try { const o = {types:[{description:desc, accept:{'application/json':['.json']}}]}; if (typeof FS_ROOT !== 'undefined' && FS_ROOT) o.startIn = FS_ROOT;
+    try { const o = {types:[{description:desc, accept:{'application/json':['.json']}}]}; { const si0 = typeof fsStartIn === 'function' ? await fsStartIn() : null; if (si0) o.startIn = si0; }
       const [h] = await window.showOpenFilePicker(o); const f = await h.getFile(); return {fh:h, name:f.name, text:await f.text()}; }
     catch (e) { if (e && e.name === 'AbortError') return null; }
   }
@@ -48662,7 +48668,7 @@ async function mcmAbrirJson(desc, inputEl) {
 }
 async function mcmGuardarArchivo(nombre, data, mime, desc, ext) {
   if (typeof window.showSaveFilePicker === 'function') {
-    try { const o = {suggestedName:nombre, types:[{description:desc, accept:{[mime]:[ext]}}]}; if (typeof FS_ROOT !== 'undefined' && FS_ROOT) o.startIn = FS_ROOT;
+    try { const o = {suggestedName:nombre, types:[{description:desc, accept:{[mime]:[ext]}}]}; { const si0 = typeof fsStartIn === 'function' ? await fsStartIn() : null; if (si0) o.startIn = si0; }
       const fh = await window.showSaveFilePicker(o); const w = await fh.createWritable(); await w.write(data); await w.close(); fsToast('Guardado: ' + fh.name); return; }
     catch (e) { if (e && e.name === 'AbortError') return; }
   }
