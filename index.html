@@ -906,6 +906,7 @@
     if (p || antes) powerCopiarADocumentos(p);
     var main = document.getElementById('mainView');
     if (main) powerAplicar(main, true);
+    try { document.dispatchEvent(new CustomEvent('mesa-power', {detail: p})); } catch (e) {}
   }
   // deja «Título del proyecto» y la barra de la planilla visible de acuerdo con el proyecto fijado
   function powerAplicar(main, recalcular){
@@ -41721,7 +41722,7 @@ function fmpEtzArreglo(b, tipo) {
   return out;
 }
 
-function fmpEtzLeer(d) {
+function fmpEtzLeer(d, todo) {   // todo: también los arreglos de resultados y cargas por estado (memoria con archivo RAM)
   const { hojas, inicioDatos } = fmpEtzEsquema(d);
   const dv = new DataView(d.buffer, d.byteOffset, d.byteLength);
   const campos = {};
@@ -41734,7 +41735,9 @@ function fmpEtzLeer(d) {
     else if (h.tipo === 0x02) {
       if (d[q] !== h.size) throw new Error('Texto del .etz con largo inconsistente en ' + h.ruta + '.');
       v = new TextDecoder('latin1').decode(d.subarray(q + 1, q + 1 + h.size)); q += 1;
-    } else v = (h.ruta.endsWith('/Values') && h.size > 0) ? fmpEtzArreglo(d.subarray(q, q + h.size), h.tipo) : null;
+    } else if (h.ruta.endsWith('/Values') && h.size > 0) v = fmpEtzArreglo(d.subarray(q, q + h.size), h.tipo);
+    else if (todo && h.size > 0) { try { v = fmpEtzArreglo(d.subarray(q, q + h.size), h.tipo); } catch (e) { v = null; } }
+    else v = null;
     q += h.size;
     campos[h.ruta] = v;
   }
@@ -48713,8 +48716,10 @@ function mcmLoadDocx() {
   return new Promise((ok, fail) => { const s = document.createElement('script'); s.src = 'docx.iife.js'; s.onload = () => window.docx ? ok(window.docx) : fail(new Error('librería Word no disponible')); s.onerror = () => fail(new Error('no se pudo cargar la librería Word (¿sin conexión?)')); document.head.appendChild(s); });
 }
 function mcmB64(dataUrl) { const b = atob(dataUrl.split(',')[1] || ''); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
-async function mcmDocx(S, Bx) {
+async function mcmDocx(S, Bx, R) {
   const d = await mcmLoadDocx();
+  const B0 = Bx || mcmBuild(S), DD = mcmDoc(S);
+  if (!R) { try { R = await mpgPaginar(DD, B0, {indicePortada:DD.indicePortada}); } catch (e) { R = null; } }
   const {Document, Packer, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, Header, Footer, AlignmentType, WidthType, BorderStyle, ShadingType, PageNumber, HeadingLevel, PageBreak, TabStopType, VerticalAlign, LevelFormat, TableLayoutType, TableOfContents, HeightRule} = d;
   const NAVY = '1F3864', BLUE = '2E5395', GREY = '595959', W = 9920, FONT = 'Arial';
   const run = (t, o = {}) => new TextRun({text:String(t), font:FONT, size:o.size || 24, bold:o.bold, italics:o.italics, color:o.color, underline:o.underline, highlight:o.hl});
@@ -48725,39 +48730,42 @@ async function mcmDocx(S, Bx) {
     const sum = widths.reduce((a, b) => a + b, 0), sc = W / sum; widths = widths.map(w => Math.round(w * sc)); widths[widths.length - 1] += W - widths.reduce((a, b) => a + b, 0);
     const cell = (t, i, hdr, extra = {}) => new TableCell({width:{size:widths[i], type:WidthType.DXA}, borders, verticalAlign:VerticalAlign.CENTER,
       shading: hdr ? {fill:NAVY, type:ShadingType.CLEAR, color:'auto'} : (extra.fill ? {fill:extra.fill, type:ShadingType.CLEAR, color:'auto'} : undefined), margins:{top:40, bottom:40, left:70, right:70},
-      children:[new Paragraph({alignment: hdr || align[i] === 'c' ? AlignmentType.CENTER : AlignmentType.LEFT, spacing:{after:0}, children:runs(t, {size:o.size || 18, bold:hdr || extra.bold || t === 'CUMPLE' || t === 'NO CUMPLE', color:hdr ? 'FFFFFF' : (t === 'NO CUMPLE' ? 'B91C1C' : t === 'CUMPLE' ? '15803D' : '000000')})})]});
+      children:[new Paragraph({alignment: hdr || align[i] === 'c' ? AlignmentType.CENTER : AlignmentType.LEFT, spacing:{after:0}, children:runs(t, {size:o.size || 17, bold:hdr || extra.bold || t === 'CUMPLE' || t === 'NO CUMPLE', color:hdr ? 'FFFFFF' : (t === 'NO CUMPLE' ? 'B91C1C' : t === 'CUMPLE' ? '15803D' : '000000')})})]});
     const trs = []; if (head) trs.push(new TableRow({tableHeader:true, children:head.map((h, i) => cell(h, i, true))}));
-    rows.forEach((r, k) => trs.push(new TableRow({cantSplit:true, children:r.map((t, i) => cell(t, i, false, o.key && i === 0 ? {bold:true, fill:'F2F5FA'} : {fill: k % 2 && !o.key ? 'F2F5FA' : undefined}))})));
+    rows.forEach((r, k) => trs.push(new TableRow({cantSplit:true, children:r.map((t, i) => cell(t, i, false, o.key && i === 0 ? {bold:true, fill:o.keyFill === false ? undefined : 'F2F5FA'} : {fill: k % 2 && !o.key ? 'F2F5FA' : undefined}))})));
     return new Table({width:{size:W, type:WidthType.DXA}, columnWidths:widths, layout:TableLayoutType.FIXED, rows:trs});
   };
   const cap = t => P([run(t.replace(/:.*/, ':') + ' ', {size:19, bold:true, color:NAVY}), run(t.replace(/^[^:]*:\s*/, ''), {size:19, italics:true, color:GREY})], {align:AlignmentType.CENTER, after:200});
-  const logo = mcmLogo(), Pp = S.proy;
+  const logo = mcmLogo(), Pp = DD.proy, HL = mpgEncabezado(Pp);
+  const imgRun = (x, w, h) => new ImageRun({type:/^data:image\/png/.test(x.src) ? 'png' : 'jpg', data:mcmB64(x.src), transformation:{width:Math.round(w), height:Math.round(h)}});
   const header = new Header({children:[new Table({width:{size:W, type:WidthType.DXA}, columnWidths:[4460, 5460], layout:TableLayoutType.FIXED,
     borders:{top:none, left:none, right:none, bottom:{style:BorderStyle.SINGLE, size:8, color:NAVY}, insideHorizontal:none, insideVertical:none},
     rows:[new TableRow({children:[
       new TableCell({width:{size:4460, type:WidthType.DXA}, borders:{top:none, left:none, right:none, bottom:{style:BorderStyle.SINGLE, size:8, color:NAVY}},
         children:[new Paragraph({spacing:{after:60}, children: logo ? [new ImageRun({type:'png', data:mcmB64(logo), transformation:{width:288, height:93}})] : []})]}),
       new TableCell({width:{size:5460, type:WidthType.DXA}, verticalAlign:VerticalAlign.BOTTOM, borders:{top:none, left:none, right:none, bottom:{style:BorderStyle.SINGLE, size:8, color:NAVY}},
-        children:[new Paragraph({alignment:AlignmentType.RIGHT, spacing:{after:0}, children:[run(mcmV(Pp.titulo, 'MEMORIA DE CÁLCULO'), {size:18, bold:true, color:NAVY})]}),
-          new Paragraph({alignment:AlignmentType.RIGHT, spacing:{after:0}, children:[run(mcmV(Pp.proyecto, ''), {size:16, color:GREY})]}),
-          new Paragraph({alignment:AlignmentType.RIGHT, spacing:{after:60}, children:[run(`${mcmV(Pp.mandante, '')} · Rev. ${Pp.rev} · ${Pp.fecha}`, {size:16, color:GREY})]})]})]})]})]});
+        children:[new Paragraph({alignment:AlignmentType.RIGHT, spacing:{after:0}, children:[run(HL[0], {size:18, bold:true, color:NAVY})]}),
+          new Paragraph({alignment:AlignmentType.RIGHT, spacing:{after:0}, children:[run(HL[1], {size:16, color:GREY})]}),
+          new Paragraph({alignment:AlignmentType.RIGHT, spacing:{after:60}, children:[run(HL[2], {size:16, color:GREY})]})]})]})]})]});
   const footer = new Footer({children:[new Paragraph({border:{top:{style:BorderStyle.SINGLE, size:6, color:NAVY, space:4}}, spacing:{before:0, after:0}, tabStops:[{type:TabStopType.RIGHT, position:W}],
-    children:[run('ING ESTRUCTURAL — Proyectos Civiles e Industriales', {size:16, bold:true, color:NAVY}), new TextRun({children:['\tPágina ', PageNumber.CURRENT, ' de ', PageNumber.TOTAL_PAGES], font:FONT, size:16, color:GREY})]}),
-    new Paragraph({spacing:{after:0}, children:[run('Angol 47, of. 404, Concepción · +56 9 9884 7164', {size:16, color:GREY})]})]});
-  const K = [];
-  K.push(new Paragraph({spacing:{after:600}, children:[]}));
-  K.push(new Paragraph({alignment:AlignmentType.CENTER, spacing:{after:200}, children:[run(mcmV(Pp.titulo, 'MEMORIA DE CÁLCULO'), {size:44, bold:true, color:NAVY, underline:{}})]}));
-  K.push(new Paragraph({alignment:AlignmentType.CENTER, spacing:{after:600}, children:runs(mcmV(Pp.proyecto), {size:32, color:BLUE, underline:{}})}));
-  K.push(table(null, [['Mandante', mcmV(Pp.mandante)], ['Proyecto', mcmV(Pp.proyecto)], ['Código', mcmV(Pp.codigo, '—')], ['Ubicación', mcmV(Pp.ubicacion, '—')], ['Elaboró', mcmV(Pp.elaboro, '—')], ['Revisó', mcmV(Pp.reviso, '—')]], [2700, 7220], ['l','l'], {size:21, key:true}));
-  K.push(new Paragraph({spacing:{after:480}, children:[]}));
-  K.push(table(['Rev.', 'Fecha', 'Descripción', 'Elaboró', 'Revisó'], [[Pp.rev, Pp.fecha, Pp.descRev, Pp.elaboro, Pp.reviso]], [900, 1500, 3300, 2200, 2020], ['c','c','l','l','l']));
-  K.push(new Paragraph({children:[new PageBreak()]}));
-  K.push(new Paragraph({spacing:{after:200}, children:[run('ÍNDICE', {size:30, bold:true, color:NAVY})]}));
-  K.push(new TableOfContents('Índice', {hyperlink:true, headingStyleRange:'1-2'}));
-  K.push(new Paragraph({children:[new PageBreak()]}));
-  for (const b of firmaIngBloques(Bx || mcmBuild(S))) {
+    children:[run(MPG_PIE, {size:16, bold:true, color:NAVY}), new TextRun({children:['\tPágina ', PageNumber.CURRENT, ' de ', PageNumber.TOTAL_PAGES], font:FONT, size:16, color:GREY})]})]});
+  const K = [], POR = DD.portada || {}, subs = mpgSubs(Pp);
+  // portada (memoria modelo de ING): cliente, título y subtítulos subrayados, imagen del modelo y tabla de antecedentes
+  if (POR.logo && POR.logo.src) { const lw = POR.logo.w || 568, lh = POR.logo.h || 67, k = Math.min(568 / lw, 67 / lh, 1); K.push(new Paragraph({alignment:AlignmentType.CENTER, spacing:{after:400}, children:[imgRun(POR.logo, lw * k, lh * k)]})); K.push(new Paragraph({spacing:{after:400}, children:[]})); }
+  else if (String(Pp.mandante || '').trim()) { K.push(new Paragraph({alignment:AlignmentType.CENTER, spacing:{after:400}, children:[run(Pp.mandante, {size:40, bold:true})]})); K.push(new Paragraph({spacing:{after:400}, children:[]})); }
+  K.push(new Paragraph({alignment:AlignmentType.CENTER, spacing:{after:160}, children:[run(mcmV(Pp.titulo, 'MEMORIA DE CÁLCULO'), {size:44, bold:true, color:NAVY, underline:{}})]}));
+  subs.forEach((t, i) => K.push(new Paragraph({alignment:AlignmentType.CENTER, spacing:{after:i === subs.length - 1 ? 360 : 80}, children:runs(t, {size:32, color:BLUE, underline:{}})})));
+  if (POR.img && POR.img.src && R && R.cov) K.push(new Paragraph({alignment:AlignmentType.CENTER, keepNext:true, spacing:{before:80, after:120}, children:[imgRun(POR.img, R.cov.w, R.cov.h)]}));
+  K.push(table(['Antecedente', 'Detalle'], mpgAntecedentes(Pp), [2600, 7320], ['l','l'], {size:20, key:true, keyFill:false}));
+  const ixT = new Paragraph({spacing:{after:200, before:DD.indicePortada ? 400 : 0}, children:[run('ÍNDICE', {size:30, bold:true, color:NAVY})]});
+  const ixC = new TableOfContents('Índice', {hyperlink:true, headingStyleRange:'1-2', cachedEntries:R && R.toc && R.toc.length ? R.toc.map(e => ({title:e.title, level:e.level, page:e.page})) : undefined});
+  if (DD.indicePortada) K.push(ixT, ixC); else K.push(new Paragraph({children:[new PageBreak()]}), ixT, ixC);
+  // el cuerpo parte en hoja nueva con pageBreakBefore (un párrafo de salto suelto puede caer a la hoja siguiente y dejar una en blanco)
+  const BB = firmaIngBloques(B0), pbb0 = BB.length && (BB[0].t === 'h1' || BB[0].t === 'ha');
+  if (!pbb0) K.push(new Paragraph({spacing:{before:0, after:0}, children:[new PageBreak()]}));
+  for (const b of BB) {
     if (b.t === 'firma') { K.push(...firmaIngDocx(d, FONT)); continue; }
-    if (b.t === 'h1' || b.t === 'ha') K.push(new Paragraph({heading:HeadingLevel.HEADING_1, keepNext:true, spacing:{before:280, after:140}, children:[run((b.num ? b.num + ' ' : '') + b.text, {size:30, bold:true, color:NAVY})]}));
+    if (b.t === 'h1' || b.t === 'ha') K.push(new Paragraph({heading:HeadingLevel.HEADING_1, pageBreakBefore:pbb0 && b === BB[0], keepNext:true, spacing:{before:280, after:140}, children:[run((b.num ? b.num + ' ' : '') + b.text, {size:30, bold:true, color:NAVY})]}));
     else if (b.t === 'h2') K.push(new Paragraph({heading:HeadingLevel.HEADING_2, keepNext:true, spacing:{before:200, after:100}, children:[run(b.num + ' ' + b.text, {size:26, bold:true, color:BLUE})]}));
     else if (b.t === 'h3') K.push(new Paragraph({heading:HeadingLevel.HEADING_3, keepNext:true, spacing:{before:160, after:80}, children:[run(b.num + ' ' + b.text, {size:24, bold:true, color:BLUE})]}));
     else if (b.t === 'pb2') K.push(P(b.text, {bold:true, keepNext:true, before:120}));
@@ -48765,19 +48773,21 @@ async function mcmDocx(S, Bx) {
     else if (b.t === 'ul') b.items.forEach(x => K.push(P(x, {numbering:{reference:'vinetas', level:0}, after:60})));
     else if (b.t === 'table') { K.push(table(b.head, b.rows, b.widths, b.align)); K.push(cap(b.cap)); }
     else if (b.t === 'fig' && b.src) {
-      const wmax = 661 * (b.ancho || 100) / 100; let w = wmax, h = b.h && b.w ? w * b.h / b.w : w * 0.6; if (h > 760) { w = w * 760 / h; h = 760; }
-      K.push(new Paragraph({alignment:AlignmentType.CENTER, spacing:{before:80, after:40}, keepNext:true, children:[new ImageRun({type:/^data:image\/png/.test(b.src) ? 'png' : 'jpg', data:mcmB64(b.src), transformation:{width:Math.round(w), height:Math.round(h)}})]}));
+      const z = mpgFigTam(b, b.maxH);
+      K.push(new Paragraph({alignment:AlignmentType.CENTER, spacing:{before:80, after:40}, keepNext:true, children:[new ImageRun({type:/^data:image\/png/.test(b.src) ? 'png' : 'jpg', data:mcmB64(b.src), transformation:{width:z.w, height:z.h}})]}));
       K.push(cap(b.cap));
     } else if (b.t === 'blank' || b.t === 'fig') {
       K.push(new Table({width:{size:W, type:WidthType.DXA}, columnWidths:[W], layout:TableLayoutType.FIXED, rows:[new TableRow({height:{value:Math.round((+b.hcm || 8) * 567), rule:HeightRule.EXACT}, children:[new TableCell({width:{size:W, type:WidthType.DXA}, verticalAlign:VerticalAlign.CENTER, borders:{top:{style:BorderStyle.DASHED, size:6, color:'8A8A8A'}, bottom:{style:BorderStyle.DASHED, size:6, color:'8A8A8A'}, left:{style:BorderStyle.DASHED, size:6, color:'8A8A8A'}, right:{style:BorderStyle.DASHED, size:6, color:'8A8A8A'}}, children:[new Paragraph({alignment:AlignmentType.CENTER, children:[run('Espacio para dibujo', {size:18, color:'9A9A9A'})]})]})]})]}));
       K.push(cap(b.cap));
     } else if (b.t === 'pb') K.push(new Paragraph({children:[new PageBreak()]}));
   }
-  const doc = new Document({creator:'ING Estructural', title:mcmV(Pp.titulo, 'Memoria de cálculo') + ' — ' + mcmV(Pp.proyecto, ''), features:{updateFields:true},
+  const doc = new Document({creator:'ING Estructural', title:mcmV(Pp.titulo, 'Memoria de cálculo') + ' — ' + mcmV(Pp.proyecto, '') + (Pp.codigo ? ' (' + Pp.codigo + ')' : ''), subject:Pp.codigo || '', features:{updateFields:true},
     styles:{default:{document:{run:{font:FONT, size:24}}}, paragraphStyles:[
       {id:'Heading1', name:'Heading 1', basedOn:'Normal', next:'Normal', quickFormat:true, run:{font:FONT, size:30, bold:true, color:NAVY}, paragraph:{spacing:{before:280, after:140}, outlineLevel:0}},
       {id:'Heading2', name:'Heading 2', basedOn:'Normal', next:'Normal', quickFormat:true, run:{font:FONT, size:26, bold:true, color:BLUE}, paragraph:{spacing:{before:200, after:100}, outlineLevel:1}},
-      {id:'Heading3', name:'Heading 3', basedOn:'Normal', next:'Normal', quickFormat:true, run:{font:FONT, size:24, bold:true, color:BLUE}, paragraph:{spacing:{before:160, after:80}, outlineLevel:2}}]},
+      {id:'Heading3', name:'Heading 3', basedOn:'Normal', next:'Normal', quickFormat:true, run:{font:FONT, size:24, bold:true, color:BLUE}, paragraph:{spacing:{before:160, after:80}, outlineLevel:2}},
+      {id:'TOC1', name:'toc 1', basedOn:'Normal', next:'Normal', run:{font:FONT, size:22, bold:true, color:NAVY}, paragraph:{spacing:{before:60, after:80}, tabStops:[{type:TabStopType.RIGHT, position:W, leader:'dot'}]}},
+      {id:'TOC2', name:'toc 2', basedOn:'Normal', next:'Normal', run:{font:FONT, size:21, color:'000000'}, paragraph:{spacing:{after:40}, indent:{left:400}, tabStops:[{type:TabStopType.RIGHT, position:W, leader:'dot'}]}}]},
     numbering:{config:[{reference:'vinetas', levels:[{level:0, format:LevelFormat.BULLET, text:'•', alignment:AlignmentType.LEFT, style:{paragraph:{indent:{left:500, hanging:280}}}}]}]},
     sections:[{properties:{page:{size:{width:12240, height:15840}, margin:{top:2269, bottom:1418, left:902, right:1418, header:227, footer:227}}}, headers:{default:header}, footers:{default:footer}, children:K}]});
   return Packer.toBlob(doc);
@@ -49433,7 +49443,8 @@ function mvsAnexoHtml(C) {
 /* ---------- interfaz ---------- */
 function mvsBarraTipo(container, tipo) {
   const bar = document.createElement('div'); bar.className = 'mvs-tipo';
-  bar.innerHTML = `<span>Tipo de memoria:</span><button type="button" class="mcm-tog${tipo === 'general' ? ' on' : ''}" data-tipo="general">Estructura completa (memoria general)</button><button type="button" class="mcm-tog${tipo === 'simple' ? ' on' : ''}" data-tipo="simple">Verificación individual (desde una planilla)</button>`;
+  const T = [['general', 'Memoria general (estructura completa)'], ['ram', 'Memoria con archivo RAM'], ['express', 'Memoria express (2–3 hojas)'], ['simple', 'Verificación individual (desde una planilla)']];
+  bar.innerHTML = '<span>Tipo de memoria:</span>' + T.map(([k, t]) => `<button type="button" class="mcm-tog${tipo === k ? ' on' : ''}" data-tipo="${k}">${t}</button>`).join('');
   bar.addEventListener('click', e => { const b = e.target.closest('[data-tipo]'); if (!b || b.dataset.tipo === tipo) return; try { localStorage.setItem(MVS_TIPO, b.dataset.tipo); } catch (er) {} renderMemorias(container); });
   return bar;
 }
@@ -49498,10 +49509,943 @@ function renderMemoriaSimple(container) {
     finally { b.disabled = false; b.textContent = t0; }
   });
 }
+/* =========================================================================
+   MEMORIA EN HOJAS (formato de la memoria modelo de ING, 16-11-2026)
+   Arma la memoria en hojas carta iguales a las del Word (márgenes 2269/1418/902/1418 twips, Arial 12
+   justificado, encabezado con logo y bloque derecho, pie «ING ESTRUCTURAL … Página X de Y»): la misma
+   hoja sirve para la vista previa, la impresión / PDF y para saber en qué página queda cada capítulo,
+   con lo que se escribe el índice (y se entrega al Word como tabla de contenido ya llena).
+   D = {proy:{titulo, sub1, sub2, proyecto, mandante, codigo, ubicacion, documento, software, fecha, rev,
+             elaboro, reviso}, portada:{img:{src,w,h}, logo:{src,w,h}}}
+   o = {indicePortada}: el índice va en la portada, bajo la tabla de antecedentes (memoria express).
+   ========================================================================= */
+const MPG = {W:816, H:1056, T:151, B:95, L:60, R:95};     // carta a 96 ppp; márgenes de la hoja ING
+MPG.CW = MPG.W - MPG.L - MPG.R; MPG.CH = MPG.H - MPG.T - MPG.B;
+const MPG_PIE = 'ING ESTRUCTURAL — Proyectos Civiles e Industriales';
+const MPG_CSS = `
+.mpg-doc{font-family:Arial,Helvetica,sans-serif;color:#111;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.mpg-page{position:relative;width:${MPG.W}px;height:${MPG.H}px;background:#fff;box-sizing:border-box;overflow:hidden;margin:0 auto 16px;box-shadow:0 2px 10px rgba(0,0,0,.18);text-align:left}
+.mpg-hd{position:absolute;left:${MPG.L}px;width:${MPG.CW}px;top:15px;display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1.33px solid #1F3864;padding-bottom:4px}
+.mpg-hd img{width:288px;height:auto;display:block}
+.mpg-hd div{text-align:right;font-size:8pt;line-height:1.25;color:#595959;max-width:360px} .mpg-hd div b{color:#1F3864;font-size:9pt}
+.mpg-ft{position:absolute;left:${MPG.L}px;width:${MPG.CW}px;bottom:15px;border-top:1px solid #1F3864;padding-top:5px;display:flex;justify-content:space-between;font-size:8pt;color:#595959}
+.mpg-ft b{color:#1F3864}
+.mpg-bd{position:absolute;left:${MPG.L}px;top:${MPG.T}px;width:${MPG.CW}px;height:${MPG.CH}px;overflow:hidden;font-size:12pt;line-height:1.15}
+.mpg-bd > :first-child{margin-top:0 !important}
+.mpg-bd .mp-p{text-align:justify;margin:0 0 8px} .mpg-bd .mp-p.mpg-c1{text-align-last:justify;margin-bottom:0}
+.mpg-bd .mp-h1{font-size:15pt;color:#1F3864;margin:18px 0 9px;font-weight:700;line-height:1.15}
+.mpg-bd .mp-h2{font-size:13pt;color:#2E5395;margin:13px 0 7px;font-weight:700;line-height:1.15}
+.mpg-bd .mp-h3{font-family:inherit;font-size:12pt;color:#2E5395;margin:11px 0 5px;font-weight:700;line-height:1.15;background:none;padding:0;border:0;border-radius:0;text-transform:none;letter-spacing:normal;box-shadow:none;position:static;text-shadow:none}
+.mpg-bd .mp-cb{font-weight:700;margin-top:8px}
+.mpg-bd .mp-ul{margin:0 0 4px;padding:0 0 0 33px} .mpg-bd .mp-ul li{text-align:justify;padding-left:4px}
+.mpg-bd .mp-t{width:100%;border-collapse:collapse;table-layout:fixed;font-size:8.5pt;line-height:1.2;margin:4px 0 0}
+.mpg-bd .mp-t th{background:#1F3864;color:#fff;padding:3px 5px;border:1px solid #a6a6a6;text-align:center;font-weight:700}
+.mpg-bd .mp-t td{border:1px solid #a6a6a6;padding:3px 5px;vertical-align:middle;overflow-wrap:anywhere} .mpg-bd .mp-t tr.z td{background:#F2F5FA}
+.mpg-bd .mp-t td.c{text-align:center} .mpg-bd .mp-t td.r{text-align:right} .mpg-bd .mp-t td.k{font-weight:700} .mpg-bd .mp-t td.ok{color:#15803d;font-weight:700} .mpg-bd .mp-t td.bad{color:#b91c1c;font-weight:700}
+.mpg-bd .mp-cap{text-align:center;font-size:9.5pt;color:#595959;font-style:italic;margin:3px 0 13px;line-height:1.2} .mpg-bd .mp-cap b{color:#1F3864;font-style:normal}
+.mpg-bd .mpg-fig{text-align:center;margin-top:5px} .mpg-bd .mpg-fig img{display:inline-block}
+.mpg-bd .mp-blank{border:1px dashed #8a8a8a;display:flex;align-items:center;justify-content:center;color:#9a9a9a;font-size:10pt;margin-top:5px}
+.mpg-bd mark{background:#fff3b0}
+.mpg-cli{text-align:center;margin:0 0 53px} .mpg-cli img{max-width:568px;max-height:67px} .mpg-cli.t{font-size:20pt;font-weight:700;color:#111}
+.mpg-tit{text-align:center;font-size:22pt;font-weight:700;color:#1F3864;text-decoration:underline;margin:0 0 11px;line-height:1.15}
+.mpg-st{text-align:center;font-size:16pt;color:#2E5395;text-decoration:underline;margin:0 0 5px;line-height:1.15} .mpg-st.u{margin-bottom:24px}
+.mpg-cimg{text-align:center;margin:5px 0 8px} .mpg-cimg img{display:inline-block}
+.mpg-bd .mpg-ant{font-size:10pt} .mpg-bd .mpg-ant td.k{width:26.2%}
+.mpg-ixt{font-size:15pt;font-weight:700;color:#1F3864;margin:0 0 13px}
+.mpg-ix{display:flex;align-items:baseline;line-height:1.2}
+.mpg-ix.l1{font-size:11pt;margin:4px 0 5px} .mpg-ix.l1 .t{font-weight:700;color:#1F3864}
+.mpg-ix.l2{font-size:10.5pt;margin:0 0 3px;padding-left:27px}
+.mpg-ix .d{flex:1;border-bottom:1.5px dotted #555;margin:0 3px 3px;min-width:12px} .mpg-ix .n{min-width:14px;text-align:right}
+.mpg-portada .mpg-ixt{margin-top:20px}
+.mpg-prev{background:#d9dfe6;padding:14px 10px;border-radius:6px;max-height:78vh;overflow:auto}
+.mpg-prev .mpg-z{transform-origin:top left}
+#mcmPrint.mpg-doc{display:none}
+@page memPag{size:letter;margin:0; @bottom-left{content:none} @bottom-center{content:none} @bottom-right{content:none} @top-left{content:none} @top-right{content:none}}
+@media print{
+  html.mem-pag body{page:memPag;margin:0 !important;padding:0 !important;background:#fff}
+  html.mem-pag body > *:not(#mcmPrint){display:none !important}
+  html.mem-pag #mcmPrint.mpg-doc{display:block;page:memPag}
+  html.mem-pag .mpg-page{page:memPag}
+  html.mem-pag .mpg-page{box-shadow:none;margin:0;break-after:page;page-break-after:always}
+  html.mem-pag .mpg-page:last-child{break-after:auto;page-break-after:auto}
+  html.mem-pag .mpg-bd mark{background:none}
+}`;
+function mpgCss() { if (!document.getElementById('mpgCss')) { const s = document.createElement('style'); s.id = 'mpgCss'; s.textContent = MPG_CSS; document.head.appendChild(s); } }
+const mpgE = t => esc(t).replace(/\[completar[^\]]*\]/g, m => `<mark>${m}</mark>`);
+// texto en mayúsculas → oración (para la fila «Documento» y el encabezado); lo demás queda igual
+const mpgOracion = t => { t = String(t || '').trim(); return t && t === t.toUpperCase() ? t.charAt(0) + t.slice(1).toLowerCase() : t; };
+function mpgSubs(P) {
+  const s1 = String(P.sub1 || '').trim(), s2 = String(P.sub2 != null && String(P.sub2).trim() ? P.sub2 : (P.proyecto || '')).trim();
+  return [s1, s2].filter(Boolean);
+}
+function mpgAntecedentes(P) {
+  const doc = String(P.documento || '').trim() || [mpgOracion(mcmV(P.titulo, 'MEMORIA DE CÁLCULO')), mpgOracion(P.sub1)].filter(Boolean).join(' — ');
+  const R = [['Cliente', mcmV(P.mandante)], ['Proyecto', mcmV(P.proyecto)], ['Código POWER', mcmV(P.codigo, '—')], ['Documento', doc]];
+  if (String(P.ubicacion || '').trim()) R.push(['Ubicación', P.ubicacion]);
+  if (String(P.software || '').trim()) R.push(['Software', P.software]);
+  R.push(['Revisión / Fecha', `Rev. ${mcmV(P.rev, '0')} — ${mcmV(P.fecha, '')}`]);
+  R.push(['Elaboró', mcmV(P.elaboro, '—')]);
+  if (String(P.reviso || '').trim()) R.push(['Revisó', P.reviso]);
+  return R;
+}
+function mpgEncabezado(P) {
+  const l2 = [mpgOracion(P.sub1), P.proyecto].filter(x => x && String(x).trim()).join(' — ');
+  const l3 = [P.mandante, P.codigo].filter(x => x && String(x).trim()).concat(['Rev. ' + mcmV(P.rev, '0'), mcmV(P.fecha, '')]).join(' · ');
+  return [mcmV(P.titulo, 'MEMORIA DE CÁLCULO'), l2, l3];
+}
+function mpgHeaderHtml(P) {
+  const L = mpgEncabezado(P);
+  return `<div class="mpg-hd"><img src="${mcmLogo()}" alt="ING Estructural"><div><b>${esc(L[0])}</b><br>${esc(L[1])}<br>${esc(L[2])}</div></div>`;
+}
+// tamaño de una figura dentro del cuerpo (px): ancho pedido, alto proporcional y tope para que entre en una hoja con su leyenda
+function mpgFigTam(b, maxH) {
+  const wmax = MPG.CW * (b.ancho || 100) / 100, r = b.w && b.h ? b.h / b.w : 0.6;
+  let w = wmax, h = w * r; const top = maxH || (MPG.CH - 70);
+  if (h > top) { h = top; w = h / r; }
+  return {w:Math.round(w), h:Math.round(h)};
+}
+function mpgTablaPartes(b) {
+  const sum = b.widths.reduce((a, x) => a + x, 0);
+  const cols = `<colgroup>${b.widths.map(w => `<col style="width:${(100 * w / sum).toFixed(2)}%">`).join('')}</colgroup>`;
+  const th = b.head ? `<thead><tr>${b.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>` : '';
+  const rows = b.rows.map((r, k) => `<tr${k % 2 && !b.key ? ' class="z"' : ''}>${r.map((x, i) => { const al = (b.align || [])[i];
+    return `<td class="${al === 'c' ? 'c' : al === 'r' ? 'r' : ''}${b.key && i === 0 ? ' k' : ''}${x === 'NO CUMPLE' ? ' bad' : x === 'CUMPLE' ? ' ok' : ''}">${mpgE(x)}</td>`; }).join('')}</tr>`);
+  const cap = b.cap ? `<div class="mp-cap"><b>${esc(b.cap.replace(/:.*/, ':'))}</b> ${esc(b.cap.replace(/^[^:]*:\s*/, ''))}</div>` : '';
+  return {cols, th, rows, cap, cls:b.cls || ''};
+}
+const mpgCapHtml = cap => `<div class="mp-cap"><b>${esc(String(cap).replace(/:.*/, ':'))}</b> ${esc(String(cap).replace(/^[^:]*:\s*/, ''))}</div>`;
+
+async function mpgPaginar(D, B0, o = {}) {
+  mpgCss();
+  const P = D.proy || {}, por = D.portada || {};
+  const tam = x => (!x || !x.src || (x.w && x.h)) ? null : new Promise(r => { const im = new Image(); im.onload = () => { x.w = im.naturalWidth; x.h = im.naturalHeight; r(); }; im.onerror = r; im.src = x.src; });
+  const B = firmaIngBloques(B0).map(b => Object.assign({}, b));
+  const img = por.img && por.img.src ? Object.assign({}, por.img) : null, logo = por.logo && por.logo.src ? Object.assign({}, por.logo) : null;
+  await Promise.all(B.filter(b => b.t === 'fig' && b.src).map(tam).concat([tam(img), tam(logo)]).filter(Boolean));
+  const host = document.createElement('div'); host.className = 'mpg-doc';
+  host.style.cssText = 'position:fixed;left:-30000px;top:0;visibility:hidden;pointer-events:none';
+  document.body.appendChild(host);
+  const hd = mpgHeaderHtml(P), pages = [];
+  let bd = null, grupos = [];
+  const nueva = () => {
+    const pg = document.createElement('div'); pg.className = 'mpg-page';
+    pg.innerHTML = hd + `<div class="mpg-bd"></div><div class="mpg-ft"><b>${MPG_PIE}</b><span class="mpg-pg"></span></div>`;
+    host.appendChild(pg); pages.push(pg); bd = pg.querySelector('.mpg-bd'); grupos = [];
+  };
+  const cabe = () => bd.scrollHeight <= bd.clientHeight + 1;
+  const nodos = html => { const t = document.createElement('div'); t.innerHTML = html; return [...t.children]; };
+  const poner = (ns, kwn) => { ns.forEach(n => bd.appendChild(n)); grupos.push({ns, kwn}); };
+  const sacar = () => { const g = grupos.pop(); g.ns.forEach(n => n.remove()); return g; };
+  // hoja nueva llevándose los títulos que quedaron al pie de la anterior
+  const saltar = () => { const arr = []; while (grupos.length > 1 && grupos[grupos.length - 1].kwn) arr.unshift(sacar()); nueva(); arr.forEach(g => poner(g.ns, g.kwn)); };
+  const colocar = (html, kwn) => {
+    const ns = nodos(html); poner(ns, kwn); if (cabe()) return ns;
+    sacar(); if (grupos.length) saltar(); poner(ns, kwn); return ns;
+  };
+  const parrafo = (text, extra) => {
+    const html = t => `<p class="mp-p${extra || ''}">${mpgE(t)}</p>`;
+    const ns = nodos(html(text)); poner(ns, false); if (cabe()) return;
+    const p = ns[0], W = String(text).split(' ');
+    let lo = 0, hi = W.length - 1;
+    while (lo < hi) { const k = Math.ceil((lo + hi) / 2); p.innerHTML = mpgE(W.slice(0, k).join(' ')); if (cabe()) lo = k; else hi = k - 1; }
+    const lh = parseFloat(getComputedStyle(p).lineHeight) || 21;
+    p.innerHTML = mpgE(W.slice(0, lo).join(' '));
+    if (lo < 4 || p.offsetHeight < lh * 1.9 || W.length - lo < 6) { sacar(); if (grupos.length) saltar(); poner(nodos(html(text)), false); return; }
+    p.classList.add('mpg-c1'); grupos[grupos.length - 1].kwn = false;
+    nueva(); parrafo(W.slice(lo).join(' '), extra);
+  };
+  const tabla = b => {
+    const T = mpgTablaPartes(b), n = T.rows.length;
+    const armar = (i, j) => `<div class="mpg-tw"><table class="mp-t ${T.cls}">${T.cols}${T.th}<tbody>${T.rows.slice(i, j).join('')}</tbody></table>${j === n ? T.cap : ''}</div>`;
+    const prueba = (i, j) => { const ns = nodos(armar(i, j)); poner(ns, false); const ok = cabe(); sacar(); return ok; };
+    if (!n) { colocar(armar(0, 0), false); return; }
+    let i = 0;
+    while (i < n) {
+      if (!prueba(i, i + 1)) { if (grupos.length) { saltar(); continue; } poner(nodos(armar(i, i + 1)), false); i++; if (i < n) nueva(); continue; }
+      let lo = i + 1, hi = n;
+      while (lo < hi) { const m = Math.ceil((lo + hi) / 2); if (prueba(i, m)) lo = m; else hi = m - 1; }
+      if (lo < n && lo - i < 2 && grupos.length) { saltar(); continue; }
+      poner(nodos(armar(i, lo)), false); i = lo;
+      if (i < n) nueva();
+    }
+  };
+  const toc = [];
+  const tocEnt = (b, kwnHtml) => { const k = toc.length; toc.push({title:(b.num ? b.num + ' ' : '') + b.text, level:b.t === 'h2' ? 2 : 1, page:0}); return kwnHtml.replace(/^<(h\d)/, `<$1 data-toc="${k}"`); };
+  const ixEnt = B.filter(b => b.t === 'h1' || b.t === 'ha' || b.t === 'h2');
+  const ixHtml = (b, k) => `<div class="mpg-ix ${b.t === 'h2' ? 'l2' : 'l1'}"><span class="t">${esc((b.num ? b.num + ' ' : '') + b.text)}</span><span class="d"></span><span class="n" data-pn="${k}"></span></div>`;
+
+  // ---- portada ----
+  nueva(); pages[0].classList.add('mpg-portada');
+  const subs = mpgSubs(P);
+  const cab = (logo ? `<div class="mpg-cli"><img src="${logo.src}" alt=""></div>` : (String(P.mandante || '').trim() ? `<div class="mpg-cli t">${esc(P.mandante)}</div>` : ''))
+    + `<div class="mpg-tit">${esc(mcmV(P.titulo, 'MEMORIA DE CÁLCULO'))}</div>` + subs.map((s, i) => `<div class="mpg-st${i === subs.length - 1 ? ' u' : ''}">${mpgE(s)}</div>`).join('');
+  const ant = mpgTablaPartes({head:['Antecedente', 'Detalle'], rows:mpgAntecedentes(P), widths:[2600, 7320], align:['l', 'l'], key:true, cls:'mpg-ant'});
+  const antHtml = `<table class="mp-t mpg-ant">${ant.cols}${ant.th}<tbody>${ant.rows.join('')}</tbody></table>`;
+  let covH = 0;
+  const ixTodo = '<div class="mpg-ixt">ÍNDICE</div>' + ixEnt.map((b, k) => ixHtml(b, k)).join('');
+  const imgHtml = h => `<div class="mpg-cimg"><img src="${img.src}" style="width:${Math.round(h * img.w / img.h)}px;height:${Math.round(h)}px" alt=""></div>`;
+  const portada = (h, ix) => { while (grupos.length) sacar(); poner(nodos(cab + (h ? imgHtml(h) : '') + antHtml + (ix ? ixTodo : '')), false); return cabe(); };
+  // la imagen se achica hasta que la portada (con el índice, si va en ella) quepa en la hoja
+  if (img) {
+    let h = Math.min(380, Math.min(470, MPG.CW) * img.h / img.w);
+    while (h >= 60) { if (portada(h, o.indicePortada)) { covH = Math.round(h); break; } h *= 0.9; }
+  }
+  const ixEnPortada = o.indicePortada && (covH ? true : portada(0, true));
+  if (!ixEnPortada) {
+    if (!covH) portada(0, false);
+    nueva();
+    colocar('<div class="mpg-ixt">ÍNDICE</div>', true);
+    ixEnt.forEach((b, k) => colocar(ixHtml(b, k), false));
+  }
+  const covW = covH && img ? Math.round(covH * img.w / img.h) : 0;
+  // ---- cuerpo ----
+  nueva();
+  for (const b of B) {
+    if (b.t === 'h1') colocar(tocEnt(b, `<h1 class="mp-h1">${esc(b.num + ' ' + b.text)}</h1>`), true);
+    else if (b.t === 'ha') colocar(tocEnt(b, `<h1 class="mp-h1">${esc(b.text)}</h1>`), true);
+    else if (b.t === 'h2') colocar(tocEnt(b, `<h2 class="mp-h2">${esc(b.num + ' ' + b.text)}</h2>`), true);
+    else if (b.t === 'h3') colocar(`<h3 class="mp-h3">${esc(b.num + ' ' + b.text)}</h3>`, true);
+    else if (b.t === 'pb2') colocar(`<p class="mp-p mp-cb">${esc(b.text)}</p>`, true);
+    else if (b.t === 'p') parrafo(b.text);
+    else if (b.t === 'ul') b.items.forEach(x => colocar(`<ul class="mp-ul"><li>${mpgE(x)}</li></ul>`, false));
+    else if (b.t === 'table') tabla(b);
+    else if (b.t === 'fig' && b.src) { const z = mpgFigTam(b, b.maxH); colocar(`<div class="mpg-fw"><div class="mpg-fig"><img src="${b.src}" style="width:${z.w}px;height:${z.h}px" alt=""></div>${mpgCapHtml(b.cap)}</div>`, false); }
+    else if (b.t === 'blank' || b.t === 'fig') colocar(`<div class="mpg-fw"><div class="mp-blank" style="height:${Math.round((+b.hcm || 8) * 37.8)}px">${b.t === 'blank' ? 'Espacio para dibujo' : 'Figura sin imagen'}</div>${mpgCapHtml(b.cap)}</div>`, false);
+    else if (b.t === 'firma') colocar(firmaIngHtml(), false);
+    else if (b.t === 'pb') { if (grupos.length) nueva(); }
+    else if (b.t === 'raw') colocar(b.html, !!b.kwn);
+  }
+  if (!grupos.length && pages.length > 1) { pages.pop().remove(); }
+  // números de página del índice y pie
+  host.querySelectorAll('[data-toc]').forEach(h => { const pg = h.closest('.mpg-page'); toc[+h.dataset.toc].page = pages.indexOf(pg) + 1; });
+  host.querySelectorAll('[data-pn]').forEach(s => { const e = toc[+s.dataset.pn]; s.textContent = e && e.page ? e.page : ''; });
+  pages.forEach((pg, i) => { pg.querySelector('.mpg-pg').textContent = `Página ${i + 1} de ${pages.length}`; });
+  const html = pages.map(p => p.outerHTML).join('');
+  host.remove();
+  return {html, toc, n:pages.length, cov:covH ? {w:covW, h:covH} : null};
+}
+// vista previa: hojas reducidas al ancho del recuadro
+function mpgMostrar(wrap, html) {
+  if (!wrap) return;
+  mpgCss();
+  wrap.classList.add('mpg-prev');
+  const w = Math.max(240, (wrap.clientWidth || 840) - 22), z = Math.min(1, w / MPG.W);
+  wrap.innerHTML = `<div class="mpg-doc mpg-z" style="zoom:${z.toFixed(3)}">${html}</div>`;
+}
+function mpgImprimir(html) {
+  mpgCss();
+  let host = document.getElementById('mcmPrint'); if (host) host.remove();
+  host = document.createElement('div'); host.id = 'mcmPrint'; host.className = 'mpg-doc'; host.innerHTML = html;
+  document.body.appendChild(host);
+  document.documentElement.classList.add('mem-pag');
+  // hoja carta sin márgenes solo mientras se imprime la memoria (no altera la impresión de las planillas)
+  const pz = document.createElement('style'); pz.textContent = '@page{size:letter;margin:0;@bottom-left{content:none;border:0}@bottom-center{content:none;border:0}@bottom-right{content:none;border:0}@top-left{content:none}@top-right{content:none}}'; document.body.appendChild(pz);
+  const off = () => { document.documentElement.classList.remove('mem-pag'); host.remove(); pz.remove(); window.removeEventListener('afterprint', off); };
+  window.addEventListener('afterprint', off);
+  setTimeout(() => window.print(), 80);
+}
+// PDF carta de las hojas ya armadas (cada hoja es exactamente una página)
+async function mpgAPdf(html, liviano) {
+  mpgCss();
+  const lib = await pdfCargarLib();
+  const oc = document.createElement('div'); oc.style.cssText = `position:fixed;left:-30000px;top:0;width:${MPG.W}px;z-index:-1`;
+  oc.className = 'mpg-doc'; oc.innerHTML = html;
+  oc.querySelectorAll('.mpg-page').forEach(p => { p.style.boxShadow = 'none'; p.style.margin = '0'; });
+  oc.querySelectorAll('mark').forEach(m => m.style.background = 'none');
+  document.body.appendChild(oc);
+  try {
+    const pages = [...oc.querySelectorAll('.mpg-page')];
+    const opt = {margin:0, image:{type:'jpeg', quality:liviano ? 0.8 : 0.95}, html2canvas:{scale:liviano ? 1.5 : 2, backgroundColor:'#ffffff', scrollX:0, scrollY:0, logging:false, width:MPG.W, height:MPG.H, windowWidth:MPG.W, onclone:pdfLimpiarColores},
+      jsPDF:{unit:'in', format:'letter', orientation:'portrait'}, pagebreak:{mode:[]}};
+    let w = lib().set(opt).from(pages[0]).toPdf();
+    for (const pg of pages.slice(1)) w = w.get('pdf').then(pdf => { pdf.addPage(); }).from(pg).toContainer().toCanvas().toPdf();
+    const pdf = await w.get('pdf');
+    return pdf.output('blob');
+  } finally { oc.remove(); }
+}
+
+// datos de portada/encabezado comunes a los cuatro tipos de memoria (proy compartido en mesaMemoria.v1)
+function mcmDoc(S) {
+  const P = Object.assign({}, S.proy || {});
+  if (P.software == null && S.anal && S.anal.software) P.software = S.anal.software;
+  const por = Object.assign({}, S.portada || {});
+  if (!por.logo && P.logoCli && P.logoCli.src) por.logo = P.logoCli;
+  if (!por.img && Array.isArray(S.figs)) { const f = S.figs.find(x => x.where === 'modelo' && x.src) || S.figs.find(x => x.src); if (f) por.img = {src:f.src, w:f.w, h:f.h}; }
+  return {proy:P, portada:por, indicePortada:!!S.indicePortada};
+}
+/* Barra «Proyecto POWER» del Constructor (todas las memorias): el código del proyecto fijado va a la
+   portada, al encabezado de cada hoja, al nombre de los archivos y a Archivo ING. */
+function mcmPowerBarHtml() {
+  const p = typeof PROYECTO_POWER !== 'undefined' ? PROYECTO_POWER : null;
+  return `<div class="calc-power${p ? '' : ' sin'}" id="mcmPower">` + (p
+    ? `<span class="cp-lbl">Proyecto POWER</span><span class="cp-chip"><b>${esc(p.codigo)}</b>${p.proyecto ? ' · ' + esc(p.proyecto) : ''}${p.mandante ? ' <span class="cp-man">· ' + esc(p.mandante) + '</span>' : ''}</span><button type="button" class="cp-btn" data-cp="elegir">Cambiar</button><button type="button" class="cp-btn" data-cp="soltar" title="Soltar el proyecto de POWER">✕</button>`
+    : `<span class="cp-lbl">Proyecto POWER</span><span class="cp-nada">Memoria sin proyecto: fíjela a un proyecto de POWER para que tome su código, mandante y nombre.</span><button type="button" class="cp-btn cp-main" data-cp="elegir">📁 Fijar proyecto</button>`) + '</div>'
+    + (() => { const L = (mcmLoad().proy || {}).logoCli; return `<div class="mcm-logo-cli" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:-.4rem 0 1rem;font-size:.85rem;color:var(--ink-muted)"><span>Logo del cliente en la portada (opcional; sin logo va el nombre del mandante):</span>`
+      + (L && L.src ? `<img src="${L.src}" alt="" style="height:32px;max-width:200px;object-fit:contain;border:1px solid var(--line,#ccd);border-radius:4px;background:#fff"><button type="button" class="cp-btn" data-logo="quitar">Quitar</button>` : '')
+      + `<button type="button" class="cp-btn" data-logo="elegir">${L && L.src ? 'Cambiar' : 'Elegir imagen…'}</button><input type="file" accept="image/*" class="mcm-logo-in" hidden></div>`; })();
+}
+function mcmPowerBarEventos(container) {
+  const lg = container.querySelector('.mcm-logo-cli');
+  if (lg) {
+    lg.addEventListener('click', e => { const b = e.target.closest('[data-logo]'); if (!b) return;
+      if (b.dataset.logo === 'quitar') { const S0 = mcmLoad(); delete S0.proy.logoCli; mcmSave(S0); renderMemorias(container); }
+      else lg.querySelector('.mcm-logo-in').click(); });
+    lg.querySelector('.mcm-logo-in').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return;
+      mcmImg(f).then(r => { const S0 = mcmLoad(); S0.proy.logoCli = r; mcmSave(S0); renderMemorias(container); }).catch(() => fsToast('No se pudo leer la imagen.')); });
+  }
+  const bar = container.querySelector('#mcmPower'); if (!bar) return;
+  bar.addEventListener('click', e => {
+    const b = e.target.closest('[data-cp]'); if (!b) return;
+    if (b.dataset.cp === 'soltar') { powerFijar(null); renderMemorias(container); }
+    else if (typeof powerSelector === 'function') powerSelector();
+  });
+}
+// guarda un objeto en localStorage; si no cabe, avisa una vez
+function mcmLsGuardar(k, o, aviso) {
+  try { localStorage.setItem(k, JSON.stringify(o)); return true; }
+  catch (e) { if (aviso && !mcmLsGuardar.av) { mcmLsGuardar.av = true; fsToast(aviso); } return false; }
+}
+function mcmLsLeer(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+const mcmNum = (x, d = 2) => (x == null || !isFinite(x)) ? '—' : (Math.abs(x) < 0.5 * Math.pow(10, -d) ? 0 : Number(x)).toLocaleString('es-CL', {minimumFractionDigits:d, maximumFractionDigits:d});
+const mcmNombre = (P, pre) => `${pre}_${mcmSlug(P.codigo || P.proyecto) || 'calculo'}_Rev${mcmSlug(P.rev || '0')}`;
+
+/* =========================================================================
+   MEMORIA EXPRESS (tipo del Constructor, 16-11-2026): 2 a 3 hojas para trabajos chicos.
+   Pide solo lo esencial: descripción, un par de normas, materiales, dibujo del modelo, cargas,
+   resultado y conclusión. El índice va en la portada, bajo la tabla de antecedentes.
+   ========================================================================= */
+const MEX_LS = 'mesaMemExpress.v1';
+function mexDef() {
+  const mat = {}; Object.entries(MCM_MAT).forEach(([k, m]) => { mat[k] = {on:k === 'perf', grado:m.opts[k === 'perf' ? 2 : (k === 'horm' ? 2 : 0)], unidad:m.extra ? m.extra.opts[0] : undefined, uso:''}; });
+  return {v:1, sub1:'', sub2:'', objetivo:null, desc:'', normSel:{nch1537:true, nch3171:true, aisc360:true}, normExtra:'', mat,
+    cargas:[{sym:'D', n:'Peso propio y cargas permanentes', v:''}, {sym:'L', n:'Sobrecarga de uso', v:''}], combos:'',
+    figs:[], res:[{elem:'', sec:'', verif:'', dc:''}], resTxt:'', concl:null, software:''};
+}
+function mexLoad() {
+  const d = mexDef(), s = mcmLsLeer(MEX_LS); if (!s || typeof s !== 'object') return d;
+  const o = Object.assign(d, s); o.mat = Object.assign(mexDef().mat, s.mat || {});
+  Object.keys(o.mat).forEach(k => o.mat[k] = Object.assign(mexDef().mat[k] || {}, o.mat[k]));
+  return o;
+}
+const mexObjetivo = (E, P) => E.objetivo != null ? E.objetivo
+  : `La presente memoria de cálculo resume ${E.sub1 ? 'la ' + mpgOracion(E.sub1).charAt(0).toLowerCase() + mpgOracion(E.sub1).slice(1) : 'el cálculo de la estructura indicada'} del proyecto «${mcmV(P.proyecto)}»${P.mandante ? ', para ' + P.mandante : ''}. Indica las normas aplicadas, los materiales, las cargas consideradas y el resultado de las verificaciones.`;
+const mexConcl = E => E.concl != null ? E.concl : mcmConcl({verif:E.res});
+function mexBuild(E, P) {
+  const B = []; let nT = 0, nF = 0;
+  const tab = (cap, head, rows, widths, align) => B.push({t:'table', cap:`Tabla ${++nT}: ${cap}`, head, rows, widths, align});
+  const par = t => String(t || '').split(/\n\s*\n/).map(x => x.trim()).filter(Boolean).forEach(x => B.push({t:'p', text:x}));
+  const figs = w => E.figs.filter(f => f.where === w && f.src).forEach(f => B.push({t:'fig', src:f.src, w:f.w, h:f.h, ancho:f.ancho || 90, maxH:300, cap:`Figura ${++nF}: ${f.cap || ''}`}));
+  B.push({t:'h1', text:'INTRODUCCIÓN Y OBJETIVO'}); par(mexObjetivo(E, P));
+  B.push({t:'h1', text:'DESCRIPCIÓN'}); par(E.desc || '[completar: descripción breve de la estructura o elemento]');
+  figs('modelo');
+  B.push({t:'h1', text:'NORMAS Y MATERIALES'});
+  B.push({t:'h2', text:'Normas'});
+  const N = MCM_NORMAS.filter(n => E.normSel[n.id]).map(n => n.t).concat(String(E.normExtra || '').split('\n').map(x => x.trim()).filter(Boolean));
+  B.push({t:'ul', items:N.length ? N : ['[completar]']});
+  B.push({t:'h2', text:'Materiales'});
+  const M = Object.entries(MCM_MAT).filter(([k]) => E.mat[k] && E.mat[k].on);
+  if (M.length) tab('Materiales', ['Material', 'Propiedades', 'Uso'], M.map(([k, m]) => [m.nombre(E.mat[k]), m.prop(E.mat[k]), E.mat[k].uso || '']), [2900, 4200, 2820], ['l','l','l']);
+  else B.push({t:'p', text:'[completar: materiales]'});
+  B.push({t:'h1', text:'CARGAS'});
+  const C = E.cargas.filter(c => c.n || c.v);
+  if (C.length) tab('Cargas consideradas', ['Símbolo', 'Carga', 'Valor / criterio'], C.map(c => [c.sym, c.n, c.v || '[completar]']), [1100, 3200, 5620], ['c','l','l']);
+  const cb = String(E.combos || '').split('\n').map(x => x.trim()).filter(Boolean);
+  if (cb.length) { B.push({t:'p', text:'Combinaciones de carga consideradas:'}); B.push({t:'ul', items:cb}); }
+  figs('cargas');
+  B.push({t:'h1', text:'RESULTADOS'});
+  const R = E.res.filter(v => v.elem || v.verif || v.dc);
+  if (R.length) tab('Resultado de las verificaciones', ['Elemento', 'Perfil / sección', 'Verificación', 'D/C', 'Estado'], R.map(v => { const d = parseFloat(String(v.dc).replace(',', '.')); return [v.elem || '', v.sec || '', v.verif || '', isFinite(d) ? mcmNum(d) : '', isFinite(d) ? (d <= 1 ? 'CUMPLE' : 'NO CUMPLE') : '']; }), [2300, 1900, 3320, 900, 1500], ['l','l','l','c','c']);
+  par(E.resTxt);
+  figs('res');
+  B.push({t:'h1', text:'CONCLUSIONES'}); par(mexConcl(E));
+  let n1 = 0, n2 = 0;
+  B.forEach(b => { if (b.t === 'h1') { n1++; n2 = 0; b.num = `${n1}.`; } else if (b.t === 'h2') { n2++; b.num = `${n1}.${n2}`; } });
+  return B;
+}
+function renderMemoriaExpress(container) {
+  const S0 = mcmLoad(), P = S0.proy; let E = mexLoad();
+  const root = document.createElement('div'); root.className = 'mcm-ui'; container.appendChild(root);
+  const doc = () => ({proy:Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO', sub1:E.sub1, sub2:E.sub2, software:E.software}), portada:{img:(E.figs.find(f => f.where === 'modelo' && f.src) || null), logo:P.logoCli || null}, indicePortada:true});
+  const sv = () => mcmLsGuardar(MEX_LS, E, 'Las imágenes son grandes para el autoguardado de la memoria express.');
+  const IP = (k, lab, ph) => `<div class="field"><label>${lab}</label><input type="text" data-p="${k}" value="${esc(P[k] || '')}" placeholder="${esc(ph || '')}"${k === 'codigo' && PROYECTO_POWER ? ' readonly title="Lo fija el proyecto de POWER"' : ''}></div>`;
+  const IE = (k, lab, ph) => `<div class="field"><label>${lab}</label><input type="text" data-e="${k}" value="${esc(E[k] || '')}" placeholder="${esc(ph || '')}"></div>`;
+  const zona = (w, t, s) => `<div class="mcm-drop mcm-drop-s" data-drop="${w}" tabindex="0"><b>${t}</b><span>${s}</span><div class="mcm-thumbs">${E.figs.map((f, i) => f.where === w && f.src ? `<div class="mcm-th"><img src="${f.src}"><input type="text" data-f="${i}" value="${esc(f.cap)}" placeholder="Pie de figura"><button type="button" class="btn-remove" data-fdel="${i}">✕</button></div>` : '').join('')}</div></div>`;
+  function html() {
+    const matRows = Object.entries(MCM_MAT).map(([k, m]) => `<div class="mem-row" style="grid-template-columns:minmax(180px,1.1fr) minmax(150px,1fr) 1.4fr">
+        <label style="display:flex;gap:.4rem;align-items:center"><input type="checkbox" data-m="${k}.on" ${E.mat[k].on ? 'checked' : ''}> ${m.label}</label>
+        <span style="display:grid;gap:.25rem"><select data-m="${k}.grado">${m.opts.map(o => `<option ${o === E.mat[k].grado ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>${m.extra ? `<select data-m="${k}.${m.extra.k}">${m.extra.opts.map(o => `<option ${o === E.mat[k][m.extra.k] ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>` : ''}</span>
+        <input type="text" data-m="${k}.uso" value="${esc(E.mat[k].uso || '')}" placeholder="uso (opcional)"></div>`).join('');
+    const normRows = MCM_NORMAS.map(n => `<label><input type="checkbox" data-n="${n.id}" ${E.normSel[n.id] ? 'checked' : ''}> <span>${esc(n.t)}</span></label>`).join('');
+    const cRows = E.cargas.map((c, i) => `<div class="mem-row" style="grid-template-columns:60px minmax(140px,1fr) 2fr auto"><input type="text" data-c="${i}.sym" value="${esc(c.sym)}" placeholder="Símb."><input type="text" data-c="${i}.n" value="${esc(c.n)}" placeholder="Carga"><input type="text" data-c="${i}.v" value="${esc(c.v)}" placeholder="Valor o criterio (ej. 250 kgf/m², NCh1537)"><button type="button" class="btn-remove" data-cdel="${i}">✕</button></div>`).join('');
+    const rRows = E.res.map((v, i) => `<div class="mem-row" style="grid-template-columns:1.2fr 1fr 1.5fr 70px auto"><input type="text" data-r="${i}.elem" value="${esc(v.elem)}" placeholder="Elemento (ej. Viga V1)"><input type="text" data-r="${i}.sec" value="${esc(v.sec)}" placeholder="Perfil"><input type="text" data-r="${i}.verif" value="${esc(v.verif)}" placeholder="Verificación (ej. Flexión AISC F2)"><input type="text" data-r="${i}.dc" value="${esc(v.dc)}" placeholder="D/C"><button type="button" class="btn-remove" data-rdel="${i}">✕</button></div>`).join('');
+    const blk = (k, t, val, rows) => `<div class="mem-blk"><h4>${t} ${E[k] != null ? `<span class="mem-tag">editado</span><button type="button" class="btn-add" data-ereset="${k}" style="margin:0 0 0 auto;padding:.1rem .5rem">↺ sugerido</button>` : '<small>texto sugerido</small>'}</h4><textarea data-e="${k}" rows="${rows || 3}">${esc(val)}</textarea></div>`;
+    return `<div class="calc-head"><h1>Memoria express</h1><div class="sub">Memoria corta (2 a 3 hojas) para trabajos chicos: normas, materiales, dibujo del modelo, cargas, resultado y conclusión, con el formato de las memorias ING. El índice va en la portada.</div></div>
+      <div class="panel"><h3>1 · Proyecto y portada</h3><div class="field-grid">${IP('proyecto', 'Proyecto')}${IP('mandante', 'Cliente / mandante')}${IP('codigo', 'Código POWER')}${IP('ubicacion', 'Ubicación')}
+        ${IE('sub1', 'Subtítulo (qué se calcula)', 'Ej: Verificación de soporte de cañería')}${IE('sub2', 'Segundo subtítulo (estructura)', 'vacío = nombre del proyecto')}${IE('software', 'Software (opcional)', 'Ej: RAM Elements')}
+        ${IP('fecha', 'Fecha')}${IP('rev', 'Revisión')}${IP('elaboro', 'Elaboró')}${IP('reviso', 'Revisó (opcional)')}</div></div>
+      <div class="panel"><h3>2 · Descripción y modelo</h3>${blk('objetivo', 'Introducción y objetivo', mexObjetivo(E, P), 3)}
+        <div class="mem-blk"><h4>Descripción breve</h4><textarea data-e="desc" rows="3" placeholder="Qué es, dónde está, perfiles y dimensiones principales, cómo se apoya">${esc(E.desc)}</textarea></div>
+        ${zona('modelo', '📐 Dibujo o captura del modelo', 'Arrastra la imagen, haz clic para elegirla o pégala con Ctrl+V. La primera también va en la portada.')}</div>
+      <div class="panel"><h3>3 · Normas y materiales</h3><details><summary style="cursor:pointer;font-weight:600;font-size:.88rem">Normas (${MCM_NORMAS.filter(n => E.normSel[n.id]).length} marcadas) — abrir lista</summary><div class="mem-checks" style="margin-top:.4rem">${normRows}</div></details>
+        <div class="mem-blk"><h4>Otras normas <small>una por línea</small></h4><textarea data-e="normExtra" rows="2">${esc(E.normExtra)}</textarea></div>
+        <div class="note" style="font-weight:600;margin-top:.5rem">Materiales</div>${matRows}</div>
+      <div class="panel"><h3>4 · Cargas</h3>${cRows}<button type="button" class="btn-add" data-act="addC">+ Agregar carga</button>
+        <div class="mem-blk"><h4>Combinaciones <small>opcional, una por línea</small></h4><textarea data-e="combos" rows="2">${esc(E.combos)}</textarea></div>
+        ${zona('cargas', '⇩ Imagen de cargas (opcional)', 'esquema de cargas aplicadas')}</div>
+      <div class="panel"><h3>5 · Resultado</h3>${rRows}<button type="button" class="btn-add" data-act="addR">+ Agregar elemento</button>
+        <div class="mem-blk"><h4>Comentario del resultado <small>opcional</small></h4><textarea data-e="resTxt" rows="2">${esc(E.resTxt)}</textarea></div>
+        ${zona('res', '⇩ Imagen de resultados (opcional)', 'razones de utilización, deformada, etc.')}
+        ${blk('concl', 'Conclusiones', mexConcl(E), 3)}</div>
+      <div class="panel"><h3>6 · Emitir memoria</h3>
+        <div class="mem-btns"><button type="button" class="mem-btn" data-act="word">⬇ Word</button><button type="button" class="mem-btn" data-act="pdf">🖨 Imprimir / Guardar PDF</button><button type="button" class="btn-add" data-act="nueva">🗋 Nueva memoria express</button></div>
+        <div class="note">PDF: en el cuadro de impresión elija «Guardar como PDF», tamaño Carta y márgenes «Ninguno». El Word y una copia PDF quedan en Archivo ING con el código del proyecto.</div>
+        <div class="mem-prev-wrap" id="mexPrev"></div></div>
+      <input type="file" accept="image/*" multiple id="mexImgIn" hidden>`;
+  }
+  let tok = 0, tp = null;
+  async function prev() { const t = ++tok; try { const R = await mpgPaginar(doc(), mexBuild(E, P), {indicePortada:true}); if (t === tok) mpgMostrar(root.querySelector('#mexPrev'), R.html); } catch (e) { console.error(e); } }
+  const prevLuego = () => { clearTimeout(tp); tp = setTimeout(prev, 350); };
+  function draw() { const y = window.scrollY; root.innerHTML = html(); window.scrollTo(0, y); prev(); }
+  draw();
+  const setP = (o, path, v) => { const ks = path.split('.'), last = ks.pop(); ks.reduce((a, k) => a[k], o)[last] = v; };
+  root.addEventListener('input', e => {
+    const t = e.target, d = t.dataset;
+    if (d.p != null) { P[d.p] = t.value; mcmSave(S0); }
+    else if (d.e != null) { E[d.e] = t.value; sv(); }
+    else if (d.m != null && t.type !== 'checkbox') setP(E.mat, d.m, t.value), sv();
+    else if (d.c != null) setP(E.cargas, d.c, t.value), sv();
+    else if (d.r != null) { setP(E.res, d.r, t.value); sv(); }
+    else if (d.f != null) { E.figs[+d.f].cap = t.value; sv(); }
+    else return;
+    prevLuego();
+  });
+  root.addEventListener('change', e => {
+    const t = e.target, d = t.dataset;
+    if (d.n) { E.normSel[d.n] = t.checked; sv(); draw(); }
+    else if (d.m && t.type === 'checkbox') { setP(E.mat, d.m, t.checked); sv(); prevLuego(); }
+    else if (d.m && t.tagName === 'SELECT') { setP(E.mat, d.m, t.value); sv(); prevLuego(); }
+    else if (t.id === 'mexImgIn') { addImgs([...t.files], dest); t.value = ''; }
+  });
+  let dest = 'modelo';
+  function addImgs(fs, where) {
+    fs = fs.filter(f => /^image\//.test(f.type)); if (!fs.length) { fsToast('Arrastra un archivo de imagen (PNG o JPG).'); return; }
+    Promise.all(fs.map(mcmImg)).then(rs => { rs.forEach((r, i) => E.figs.push({id:Date.now() + i, where, cap:where === 'modelo' ? 'Modelo de la estructura' : where === 'cargas' ? 'Cargas aplicadas' : (fs[i].name || 'Resultados').replace(/\.[^.]+$/, ''), src:r.src, w:r.w, h:r.h, ancho:90})); sv(); draw(); }).catch(() => fsToast('No se pudo leer la imagen.'));
+  }
+  root.addEventListener('dragover', e => { const z = e.target.closest('[data-drop]'); if (!z) return; e.preventDefault(); z.classList.add('over'); });
+  root.addEventListener('dragleave', e => { const z = e.target.closest('[data-drop]'); if (z && !z.contains(e.relatedTarget)) z.classList.remove('over'); });
+  root.addEventListener('drop', e => { const z = e.target.closest('[data-drop]'); if (!z) return; e.preventDefault(); z.classList.remove('over'); addImgs([...(e.dataTransfer.files || [])], z.dataset.drop); });
+  root.addEventListener('paste', e => { const z = e.target.closest('[data-drop]'); if (!z) return; const fs = [...(e.clipboardData.items || [])].filter(it => it.kind === 'file').map(it => it.getAsFile()).filter(Boolean); if (fs.length) { e.preventDefault(); addImgs(fs, z.dataset.drop); } });
+  let armado = 0;
+  root.addEventListener('click', async e => {
+    const z = e.target.closest('[data-drop]');
+    if (z && !e.target.closest('input,button,.mcm-th')) { dest = z.dataset.drop; root.querySelector('#mexImgIn').click(); return; }
+    const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+    if (d.fdel != null) { E.figs.splice(+d.fdel, 1); sv(); draw(); return; }
+    if (d.cdel != null) { E.cargas.splice(+d.cdel, 1); sv(); draw(); return; }
+    if (d.rdel != null) { E.res.splice(+d.rdel, 1); sv(); draw(); return; }
+    if (d.ereset) { E[d.ereset] = null; sv(); draw(); return; }
+    if (d.act === 'addC') { E.cargas.push({sym:'', n:'', v:''}); sv(); draw(); return; }
+    if (d.act === 'addR') { E.res.push({elem:'', sec:'', verif:'', dc:''}); sv(); draw(); return; }
+    if (d.act === 'nueva') { if (Date.now() - armado > 4000) { armado = Date.now(); fsToast('Vuelve a pulsar «Nueva memoria express» para borrar la actual.'); return; } E = mexDef(); sv(); draw(); return; }
+    if (d.act === 'word' || d.act === 'pdf') {
+      const t0 = b.textContent; b.disabled = true; b.textContent = '⏳ Generando…';
+      try {
+        const D = doc(), B = mexBuild(E, P), R = await mpgPaginar(D, B, {indicePortada:true}), base = mcmNombre(P, 'Memoria_Express');
+        const Sx = {proy:D.proy, portada:D.portada, indicePortada:true};
+        if (d.act === 'word') { const blob = await mcmDocx(Sx, B, R); await mcmGuardarArchivo(base + '.docx', blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Documento de Word', '.docx'); archMemoria([{nombre:base + '.docx', blob}], D.proy, {clase:'express'}); }
+        else {
+          const arch = () => { window.removeEventListener('afterprint', arch); setTimeout(async () => { try { archMemoria([{nombre:base + '.pdf', blob:await mpgAPdf(R.html, true)}], D.proy, {clase:'express'}); } catch (er) {} }, 300); };
+          window.addEventListener('afterprint', arch); mpgImprimir(R.html);
+        }
+      } catch (er) { fsToast('No se pudo generar: ' + ((er && er.message) || er)); }
+      finally { b.disabled = false; b.textContent = t0; }
+    }
+  });
+}
+
+/* =========================================================================
+   MEMORIA CON ARCHIVO RAM (tipo del Constructor, 16-11-2026)
+   Se cargan los .zip (o .etz) de RAM Elements del diseño y de la verificación y la memoria se arma
+   con lo que traen: geometría, grupos, perfiles, materiales (.mat), apoyos, estados de carga y cargas,
+   combinaciones, reacciones, desplazamientos y razones de diseño con su cláusula.
+   Lectura de resultados (ingeniería inversa sobre «Monorriel 1 t_0.etz», RAM Elements, verificada con
+   ΣFY de reacciones = carga aplicada): las hojas ModelResults1/.../<campo>N/k son arreglos con el mismo
+   formato que los «Values» y k es el índice del estado de carga (combinaciones incluidas); un k ausente
+   significa todo cero. NudosDisp1-6 / NudosReacc1-6 = TX, TY, TZ, RX, RY, RZ; VigasA1-12 = fuerzas en
+   extremos (1-6 nudo inicial, 7-12 nudo final); VigasCriticalRatio/Location/Reference por combinación
+   (Reference = índice en ModelData1/CodeReferences). VigasCriticalStatus no se interpreta (sin confirmar).
+   Cargas: NudosFuerza1-6/k y VigasPuntual(2)Dir/Val/Dist/Porcent/k; peso propio = EstadosMult{X,Y,Z}.
+   Lo que el lector no reconoce se informa en la memoria como «no leído»; nada se supone.
+   ========================================================================= */
+const MRM_LS = 'mesaMemRam.v1';
+function mrmDef() { return {v:1, sub1:'', sub2:'', intro:null, desc:null, crit:null, concl:null, alc:null, normExtra:'', modelos:[], figs:[], defo:{L:'', n:'', est:''}, verTodos:false}; }
+function mrmLoad() { const s = mcmLsLeer(MRM_LS); return Object.assign(mrmDef(), s && typeof s === 'object' ? s : {}); }
+// unidades RAM («Ton-m», «Kg-cm», «kN-m», «Lb-in»…): fuerza y largo
+function mrmUnid(u) {
+  const [f, l] = String(u || 'Ton-m').split('-').map(x => x.trim().toLowerCase());
+  const F = {ton:['tonf', 1], kg:['kgf', 1], kn:['kN', 1], n:['N', 1], lb:['lbf', 1], kip:['kip', 1]}[f] || [f || '?', 1];
+  const L = {m:1, cm:0.01, mm:0.001, ft:0.3048, in:0.0254}[l];
+  return {f:F[0], fL:L || 1, lu:l || 'm', ok:!!L};
+}
+// .mat del zip: propiedades por material, llevadas a kgf/cm² y kg/m³
+function mrmMats(archivos) {
+  const out = {}, FK = {kg:1, ton:1000, kn:101.972, n:0.101972, lb:0.453592, kip:453.592}, LC = {cm:1, m:100, mm:0.1, in:2.54, ft:30.48};
+  for (const [nom, datos] of Object.entries(archivos || {})) {
+    if (!/\.mat$/i.test(nom)) continue;
+    let tipo = '', enc = null;
+    for (const l of new TextDecoder('latin1').decode(datos).split(/\r?\n/)) {
+      const t = l.trim(); if (!t) continue;
+      if (/^\[.*\]$/.test(t)) { tipo = t.slice(1, -1); enc = null; continue; }
+      const c = l.split('\t').map(x => x.trim());
+      if (!enc) { if (c[0] === 'Name') enc = c; continue; }
+      const f = {}; enc.forEach((h, j) => f[h] = c[j]);
+      const [uf, ul] = String(f.Unit || 'Kg-Cm').toLowerCase().split('-'), kF = FK[uf], kL = LC[ul];
+      const num = k => parseFloat(String(f[k] || '').replace(',', '.'));
+      const ten = k => (kF && kL && isFinite(num(k))) ? num(k) * kF / (kL * kL) : null;
+      out[String(f.Name).toUpperCase()] = {nombre:f.Name, tipo, archivo:nom, E:ten('E'), Fy:ten('Fy'), Fu:ten('Fu'), nu:num('U'),
+        rho:(kF && kL && isFinite(num('W'))) ? num('W') * kF / (kL * kL * kL) * 1e6 : null};
+    }
+  }
+  return out;
+}
+async function mrmLeer(file) {
+  const buf = await file.arrayBuffer(), u8 = new Uint8Array(buf);
+  let archivos = {}, etz = u8, nombreEtz = file.name;
+  if (u8[0] === 0x50 && u8[1] === 0x4b) {
+    archivos = await fmpUnzip(buf);
+    const k = Object.keys(archivos).find(n => /\.etz$/i.test(n));
+    if (!k) throw new Error('El .zip no contiene un archivo .etz de RAM Elements.');
+    etz = archivos[k]; nombreEtz = k;
+  }
+  const m = fmpEtzLeer(etz, true), c = m.campos, U = mrmUnid(m.unidades);
+  if (!U.ok) throw new Error(`Unidades del modelo «${m.unidades}» no reconocidas.`);
+  const sec = fmpSecciones(archivos), mats = mrmMats(archivos);
+  const ids = c['ModelData1/LoadCases/EstadosIdCarga/Values'] || [], nE = ids.length;
+  const vec = (k, n) => { const a = c['ModelData1/LoadCases/' + k + '/Values'] || []; return Array.from({length:n}, (_, i) => a[i] != null ? a[i] : (typeof a[0] === 'string' ? '' : 0)); };
+  const estados = ids.map((id, k) => ({id, desc:vec('EstadosDescripcion', nE)[k], cat:vec('EstadosCategoria', nE)[k], comb:!!vec('EstadosEsComb', nE)[k],
+    pp:['X', 'Y', 'Z'].map(d => vec('EstadosMult' + d, nE)[k] || 0)}));
+  const nN = m.nudos.length, nB = m.barras.length;
+  const res = (grupo, campo, k, n) => { const a = c[`ModelResults1/${grupo}/${campo}/${k}`]; return Array.isArray(a) ? a.slice(0, n).map(Number) : null; };
+  const leidos = new Set(), props = k => c['ModelProperties1/' + k];
+  const marcar = k => leidos.add(k);
+  // resultados por estado
+  const R = estados.map((e, k) => ({
+    disp:[1, 2, 3, 4, 5, 6].map(i => { marcar(`ModelResults1/Nodes/NudosDisp${i}/${k}`); return res('Nodes', 'NudosDisp' + i, k, nN); }),
+    reac:[1, 2, 3, 4, 5, 6].map(i => { marcar(`ModelResults1/Nodes/NudosReacc${i}/${k}`); return res('Nodes', 'NudosReacc' + i, k, nN); }),
+    ratio:res('Members', 'VigasCriticalRatio', k, nB), loc:res('Members', 'VigasCriticalLocation', k, nB), ref:res('Members', 'VigasCriticalReference', k, nB),
+    cargasN:[1, 2, 3, 4, 5, 6].map(i => { const kk = `ModelData1/Nodes/NudosFuerza${i}/${k}`; marcar(kk); const a = c[kk]; return Array.isArray(a) ? a.map(Number) : null; }),
+    puntual:[['VigasPuntualDir', 'VigasPuntualVal', 'VigasPuntualDist', 'VigasPuntualPorcent'], ['VigasPuntual2Dir', 'VigasPuntual2Val', 'VigasPuntual2Dist', 'VigasPuntual2Porc']].map(q => {
+      q.forEach(x => marcar(`ModelData1/Members/${x}/${k}`));
+      const [dir, val, dist, por] = q.map(x => c[`ModelData1/Members/${x}/${k}`]);
+      if (!Array.isArray(val)) return [];
+      return val.map((v, j) => ({b:j, dir:(dir || [])[j] || '', v:+v, d:+((dist || [])[j] || 0), pct:!!(por || [])[j]})).filter(x => x.v && x.dir);
+    }).flat(),
+  }));
+  // otras cargas presentes en el modelo que este lector no interpreta (se avisan, no se suponen)
+  const otras = Object.keys(c).filter(k => /^ModelData1\/(Nodes|Members|Shells|Areas)\/.+\/\d+$/.test(k) && !leidos.has(k) && Array.isArray(c[k]) && c[k].some(v => v && v !== '' && v !== 0))
+    .map(k => k.replace(/^ModelData1\//, '').replace(/\/\d+$/, '')).filter((v, i, a) => a.indexOf(v) === i);
+  // combinaciones: el .etz guarda los resultados de los estados; los de cada combinación se suman con los
+  // factores de su fórmula (la «descripción» de la combinación en RAM Elements, p. ej. «1.2PP+1.6SC1»)
+  const idx = {}; estados.forEach((e, k) => { if (!e.comb) idx[String(e.id).toUpperCase()] = k; });
+  estados.forEach((e, k) => {
+    if (!e.comb) return;
+    const hay = R[k].disp.concat(R[k].reac).some(a => a && a.some(v => v));
+    if (hay) { e.res = 'modelo'; return; }
+    const f = mrmFormula(e.desc, idx) || mrmFormula(e.id, idx);
+    if (!f || props('AnalysisPdelta')) { e.res = 'no'; return; }
+    e.res = 'superp'; e.form = f;
+    ['disp', 'reac'].forEach(t => { R[k][t] = [0, 1, 2, 3, 4, 5].map(q => { let out = null; f.forEach(x => { const a = R[x.k][t][q]; if (a) { out = out || a.map(() => 0); a.forEach((v, i) => out[i] += x.f * v); } }); return out; }); });
+  });
+  const refs = c['ModelData1/CodeReferences/Values'] || [];
+  const barras = m.barras.map((b, j) => {
+    const a = m.nudos[b.n1 - 1], z = m.nudos[b.n2 - 1];
+    const L = a && z ? Math.hypot(z.x - a.x, z.y - a.y, z.z - a.z) : 0;
+    const s = sec[String(b.secc || '').toUpperCase()], mt = mats[String(b.mat || '').toUpperCase()];
+    return {i:j + 1, id:(c['ModelData1/Members/VigasID/Values'] || [])[j] || j + 1, n1:b.n1, n2:b.n2, grupo:String(b.desc || '').trim(), secc:b.secc, mat:b.mat, L,
+      A:s && s.area ? s.area : null, masa:s && s.area && mt && mt.rho ? s.area * L * mt.rho : null};
+  });
+  return {archivo:file.name, etz:nombreEtz, archivos:Object.keys(archivos), unidades:m.unidades, U, version:props('AnalysisVersion'),
+    analizado:!!props('Analyzed'), disenado:!!props('Designed'), pdelta:!!props('AnalysisPdelta'),
+    codigos:{hr:props('DesignCodeSteelHR') || '', cf:props('DesignCodeSteelCF') || '', hormigon:props('DesignCodeConcrete') || '', madera:props('DesignCode_Wood') || ''},
+    nudos:m.nudos.map(n => ({n:n.n, id:n.id, x:n.x, y:n.y, z:n.z, r:n.restr.join('')})), barras, estados, R, refs, mats, otras,
+    secciones:Object.fromEntries(Object.entries(sec).map(([k, s]) => [k, {area:s.area, lib:s.lib, fuente:s.fuente}]))};
+}
+// --- cálculos sobre el modelo leído ---
+const MRM_G = 9.80665;
+// fórmula de combinación de RAM Elements: términos [factor][*]ID unidos por + o − (p. ej. «PP+SC1», «1.2PP+1.6SC1», «0.9*PP-1.4E»)
+function mrmFormula(txt, idx) {
+  const s = String(txt || '').replace(/\s+/g, ''); if (!s) return null;
+  const re = /([+-]?)(\d+(?:[.,]\d+)?)?\*?([A-Za-z_][\w.]*)/y, out = []; let m;
+  re.lastIndex = 0;
+  while (re.lastIndex < s.length && (m = re.exec(s))) {
+    if (!m[0]) return null;
+    const k = idx[m[3].toUpperCase()]; if (k == null) return null;
+    out.push({k, f:(m[1] === '-' ? -1 : 1) * (m[2] ? parseFloat(m[2].replace(',', '.')) : 1)});
+  }
+  return re.lastIndex === s.length && out.length ? out : null;
+}
+function mrmGrupos(M) {
+  const g = new Map();
+  M.barras.forEach(b => { const k = [b.grupo, b.secc, b.mat].join('|'); if (!g.has(k)) g.set(k, {grupo:b.grupo, secc:b.secc, mat:b.mat, n:0, L:0, masa:0, sinMasa:0, barras:[]}); const x = g.get(k); x.n++; x.L += b.L; if (b.masa != null) x.masa += b.masa; else x.sinMasa++; x.barras.push(b); });
+  return [...g.values()];
+}
+function mrmApoyos(M) {
+  const tipo = r => r === '111111' ? 'Empotrado' : r === '111000' ? 'Rotulado (traslaciones restringidas)' : 'Restricción parcial (' + ['TX', 'TY', 'TZ', 'RX', 'RY', 'RZ'].filter((_, i) => r[i] === '1').join(', ') + ')';
+  const g = new Map(); M.nudos.filter(n => /1/.test(n.r)).forEach(n => { const t = tipo(n.r); if (!g.has(t)) g.set(t, []); g.get(t).push(n); });
+  return [...g.entries()].map(([t, ns]) => ({tipo:t, nudos:ns}));
+}
+function mrmDim(M) { const e = k => { const v = M.nudos.map(n => n[k]); return Math.max(...v) - Math.min(...v); }; return {x:e('x'), y:e('y'), z:e('z')}; }
+const mrmCodigo = c => { const m = /AISC[- ]?(\d{2})\s*(ASD|LRFD)?/i.exec(c || ''); if (m) return `ANSI/AISC 360-${m[1]} — Specification for Structural Steel Buildings${m[2] ? ' (método ' + m[2].toUpperCase() + ')' : ''}`;
+  const a = /AISI[- ]?(\d{2})\s*(ASD|LRFD)?/i.exec(c || ''); if (a) return `AISI S100-${a[1]} — North American Specification for the Design of Cold-Formed Steel Structural Members${a[2] ? ' (método ' + a[2].toUpperCase() + ')' : ''}`; return c; };
+const mrmCF = M => Object.values(M.secciones).some(s => /aisi|box|cf/i.test(s.lib || '')) && M.barras.some(b => /aisi|box/i.test((M.secciones[String(b.secc).toUpperCase()] || {}).lib || ''));
+function mrmDiseno(M) {   // razón máxima por barra entre las combinaciones (o estados) con diseño
+  const ks = M.estados.map((e, k) => k).filter(k => M.R[k].ratio || (M.disenado && M.estados[k].comb));
+  return M.barras.map((b, j) => { let best = {r:0, k:-1};
+    ks.forEach(k => { const r = M.R[k].ratio ? M.R[k].ratio[j] : 0; if (r > best.r || best.k < 0) best = {r, k, loc:M.R[k].loc ? M.R[k].loc[j] : 0, ref:M.R[k].ref ? M.R[k].ref[j] : 0}; });
+    return Object.assign({b}, best, {cl:best.k >= 0 ? (M.refs[best.ref] || '') : ''}); });
+}
+function mrmAplicadaY(M, k) {   // carga vertical aplicada (FY) del estado k, cuando todas sus cargas son legibles
+  const R = M.R[k]; let s = 0;
+  (R.cargasN[1] || []).forEach(v => s += v || 0);
+  R.puntual.forEach(p => { if (p.dir === 'Y') s += p.v; });
+  const masa = M.barras.reduce((a, b) => a + (b.masa || 0), 0);
+  const fPP = {tonf:1e-3, kgf:1, kN:MRM_G / 1000, N:MRM_G, lbf:2.20462, kip:0.00220462}[M.U.f];
+  if (M.estados[k].pp[1]) s += M.estados[k].pp[1] * masa * (fPP || 0);
+  return s;
+}
+const mrmSumY = (M, k) => (M.R[k].reac[1] || []).reduce((a, v) => a + (v || 0), 0);
+function mrmDesp(M, k) {   // desplazamiento máximo (traslación) del estado k, en mm
+  const D = M.R[k].disp, fmm = M.U.fL * 1000; let best = {d:0, n:null, t:[0, 0, 0]};
+  M.nudos.forEach((n, i) => { const t = [0, 1, 2].map(q => (D[q] ? D[q][i] : 0) * fmm), d = Math.hypot(...t); if (d > best.d) best = {d, n, t}; });
+  const mx = q => Math.max(0, ...M.nudos.map((n, i) => Math.abs((D[q] ? D[q][i] : 0) * fmm)));
+  return Object.assign(best, {tx:mx(0), ty:mx(1), tz:mx(2)});
+}
+/* --- figuras del modelo (canvas → PNG): vista isométrica, o elevación si el modelo es plano --- */
+function mrmProy(M) {
+  const plano = Math.max(...M.nudos.map(n => n.z)) - Math.min(...M.nudos.map(n => n.z)) < 1e-6;
+  const yaw = plano ? 0 : -35 * Math.PI / 180, pitch = plano ? 0 : 28 * Math.PI / 180;
+  return (x, y, z) => { const X1 = x * Math.cos(yaw) + z * Math.sin(yaw), Z1 = -x * Math.sin(yaw) + z * Math.cos(yaw); return [X1, y * Math.cos(pitch) - Z1 * Math.sin(pitch)]; };
+}
+function mrmFigura(M, modo, k) {
+  const pr = mrmProy(M), P2 = M.nudos.map(n => pr(n.x, n.y, n.z));
+  const W = 1500, mg = 110;
+  let x0 = Math.min(...P2.map(p => p[0])), x1 = Math.max(...P2.map(p => p[0])), y0 = Math.min(...P2.map(p => p[1])), y1 = Math.max(...P2.map(p => p[1]));
+  const span = Math.max(x1 - x0, y1 - y0, 0.5);
+  if (x1 - x0 < span * 0.15) { const c = (x0 + x1) / 2; x0 = c - span * 0.075; x1 = c + span * 0.075; }
+  if (y1 - y0 < span * 0.15) { const c = (y0 + y1) / 2; y0 = c - span * 0.075; y1 = c + span * 0.075; }
+  const sc = Math.min((W - 2 * mg) / (x1 - x0), 1100 / (y1 - y0)), H = Math.round((y1 - y0) * sc + 2 * mg + (modo === 'util' ? 60 : 0));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+  const T = p => [mg + (p[0] - x0) * sc + ((W - 2 * mg) - (x1 - x0) * sc) / 2, H - mg - (modo === 'util' ? 60 : 0) - (p[1] - y0) * sc];
+  const S = M.nudos.map((n, i) => T(P2[i]));
+  const D = modo === 'util' ? mrmDiseno(M) : null;
+  const col = r => r > 1 ? '#c0392b' : r > 0.9 ? '#e67e22' : r > 0.7 ? '#f1c40f' : r > 0.5 ? '#27ae60' : '#2e86c1';
+  g.lineCap = 'round';
+  M.barras.forEach((b, j) => { const a = S[b.n1 - 1], z = S[b.n2 - 1]; if (!a || !z) return; g.strokeStyle = D ? col(D[j].r) : '#1b1b1b'; g.lineWidth = D ? 6 : 4; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(z[0], z[1]); g.stroke(); });
+  // apoyos
+  M.nudos.forEach((n, i) => { if (!/1/.test(n.r)) return; const [x, y] = S[i]; g.strokeStyle = '#1F3864'; g.fillStyle = '#1F3864'; g.lineWidth = 2.5;
+    if (n.r === '111111') { g.fillRect(x - 16, y + 2, 32, 9); for (let q = -16; q < 16; q += 7) { g.beginPath(); g.moveTo(x + q, y + 11); g.lineTo(x + q - 6, y + 19); g.stroke(); } }
+    else if (n.r.slice(0, 3) === '111') { g.beginPath(); g.moveTo(x, y + 2); g.lineTo(x - 13, y + 22); g.lineTo(x + 13, y + 22); g.closePath(); g.stroke(); }
+    else { g.beginPath(); g.arc(x, y + 11, 8, 0, 2 * Math.PI); g.stroke(); } });
+  g.font = '26px Arial'; g.fillStyle = '#111';
+  const fmt = v => mcmNum(Math.abs(v), Math.abs(v) < 10 ? 2 : 1) + ' ' + M.U.f;
+  const flecha = (x, y, dx, dy, txt, colr) => { const L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L; g.strokeStyle = colr; g.fillStyle = colr; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(x - dx, y - dy); g.lineTo(x, y); g.stroke(); g.beginPath(); g.moveTo(x, y); g.lineTo(x - 14 * ux - 7 * uy, y - 14 * uy + 7 * ux); g.lineTo(x - 14 * ux + 7 * uy, y - 14 * uy - 7 * ux); g.closePath(); g.fill();
+    g.fillText(txt, x - dx + (Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? -g.measureText(txt).width - 6 : 6) : 8), y - dy + (Math.abs(dy) >= Math.abs(dx) ? (dy > 0 ? -8 : 26) : -8)); };
+  const dirV = d => { const o = pr(0, 0, 0), u = pr(d === 'X' ? 1 : 0, d === 'Y' ? 1 : 0, d === 'Z' ? 1 : 0); const vx = u[0] - o[0], vy = -(u[1] - o[1]), L = Math.hypot(vx, vy); return L < 0.2 ? null : [vx / L, vy / L]; };
+  if (modo === 'cargas') {
+    const R = M.R[k], items = [];
+    ['X', 'Y', 'Z'].forEach((d, q) => (R.cargasN[q] || []).forEach((v, i) => { if (v) items.push({p:S[i], d, v}); }));
+    R.puntual.forEach(pp => { const b = M.barras[pp.b]; if (!b) return; const a = S[b.n1 - 1], z = S[b.n2 - 1]; const t = pp.pct ? pp.d / 100 : (b.L ? pp.d / b.L : 0); items.push({p:[a[0] + (z[0] - a[0]) * t, a[1] + (z[1] - a[1]) * t], d:pp.dir.toUpperCase(), v:pp.v, loc:pp.dir !== pp.dir.toUpperCase()}); });
+    const vmax = Math.max(1e-9, ...items.map(it => Math.abs(it.v)));
+    items.forEach(it => { const u = dirV(it.d), s = Math.sign(it.v) || 1, L = 50 + 60 * Math.abs(it.v) / vmax, t = fmt(it.v) + (it.loc ? ' (local)' : '');
+      if (u) flecha(it.p[0], it.p[1], u[0] * s * L, u[1] * s * L, t, '#b03a2e');
+      else { g.strokeStyle = g.fillStyle = '#b03a2e'; g.lineWidth = 3; g.beginPath(); g.arc(it.p[0], it.p[1], 9, 0, 2 * Math.PI); g.stroke(); g.beginPath(); if (s > 0) g.arc(it.p[0], it.p[1], 3, 0, 2 * Math.PI), g.fill(); else { g.moveTo(it.p[0] - 6, it.p[1] - 6); g.lineTo(it.p[0] + 6, it.p[1] + 6); g.moveTo(it.p[0] + 6, it.p[1] - 6); g.lineTo(it.p[0] - 6, it.p[1] + 6); g.stroke(); } g.fillText(t + ' (' + it.d + ')', it.p[0] + 14, it.p[1] + 34); } });
+    if (M.estados[k].pp.some(v => v)) { g.fillStyle = '#1F3864'; g.font = 'italic 26px Arial'; g.fillText('Peso propio generado por el programa (factor ' + M.estados[k].pp.map((v, q) => v ? ['X', 'Y', 'Z'][q] + ' = ' + mcmNum(v, 1) : '').filter(Boolean).join(', ') + ')', mg * 0.4, 40); }
+  }
+  if (modo === 'util') {
+    const bandas = [['≤ 0,50', '#2e86c1'], ['0,50 – 0,70', '#27ae60'], ['0,70 – 0,90', '#f1c40f'], ['0,90 – 1,00', '#e67e22'], ['> 1,00', '#c0392b']];
+    g.font = '24px Arial'; let x = mg * 0.4; const y = H - 34;
+    g.fillStyle = '#111'; g.fillText('Razón de diseño:', x, y + 8); x += g.measureText('Razón de diseño:').width + 16;
+    bandas.forEach(([t, c2]) => { g.fillStyle = c2; g.fillRect(x, y - 10, 34, 16); x += 42; g.fillStyle = '#111'; g.fillText(t, x, y + 8); x += g.measureText(t).width + 26; });
+  }
+  return {src:cv.toDataURL('image/png'), w:W, h:H};
+}
+// --- textos sugeridos ---
+function mrmTxt(MR, P, k) {
+  if (MR[k] != null) return MR[k];
+  const M = MR.modelos[0]; if (!M) return '';
+  const G = mrmGrupos(M), mats = [...new Set(M.barras.map(b => b.mat).filter(Boolean))], dim = mrmDim(M), U = M.U;
+  const est = MR.sub1 ? mpgOracion(MR.sub1).charAt(0).toLowerCase() + mpgOracion(MR.sub1).slice(1) : 'la estructura';
+  if (k === 'intro') return `La presente memoria documenta el análisis y diseño de ${est} del proyecto «${mcmV(P.proyecto)}»${P.mandante ? ', de ' + P.mandante : ''}. `
+    + `El análisis se realizó con ${MR.modelos.length > 1 ? 'los modelos' : 'el modelo'} de barras en RAM Elements ${MR.modelos.map(m => '«' + m.etz + '»').join(' y ')}, de ${MR.modelos.length > 1 ? 'los cuales' : 'donde'} se obtienen la geometría, las secciones, los materiales, las cargas, los resultados del análisis y las razones de diseño que se presentan en este documento.`;
+  if (k === 'desc') {
+    const perf = G.map(x => `${x.n} ${x.n === 1 ? 'elemento' : 'elementos'} ${x.secc}${x.grupo && x.grupo !== '0' ? ' (grupo ' + x.grupo + ')' : ''}`);
+    const ap = mrmApoyos(M).map(a => `${a.nudos.length} ${a.nudos.length === 1 ? 'apoyo' : 'apoyos'} ${a.tipo.charAt(0).toLowerCase() + a.tipo.slice(1)}`);
+    const d = [dim.x, dim.y, dim.z].map(v => mcmNum(v, 2));
+    return `La estructura está formada por ${mcmList(perf)}, de acero ${mcmList(mats)}. Sus dimensiones generales son ${d[0]} m en dirección X, ${d[1]} m en altura (Y) y ${d[2]} m en dirección Z. `
+      + `Se apoya mediante ${mcmList(ap) || '[completar]'}.`;
+  }
+  if (k === 'crit') {
+    const c = [M.codigos.hr ? `${mrmCodigo(M.codigos.hr)}` : '', mrmCF(M) && M.codigos.cf ? mrmCodigo(M.codigos.cf) : ''].filter(Boolean);
+    return `El diseño de los elementos de acero se verificó en RAM Elements según ${mcmList(c) || '[completar]'}, con las combinaciones de carga definidas en el modelo. `
+      + `Un elemento cumple cuando su razón de diseño (demanda/capacidad) es menor o igual a 1,00. El análisis es ${M.pdelta ? 'de segundo orden (P-Δ)' : 'elástico lineal de primer orden'}.`;
+  }
+  if (k === 'concl') {
+    const D = MR.modelos.flatMap(m => m.disenado ? mrmDiseno(m).map(x => Object.assign(x, {m})) : []);
+    if (!D.length) return 'Los modelos entregados no tienen el diseño de acero corrido en RAM Elements: no hay razones de diseño que informar. [completar]';
+    const mx = D.reduce((a, b) => b.r > a.r ? b : a), malos = D.filter(x => x.r > 1);
+    const dv = mrmDefo(MR);
+    return (malos.length ? `${malos.length} de ${D.length} elementos superan la razón de diseño 1,00 (máxima ${mcmNum(mx.r)} en el elemento ${mx.b.id}, ${mx.b.secc}); deben reforzarse o redimensionarse antes de la emisión definitiva.`
+      : `Todos los elementos de acero verificados (${D.length}) cumplen con la razón de diseño ≤ 1,00. La razón máxima es ${mcmNum(mx.r)}, en el elemento ${mx.b.id} (${mx.b.secc}${mx.b.grupo && mx.b.grupo !== '0' ? ', grupo ' + mx.b.grupo : ''}) para la combinación ${mx.m.estados[mx.k].id}${mx.cl ? ', gobernada por ' + mx.cl : ''}.`)
+      + (dv ? ` ${dv.ok ? 'La deformación cumple' : 'La deformación NO cumple'} el límite L/${dv.n} (${mcmNum(dv.d, 1)} mm ${dv.ok ? '≤' : '>'} ${mcmNum(dv.adm, 1)} mm).` : '');
+  }
+  if (k === 'alc') return 'Esta memoria se basa en los modelos de RAM Elements indicados: la geometría, las secciones, los materiales, las cargas y las combinaciones son las definidas en ellos. Los factores de las combinaciones de carga son los definidos en el programa. '
+    + 'No forman parte de este documento el diseño de conexiones, placas base, anclajes ni fundaciones, salvo que se indique expresamente.';
+  return '';
+}
+function mrmDefo(MR) {
+  const d = MR.defo || {}, L = parseFloat(String(d.L).replace(',', '.')), n = parseFloat(String(d.n).replace(',', '.'));
+  const M = MR.modelos[0]; if (!M || !(L > 0) || !(n > 0)) return null;
+  const k = M.estados.findIndex(e => e.id === d.est); if (k < 0) return null;
+  const dd = mrmDesp(M, k), adm = L * 1000 / n;
+  return {L, n, adm, d:dd.ty, est:M.estados[k], ok:dd.ty <= adm};
+}
+function mrmBuild(MR, P) {
+  const B = []; let nT = 0, nF = 0;
+  const tab = (cap, head, rows, widths, align) => B.push({t:'table', cap:`Tabla ${++nT}: ${cap}`, head, rows, widths, align});
+  const fig = (f, cap, ancho) => B.push({t:'fig', src:f.src, w:f.w, h:f.h, ancho:ancho || 100, cap:`Figura ${++nF}: ${cap}`});
+  const par = t => String(t || '').split(/\n\s*\n/).map(x => x.trim()).filter(Boolean).forEach(x => B.push({t:'p', text:x}));
+  const ufig = w => MR.figs.filter(f => f.where === w && f.src).forEach(f => fig(f, f.cap || '', f.ancho || 90));
+  const Ms = MR.modelos, varios = Ms.length > 1, sub = (M, t) => varios ? B.push({t:'h2', text:`${t} — ${M.etz}`}) : null;
+  B.push({t:'h1', text:'INTRODUCCIÓN Y OBJETIVO'}); par(mrmTxt(MR, P, 'intro'));
+  B.push({t:'h1', text:'DESCRIPCIÓN DE LA ESTRUCTURA'}); par(mrmTxt(MR, P, 'desc'));
+  ufig('desc');
+  if (Ms[0]) fig(mrmFigura(Ms[0], 'modelo'), 'Modelo de barras de la estructura' + (varios ? ' (' + Ms[0].etz + ')' : ''), 90);
+  B.push({t:'h1', text:'NORMAS, MATERIALES Y CRITERIOS DE DISEÑO'});
+  B.push({t:'h2', text:'Normas'});
+  const N = ['NCh1537:2009 — Diseño estructural: cargas permanentes y cargas de uso', 'NCh3171:2017 — Diseño estructural: disposiciones generales y combinaciones de carga']
+    .concat([...new Set(Ms.flatMap(M => [M.codigos.hr ? mrmCodigo(M.codigos.hr) : '', mrmCF(M) && M.codigos.cf ? mrmCodigo(M.codigos.cf) : '']).filter(Boolean))])
+    .concat(String(MR.normExtra || '').split('\n').map(x => x.trim()).filter(Boolean));
+  B.push({t:'ul', items:N});
+  B.push({t:'h2', text:'Materiales'});
+  const usados = [...new Set(Ms.flatMap(M => M.barras.map(b => String(b.mat || '').toUpperCase())))];
+  const matRows = usados.map(k => { const m = Ms.map(M => M.mats[k]).find(Boolean); if (!m) return [k, 'Propiedades no incluidas en el .zip (falta el archivo .mat)', '—', '—', '—'];
+    const mpa = v => v != null ? `${mcmNum(v * 0.0980665, 0)} MPa (${mcmNum(v, 0)} kgf/cm²)` : '—';
+    return [m.nombre, mpa(m.Fy), mpa(m.Fu), m.E != null ? mcmNum(m.E * 0.0980665, 0) + ' MPa' : '—', m.rho != null ? mcmNum(m.rho, 0) + ' kg/m³' : '—']; });
+  tab('Materiales del modelo (archivo .mat de RAM Elements)', ['Material', 'Fy', 'Fu', 'E', 'Densidad'], matRows, [1700, 2500, 2500, 1600, 1620], ['l','c','c','c','c']);
+  B.push({t:'h2', text:'Criterios de diseño'}); par(mrmTxt(MR, P, 'crit'));
+  B.push({t:'h1', text:'MODELO DE ANÁLISIS'});
+  Ms.forEach((M, mi) => {
+    const G = mrmGrupos(M), dim = mrmDim(M);
+    if (varios) B.push({t:'h2', text:`Modelo ${mi + 1}: ${M.etz}`});
+    else B.push({t:'h2', text:'Software y archivos'});
+    par(`Programa: RAM Elements. Archivo: «${M.etz}»${M.archivo !== M.etz ? ' (dentro de «' + M.archivo + '»)' : ''}. Unidades del modelo: ${M.unidades}. ${M.analizado ? 'Modelo analizado' : 'El modelo NO registra análisis'}${M.disenado ? ' y con el diseño de acero corrido' : ', sin diseño de acero corrido'}.`);
+    if (!varios) B.push({t:'h2', text:'Geometría, secciones y material'});
+    par(`El modelo tiene ${M.nudos.length} nudos y ${M.barras.length} elementos. Dimensiones generales: ${mcmNum(dim.x)} m (X) × ${mcmNum(dim.y)} m (Y, vertical) × ${mcmNum(dim.z)} m (Z). La Tabla ${nT + 1} resume los grupos de elementos.`);
+    tab('Grupos de elementos del modelo' + (varios ? ' (' + M.etz + ')' : ''), ['Grupo RAM', 'Sección', 'Material', 'N° elem.', 'Largo total [m]', 'Masa [kg]'],
+      G.map(x => [x.grupo || '—', x.secc, x.mat, String(x.n), mcmNum(x.L), x.sinMasa ? (x.masa ? mcmNum(x.masa, 0) + ' *' : '—') : mcmNum(x.masa, 0)]), [1700, 2200, 1500, 1100, 1700, 1720], ['l','l','l','c','c','c']);
+    if (G.some(x => x.sinMasa)) B.push({t:'p', text:'* Masa parcial o no calculada: el .zip no trae el área de alguna sección o la densidad de su material.'});
+    if (!varios) B.push({t:'h2', text:'Condiciones de apoyo'});
+    const A = mrmApoyos(M);
+    if (A.length) tab('Condiciones de apoyo' + (varios ? ' (' + M.etz + ')' : ''), ['Tipo de apoyo', 'N°', 'Nudos'], A.map(a => [a.tipo, String(a.nudos.length), a.nudos.map(n => n.id).join(', ')]), [4300, 900, 4720], ['l','c','l']);
+    else B.push({t:'p', text:'El modelo no tiene nudos con restricciones.'});
+    if (varios && mi > 0) fig(mrmFigura(M, 'modelo'), 'Modelo de barras (' + M.etz + ')', 90);
+  });
+  B.push({t:'h1', text:'CARGAS Y COMBINACIONES'});
+  Ms.forEach(M => {
+    sub(M, 'Estados de carga');
+    if (!varios) B.push({t:'h2', text:'Estados de carga'});
+    const E = M.estados.map((e, k) => ({e, k})).filter(x => !x.e.comb);
+    tab('Estados de carga' + (varios ? ' (' + M.etz + ')' : ''), ['Estado', 'Descripción', 'Categoría RAM', 'Cargas'], E.map(({e, k}) => {
+      const R = M.R[k], q = [];
+      if (e.pp.some(v => v)) q.push('peso propio (programa)');
+      const nN = R.cargasN.reduce((a, arr) => a + (arr ? arr.filter(v => v).length : 0), 0); if (nN) q.push(`${nN} ${nN === 1 ? 'carga' : 'cargas'} en nudos`);
+      if (R.puntual.length) q.push(`${R.puntual.length} ${R.puntual.length === 1 ? 'carga puntual' : 'cargas puntuales'} en barras`);
+      return [e.id, e.desc || '—', e.cat || '—', q.join('; ') || 'sin cargas leídas']; }), [1200, 3400, 1600, 3720], ['c','l','c','l']);
+    if (M.otras.length) B.push({t:'p', text:`El modelo tiene además cargas de otro tipo que esta memoria no lee automáticamente (${M.otras.join(', ')}); se deben describir a mano. [completar]`});
+    E.forEach(({e, k}) => {
+      const R = M.R[k], rows = [];
+      ['FX', 'FY', 'FZ', 'MX', 'MY', 'MZ'].forEach((nm, q) => (R.cargasN[q] || []).forEach((v, i) => { if (v) rows.push([`Nudo ${M.nudos[i].id}`, nm, `${mcmNum(v, 3)} ${M.U.f}${q > 2 ? '·' + M.U.lu : ''}`, '—']); }));
+      R.puntual.forEach(p => { const b = M.barras[p.b]; rows.push([`Elemento ${b ? b.id : p.b + 1}`, 'Puntual ' + p.dir + (p.dir !== p.dir.toUpperCase() ? ' (local)' : ''), `${mcmNum(p.v, 3)} ${M.U.f}`, p.pct ? mcmNum(p.d, 0) + ' % de L' : mcmNum(p.d * M.U.fL, 3) + ' m']); });
+      if (rows.length) tab(`Cargas del estado ${e.id} (${e.desc || '—'})`, ['Ubicación', 'Tipo / dirección', 'Valor', 'Posición'], rows, [2600, 2600, 2400, 2320], ['l','c','c','c']);
+      if (rows.length || e.pp.some(v => v)) fig(mrmFigura(M, 'cargas', k), `Estado ${e.id}: ${e.desc || ''}`, 80);
+    });
+    const C = M.estados.filter(e => e.comb);
+    if (C.length) { if (!varios) B.push({t:'h2', text:'Combinaciones de carga'});
+      const fx = e => e.form ? e.form.map((x, i) => (x.f < 0 ? '− ' : i ? '+ ' : '') + (Math.abs(x.f) !== 1 ? mcmNum(Math.abs(x.f), 2).replace(/,?0+$/, '') + ' ' : '') + M.estados[x.k].id).join(' ') : '—';
+      tab('Combinaciones de carga definidas en el modelo' + (varios ? ' (' + M.etz + ')' : ''), ['Combinación', 'Fórmula en RAM Elements', 'Estados y factores', 'Reacciones y desplazamientos'], C.map(e => [e.id, e.desc || '—', fx(e), e.res === 'modelo' ? 'del programa' : e.res === 'superp' ? 'por superposición' : 'no disponibles']), [1500, 2800, 2900, 2720], ['c','l','l','c']);
+      if (C.some(e => e.res === 'superp')) B.push({t:'p', text:'El archivo de RAM Elements guarda los resultados de cada estado de carga. Las reacciones y desplazamientos de las combinaciones se obtienen sumando los resultados de los estados con los factores de la fórmula de cada combinación (análisis lineal). Las razones de diseño de los elementos son las calculadas por el programa para cada combinación.'});
+      if (C.some(e => e.res === 'no')) B.push({t:'p', text:'Para las combinaciones marcadas «no disponibles» no se pudo leer la fórmula' + (M.pdelta ? ' o el análisis es de segundo orden (P-Δ), en que la superposición no es válida' : '') + '; sus reacciones y desplazamientos no se informan. [completar si se requieren]'}); }
+  });
+  ufig('cargas');
+  B.push({t:'h1', text:'DISEÑO DE ELEMENTOS DE ACERO'});
+  Ms.forEach(M => {
+    sub(M, 'Diseño');
+    if (!M.disenado) { B.push({t:'p', text:`El modelo «${M.etz}» no tiene el diseño de acero corrido en RAM Elements: no hay razones de diseño que informar.`}); return; }
+    const D = mrmDiseno(M), G = mrmGrupos(M);
+    tab('Razón de diseño máxima por grupo' + (varios ? ' (' + M.etz + ')' : ''), ['Grupo', 'Sección', 'N°', 'Razón máx.', 'Elem.', 'Combinación', 'Referencia', 'Estado'], G.map(g => {
+      const xs = D.filter(x => g.barras.includes(x.b)), mx = xs.reduce((a, b) => b.r > a.r ? b : a, xs[0]);
+      return [g.grupo || '—', g.secc, String(g.n), mcmNum(mx.r), String(mx.b.id), mx.k >= 0 ? M.estados[mx.k].id : '—', mx.cl || '—', mx.r <= 1 ? 'CUMPLE' : 'NO CUMPLE']; }), [1100, 1700, 600, 1100, 800, 1400, 1820, 1400], ['l','l','c','c','c','c','c','c']);
+    if (MR.verTodos || M.barras.length <= 30) tab('Razón de diseño por elemento' + (varios ? ' (' + M.etz + ')' : ''), ['Elem.', 'Grupo', 'Sección', 'L [m]', 'Razón', 'Combinación', 'Ubicación', 'Referencia'],
+      D.map(x => [String(x.b.id), x.b.grupo || '—', x.b.secc, mcmNum(x.b.L), mcmNum(x.r), x.k >= 0 ? M.estados[x.k].id : '—', x.k >= 0 ? mcmNum(x.loc, 0) + ' % de L' : '—', x.cl || '—']), [800, 1200, 1700, 900, 1000, 1400, 1300, 1620], ['c','l','l','c','c','c','c','c']);
+    fig(mrmFigura(M, 'util'), 'Razón de diseño de los elementos de acero' + (varios ? ' (' + M.etz + ')' : ''), 90);
+  });
+  ufig('res');
+  B.push({t:'h1', text:'DEFORMACIONES'});
+  Ms.forEach(M => {
+    sub(M, 'Deformaciones');
+    tab('Desplazamientos máximos por estado y combinación [mm]' + (varios ? ' (' + M.etz + ')' : ''), ['Estado', 'Descripción', '|δ| máx.', 'Nudo', 'TX máx.', 'TY máx.', 'TZ máx.'],
+      M.estados.map((e, k) => { if (e.res === 'no') return [e.id, e.desc || '—', '—', '—', '—', '—', '—']; const d = mrmDesp(M, k); return [e.id, e.desc || '—', mcmNum(d.d), d.n ? String(d.n.id) : '—', mcmNum(d.tx), mcmNum(d.ty), mcmNum(d.tz)]; }), [1100, 3000, 1100, 900, 1270, 1270, 1280], ['c','l','c','c','c','c','c']);
+  });
+  const dv = mrmDefo(MR);
+  if (dv) { B.push({t:'p', text:`Verificación de deformación vertical para ${dv.est.id} (${dv.est.desc}): luz L = ${mcmNum(dv.L)} m, límite L/${dv.n} = ${mcmNum(dv.adm, 1)} mm; desplazamiento vertical máximo |TY| = ${mcmNum(dv.d, 1)} mm → ${dv.ok ? 'CUMPLE' : 'NO CUMPLE'}. El límite L/${dv.n} es el criterio indicado por el proyectista para esta estructura.`}); }
+  B.push({t:'h1', text:'REACCIONES'});
+  Ms.forEach(M => {
+    sub(M, 'Reacciones');
+    const ap = M.nudos.map((n, i) => ({n, i})).filter(x => /1/.test(x.n.r));
+    const ks = M.estados.map((e, k) => k).filter(k => M.estados[k].comb && M.estados[k].res !== 'no');
+    const lista = ks.length ? ks : M.estados.map((e, k) => k);
+    const fM = M.U.f + '·m', mf = M.U.fL;
+    const rows = []; lista.forEach(k => ap.forEach(({n, i}) => { const R = M.R[k].reac; rows.push([M.estados[k].id, String(n.id)].concat([0, 1, 2].map(q => mcmNum(R[q] ? R[q][i] : 0, 3)), [3, 4, 5].map(q => mcmNum((R[q] ? R[q][i] : 0) * mf, 3)))); }));
+    if (rows.length) tab(`Reacciones en los apoyos por ${ks.length ? 'combinación' : 'estado'} [${M.U.f}; ${fM}]` + (varios ? ' (' + M.etz + ')' : ''), ['Estado', 'Nudo', 'FX', 'FY', 'FZ', 'MX', 'MY', 'MZ'], rows, [1300, 800, 1300, 1300, 1300, 1300, 1300, 1320], ['c','c','c','c','c','c','c','c']);
+    // control: suma de reacciones verticales vs carga aplicada (solo si todas las cargas del estado son legibles)
+    const ctl = M.estados.map((e, k) => ({e, k})).filter(x => !x.e.comb).map(({e, k}) => { const ap2 = mrmAplicadaY(M, k), sr = mrmSumY(M, k); return [e.id, mcmNum(-ap2, 3), mcmNum(sr, 3), Math.abs(ap2) > 1e-9 ? mcmNum(100 * (sr + ap2) / Math.abs(ap2), 2) + ' %' : '—']; });
+    if (ctl.length && !M.otras.length) { B.push({t:'p', text:'Como control del modelo, la suma de las reacciones verticales de cada estado se compara con la carga vertical aplicada (cargas en nudos y en barras más el peso propio calculado con las áreas y densidades del .zip):'});
+      tab(`Control de equilibrio vertical [${M.U.f}]` + (varios ? ' (' + M.etz + ')' : ''), ['Estado', 'Carga vertical aplicada', 'Σ reacciones FY', 'Diferencia'], ctl, [1600, 3000, 3000, 2320], ['c','c','c','c']); }
+  });
+  B.push({t:'h1', text:'MASA DE ACERO'});
+  Ms.forEach(M => {
+    sub(M, 'Masa');
+    const G = mrmGrupos(M), tot = G.reduce((a, g) => a + g.masa, 0), falta = G.some(g => g.sinMasa);
+    par(`La masa de acero de ${varios ? 'este modelo' : 'la estructura'}, calculada como área de la sección × largo × densidad del material para cada elemento, es ${mcmNum(tot, 0)} kg${falta ? ' (parcial: faltan áreas o densidades en el .zip)' : ''}.`);
+  });
+  B.push({t:'h1', text:'CONCLUSIONES Y RECOMENDACIONES'}); par(mrmTxt(MR, P, 'concl'));
+  B.push({t:'h1', text:'ALCANCES Y LIMITACIONES'}); par(mrmTxt(MR, P, 'alc'));
+  let n1 = 0, n2 = 0;
+  B.forEach(b => { if (b.t === 'h1') { n1++; n2 = 0; b.num = `${n1}.`; } else if (b.t === 'h2') { n2++; b.num = `${n1}.${n2}`; } });
+  return B;
+}
+function renderMemoriaRam(container) {
+  const S0 = mcmLoad(), P = S0.proy; let MR = mrmLoad();
+  const root = document.createElement('div'); root.className = 'mcm-ui'; container.appendChild(root);
+  const sv = () => mcmLsGuardar(MRM_LS, MR, 'El modelo es grande para el autoguardado: la memoria RAM se conserva mientras la página esté abierta.');
+  const doc = () => { const M = MR.modelos[0], f = MR.figs.find(x => x.where === 'portada' && x.src);
+    return {proy:Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO', sub1:MR.sub1, sub2:MR.sub2, software:MR.modelos.length ? 'RAM Elements — ' + MR.modelos.map(m => '«' + m.etz + '»').join(', ') : 'RAM Elements'}),
+      portada:{img:f || (M ? mrmFigura(M, 'modelo') : null), logo:P.logoCli || null}}; };
+  const IP = (k, lab, ph) => `<div class="field"><label>${lab}</label><input type="text" data-p="${k}" value="${esc(P[k] || '')}" placeholder="${esc(ph || '')}"${k === 'codigo' && PROYECTO_POWER ? ' readonly title="Lo fija el proyecto de POWER"' : ''}></div>`;
+  const IE = (k, lab, ph) => `<div class="field"><label>${lab}</label><input type="text" data-e="${k}" value="${esc(MR[k] || '')}" placeholder="${esc(ph || '')}"></div>`;
+  const blk = (k, t) => `<div class="mem-blk"><h4>${t} ${MR[k] != null ? `<span class="mem-tag">editado</span><button type="button" class="btn-add" data-ereset="${k}" style="margin:0 0 0 auto;padding:.1rem .5rem">↺ sugerido</button>` : '<small>texto sugerido con los datos del modelo</small>'}</h4><textarea data-e="${k}" rows="3">${esc(mrmTxt(MR, P, k))}</textarea></div>`;
+  const zona = (w, t, s) => `<div class="mcm-drop mcm-drop-s" data-drop="${w}" tabindex="0"><b>${t}</b><span>${s}</span><div class="mcm-thumbs">${MR.figs.map((f, i) => f.where === w && f.src ? `<div class="mcm-th"><img src="${f.src}"><input type="text" data-f="${i}" value="${esc(f.cap)}" placeholder="Pie de figura"><button type="button" class="btn-remove" data-fdel="${i}">✕</button></div>` : '').join('')}</div></div>`;
+  function resumen(M, i) {
+    const G = mrmGrupos(M), D = M.disenado ? mrmDiseno(M) : [], mx = D.length ? D.reduce((a, b) => b.r > a.r ? b : a) : null;
+    return `<div class="mem-blk"><h4>📦 ${esc(M.archivo)} <small>${esc(M.etz)} · ${esc(M.unidades)}</small><button type="button" class="btn-remove" data-mdel="${i}" style="margin-left:auto" title="Quitar este modelo">✕</button></h4>
+      <div class="note">${M.nudos.length} nudos · ${M.barras.length} elementos · ${G.length} grupos · ${M.estados.filter(e => !e.comb).length} estados · ${M.estados.filter(e => e.comb).length} combinaciones · ${mrmApoyos(M).reduce((a, x) => a + x.nudos.length, 0)} apoyos · masa ${mcmNum(G.reduce((a, g) => a + g.masa, 0), 0)} kg
+      ${M.disenado ? ` · razón máx. <b style="color:${mx && mx.r > 1 ? '#b91c1c' : '#15803d'}">${mx ? mcmNum(mx.r) : '—'}</b>` : ' · <b>sin diseño corrido</b>'}${M.otras.length ? `<br>⚠ Cargas no leídas automáticamente: ${esc(M.otras.join(', '))}` : ''}${Object.keys(M.mats).length ? '' : '<br>⚠ El .zip no trae el archivo .mat: faltan Fy, Fu y densidad.'}</div></div>`;
+  }
+  function html() {
+    const M = MR.modelos[0], ests = M ? M.estados : [];
+    return `<div class="calc-head"><h1>Memoria con archivo RAM</h1><div class="sub">Cargue los .zip de RAM Elements (los que arma «Archivo › Comprimir», con el .etz, .mat y .sec) del diseño y de la verificación. La memoria se arma sola con la geometría, perfiles, materiales, apoyos, cargas, combinaciones, reacciones, deformaciones y razones de diseño del modelo; usted revisa los textos y agrega fotos o planos si quiere.</div></div>
+      <div class="panel"><h3>1 · Modelos RAM Elements</h3>
+        <div class="mcm-drop" data-ram="1" tabindex="0"><b>📦 Arrastre aquí los .zip (o .etz) de RAM Elements</b><span>o haga clic para elegirlos. Puede cargar más de uno (diseño y verificación).</span></div>
+        <input type="file" id="mrmIn" accept=".zip,.etz" multiple hidden>
+        <div id="mrmEst" class="note"></div>${MR.modelos.map(resumen).join('')}</div>
+      <div class="panel"><h3>2 · Proyecto y portada</h3><div class="field-grid">${IP('proyecto', 'Proyecto')}${IP('mandante', 'Cliente / mandante')}${IP('codigo', 'Código POWER')}${IP('ubicacion', 'Ubicación')}
+        ${IE('sub1', 'Subtítulo (qué se calcula)', 'Ej: Diseño de monorriel 1 t')}${IE('sub2', 'Segundo subtítulo (estructura)', 'vacío = nombre del proyecto')}${IP('fecha', 'Fecha')}${IP('rev', 'Revisión')}${IP('elaboro', 'Elaboró')}${IP('reviso', 'Revisó (opcional)')}</div>
+        ${zona('portada', '🖼 Imagen de portada (opcional)', 'si no se pone, va el dibujo del modelo generado por la Mesa')}</div>
+      <div class="panel"><h3>3 · Textos</h3>${blk('intro', 'Introducción y objetivo')}${blk('desc', 'Descripción de la estructura')}${zona('desc', '🖼 Fotos o planos de la estructura (opcional)', 'van en el capítulo Descripción')}
+        ${blk('crit', 'Criterios de diseño')}<div class="mem-blk"><h4>Otras normas <small>una por línea</small></h4><textarea data-e="normExtra" rows="2">${esc(MR.normExtra)}</textarea></div>
+        ${blk('concl', 'Conclusiones y recomendaciones')}${blk('alc', 'Alcances y limitaciones')}</div>
+      <div class="panel"><h3>4 · Opciones</h3><div class="field-grid">
+        <div class="field"><label>Deformación: luz L [m] (opcional)</label><input type="text" data-d="L" value="${esc(MR.defo.L)}" placeholder="Ej: 3,10"></div>
+        <div class="field"><label>Límite L / n</label><input type="text" data-d="n" value="${esc(MR.defo.n)}" placeholder="Ej: 450"></div>
+        <div class="field"><label>Estado o combinación a verificar</label><select data-d="est"><option value="">—</option>${ests.map(e => `<option value="${esc(e.id)}"${e.id === MR.defo.est ? ' selected' : ''}>${esc(e.id + ' — ' + e.desc)}</option>`).join('')}</select></div></div>
+        <div class="mem-checks" style="margin-top:.5rem"><label><input type="checkbox" data-v="1" ${MR.verTodos ? 'checked' : ''}> <span>Tabla de razón de diseño de todos los elementos (en modelos de más de 30 elementos va solo la tabla por grupo)</span></label></div>
+        ${zona('cargas', '⇩ Imágenes adicionales de cargas (opcional)', 'van al final del capítulo Cargas')}${zona('res', '⇩ Imágenes adicionales de resultados (opcional)', 'van al final del capítulo Diseño')}</div>
+      <div class="panel"><h3>5 · Emitir memoria</h3>
+        <div class="mem-btns"><button type="button" class="mem-btn" data-act="word">⬇ Word</button><button type="button" class="mem-btn" data-act="pdf">🖨 Imprimir / Guardar PDF</button><button type="button" class="btn-add" data-act="nueva">🗋 Nueva memoria RAM</button></div>
+        <div class="note">PDF: en el cuadro de impresión elija «Guardar como PDF», tamaño Carta y márgenes «Ninguno». El Word y una copia PDF quedan en Archivo ING con el código del proyecto.</div>
+        <div class="mem-prev-wrap" id="mrmPrev">${MR.modelos.length ? '' : '<div class="note" style="padding:1rem">Cargue un modelo para ver la memoria.</div>'}</div></div>
+      <input type="file" accept="image/*" multiple id="mrmImgIn" hidden>`;
+  }
+  let tok = 0, tp = null;
+  async function prev() { if (!MR.modelos.length) return; const t = ++tok; try { const R = await mpgPaginar(doc(), mrmBuild(MR, P)); if (t === tok) mpgMostrar(root.querySelector('#mrmPrev'), R.html); } catch (e) { console.error(e); const w = root.querySelector('#mrmPrev'); if (w) w.innerHTML = '<div class="note">No se pudo armar la vista previa: ' + esc(e.message || e) + '</div>'; } }
+  const prevLuego = () => { clearTimeout(tp); tp = setTimeout(prev, 400); };
+  function draw() { const y = window.scrollY; root.innerHTML = html(); window.scrollTo(0, y); prev(); }
+  draw();
+  async function cargar(files) {
+    const st = root.querySelector('#mrmEst');
+    for (const f of files) {
+      if (!/\.(zip|etz)$/i.test(f.name)) { fsToast('«' + f.name + '» no es un .zip ni un .etz.'); continue; }
+      st.textContent = 'Leyendo ' + f.name + '…';
+      try { const M = await mrmLeer(f); MR.modelos = MR.modelos.filter(x => x.archivo !== M.archivo).concat([M]); }
+      catch (e) { fsToast('No se pudo leer ' + f.name + ': ' + ((e && e.message) || e)); }
+    }
+    sv(); draw();
+  }
+  root.addEventListener('input', e => {
+    const t = e.target, d = t.dataset;
+    if (d.p != null) { P[d.p] = t.value; mcmSave(S0); }
+    else if (d.e != null) { MR[d.e] = t.value; sv(); }
+    else if (d.d != null) { MR.defo[d.d] = t.value; sv(); }
+    else if (d.f != null) { MR.figs[+d.f].cap = t.value; sv(); }
+    else return;
+    prevLuego();
+  });
+  root.addEventListener('change', e => {
+    const t = e.target, d = t.dataset;
+    if (d.d === 'est') { MR.defo.est = t.value; sv(); prevLuego(); }
+    else if (d.v) { MR.verTodos = t.checked; sv(); prevLuego(); }
+    else if (t.id === 'mrmIn') { cargar([...t.files]); t.value = ''; }
+    else if (t.id === 'mrmImgIn') { addImgs([...t.files], dest); t.value = ''; }
+  });
+  let dest = 'desc';
+  function addImgs(fs, where) {
+    fs = fs.filter(f => /^image\//.test(f.type)); if (!fs.length) { fsToast('Arrastra un archivo de imagen (PNG o JPG).'); return; }
+    Promise.all(fs.map(mcmImg)).then(rs => { rs.forEach((r, i) => MR.figs.push({id:Date.now() + i, where, cap:(fs[i].name || 'Imagen').replace(/\.[^.]+$/, ''), src:r.src, w:r.w, h:r.h, ancho:90})); sv(); draw(); }).catch(() => fsToast('No se pudo leer la imagen.'));
+  }
+  const zonaDe = e => e.target.closest('[data-drop],[data-ram]');
+  root.addEventListener('dragover', e => { const z = zonaDe(e); if (!z) return; e.preventDefault(); z.classList.add('over'); });
+  root.addEventListener('dragleave', e => { const z = zonaDe(e); if (z && !z.contains(e.relatedTarget)) z.classList.remove('over'); });
+  root.addEventListener('drop', e => { const z = zonaDe(e); if (!z) return; e.preventDefault(); z.classList.remove('over'); const fs = [...(e.dataTransfer.files || [])]; if (z.dataset.ram) cargar(fs); else addImgs(fs, z.dataset.drop); });
+  root.addEventListener('paste', e => { const z = e.target.closest('[data-drop]'); if (!z) return; const fs = [...(e.clipboardData.items || [])].filter(it => it.kind === 'file').map(it => it.getAsFile()).filter(Boolean); if (fs.length) { e.preventDefault(); addImgs(fs, z.dataset.drop); } });
+  let armado = 0;
+  root.addEventListener('click', async e => {
+    const z = zonaDe(e);
+    if (z && !e.target.closest('input,button,.mcm-th')) { if (z.dataset.ram) root.querySelector('#mrmIn').click(); else { dest = z.dataset.drop; root.querySelector('#mrmImgIn').click(); } return; }
+    const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+    if (d.mdel != null) { MR.modelos.splice(+d.mdel, 1); sv(); draw(); return; }
+    if (d.fdel != null) { MR.figs.splice(+d.fdel, 1); sv(); draw(); return; }
+    if (d.ereset) { MR[d.ereset] = null; sv(); draw(); return; }
+    if (d.act === 'nueva') { if (Date.now() - armado > 4000) { armado = Date.now(); fsToast('Vuelve a pulsar «Nueva memoria RAM» para borrar la actual.'); return; } MR = mrmDef(); sv(); draw(); return; }
+    if (d.act === 'word' || d.act === 'pdf') {
+      if (!MR.modelos.length) { fsToast('Cargue primero el .zip del modelo RAM.'); return; }
+      const t0 = b.textContent; b.disabled = true; b.textContent = '⏳ Generando…';
+      try {
+        const D = doc(), B = mrmBuild(MR, P), R = await mpgPaginar(D, B), base = mcmNombre(P, 'Memoria_RAM');
+        if (d.act === 'word') { const blob = await mcmDocx({proy:D.proy, portada:D.portada}, B, R); await mcmGuardarArchivo(base + '.docx', blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Documento de Word', '.docx'); archMemoria([{nombre:base + '.docx', blob}], D.proy, {clase:'ram'}); }
+        else {
+          const arch = () => { window.removeEventListener('afterprint', arch); setTimeout(async () => { try { archMemoria([{nombre:base + '.pdf', blob:await mpgAPdf(R.html, true)}], D.proy, {clase:'ram'}); } catch (er) {} }, 300); };
+          window.addEventListener('afterprint', arch); mpgImprimir(R.html);
+        }
+      } catch (er) { fsToast('No se pudo generar: ' + ((er && er.message) || er)); }
+      finally { b.disabled = false; b.textContent = t0; }
+    }
+  });
+}
+
 function renderMemorias(container) {
   if (!document.getElementById('mcmCss')) { const st = document.createElement('style'); st.id = 'mcmCss'; st.textContent = MCM_CSS; document.head.appendChild(st); }
   let mcmTipo = 'general'; try { mcmTipo = localStorage.getItem(MVS_TIPO) || 'general'; } catch (e) {}
   container.innerHTML = ''; container.appendChild(mvsBarraTipo(container, mcmTipo));
+  { const t = document.createElement('div'); t.innerHTML = mcmPowerBarHtml(); container.appendChild(t.firstChild); mcmPowerBarEventos(container); }
+  if (!container.dataset.powerEv) { container.dataset.powerEv = '1'; document.addEventListener('mesa-power', () => { if (document.body.contains(container) && location.hash.replace('#', '') === 'memorias') renderMemorias(container); }); }
+  if (mcmTipo === 'ram' || mcmTipo === 'express') {
+    document.documentElement.classList.add('mcm-on');
+    const offR = () => { if (location.hash.replace('#', '') !== 'memorias') { document.documentElement.classList.remove('mcm-on'); window.removeEventListener('hashchange', offR); } };
+    window.addEventListener('hashchange', offR);
+    (mcmTipo === 'ram' ? renderMemoriaRam : renderMemoriaExpress)(container); return;
+  }
   if (mcmTipo === 'simple') {
     document.documentElement.classList.add('mcm-on');
     const offR = () => { if (location.hash.replace('#', '') !== 'memorias') { document.documentElement.classList.remove('mcm-on'); window.removeEventListener('hashchange', offR); } };
@@ -49553,7 +50497,7 @@ function renderMemorias(container) {
       <div class="mem-btns"><button type="button" class="btn-add" data-act="nueva">🗋 Nueva memoria</button><button type="button" class="btn-add" data-act="abrir">📂 Abrir memoria…</button><button type="button" class="btn-add" data-act="guardar">💾 Guardar</button><button type="button" class="btn-add" data-act="guardarComo">💾 Guardar como…</button><input type="file" accept=".json,application/json" id="mcmFile" hidden>${mcmFH ? `<span class="note" style="align-self:center">Archivo: <b>${esc(mcmFH.name)}</b></span>` : ''}</div>
     </div>
     <div class="panel"><h3>1 · Proyecto y portada</h3><div class="field-grid">
-      ${SEL('Tipo de documento', 'proy.titulo', MCM_DOCS)}${F('Nombre del proyecto', 'proy.proyecto', 'Ej: Ampliación nave de secado')}${F('Mandante', 'proy.mandante')}${F('Código ING', 'proy.codigo', 'Ej: ING-24-031')}
+      ${SEL('Tipo de documento', 'proy.titulo', MCM_DOCS)}${F('Nombre del proyecto', 'proy.proyecto', 'Ej: Ampliación nave de secado')}${F('Mandante', 'proy.mandante')}${F('Código POWER', 'proy.codigo', 'Ej: BED-02-028-26')}${F('Subtítulo (tipo de estudio)', 'proy.sub1', 'Ej: Diseño de estructura soporte')}${F('Segundo subtítulo (estructura)', 'proy.sub2', 'vacío = nombre del proyecto')}
       ${F('Ubicación', 'proy.ubicacion', 'Comuna, región')}${F('Fecha', 'proy.fecha')}${F('Revisión', 'proy.rev')}${SELO('Descripción de la revisión', 'proy.descRev', MCM_REVS)}${SELO('Elaboró', 'proy.elaboro', MCM_ING)}${SELO('Revisó', 'proy.reviso', MCM_ING)}</div></div>
     <div class="panel"><h3>2 · Tipo de estructura</h3><div class="field-grid">
       ${SEL('Uso / tipo', 'est.uso', MCM_USOS.map(u => [u.id, u.label]))}${F('Destino o nombre de la estructura', 'est.nombre', 'Ej: almacenamiento de madera seca')}
@@ -49591,14 +50535,16 @@ function renderMemorias(container) {
     <div class="panel"><h3>10 · Emitir memoria</h3>${esq}
       <div class="mem-btns"><button type="button" class="mem-btn" data-act="word">⬇ Descargar Word</button><button type="button" class="mem-btn" data-act="pdf">🖨 Imprimir / Guardar PDF</button><button type="button" class="btn-add" data-act="guardar">💾 Guardar memoria</button></div>
       <div class="note">Word: el índice se actualiza al abrir (Word pregunta «¿actualizar campos?» → Sí). PDF: en el diálogo de impresión elige «Guardar como PDF», tamaño Carta.</div>
-      <div class="mem-prev-wrap" id="mcmPrevWrap">${mcmSheetHtml(S, B)}</div></div>`;
+      <div class="mem-prev-wrap" id="mcmPrevWrap"></div></div>`;
   }
-  function draw() { const y = window.scrollY; root.innerHTML = html(); window.scrollTo(0, y); }
+  let tokP = 0;
+  async function prevPag() { const t = ++tokP; try { const R = await mpgPaginar(mcmDoc(S), mcmBuild(S)); if (t === tokP) mpgMostrar(document.getElementById('mcmPrevWrap'), R.html); } catch (e) { console.error(e); } }
+  function draw() { const y = window.scrollY; root.innerHTML = html(); window.scrollTo(0, y); prevPag(); }
   document.documentElement.classList.add('mcm-on');
   const offRoute = () => { if (location.hash.replace('#', '') !== 'memorias') { document.documentElement.classList.remove('mcm-on'); window.removeEventListener('hashchange', offRoute); } };
   window.addEventListener('hashchange', offRoute);
   let tPrev = null;
-  function refreshPrev() { mcmSave(S); clearTimeout(tPrev); tPrev = setTimeout(() => { const B = mcmBuild(S); const w = document.getElementById('mcmPrevWrap'); if (w) w.innerHTML = mcmSheetHtml(S, B); const q = root.querySelector('#mem_esq'); if (q) { const tmp = document.createElement('div'); tmp.innerHTML = html().match(/<div id="mem_esq"[\s\S]*?<\/div>/)[0]; q.innerHTML = tmp.firstChild.innerHTML; } }, 250); }
+  function refreshPrev() { mcmSave(S); clearTimeout(tPrev); tPrev = setTimeout(() => { prevPag(); const q = root.querySelector('#mem_esq'); if (q) { const tmp = document.createElement('div'); tmp.innerHTML = html().match(/<div id="mem_esq"[\s\S]*?<\/div>/)[0]; q.innerHTML = tmp.firstChild.innerHTML; } }, 250); }
   const redrawKeys = /^(est\.(uso|acero|hormigon|madera|albanileria|metalcon)|mat\.\w+\.on|cargas\.\d+\.on|sis\.(on|norma)|caps\.|figs\.\d+\.(where|ancho|hcm))/;
   root.addEventListener('input', e => {
     const t = e.target;
@@ -49646,10 +50592,10 @@ function renderMemorias(container) {
       const Sa = JSON.parse(JSON.stringify(S)), nomPdf = `Memoria_${mcmSlug(S.proy.codigo || S.proy.proyecto) || 'calculo'}_Rev${mcmSlug(S.proy.rev)}.pdf`;
       // tras cerrar el cuadro de impresión se arma una copia PDF de la memoria y se guarda en Archivo ING
       const arch = () => { window.removeEventListener('afterprint', arch); setTimeout(async () => {
-        try { fsToast('Guardando la memoria en Archivo ING…'); await archMemoria([{nombre:nomPdf, blob:await mcmHojaAPdf(mcmSheetHtml(Sa, mcmBuild(Sa)), true)}], Sa.proy, {clase:'general'}); }
+        try { fsToast('Guardando la memoria en Archivo ING…'); const Ra = await mpgPaginar(mcmDoc(Sa), mcmBuild(Sa)); await archMemoria([{nombre:nomPdf, blob:await mpgAPdf(Ra.html, true)}], Sa.proy, {clase:'general'}); }
         catch (err) { fsToast('No se pudo preparar el PDF para Archivo ING: ' + ((err && err.message) || err)); } }, 300); };
       window.addEventListener('afterprint', arch);
-      mcmImprimir(S); return; }
+      try { const Rp = await mpgPaginar(mcmDoc(S), mcmBuild(S)); mpgImprimir(Rp.html); } catch (err) { window.removeEventListener('afterprint', arch); fsToast('No se pudo preparar la impresión: ' + ((err && err.message) || err)); } return; }
     else if (a === 'word') { b.disabled = true; const t0 = b.textContent; b.textContent = 'Generando Word…';
       try { const blob = await mcmDocx(S), nomW = `Memoria_${mcmSlug(S.proy.codigo || S.proy.proyecto) || 'calculo'}_Rev${mcmSlug(S.proy.rev)}.docx`; await mcmGuardarArchivo(nomW, blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Documento de Word', '.docx'); archMemoria([{nombre:nomW, blob}], S.proy, {clase:'general'}); }
       catch (err) { fsToast('No se pudo generar el Word: ' + (err.message || err)); }
@@ -56485,7 +57431,7 @@ function route() {
 document.addEventListener('input', function(e){
   var t = e.target; if (!t || t.tagName !== 'INPUT') return;
   if (!/^(text|search|)$/.test(t.type || '') || t.dataset.noupper != null) return;
-  if (!t.closest('#mainView')) return;
+  if (!t.closest('#mainView') || t.closest('.mcm-ui')) return;   // memorias: mayúsculas y minúsculas como la memoria modelo de ING
   var v = t.value; if (!v || v.indexOf('@') >= 0 || !/[a-záéíóúñü]/.test(v)) return;
   if (/^[\d\s.,+\-*/()eE]*$/.test(v)) return; // números con notación científica
   var a = t.selectionStart, b = t.selectionEnd; t.value = v.toLocaleUpperCase('es-CL');
