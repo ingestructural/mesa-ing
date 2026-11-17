@@ -50544,7 +50544,7 @@ function renderMemoriaRam(container) {
     r.onresult = ev => { let tmp = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const x = ev.results[i]; if (x.isFinal) fin += x[0].transcript.trim() + ' '; else tmp += x[0].transcript; }
       ta.value = (base + fin + tmp).trim(); guardar(ta.value); };
     r.onerror = ev => fsToast(ev.error === 'not-allowed' || ev.error === 'service-not-allowed' ? 'El navegador no dio permiso al micrófono: permítalo en el candado de la barra de direcciones.' : ev.error === 'no-speech' ? 'No se escuchó nada: vuelva a pulsar el micrófono.' : 'Dictado: ' + ev.error);
-    r.onend = () => { if (mrmRec !== r) return; mrmRec = null; mrmRecK = null; let v = ta.value.trim(); if (v) v = v.charAt(0).toUpperCase() + v.slice(1); if (v && !/[.!?]$/.test(v) && k !== 'instr') v += '.'; guardar(v); sv(); draw(); };
+    r.onend = () => { if (mrmRec !== r) return; mrmRec = null; mrmRecK = null; const t = mcmDictLimpiar(fin); let v = (base + t).trim(); if (v) v = v.charAt(0).toUpperCase() + v.slice(1); if (v && !/[.!?)»]$/.test(v) && k !== 'instr') v += '.'; ta.value = v; guardar(v); sv(); draw(); };
     try { r.start(); mrmRec = r; mrmRecK = k; const b = root.querySelector('[data-act="mic"][data-k="' + k + '"]'); if (b) { b.textContent = '⏹ Detener'; b.classList.add('on'); } } catch (e) { fsToast('No se pudo iniciar el dictado: ' + (e.message || e)); }
   }
   let tok = 0, tp = null;
@@ -50620,6 +50620,32 @@ function renderMemoriaRam(container) {
    Dictado (Web Speech API de Chrome/Edge, es-CL) como alternativa a escribir: lo dictado se agrega al final del texto del cuadro
    y se avisa con un evento «input», igual que si se hubiera escrito. Los cuadros con data-nomic tienen su propio micrófono. */
 let MCM_MIC = null;
+/* limpieza del texto dictado (reglas, sin IA): puntuación dictada, decimales, guiones en códigos, muletillas,
+   palabras repetidas seguidas, espacios y mayúsculas. «punto» solo se cambia por «.» cuando no es parte de «punto de …». */
+function mcmDictLimpiar(t) {
+  let s = ' ' + String(t || '').replace(/\s+/g, ' ') + ' ';
+  s = s.replace(/(\d)\s+coma\s+(\d)/gi, '$1,$2');
+  const R = [
+    [/\s+(?:punto\s+(?:y\s+)?aparte|nuevo\s+p[aá]rrafo)\b[\s,.]*/gi, '.\n\n'],
+    [/\s+punto\s+(?:y\s+)?seguido\b/gi, '.'], [/\s+punto\s+final\b/gi, '.'],
+    [/\s+punto\s+y\s+coma\b/gi, ';'], [/\s+dos\s+puntos\b/gi, ':'],
+    [/\s+abre\s+par[eé]ntesis\b\s*/gi, ' ('], [/\s+cierra\s+par[eé]ntesis\b/gi, ')'],
+    [/\s+abre\s+comillas\b\s*/gi, ' «'], [/\s+cierra\s+comillas\b/gi, '»'],
+    [/\s+(?:signo\s+de\s+)?interrogaci[oó]n\b/gi, '?'],
+    [/\s+coma\b/gi, ','],
+    [/\s+punto\b(?!\s+(?:de|del|a|al|en|cr[ií]tico|medio|fijo|m[aá]s|cero|cardinal|muerto|neutro)\b)/gi, '.'],
+    [/(\S)\s+gui[oó]n\s+(?=\S)/gi, '$1-'],
+    [/(\n|[ \t]+)(?:e+h+|e+m+|m{2,}|e+h+m+)\b,?/gi, '$1'],
+  ];
+  R.forEach(([re, v]) => { s = s.replace(re, v); });
+  s = s.replace(/(^|[^\p{L}])(\p{L}+)(?:\s+\2)+(?=[^\p{L}]|$)/giu, '$1$2');   // «la la viga» → «la viga»
+  s = s.replace(/[ \t]+([,.;:)?»])/g, '$1').replace(/([(«])[ \t]+/g, '$1')
+    .replace(/([,;:])(?=[^\s\d\n])/g, '$1 ').replace(/\.(?=\p{L})/gu, '. ')
+    .replace(/[,;:]+\./g, '.').replace(/\.{2,}/g, '.').replace(/,{2,}/g, ',').replace(/[ \t]{2,}/g, ' ')
+    .split('\n').map(x => x.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  s = s.replace(/^\p{Ll}/u, c => c.toUpperCase()).replace(/([.?!]\s+|\n)(\p{Ll})/gu, (m, a, c) => a + c.toUpperCase());
+  return s.replace(/^[,.;:]\s*/, '');
+}
 function mcmMicDecorar(cont) {
   cont.querySelectorAll('textarea:not([data-nomic]):not([data-mic])').forEach(ta => {
     ta.dataset.mic = '1';
@@ -50648,7 +50674,7 @@ function mcmMicDictar(ta, b) {
     ta.value = base + (t ? sep + t : ''); if (nuevo) avisar(); };
   r.onerror = ev => fsToast(ev.error === 'not-allowed' || ev.error === 'service-not-allowed' ? 'El navegador no dio permiso al micrófono: permítalo en el candado de la barra de direcciones.' : ev.error === 'no-speech' ? 'No se escuchó nada: vuelva a pulsar el micrófono.' : 'Dictado: ' + ev.error);
   r.onend = () => { if (!MCM_MIC || MCM_MIC.r !== r) return; MCM_MIC = null; b.classList.remove('on'); b.textContent = '🎤';
-    const t = fin.trim(); if (t) { let v = ta.value.replace(/\s+$/, ''); if (!/[.!?:]$/.test(v)) v += '.'; ta.value = v; avisar(); } };
+    let t = mcmDictLimpiar(fin); if (t) { if (base && !/[.!?:]$/.test(base)) t = t.charAt(0).toLowerCase() + t.slice(1); let v = base + sep + t; if (!/[.!?:)»]$/.test(v)) v += '.'; ta.value = v; avisar(); } };
   try { r.start(); MCM_MIC = {r, ta}; b.classList.add('on'); b.textContent = '⏹'; } catch (e) { fsToast('No se pudo iniciar el dictado: ' + (e.message || e)); }
 }
 
