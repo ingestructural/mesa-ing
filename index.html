@@ -1285,12 +1285,25 @@ function firmaIngHtml(o){
   }
   return '<div class="firma-ing' + (o.edit ? ' firma-ing-edit' : '') + '"' + (o.edit ? ' id="firmaIngPie"' : '') + '>'
     + (o.edit ? '<div class="firma-ing-nota">Pie de firma de la memoria (se imprime al final). ' + (firmaIngOn() ? 'Arrastre la firma para moverla; la esquina azul cambia el tamaño; doble clic la devuelve a su lugar.' : 'Use «Firmar» para poner su firma sobre el nombre.') + '</div>' : '')
-    + '<div class="firma-ing-txt">' + img + '<b>' + FIRMA_ING[0] + '</b><br>' + FIRMA_ING[1] + '<br>' + FIRMA_ING[2] + '</div>' + firmaIngLogo() + '</div>';
+    + '<div class="firma-ing-txt">' + img + '<b>' + FIRMA_ING[0] + '</b><br>' + FIRMA_ING[1] + '<br>' + firmaIngLogo() + FIRMA_ING[2] + '</div></div>';
 }
-/* logo de ING Estructural bajo el pie de firma (pedido de ING, 13-11-2026: siempre); se toma del logo de la barra lateral */
+/* logo de ING Estructural en el pie de firma: solo el isotipo (cuadro azul), pequeño, a la izquierda de «ING Estructural»
+   (pedido de ING, 17-11-2026; antes iba el logo completo debajo). Se recorta del logo de la barra lateral. */
+var FIRMA_ING_MARCA = null;
+function firmaIngMarca(){
+  if (FIRMA_ING_MARCA) return FIRMA_ING_MARCA;
+  var lg = document.querySelector('.brand-logo'); if (!lg || !lg.src || !lg.naturalWidth) return null;
+  try {
+    var k = lg.naturalWidth / 530, sx = 17 * k, sy = 18 * k, sw = 131 * k, sh = 134 * k;   // isotipo dentro del logo 530×171
+    var c = document.createElement('canvas'); c.width = 262; c.height = 268;
+    c.getContext('2d').drawImage(lg, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    FIRMA_ING_MARCA = {src:c.toDataURL('image/png'), w:c.width, h:c.height};
+  } catch (e) { return null; }
+  return FIRMA_ING_MARCA;
+}
 function firmaIngLogo(){
-  var lg = document.querySelector('.brand-logo');
-  return lg && lg.src ? '<div class="firma-ing-logo"><img src="' + lg.src + '" alt="ING Estructural"></div>' : '';
+  var m = firmaIngMarca();
+  return m ? '<img class="firma-ing-marca" src="' + m.src + '" alt="">' : '';
 }
 
 /* bloques del Constructor de Memorias: la firma va al final del cuerpo, antes de los anexos */
@@ -1315,15 +1328,16 @@ function firmaIngDocx(d, FONT){
         verticalPosition:{relative:d.VerticalPositionRelativeFrom.LINE, offset:Math.round((FIRMA_ING_GEO.top + q.dy) * EMU)},
         allowOverlap:true, behindDocument:false, wrap:{type:d.TextWrappingType.NONE}, zIndex:5}}); };
   return [P([], {after:1800, keepNext:true})].concat(FIRMA_ING.map(function(t, i){
-    return P(i === 0 && firmaIngOn() ? [fImg(), run(t, true)] : [run(t, i === 0)], {keepNext:i < 3}); })).concat(firmaIngLogoDocx(d, P));
+    var ch = i === 0 && firmaIngOn() ? [fImg(), run(t, true)] : [run(t, i === 0)];
+    if (i === FIRMA_ING.length - 1) ch = firmaIngLogoDocx(d).concat(ch);
+    return P(ch, {keepNext:i < FIRMA_ING.length - 1}); }));
 }
-/* logo de ING Estructural bajo el pie (Word), alto 1,4 cm */
-function firmaIngLogoDocx(d, P){
-  var lg = document.querySelector('.brand-logo');
-  if (!lg || !/^data:image\/png;base64,/.test(lg.src || '')) return [];
-  var b = atob(lg.src.split(',')[1]), u = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
-  var h = Math.round(1.4 * 37.8), w = Math.round(h * ((lg.naturalWidth || 530) / (lg.naturalHeight || 171)));
-  return [P([new d.ImageRun({type:'png', data:u, transformation:{width:w, height:h}})], {after:0})];
+/* isotipo de ING Estructural antes de «ING Estructural» (Word), alto 0,5 cm */
+function firmaIngLogoDocx(d){
+  var m = firmaIngMarca(); if (!m) return [];
+  var b = atob(m.src.split(',')[1]), u = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+  var h = Math.round(0.5 * 37.8), w = Math.round(h * m.w / m.h);
+  return [new d.ImageRun({type:'png', data:u, transformation:{width:w, height:h}}), new d.TextRun({text:' ', size:24})];
 }
 
 /* ---------- pie en pantalla al final de cada planilla ---------- */
@@ -1489,7 +1503,7 @@ async function firmaIngClick(ev){
   var st = document.createElement('style');
   st.textContent = '.firma-ing{padding-top:3.2cm;break-inside:avoid;page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif;font-size:12pt;line-height:1.35;color:#111;text-align:left}'
     + '.firma-ing-txt{position:relative;display:inline-block;font-weight:400}.firma-ing-txt b{font-weight:700}'
-    + '.firma-ing-logo{margin-top:.25cm}.firma-ing-logo img{height:1.4cm;width:auto;display:block}'
+    + '.firma-ing-marca{height:.5cm;width:auto;display:inline-block;vertical-align:-.11cm;margin-right:.15cm}'
     + '.firma-ing .fimg{user-select:none;-webkit-user-drag:none;touch-action:none;pointer-events:none}'
     + '.firma-ing-edit{margin:1.2rem 0 .5rem;padding:4.1cm 1.2rem .9rem;background:#fff;border:1px dashed #9fb3c8;border-radius:6px;position:relative}'
     + '.firma-ing-edit .fimg{pointer-events:auto;cursor:move}.firma-ing-edit .fimg:hover{outline:1px dashed #1f6feb}'
