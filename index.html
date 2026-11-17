@@ -48695,7 +48695,7 @@ html.mcm-on .print-actions{display:none !important}
 .mcm-thumbs{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:.3rem} .mcm-th{display:grid;gap:.2rem;width:180px;cursor:default} .mcm-th img{width:180px;height:110px;object-fit:cover;border-radius:4px;border:1px solid var(--line,#ccd)}
 .mcm-th input{font-size:.75rem;width:100%} .mcm-th button{justify-self:end;margin:0}
 .mcm-tog{border:1px solid var(--accent,#0060c1);background:transparent;color:var(--accent,#0060c1);border-radius:16px;padding:.35rem .8rem;font-weight:600;cursor:pointer}
-.mcm-tog.on{background:var(--accent,#0060c1);color:#fff} .mrm-kw{font-weight:700} .mrm-kw.a{color:#15803d} .mrm-kw.s{color:#0060c1} .mrm-instr .btn-add.on{background:#b91c1c;color:#fff;border-color:#b91c1c;animation:mrmPulso 1.2s infinite} @keyframes mrmPulso{50%{opacity:.6}} .mcm-tog:disabled{opacity:.4;cursor:not-allowed}
+.mcm-tog.on{background:var(--accent,#0060c1);color:#fff} .mrm-kw{font-weight:700} .mrm-kw.a{color:#15803d} .mrm-kw.s{color:#0060c1} .mrm-add{margin-top:.45rem;padding:.45rem .55rem;border:1px dashed var(--line,#c9d3df);border-radius:6px} .mrm-add-h{display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem;font-size:.82rem;font-weight:600} .mrm-add-h small{font-weight:400;color:var(--ink-muted,#666)} .mrm-add-h .btn-add{margin:0 0 0 auto;padding:.12rem .55rem} .mrm-add .btn-add.on,.mrm-instr .btn-add.on{background:#b91c1c;color:#fff;border-color:#b91c1c;animation:mrmPulso 1.2s infinite} @keyframes mrmPulso{50%{opacity:.6}} .mcm-tog:disabled{opacity:.4;cursor:not-allowed}
 .mcm-res h4{font-size:.95rem;color:var(--accent)} .mcm-resit{margin:.6rem 0 .2rem} .mcm-resit-h{font-weight:700;font-size:.85rem;margin-bottom:.3rem}
 .mcm-drop-s{margin:.35rem 0;padding:.5rem .6rem} .mcm-th small{color:var(--ink-muted);font-size:.72rem}
 .ett-sug{margin-top:.3rem;width:100%;font-size:.78rem !important;color:var(--accent) !important;background:color-mix(in srgb,var(--accent,#0060c1) 6%,transparent) !important;border:1px dashed var(--accent,#0060c1) !important;border-radius:4px;padding:.2rem .3rem}
@@ -49992,8 +49992,8 @@ function renderMemoriaExpress(container) {
    Lo que el lector no reconoce se informa en la memoria como «no leído»; nada se supone.
    ========================================================================= */
 const MRM_LS = 'mesaMemRam.v1';
-function mrmDef() { return {v:1, sub1:'', sub2:'', intro:null, desc:null, crit:null, concl:null, alc:null, normExtra:'', instr:'', modelos:[], figs:[], defo:{L:'', n:'', est:''}, verTodos:false}; }
-function mrmLoad() { const s = mcmLsLeer(MRM_LS); return Object.assign(mrmDef(), s && typeof s === 'object' ? s : {}); }
+function mrmDef() { return {v:1, sub1:'', sub2:'', intro:null, desc:null, crit:null, concl:null, alc:null, normExtra:'', instr:'', extra:{}, modelos:[], figs:[], defo:{L:'', n:'', est:''}, verTodos:false}; }
+function mrmLoad() { const s = mcmLsLeer(MRM_LS), o = Object.assign(mrmDef(), s && typeof s === 'object' ? s : {}); if (!o.extra || typeof o.extra !== 'object') o.extra = {}; return o; }
 // unidades RAM («Ton-m», «Kg-cm», «kN-m», «Lb-in»…): fuerza y largo
 function mrmUnid(u) {
   const [f, l] = String(u || 'Ton-m').split('-').map(x => x.trim().toLowerCase());
@@ -50360,10 +50360,11 @@ function mrmBuild(MR, P) {
   const tab = (cap, head, rows, widths, align) => B.push({t:'table', cap:`Tabla ${++nT}: ${cap}`, head, rows, widths, align});
   const fig = (f, cap, ancho) => B.push({t:'fig', src:f.src, w:f.w, h:f.h, ancho:ancho || 100, cap:`Figura ${++nF}: ${cap}`});
   const par = t => String(t || '').split(/\n\s*\n/).map(x => x.trim()).filter(Boolean).forEach(x => B.push({t:'p', text:x}));
+  const txt = k => { par(mrmTxt(MR, P, k)); par((MR.extra || {})[k]); };   // texto automático (o editado) + complemento dictado o escrito
   const ufig = w => MR.figs.filter(f => f.where === w && f.src).forEach(f => fig(f, f.cap || '', f.ancho || 90));
   mrmRoles(MR); const Ms = MR.modelos, varios = Ms.length > 1, sub = (M, t) => varios ? B.push({t:'h2', text:`${t} — ${mrmNom(M)}`}) : null;
-  B.push({t:'h1', text:'INTRODUCCIÓN Y OBJETIVO'}); par(mrmTxt(MR, P, 'intro'));
-  B.push({t:'h1', text:'DESCRIPCIÓN DE LA ESTRUCTURA'}); par(mrmTxt(MR, P, 'desc'));
+  B.push({t:'h1', text:'INTRODUCCIÓN Y OBJETIVO'}); txt('intro');
+  B.push({t:'h1', text:'DESCRIPCIÓN DE LA ESTRUCTURA'}); txt('desc');
   ufig('desc');
   if (Ms[0]) fig(mrmFigura(Ms[0], 'modelo'), 'Modelo de barras de la estructura' + (varios ? ' (' + mrmNom(Ms[0]) + ')' : ''), 90);
   B.push({t:'h1', text:'NORMAS, MATERIALES Y CRITERIOS DE DISEÑO'});
@@ -50378,7 +50379,7 @@ function mrmBuild(MR, P) {
     const mpa = v => v != null ? `${mcmNum(v * 0.0980665, 0)} MPa (${mcmNum(v, 0)} kgf/cm²)` : '—';
     return [m.nombre, mpa(m.Fy), mpa(m.Fu), m.E != null ? mcmNum(m.E * 0.0980665, 0) + ' MPa' : '—', m.rho != null ? mcmNum(m.rho, 0) + ' kg/m³' : '—']; });
   tab('Materiales del modelo (archivo .mat de RAM Elements)', ['Material', 'Fy', 'Fu', 'E', 'Densidad'], matRows, [1700, 2500, 2500, 1600, 1620], ['l','c','c','c','c']);
-  B.push({t:'h2', text:'Criterios de diseño'}); par(mrmTxt(MR, P, 'crit'));
+  B.push({t:'h2', text:'Criterios de diseño'}); txt('crit');
   B.push({t:'h1', text:'MODELO DE ANÁLISIS'});
   Ms.forEach((M, mi) => {
     const G = mrmGrupos(M), dim = mrmDim(M);
@@ -50466,7 +50467,7 @@ function mrmBuild(MR, P) {
   });
   const I = mrmInstr(MR);
   if (I.comparar) mrmComparacion(MR, B, tab, par);
-  B.push({t:'h1', text:'CONCLUSIONES Y RECOMENDACIONES'}); par(mrmTxt(MR, P, 'concl'));
+  B.push({t:'h1', text:'CONCLUSIONES Y RECOMENDACIONES'}); txt('concl');
   // elementos que no cumplen (para evaluar o definir refuerzos) y perfiles definidos
   Ms.forEach(M => { if (!M.disenado) return; const mal = mrmDiseno(M).filter(x => x.r > 1); if (!mal.length) return;
     tab('Elementos que no cumplen' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Elem.', 'Grupo', 'Sección', 'L [m]', 'Razón', 'Combinación', 'Referencia'],
@@ -50475,7 +50476,7 @@ function mrmBuild(MR, P) {
     B.push({t:'p', text:`Los perfiles definidos${varios ? ' (' + mrmNom(M).toLowerCase() + ')' : ''} son los de la tabla siguiente.`});
     tab('Perfiles definidos' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Grupo RAM', 'Sección', 'Material', 'N° elem.', 'Largo total [m]', 'Masa [kg]'],
       G.map(x => [x.grupo || '—', x.secc, x.mat, String(x.n), mcmNum(x.L), x.sinMasa ? '—' : mcmNum(x.masa, 0)]), [1700, 2200, 1500, 1100, 1700, 1720], ['l','l','l','c','c','c']); }
-  B.push({t:'h1', text:'ALCANCES Y LIMITACIONES'}); par(mrmTxt(MR, P, 'alc'));
+  B.push({t:'h1', text:'ALCANCES Y LIMITACIONES'}); txt('alc');
   let n1 = 0, n2 = 0;
   B.forEach(b => { if (b.t === 'h1') { n1++; n2 = 0; b.num = `${n1}.`; } else if (b.t === 'h2') { n2++; b.num = `${n1}.${n2}`; } });
   return B;
@@ -50489,7 +50490,9 @@ function renderMemoriaRam(container) {
       portada:{img:f || (M ? mrmFigura(M, 'modelo') : null), logo:P.logoCli || null}}; };
   const IP = (k, lab, ph) => `<div class="field"><label>${lab}</label><input type="text" data-p="${k}" value="${esc(P[k] || '')}" placeholder="${esc(ph || '')}"${k === 'codigo' && PROYECTO_POWER ? ' readonly title="Lo fija el proyecto de POWER"' : ''}></div>`;
   const IE = (k, lab, ph) => `<div class="field"><label>${lab}</label><input type="text" data-e="${k}" value="${esc(MR[k] || '')}" placeholder="${esc(ph || '')}"></div>`;
-  const blk = (k, t) => `<div class="mem-blk"><h4>${t} ${MR[k] != null ? `<span class="mem-tag">editado</span><button type="button" class="btn-add" data-ereset="${k}" style="margin:0 0 0 auto;padding:.1rem .5rem">↺ sugerido</button>` : '<small>texto sugerido con los datos del modelo</small>'}</h4><textarea data-e="${k}" rows="3">${esc(mrmTxt(MR, P, k))}</textarea></div>`;
+  const blk = (k, t) => `<div class="mem-blk"><h4>${t} ${MR[k] != null ? `<span class="mem-tag">editado</span><button type="button" class="btn-add" data-ereset="${k}" style="margin:0 0 0 auto;padding:.1rem .5rem">↺ sugerido</button>` : '<small>texto sugerido con los datos del modelo</small>'}</h4><textarea data-e="${k}" rows="3">${esc(mrmTxt(MR, P, k))}</textarea>
+    <div class="mrm-add"><div class="mrm-add-h"><span>Complemento <small>(opcional: se agrega al final de este capítulo; el texto de arriba sigue automático)</small></span><button type="button" class="btn-add${mrmRecK === k ? ' on' : ''}" data-act="mic" data-k="${k}">${mrmRecK === k ? '⏹ Detener' : '🎤 Agregar dictado'}</button></div>
+    <textarea data-x="${k}" rows="2" placeholder="Dicte o escriba lo que quiera agregar">${esc((MR.extra || {})[k] || '')}</textarea></div></div>`;
   const zona = (w, t, s) => `<div class="mcm-drop mcm-drop-s" data-drop="${w}" tabindex="0"><b>${t}</b><span>${s}</span><div class="mcm-thumbs">${MR.figs.map((f, i) => f.where === w && f.src ? `<div class="mcm-th"><img src="${f.src}"><input type="text" data-f="${i}" value="${esc(f.cap)}" placeholder="Pie de figura"><button type="button" class="btn-remove" data-fdel="${i}">✕</button></div>` : '').join('')}</div></div>`;
   function resumen(M, i) {
     const G = mrmGrupos(M), D = M.disenado ? mrmDiseno(M) : [], mx = D.length ? D.reduce((a, b) => b.r > a.r ? b : a) : null;
@@ -50505,7 +50508,7 @@ function renderMemoriaRam(container) {
         <div class="mcm-drop" data-ram="1" tabindex="0"><b>📦 Arrastre aquí los .zip (o .etz) de RAM Elements</b><span>o haga clic para elegirlos. Puede cargar varios a la vez (p. ej. estructura existente y estructura reforzada).</span></div>
         <input type="file" id="mrmIn" accept=".zip,.etz" multiple hidden>
         <div id="mrmEst" class="note"></div>${MR.modelos.map(resumen).join('')}
-        <div class="mem-blk mrm-instr"><h4>🎤 Instrucción para la memoria <small>(<b class="mrm-kw a">comparar</b> · <b class="mrm-kw a">evaluar</b> · <b class="mrm-kw a">definir</b> · <b class="mrm-kw a">verificar</b> · <b class="mrm-kw a">diseñar</b> · <b class="mrm-kw s">existente</b> · <b class="mrm-kw s">reforzada</b> · <b class="mrm-kw s">propuesta</b>)</small><button type="button" class="btn-add${mrmRec ? ' on' : ''}" data-act="mic" style="margin:0 0 0 auto;padding:.15rem .6rem">${mrmRec ? '⏹ Detener' : '🎤 Dictar'}</button></h4>
+        <div class="mem-blk mrm-instr"><h4>🎤 Instrucción para la memoria <small>(<b class="mrm-kw a">comparar</b> · <b class="mrm-kw a">evaluar</b> · <b class="mrm-kw a">definir</b> · <b class="mrm-kw a">verificar</b> · <b class="mrm-kw a">diseñar</b> · <b class="mrm-kw s">existente</b> · <b class="mrm-kw s">reforzada</b> · <b class="mrm-kw s">propuesta</b>)</small><button type="button" class="btn-add${mrmRecK === 'instr' ? ' on' : ''}" data-act="mic" data-k="instr" style="margin:0 0 0 auto;padding:.15rem .6rem">${mrmRecK === 'instr' ? '⏹ Detener' : '🎤 Dictar'}</button></h4>
           <textarea data-e="instr" rows="2" placeholder="Ej: Compara la estructura existente con la reforzada y evalúa si el refuerzo cumple">${esc(MR.instr || '')}</textarea>
           <div class="note" id="mrmAcc">${mrmInstrNota(MR)}</div>
           <div class="note">Díctela o escríbala. La Mesa reconoce las acciones por las palabras clave entre paréntesis (también sus formas: compara, comparación, evalúa, define, propone, dimensiona, verifica, revisa, diseña) y arma la memoria según ellas; con dos o más modelos y la acción «comparar» agrega el capítulo de comparación. El nombre de cada situación se toma de lo que escriba arriba, del nombre del archivo (existente, reforzada, propuesta) o de la instrucción. El dictado funciona en Chrome y Edge (pide permiso de micrófono la primera vez).</div></div></div>
@@ -50527,20 +50530,22 @@ function renderMemoriaRam(container) {
         <div class="mem-prev-wrap" id="mrmPrev">${MR.modelos.length ? '' : '<div class="note" style="padding:1rem">Cargue un modelo para ver la memoria.</div>'}</div></div>
       <input type="file" accept="image/*" multiple id="mrmImgIn" hidden>`;
   }
-  // dictado de la instrucción (Web Speech API de Chrome/Edge)
-  let mrmRec = null;
-  function dictar() {
-    if (mrmRec) { mrmRec.stop(); return; }
+  // dictado (Web Speech API de Chrome/Edge): la instrucción del punto 1 o el complemento de un texto del punto 3
+  let mrmRec = null, mrmRecK = null;
+  function dictar(k) {
+    if (mrmRec) { const otro = mrmRecK !== k; mrmRec.stop(); if (!otro) return; }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { fsToast('Este navegador no permite dictar. Use Chrome o Edge, o el dictado de Windows (tecla Windows + H) sobre el cuadro de la instrucción.'); return; }
-    const ta = root.querySelector('[data-e="instr"]'), base = ta.value.trim() ? ta.value.trim() + ' ' : '';
+    if (!SR) { fsToast('Este navegador no permite dictar. Use Chrome o Edge, o el dictado de Windows (tecla Windows + H) sobre el cuadro de texto.'); return; }
+    const sel = k === 'instr' ? '[data-e="instr"]' : '[data-x="' + k + '"]', ta = root.querySelector(sel); if (!ta) return;
+    const base = ta.value.trim() ? ta.value.trim() + ' ' : '';
+    const guardar = v => { if (k === 'instr') { MR.instr = v; const n = root.querySelector('#mrmAcc'); if (n) n.innerHTML = mrmInstrNota(MR); } else { MR.extra = MR.extra || {}; MR.extra[k] = v; } };
     let fin = '';
     const r = new SR(); r.lang = 'es-CL'; r.continuous = true; r.interimResults = true;
     r.onresult = ev => { let tmp = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const x = ev.results[i]; if (x.isFinal) fin += x[0].transcript.trim() + ' '; else tmp += x[0].transcript; }
-      ta.value = (base + fin + tmp).trim(); MR.instr = ta.value; const n = root.querySelector('#mrmAcc'); if (n) n.innerHTML = mrmInstrNota(MR); };
-    r.onerror = ev => fsToast(ev.error === 'not-allowed' || ev.error === 'service-not-allowed' ? 'El navegador no dio permiso al micrófono: permítalo en el candado de la barra de direcciones.' : ev.error === 'no-speech' ? 'No se escuchó nada: vuelva a pulsar «Dictar».' : 'Dictado: ' + ev.error);
-    r.onend = () => { mrmRec = null; MR.instr = ta.value.trim(); if (MR.instr) MR.instr = MR.instr.charAt(0).toUpperCase() + MR.instr.slice(1); sv(); draw(); };
-    try { r.start(); mrmRec = r; const b = root.querySelector('[data-act="mic"]'); if (b) { b.textContent = '⏹ Detener'; b.classList.add('on'); } } catch (e) { fsToast('No se pudo iniciar el dictado: ' + (e.message || e)); }
+      ta.value = (base + fin + tmp).trim(); guardar(ta.value); };
+    r.onerror = ev => fsToast(ev.error === 'not-allowed' || ev.error === 'service-not-allowed' ? 'El navegador no dio permiso al micrófono: permítalo en el candado de la barra de direcciones.' : ev.error === 'no-speech' ? 'No se escuchó nada: vuelva a pulsar el micrófono.' : 'Dictado: ' + ev.error);
+    r.onend = () => { if (mrmRec !== r) return; mrmRec = null; mrmRecK = null; let v = ta.value.trim(); if (v) v = v.charAt(0).toUpperCase() + v.slice(1); if (v && !/[.!?]$/.test(v) && k !== 'instr') v += '.'; guardar(v); sv(); draw(); };
+    try { r.start(); mrmRec = r; mrmRecK = k; const b = root.querySelector('[data-act="mic"][data-k="' + k + '"]'); if (b) { b.textContent = '⏹ Detener'; b.classList.add('on'); } } catch (e) { fsToast('No se pudo iniciar el dictado: ' + (e.message || e)); }
   }
   let tok = 0, tp = null;
   async function prev() { if (!MR.modelos.length) return; const t = ++tok; try { const R = await mpgPaginar(doc(), mrmBuild(MR, P)); if (t === tok) mpgMostrar(root.querySelector('#mrmPrev'), R.html); } catch (e) { console.error(e); const w = root.querySelector('#mrmPrev'); if (w) w.innerHTML = '<div class="note">No se pudo armar la vista previa: ' + esc(e.message || e) + '</div>'; } }
@@ -50561,6 +50566,7 @@ function renderMemoriaRam(container) {
     const t = e.target, d = t.dataset;
     if (d.p != null) { P[d.p] = t.value; mcmSave(S0); }
     else if (d.e != null) { MR[d.e] = t.value; sv(); if (d.e === 'instr') { const n = root.querySelector('#mrmAcc'); if (n) n.innerHTML = mrmInstrNota(MR); } }
+    else if (d.x != null) { MR.extra = MR.extra || {}; MR.extra[d.x] = t.value; sv(); }
     else if (d.mrol != null) { MR.modelos[+d.mrol].rol = t.value; sv(); const n = root.querySelector('#mrmAcc'); if (n) n.innerHTML = mrmInstrNota(MR); }
     else if (d.d != null) { MR.defo[d.d] = t.value; sv(); }
     else if (d.f != null) { MR.figs[+d.f].cap = t.value; sv(); }
@@ -50590,7 +50596,7 @@ function renderMemoriaRam(container) {
     if (z && !e.target.closest('input,button,.mcm-th')) { if (z.dataset.ram) root.querySelector('#mrmIn').click(); else { dest = z.dataset.drop; root.querySelector('#mrmImgIn').click(); } return; }
     const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
     if (d.mdel != null) { MR.modelos.splice(+d.mdel, 1); sv(); draw(); return; }
-    if (d.act === 'mic') { dictar(); return; }
+    if (d.act === 'mic') { dictar(d.k || 'instr'); return; }
     if (d.fdel != null) { MR.figs.splice(+d.fdel, 1); sv(); draw(); return; }
     if (d.ereset) { MR[d.ereset] = null; sv(); draw(); return; }
     if (d.act === 'nueva') { if (Date.now() - armado > 4000) { armado = Date.now(); fsToast('Vuelve a pulsar «Nueva memoria RAM» para borrar la actual.'); return; } MR = mrmDef(); sv(); draw(); return; }
