@@ -48695,7 +48695,7 @@ html.mcm-on .print-actions{display:none !important}
 .mcm-thumbs{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:.3rem} .mcm-th{display:grid;gap:.2rem;width:180px;cursor:default} .mcm-th img{width:180px;height:110px;object-fit:cover;border-radius:4px;border:1px solid var(--line,#ccd)}
 .mcm-th input{font-size:.75rem;width:100%} .mcm-th button{justify-self:end;margin:0}
 .mcm-tog{border:1px solid var(--accent,#0060c1);background:transparent;color:var(--accent,#0060c1);border-radius:16px;padding:.35rem .8rem;font-weight:600;cursor:pointer}
-.mcm-tog.on{background:var(--accent,#0060c1);color:#fff} .mcm-tog:disabled{opacity:.4;cursor:not-allowed}
+.mcm-tog.on{background:var(--accent,#0060c1);color:#fff} .mrm-instr .btn-add.on{background:#b91c1c;color:#fff;border-color:#b91c1c;animation:mrmPulso 1.2s infinite} @keyframes mrmPulso{50%{opacity:.6}} .mcm-tog:disabled{opacity:.4;cursor:not-allowed}
 .mcm-res h4{font-size:.95rem;color:var(--accent)} .mcm-resit{margin:.6rem 0 .2rem} .mcm-resit-h{font-weight:700;font-size:.85rem;margin-bottom:.3rem}
 .mcm-drop-s{margin:.35rem 0;padding:.5rem .6rem} .mcm-th small{color:var(--ink-muted);font-size:.72rem}
 .ett-sug{margin-top:.3rem;width:100%;font-size:.78rem !important;color:var(--accent) !important;background:color-mix(in srgb,var(--accent,#0060c1) 6%,transparent) !important;border:1px dashed var(--accent,#0060c1) !important;border-radius:4px;padding:.2rem .3rem}
@@ -49992,7 +49992,7 @@ function renderMemoriaExpress(container) {
    Lo que el lector no reconoce se informa en la memoria como «no leído»; nada se supone.
    ========================================================================= */
 const MRM_LS = 'mesaMemRam.v1';
-function mrmDef() { return {v:1, sub1:'', sub2:'', intro:null, desc:null, crit:null, concl:null, alc:null, normExtra:'', modelos:[], figs:[], defo:{L:'', n:'', est:''}, verTodos:false}; }
+function mrmDef() { return {v:1, sub1:'', sub2:'', intro:null, desc:null, crit:null, concl:null, alc:null, normExtra:'', instr:'', modelos:[], figs:[], defo:{L:'', n:'', est:''}, verTodos:false}; }
 function mrmLoad() { const s = mcmLsLeer(MRM_LS); return Object.assign(mrmDef(), s && typeof s === 'object' ? s : {}); }
 // unidades RAM («Ton-m», «Kg-cm», «kN-m», «Lb-in»…): fuerza y largo
 function mrmUnid(u) {
@@ -50186,13 +50186,129 @@ function mrmFigura(M, modo, k) {
   return {src:cv.toDataURL('image/png'), w:W, h:H};
 }
 // --- textos sugeridos ---
+/* --- situaciones (un modelo por situación) e instrucción dictada o escrita --- */
+// nombre de la situación: el que escribe el usuario; si no, se deduce del nombre del archivo o de la instrucción
+function mrmRolArch(nombre) {
+  const s = String(nombre || '').toLowerCase();
+  if (/refuerz|reforzad/.test(s)) return 'Estructura reforzada';
+  if (/existen|actual|original/.test(s)) return 'Estructura existente';
+  if (/propuest|nuev|modific/.test(s)) return 'Estructura propuesta';
+  return '';
+}
+function mrmRoles(MR) {
+  const Ms = MR.modelos, s = mrmNorm(MR.instr);
+  const r = Ms.map(M => (M.rol || '').trim() || mrmRolArch(M.archivo + ' ' + M.etz));
+  // «compara la existente con la reforzada»: con dos modelos sin nombre, se asignan en el orden de carga
+  if (Ms.length === 2 && !r[0] && !r[1] && /existen|actual/.test(s) && /refuerz|reforzad|propuest/.test(s)) { r[0] = 'Estructura existente'; r[1] = /refuerz|reforzad/.test(s) ? 'Estructura reforzada' : 'Estructura propuesta'; }
+  if (Ms.length === 2 && r[0] && !r[1] && /existente/i.test(r[0]) && /refuerz|reforzad/.test(s)) r[1] = 'Estructura reforzada';
+  if (Ms.length === 2 && !r[0] && r[1] && /reforzada|propuesta/i.test(r[1])) r[0] = 'Estructura existente';
+  Ms.forEach((M, i) => { M._nom = r[i] || (Ms.length > 1 ? 'Modelo ' + (i + 1) : ''); });
+  return Ms.map(M => M._nom);
+}
+const mrmNom = M => M._nom || M.etz;
+const mrmLa = M => { const n = mrmNom(M); return (/^(estructura|situaci|alternativa|propuesta|condici)/i.test(n) ? 'la ' : /^modelo/i.test(n) ? 'el ' : '') + n.charAt(0).toLowerCase() + n.slice(1); };
+const mrmNorm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const MRM_ACC = [
+  {k:'comparar', t:'comparar', re:/compar|versus|\bvs\b|diferencia|antes y despu|contrast/},
+  {k:'evaluar', t:'evaluar', re:/evalu|capacidad|estado actual|diagn[oó]st/},
+  {k:'definir', t:'definir', re:/defin|propon|dimension|determin|seleccion/},
+  {k:'verificar', t:'verificar', re:/verific|chequ|comprob|revis/},
+  {k:'disenar', t:'diseñar', re:/disen/}];
+function mrmInstr(MR) {
+  const s = mrmNorm(MR.instr), acc = MRM_ACC.filter(a => a.re.test(s)).map(a => a.k);
+  const n = MR.modelos.length;
+  // sin instrucción, dos situaciones con nombre (existente / reforzada) se comparan
+  const auto = !acc.length && n > 1 && MR.modelos.some(M => /reforzad|propuest/i.test(mrmNom(M)));
+  if (auto) acc.push('comparar');
+  return {acc, auto, comparar:acc.includes('comparar') && n > 1, falta2:acc.includes('comparar') && n < 2};
+}
+function mrmInstrNota(MR) {
+  mrmRoles(MR); const I = mrmInstr(MR), Ms = MR.modelos;
+  const a = I.acc.length ? I.acc.map(k => MRM_ACC.find(x => x.k === k).t).join(', ') : 'documentar el análisis y diseño (no se reconoció otra acción)';
+  return `<b>Acción reconocida:</b> ${esc(a)}${I.auto ? ' (por los nombres de las situaciones)' : ''}.`
+    + (Ms.length ? ` <b>Situaciones:</b> ${Ms.map(M => esc(mrmNom(M)) + ' («' + esc(M.etz) + '»)').join(' · ')}.` : '')
+    + (I.falta2 ? ' <b style="color:#b45309">Para comparar cargue dos o más modelos.</b>' : '')
+    + (I.comparar ? ' Se agrega el capítulo «Comparación de situaciones».' : '');
+}
+// indicadores de un modelo para la comparación
+function mrmInd(M) {
+  const G = mrmGrupos(M), masa = G.reduce((a, g) => a + g.masa, 0), D = M.disenado ? mrmDiseno(M) : [];
+  const mx = D.length ? D.reduce((a, b) => b.r > a.r ? b : a) : null;
+  const ks = M.estados.map((e, k) => k).filter(k => M.estados[k].comb && M.estados[k].res !== 'no'), lista = ks.length ? ks : M.estados.map((e, k) => k).filter(k => M.estados[k].res !== 'no');
+  let dm = {d:0}, ke = -1; lista.forEach(k => { const d = mrmDesp(M, k); if (d.d > dm.d) { dm = d; ke = k; } });
+  let fy = 0; lista.forEach(k => (M.R[k].reac[1] || []).forEach(v => { if (Math.abs(v || 0) > Math.abs(fy)) fy = v; }));
+  return {G, masa, D, mx, malos:D.filter(x => x.r > 1), dm, ke, fy, lista};
+}
+const mrmClave = (M, n1, n2) => { const f = M.U.fL * 1000, p = n => { const q = M.nudos[n - 1]; return q ? [q.x, q.y, q.z].map(v => Math.round(v * f / 5)).join(',') : '?'; }; return [p(n1), p(n2)].sort().join('|'); };
+const mrmClaveN = (M, n) => [n.x, n.y, n.z].map(v => Math.round(v * M.U.fL * 1000 / 5)).join(',');
+function mrmComparacion(MR, B, tab, par) {
+  const Ms = MR.modelos, X = Ms.map(mrmInd), A = Ms[0], XA = X[0], nM = Ms.length;
+  B.push({t:'h1', text:'COMPARACIÓN DE SITUACIONES'});
+  par(`Se comparan ${nM === 2 ? 'las dos situaciones' : 'las ' + nM + ' situaciones'} analizadas: ${mcmList(Ms.map(M => mrmNom(M) + ' (modelo «' + M.etz + '»)'))}. La primera se toma como referencia para las variaciones.`);
+  B.push({t:'h2', text:'Resumen comparativo'});
+  const wM = Math.floor((9920 - 3200) / nM), wid = [3200].concat(Ms.map((M, i) => i === nM - 1 ? 9920 - 3200 - wM * (nM - 1) : wM));
+  const fila = (n, f) => [n].concat(X.map((x, i) => f(x, Ms[i])));
+  const rows = [
+    fila('N° de elementos', (x, M) => String(M.barras.length)),
+    fila('Masa de acero [kg]', x => mcmNum(x.masa, 0)),
+    fila('Razón de diseño máxima', (x, M) => x.mx ? `${mcmNum(x.mx.r)} (elem. ${x.mx.b.id}, ${x.mx.b.secc})` : 'sin diseño'),
+    fila('Elementos con razón > 1,00', (x, M) => M.disenado ? `${x.malos.length} de ${x.D.length}` : '—'),
+    fila('Desplazamiento máximo |δ| [mm]', (x, M) => x.ke >= 0 ? `${mcmNum(x.dm.d, 1)} (${M.estados[x.ke].id})` : '—'),
+    fila('Reacción vertical máxima', (x, M) => `${mcmNum(x.fy, 3)} ${M.U.f}`)];
+  tab('Resumen comparativo de las situaciones', ['Indicador'].concat(Ms.map(mrmNom)), rows, wid, ['l'].concat(Ms.map(() => 'c')));
+  const txt = [];
+  Ms.slice(1).forEach((M, j) => { const x = X[j + 1];
+    if (XA.mx && x.mx) txt.push(`En ${mrmLa(M)}, la razón de diseño máxima pasa de ${mcmNum(XA.mx.r)} a ${mcmNum(x.mx.r)} (${x.mx.r <= XA.mx.r ? '' : '+'}${mcmNum(100 * (x.mx.r - XA.mx.r) / XA.mx.r, 1)} %)` + (XA.malos.length ? ` y los elementos que no cumplen pasan de ${XA.malos.length} a ${x.malos.length}` : '') + '.');
+    if (XA.masa > 0) txt.push(`La masa de acero pasa de ${mcmNum(XA.masa, 0)} kg a ${mcmNum(x.masa, 0)} kg (${x.masa >= XA.masa ? '+' : '−'}${mcmNum(Math.abs(x.masa - XA.masa), 0)} kg).`);
+    if (XA.ke >= 0 && x.ke >= 0 && XA.dm.d > 0) txt.push(`El desplazamiento máximo pasa de ${mcmNum(XA.dm.d, 1)} mm a ${mcmNum(x.dm.d, 1)} mm.`); });
+  if (txt.length) par(txt.join(' '));
+  // elementos: se emparejan por la posición de sus extremos (tolerancia 5 mm)
+  Ms.slice(1).forEach((M, j) => {
+    const x = X[j + 1], mapA = new Map();
+    A.barras.forEach((b, i) => mapA.set(mrmClave(A, b.n1, b.n2), i));
+    const dA = XA.D, dB = x.D, par2 = [], nuevos = [], usados = new Set();
+    M.barras.forEach((b, i) => { const ia = mapA.get(mrmClave(M, b.n1, b.n2)); if (ia == null) { nuevos.push(b); return; } usados.add(ia); par2.push({a:A.barras[ia], b, ra:dA[ia] ? dA[ia].r : null, rb:dB[i] ? dB[i].r : null}); });
+    const quitados = A.barras.filter((b, i) => !usados.has(i));
+    B.push({t:'h2', text:`Elementos: ${mrmNom(A)} y ${mrmNom(M)}`});
+    const cambia = par2.filter(p => String(p.a.secc).toUpperCase() !== String(p.b.secc).toUpperCase() || (p.ra != null && p.rb != null && Math.abs(p.rb - p.ra) > 0.005));
+    par(`De los ${M.barras.length} elementos de ${mrmLa(M)}, ${par2.length} coinciden en posición con elementos de ${mrmLa(A)}; ${cambia.length} de ellos cambian de sección o de razón de diseño.`
+      + (nuevos.length ? ` Se agregan ${nuevos.length} ${nuevos.length === 1 ? 'elemento' : 'elementos'} (${mcmList([...new Set(nuevos.map(b => b.secc))])}).` : '')
+      + (quitados.length ? ` ${quitados.length} ${quitados.length === 1 ? 'elemento' : 'elementos'} de ${mrmLa(A)} no tienen par en ${mrmLa(M)}.` : ''));
+    const lim = 40, ord = cambia.slice().sort((p, q) => Math.abs((q.rb || 0) - (q.ra || 0)) - Math.abs((p.rb || 0) - (p.ra || 0))).slice(0, lim).sort((p, q) => (+p.a.id || 0) - (+q.a.id || 0));
+    if (ord.length) tab(`Elementos que cambian de sección o de razón de diseño (${mrmNom(A)} → ${mrmNom(M)})${cambia.length > lim ? ', ' + lim + ' de mayor variación' : ''}`,
+      ['Elem.', 'Sección (ref.)', 'Razón (ref.)', 'Sección', 'Razón', 'Variación', 'Estado'],
+      ord.map(p => [p.a.id === p.b.id ? String(p.a.id) : p.a.id + ' / ' + p.b.id, p.a.secc, p.ra != null ? mcmNum(p.ra) : '—', p.b.secc, p.rb != null ? mcmNum(p.rb) : '—',
+        p.ra && p.rb != null ? (p.rb >= p.ra ? '+' : '') + mcmNum(100 * (p.rb - p.ra) / p.ra, 1) + ' %' : '—', p.rb == null ? '—' : p.rb <= 1 ? 'CUMPLE' : 'NO CUMPLE']),
+      [1100, 1800, 1200, 1800, 1200, 1400, 1420], ['c','l','c','l','c','c','c']);
+    if (nuevos.length && M.disenado) tab(`Elementos agregados en ${mrmNom(M)}`, ['Elem.', 'Grupo', 'Sección', 'L [m]', 'Razón', 'Estado'],
+      nuevos.slice(0, lim).map(b => { const i = M.barras.indexOf(b), r = dB[i] ? dB[i].r : null; return [String(b.id), b.grupo || '—', b.secc, mcmNum(b.L), r != null ? mcmNum(r) : '—', r == null ? '—' : r <= 1 ? 'CUMPLE' : 'NO CUMPLE']; }),
+      [1200, 1700, 2300, 1300, 1500, 1920], ['c','l','l','c','c','c']);
+    // reacciones en los apoyos que coinciden en posición
+    if (A.U.f !== M.U.f) { par(`Las reacciones no se comparan: los modelos usan unidades de fuerza distintas (${A.U.f} y ${M.U.f}).`); return; }
+    const apA = new Map(); A.nudos.forEach((n, i) => { if (/1/.test(n.r)) apA.set(mrmClaveN(A, n), i); });
+    const env = (Mx, Xx, i) => { let fy = 0, h = 0; Xx.lista.forEach(k => { const R = Mx.R[k].reac, v = R[1] ? R[1][i] || 0 : 0, hh = Math.hypot(R[0] ? R[0][i] || 0 : 0, R[2] ? R[2][i] || 0 : 0); if (Math.abs(v) > Math.abs(fy)) fy = v; if (hh > h) h = hh; }); return {fy, h}; };
+    const rr = []; M.nudos.forEach((n, i) => { if (!/1/.test(n.r)) return; const ia = apA.get(mrmClaveN(M, n)); if (ia == null) return; const ea = env(A, XA, ia), eb = env(M, x, i);
+      rr.push([A.nudos[ia].id === n.id ? String(n.id) : A.nudos[ia].id + ' / ' + n.id, mcmNum(ea.fy, 3), mcmNum(eb.fy, 3), Math.abs(ea.fy) > 1e-9 ? mcmNum(100 * (Math.abs(eb.fy) - Math.abs(ea.fy)) / Math.abs(ea.fy), 1) + ' %' : '—', mcmNum(ea.h, 3), mcmNum(eb.h, 3)]); });
+    if (rr.length) { B.push({t:'h2', text:`Reacciones: ${mrmNom(A)} y ${mrmNom(M)}`});
+      tab(`Reacciones máximas en los apoyos comunes [${M.U.f}] (envolvente de ${x.lista.some(k => M.estados[k].comb) ? 'combinaciones' : 'estados'})`, ['Nudo', 'FY (ref.)', 'FY', 'Variación |FY|', 'H (ref.)', 'H'], rr,
+        [1500, 1700, 1700, 1700, 1660, 1660], ['c','c','c','c','c','c']);
+      B.push({t:'p', text:'FY: reacción vertical de mayor valor absoluto; H: resultante horizontal máxima √(FX² + FZ²). Variación respecto de la situación de referencia.'}); }
+  });
+}
 function mrmTxt(MR, P, k) {
   if (MR[k] != null) return MR[k];
   const M = MR.modelos[0]; if (!M) return '';
   const G = mrmGrupos(M), mats = [...new Set(M.barras.map(b => b.mat).filter(Boolean))], dim = mrmDim(M), U = M.U;
   const est = MR.sub1 ? mpgOracion(MR.sub1).charAt(0).toLowerCase() + mpgOracion(MR.sub1).slice(1) : 'la estructura';
-  if (k === 'intro') return `La presente memoria documenta el análisis y diseño de ${est} del proyecto «${mcmV(P.proyecto)}»${P.mandante ? ', de ' + P.mandante : ''}. `
-    + `El análisis se realizó con ${MR.modelos.length > 1 ? 'los modelos' : 'el modelo'} de barras en RAM Elements ${MR.modelos.map(m => '«' + m.etz + '»').join(' y ')}, de ${MR.modelos.length > 1 ? 'los cuales' : 'donde'} se obtienen la geometría, las secciones, los materiales, las cargas, los resultados del análisis y las razones de diseño que se presentan en este documento.`;
+  if (k === 'intro') {
+    mrmRoles(MR); const I = mrmInstr(MR), Ms = MR.modelos, varios = Ms.length > 1;
+    const fr = {comparar:I.comparar ? 'la comparación entre ' + mcmList(Ms.map(mrmLa)) : '', evaluar:'la evaluación estructural', definir:'la definición de los perfiles', verificar:'la verificación', disenar:'el diseño'};
+    const acc = I.acc.map(a => fr[a]).filter(Boolean);
+    return `La presente memoria documenta ${acc.length ? mcmList(acc) : 'el análisis y diseño'} de ${est} del proyecto «${mcmV(P.proyecto)}»${P.mandante ? ', de ' + P.mandante : ''}. `
+      + `El análisis se realizó con ${varios ? 'los modelos' : 'el modelo'} de barras en RAM Elements ${mcmList(Ms.map(m => '«' + m.etz + '»' + (varios ? ' (' + mrmNom(m).toLowerCase() + ')' : '')))}, de ${varios ? 'los cuales' : 'donde'} se obtienen la geometría, las secciones, los materiales, las cargas, los resultados del análisis y las razones de diseño que se presentan en este documento.`
+      + (I.comparar ? ' Las situaciones se comparan en cuanto a las razones de diseño de los elementos, la masa de acero, los desplazamientos y las reacciones en los apoyos.' : '');
+  }
+  if (k === 'desc' && MR.modelos.length > 1) { mrmRoles(MR); return MR.modelos.map(m => mrmNom(m) + ': ' + mrmTxt(Object.assign({}, MR, {modelos:[m], desc:null}), P, 'desc').replace(/^La estructura/, 'la estructura')).join('\n\n'); }
   if (k === 'desc') {
     const perf = G.map(x => `${x.n} ${x.n === 1 ? 'elemento' : 'elementos'} ${x.secc}${x.grupo && x.grupo !== '0' ? ' (grupo ' + x.grupo + ')' : ''}`);
     const ap = mrmApoyos(M).map(a => `${a.nudos.length} ${a.nudos.length === 1 ? 'apoyo' : 'apoyos'} ${a.tipo.charAt(0).toLowerCase() + a.tipo.slice(1)}`);
@@ -50204,6 +50320,20 @@ function mrmTxt(MR, P, k) {
     const c = [M.codigos.hr ? `${mrmCodigo(M.codigos.hr)}` : '', mrmCF(M) && M.codigos.cf ? mrmCodigo(M.codigos.cf) : ''].filter(Boolean);
     return `El diseño de los elementos de acero se verificó en RAM Elements según ${mcmList(c) || '[completar]'}, con las combinaciones de carga definidas en el modelo. `
       + `Un elemento cumple cuando su razón de diseño (demanda/capacidad) es menor o igual a 1,00. El análisis es ${M.pdelta ? 'de segundo orden (P-Δ)' : 'elástico lineal de primer orden'}.`;
+  }
+  if (k === 'concl' && MR.modelos.length > 1) {
+    mrmRoles(MR); const I = mrmInstr(MR), Ms = MR.modelos, X = Ms.map(mrmInd);
+    const ver = Ms.map((m, i) => { const x = X[i]; if (!m.disenado) return `${mrmNom(m)}: el modelo no tiene el diseño de acero corrido.`;
+      return x.malos.length ? `${mrmNom(m)}: ${x.malos.length} de ${x.D.length} elementos superan la razón de diseño 1,00 (máxima ${mcmNum(x.mx.r)} en el elemento ${x.mx.b.id}, ${x.mx.b.secc}).`
+        : `${mrmNom(m)}: todos los elementos verificados (${x.D.length}) cumplen con la razón de diseño ≤ 1,00; la máxima es ${mcmNum(x.mx.r)}, en el elemento ${x.mx.b.id} (${x.mx.b.secc}).`; });
+    let c = ver.join('\n\n');
+    if (I.comparar && X[0].mx && X[Ms.length - 1].mx) { const a = X[0], b = X[Ms.length - 1], ul = Ms[Ms.length - 1];
+      c += `\n\nAl comparar ${mrmLa(Ms[0])} con ${mrmLa(ul)}, la razón de diseño máxima pasa de ${mcmNum(a.mx.r)} a ${mcmNum(b.mx.r)}`
+        + (a.malos.length ? ` y los elementos que no cumplen pasan de ${a.malos.length} a ${b.malos.length}` : '') + `; la masa de acero varía en ${b.masa >= a.masa ? '+' : '−'}${mcmNum(Math.abs(b.masa - a.masa), 0)} kg.`
+        + (b.malos.length ? ` ${mrmNom(ul)} aún tiene elementos que no cumplen: deben reforzarse o redimensionarse antes de la emisión definitiva.` : a.malos.length ? ` Con ${mrmLa(ul)} todos los elementos cumplen.` : ''); }
+    const dv = mrmDefo(MR);
+    if (dv) c += ` ${dv.ok ? 'La deformación cumple' : 'La deformación NO cumple'} el límite L/${dv.n} en ${mrmLa(Ms[0])} (${mcmNum(dv.d, 1)} mm ${dv.ok ? '≤' : '>'} ${mcmNum(dv.adm, 1)} mm).`;
+    return c;
   }
   if (k === 'concl') {
     const D = MR.modelos.flatMap(m => m.disenado ? mrmDiseno(m).map(x => Object.assign(x, {m})) : []);
@@ -50231,11 +50361,11 @@ function mrmBuild(MR, P) {
   const fig = (f, cap, ancho) => B.push({t:'fig', src:f.src, w:f.w, h:f.h, ancho:ancho || 100, cap:`Figura ${++nF}: ${cap}`});
   const par = t => String(t || '').split(/\n\s*\n/).map(x => x.trim()).filter(Boolean).forEach(x => B.push({t:'p', text:x}));
   const ufig = w => MR.figs.filter(f => f.where === w && f.src).forEach(f => fig(f, f.cap || '', f.ancho || 90));
-  const Ms = MR.modelos, varios = Ms.length > 1, sub = (M, t) => varios ? B.push({t:'h2', text:`${t} — ${M.etz}`}) : null;
+  mrmRoles(MR); const Ms = MR.modelos, varios = Ms.length > 1, sub = (M, t) => varios ? B.push({t:'h2', text:`${t} — ${mrmNom(M)}`}) : null;
   B.push({t:'h1', text:'INTRODUCCIÓN Y OBJETIVO'}); par(mrmTxt(MR, P, 'intro'));
   B.push({t:'h1', text:'DESCRIPCIÓN DE LA ESTRUCTURA'}); par(mrmTxt(MR, P, 'desc'));
   ufig('desc');
-  if (Ms[0]) fig(mrmFigura(Ms[0], 'modelo'), 'Modelo de barras de la estructura' + (varios ? ' (' + Ms[0].etz + ')' : ''), 90);
+  if (Ms[0]) fig(mrmFigura(Ms[0], 'modelo'), 'Modelo de barras de la estructura' + (varios ? ' (' + mrmNom(Ms[0]) + ')' : ''), 90);
   B.push({t:'h1', text:'NORMAS, MATERIALES Y CRITERIOS DE DISEÑO'});
   B.push({t:'h2', text:'Normas'});
   const N = ['NCh1537:2009 — Diseño estructural: cargas permanentes y cargas de uso', 'NCh3171:2017 — Diseño estructural: disposiciones generales y combinaciones de carga']
@@ -50252,26 +50382,26 @@ function mrmBuild(MR, P) {
   B.push({t:'h1', text:'MODELO DE ANÁLISIS'});
   Ms.forEach((M, mi) => {
     const G = mrmGrupos(M), dim = mrmDim(M);
-    if (varios) B.push({t:'h2', text:`Modelo ${mi + 1}: ${M.etz}`});
+    if (varios) B.push({t:'h2', text:`${mrmNom(M)}: modelo «${M.etz}»`});
     else B.push({t:'h2', text:'Software y archivos'});
     par(`Programa: RAM Elements. Archivo: «${M.etz}»${M.archivo !== M.etz ? ' (dentro de «' + M.archivo + '»)' : ''}. Unidades del modelo: ${M.unidades}. ${M.analizado ? 'Modelo analizado' : 'El modelo NO registra análisis'}${M.disenado ? ' y con el diseño de acero corrido' : ', sin diseño de acero corrido'}.`);
     if (!varios) B.push({t:'h2', text:'Geometría, secciones y material'});
     par(`El modelo tiene ${M.nudos.length} nudos y ${M.barras.length} elementos. Dimensiones generales: ${mcmNum(dim.x)} m (X) × ${mcmNum(dim.y)} m (Y, vertical) × ${mcmNum(dim.z)} m (Z). La Tabla ${nT + 1} resume los grupos de elementos.`);
-    tab('Grupos de elementos del modelo' + (varios ? ' (' + M.etz + ')' : ''), ['Grupo RAM', 'Sección', 'Material', 'N° elem.', 'Largo total [m]', 'Masa [kg]'],
+    tab('Grupos de elementos del modelo' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Grupo RAM', 'Sección', 'Material', 'N° elem.', 'Largo total [m]', 'Masa [kg]'],
       G.map(x => [x.grupo || '—', x.secc, x.mat, String(x.n), mcmNum(x.L), x.sinMasa ? (x.masa ? mcmNum(x.masa, 0) + ' *' : '—') : mcmNum(x.masa, 0)]), [1700, 2200, 1500, 1100, 1700, 1720], ['l','l','l','c','c','c']);
     if (G.some(x => x.sinMasa)) B.push({t:'p', text:'* Masa parcial o no calculada: el .zip no trae el área de alguna sección o la densidad de su material.'});
     if (!varios) B.push({t:'h2', text:'Condiciones de apoyo'});
     const A = mrmApoyos(M);
-    if (A.length) tab('Condiciones de apoyo' + (varios ? ' (' + M.etz + ')' : ''), ['Tipo de apoyo', 'N°', 'Nudos'], A.map(a => [a.tipo, String(a.nudos.length), a.nudos.map(n => n.id).join(', ')]), [4300, 900, 4720], ['l','c','l']);
+    if (A.length) tab('Condiciones de apoyo' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Tipo de apoyo', 'N°', 'Nudos'], A.map(a => [a.tipo, String(a.nudos.length), a.nudos.map(n => n.id).join(', ')]), [4300, 900, 4720], ['l','c','l']);
     else B.push({t:'p', text:'El modelo no tiene nudos con restricciones.'});
-    if (varios && mi > 0) fig(mrmFigura(M, 'modelo'), 'Modelo de barras (' + M.etz + ')', 90);
+    if (varios && mi > 0) fig(mrmFigura(M, 'modelo'), 'Modelo de barras (' + mrmNom(M) + ')', 90);
   });
   B.push({t:'h1', text:'CARGAS Y COMBINACIONES'});
   Ms.forEach(M => {
     sub(M, 'Estados de carga');
     if (!varios) B.push({t:'h2', text:'Estados de carga'});
     const E = M.estados.map((e, k) => ({e, k})).filter(x => !x.e.comb);
-    tab('Estados de carga' + (varios ? ' (' + M.etz + ')' : ''), ['Estado', 'Descripción', 'Categoría RAM', 'Cargas'], E.map(({e, k}) => {
+    tab('Estados de carga' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Estado', 'Descripción', 'Categoría RAM', 'Cargas'], E.map(({e, k}) => {
       const R = M.R[k], q = [];
       if (e.pp.some(v => v)) q.push('peso propio (programa)');
       const nN = R.cargasN.reduce((a, arr) => a + (arr ? arr.filter(v => v).length : 0), 0); if (nN) q.push(`${nN} ${nN === 1 ? 'carga' : 'cargas'} en nudos`);
@@ -50288,7 +50418,7 @@ function mrmBuild(MR, P) {
     const C = M.estados.filter(e => e.comb);
     if (C.length) { if (!varios) B.push({t:'h2', text:'Combinaciones de carga'});
       const fx = e => e.form ? e.form.map((x, i) => (x.f < 0 ? '− ' : i ? '+ ' : '') + (Math.abs(x.f) !== 1 ? mcmNum(Math.abs(x.f), 2).replace(/,?0+$/, '') + ' ' : '') + M.estados[x.k].id).join(' ') : '—';
-      tab('Combinaciones de carga definidas en el modelo' + (varios ? ' (' + M.etz + ')' : ''), ['Combinación', 'Fórmula en RAM Elements', 'Estados y factores', 'Reacciones y desplazamientos'], C.map(e => [e.id, e.desc || '—', fx(e), e.res === 'modelo' ? 'del programa' : e.res === 'superp' ? 'por superposición' : 'no disponibles']), [1500, 2800, 2900, 2720], ['c','l','l','c']);
+      tab('Combinaciones de carga definidas en el modelo' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Combinación', 'Fórmula en RAM Elements', 'Estados y factores', 'Reacciones y desplazamientos'], C.map(e => [e.id, e.desc || '—', fx(e), e.res === 'modelo' ? 'del programa' : e.res === 'superp' ? 'por superposición' : 'no disponibles']), [1500, 2800, 2900, 2720], ['c','l','l','c']);
       if (C.some(e => e.res === 'superp')) B.push({t:'p', text:'El archivo de RAM Elements guarda los resultados de cada estado de carga. Las reacciones y desplazamientos de las combinaciones se obtienen sumando los resultados de los estados con los factores de la fórmula de cada combinación (análisis lineal). Las razones de diseño de los elementos son las calculadas por el programa para cada combinación.'});
       if (C.some(e => e.res === 'no')) B.push({t:'p', text:'Para las combinaciones marcadas «no disponibles» no se pudo leer la fórmula' + (M.pdelta ? ' o el análisis es de segundo orden (P-Δ), en que la superposición no es válida' : '') + '; sus reacciones y desplazamientos no se informan. [completar si se requieren]'}); }
   });
@@ -50296,20 +50426,20 @@ function mrmBuild(MR, P) {
   B.push({t:'h1', text:'DISEÑO DE ELEMENTOS DE ACERO'});
   Ms.forEach(M => {
     sub(M, 'Diseño');
-    if (!M.disenado) { B.push({t:'p', text:`El modelo «${M.etz}» no tiene el diseño de acero corrido en RAM Elements: no hay razones de diseño que informar.`}); return; }
+    if (!M.disenado) { B.push({t:'p', text:`El modelo «${M.etz}» (${mrmNom(M).toLowerCase()}) no tiene el diseño de acero corrido en RAM Elements: no hay razones de diseño que informar.`}); return; }
     const D = mrmDiseno(M), G = mrmGrupos(M);
-    tab('Razón de diseño máxima por grupo' + (varios ? ' (' + M.etz + ')' : ''), ['Grupo', 'Sección', 'N°', 'Razón máx.', 'Elem.', 'Combinación', 'Referencia', 'Estado'], G.map(g => {
+    tab('Razón de diseño máxima por grupo' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Grupo', 'Sección', 'N°', 'Razón máx.', 'Elem.', 'Combinación', 'Referencia', 'Estado'], G.map(g => {
       const xs = D.filter(x => g.barras.includes(x.b)), mx = xs.reduce((a, b) => b.r > a.r ? b : a, xs[0]);
       return [g.grupo || '—', g.secc, String(g.n), mcmNum(mx.r), String(mx.b.id), mx.k >= 0 ? M.estados[mx.k].id : '—', mx.cl || '—', mx.r <= 1 ? 'CUMPLE' : 'NO CUMPLE']; }), [1100, 1700, 600, 1100, 800, 1400, 1820, 1400], ['l','l','c','c','c','c','c','c']);
-    if (MR.verTodos || M.barras.length <= 30) tab('Razón de diseño por elemento' + (varios ? ' (' + M.etz + ')' : ''), ['Elem.', 'Grupo', 'Sección', 'L [m]', 'Razón', 'Combinación', 'Ubicación', 'Referencia'],
+    if (MR.verTodos || M.barras.length <= 30) tab('Razón de diseño por elemento' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Elem.', 'Grupo', 'Sección', 'L [m]', 'Razón', 'Combinación', 'Ubicación', 'Referencia'],
       D.map(x => [String(x.b.id), x.b.grupo || '—', x.b.secc, mcmNum(x.b.L), mcmNum(x.r), x.k >= 0 ? M.estados[x.k].id : '—', x.k >= 0 ? mcmNum(x.loc, 0) + ' % de L' : '—', x.cl || '—']), [800, 1200, 1700, 900, 1000, 1400, 1300, 1620], ['c','l','l','c','c','c','c','c']);
-    fig(mrmFigura(M, 'util'), 'Razón de diseño de los elementos de acero' + (varios ? ' (' + M.etz + ')' : ''), 90);
+    fig(mrmFigura(M, 'util'), 'Razón de diseño de los elementos de acero' + (varios ? ' (' + mrmNom(M) + ')' : ''), 90);
   });
   ufig('res');
   B.push({t:'h1', text:'DEFORMACIONES'});
   Ms.forEach(M => {
     sub(M, 'Deformaciones');
-    tab('Desplazamientos máximos por estado y combinación [mm]' + (varios ? ' (' + M.etz + ')' : ''), ['Estado', 'Descripción', '|δ| máx.', 'Nudo', 'TX máx.', 'TY máx.', 'TZ máx.'],
+    tab('Desplazamientos máximos por estado y combinación [mm]' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Estado', 'Descripción', '|δ| máx.', 'Nudo', 'TX máx.', 'TY máx.', 'TZ máx.'],
       M.estados.map((e, k) => { if (e.res === 'no') return [e.id, e.desc || '—', '—', '—', '—', '—', '—']; const d = mrmDesp(M, k); return [e.id, e.desc || '—', mcmNum(d.d), d.n ? String(d.n.id) : '—', mcmNum(d.tx), mcmNum(d.ty), mcmNum(d.tz)]; }), [1100, 3000, 1100, 900, 1270, 1270, 1280], ['c','l','c','c','c','c','c']);
   });
   const dv = mrmDefo(MR);
@@ -50322,11 +50452,11 @@ function mrmBuild(MR, P) {
     const lista = ks.length ? ks : M.estados.map((e, k) => k);
     const fM = M.U.f + '·m', mf = M.U.fL;
     const rows = []; lista.forEach(k => ap.forEach(({n, i}) => { const R = M.R[k].reac; rows.push([M.estados[k].id, String(n.id)].concat([0, 1, 2].map(q => mcmNum(R[q] ? R[q][i] : 0, 3)), [3, 4, 5].map(q => mcmNum((R[q] ? R[q][i] : 0) * mf, 3)))); }));
-    if (rows.length) tab(`Reacciones en los apoyos por ${ks.length ? 'combinación' : 'estado'} [${M.U.f}; ${fM}]` + (varios ? ' (' + M.etz + ')' : ''), ['Estado', 'Nudo', 'FX', 'FY', 'FZ', 'MX', 'MY', 'MZ'], rows, [1300, 800, 1300, 1300, 1300, 1300, 1300, 1320], ['c','c','c','c','c','c','c','c']);
+    if (rows.length) tab(`Reacciones en los apoyos por ${ks.length ? 'combinación' : 'estado'} [${M.U.f}; ${fM}]` + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Estado', 'Nudo', 'FX', 'FY', 'FZ', 'MX', 'MY', 'MZ'], rows, [1300, 800, 1300, 1300, 1300, 1300, 1300, 1320], ['c','c','c','c','c','c','c','c']);
     // control: suma de reacciones verticales vs carga aplicada (solo si todas las cargas del estado son legibles)
     const ctl = M.estados.map((e, k) => ({e, k})).filter(x => !x.e.comb).map(({e, k}) => { const ap2 = mrmAplicadaY(M, k), sr = mrmSumY(M, k); return [e.id, mcmNum(-ap2, 3), mcmNum(sr, 3), Math.abs(ap2) > 1e-9 ? mcmNum(100 * (sr + ap2) / Math.abs(ap2), 2) + ' %' : '—']; });
     if (ctl.length && !M.otras.length) { B.push({t:'p', text:'Como control del modelo, la suma de las reacciones verticales de cada estado se compara con la carga vertical aplicada (cargas en nudos y en barras más el peso propio calculado con las áreas y densidades del .zip):'});
-      tab(`Control de equilibrio vertical [${M.U.f}]` + (varios ? ' (' + M.etz + ')' : ''), ['Estado', 'Carga vertical aplicada', 'Σ reacciones FY', 'Diferencia'], ctl, [1600, 3000, 3000, 2320], ['c','c','c','c']); }
+      tab(`Control de equilibrio vertical [${M.U.f}]` + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Estado', 'Carga vertical aplicada', 'Σ reacciones FY', 'Diferencia'], ctl, [1600, 3000, 3000, 2320], ['c','c','c','c']); }
   });
   B.push({t:'h1', text:'MASA DE ACERO'});
   Ms.forEach(M => {
@@ -50334,7 +50464,17 @@ function mrmBuild(MR, P) {
     const G = mrmGrupos(M), tot = G.reduce((a, g) => a + g.masa, 0), falta = G.some(g => g.sinMasa);
     par(`La masa de acero de ${varios ? 'este modelo' : 'la estructura'}, calculada como área de la sección × largo × densidad del material para cada elemento, es ${mcmNum(tot, 0)} kg${falta ? ' (parcial: faltan áreas o densidades en el .zip)' : ''}.`);
   });
+  const I = mrmInstr(MR);
+  if (I.comparar) mrmComparacion(MR, B, tab, par);
   B.push({t:'h1', text:'CONCLUSIONES Y RECOMENDACIONES'}); par(mrmTxt(MR, P, 'concl'));
+  // elementos que no cumplen (para evaluar o definir refuerzos) y perfiles definidos
+  Ms.forEach(M => { if (!M.disenado) return; const mal = mrmDiseno(M).filter(x => x.r > 1); if (!mal.length) return;
+    tab('Elementos que no cumplen' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Elem.', 'Grupo', 'Sección', 'L [m]', 'Razón', 'Combinación', 'Referencia'],
+      mal.slice(0, 60).map(x => [String(x.b.id), x.b.grupo || '—', x.b.secc, mcmNum(x.b.L), mcmNum(x.r), x.k >= 0 ? M.estados[x.k].id : '—', x.cl || '—']), [1000, 1300, 2000, 1100, 1100, 1700, 1720], ['c','l','l','c','c','c','c']); });
+  if (I.acc.includes('definir')) { const M = Ms[Ms.length - 1], G = mrmGrupos(M);
+    B.push({t:'p', text:`Los perfiles definidos${varios ? ' (' + mrmNom(M).toLowerCase() + ')' : ''} son los de la tabla siguiente.`});
+    tab('Perfiles definidos' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Grupo RAM', 'Sección', 'Material', 'N° elem.', 'Largo total [m]', 'Masa [kg]'],
+      G.map(x => [x.grupo || '—', x.secc, x.mat, String(x.n), mcmNum(x.L), x.sinMasa ? '—' : mcmNum(x.masa, 0)]), [1700, 2200, 1500, 1100, 1700, 1720], ['l','l','l','c','c','c']); }
   B.push({t:'h1', text:'ALCANCES Y LIMITACIONES'}); par(mrmTxt(MR, P, 'alc'));
   let n1 = 0, n2 = 0;
   B.forEach(b => { if (b.t === 'h1') { n1++; n2 = 0; b.num = `${n1}.`; } else if (b.t === 'h2') { n2++; b.num = `${n1}.${n2}`; } });
@@ -50354,16 +50494,21 @@ function renderMemoriaRam(container) {
   function resumen(M, i) {
     const G = mrmGrupos(M), D = M.disenado ? mrmDiseno(M) : [], mx = D.length ? D.reduce((a, b) => b.r > a.r ? b : a) : null;
     return `<div class="mem-blk"><h4>📦 ${esc(M.archivo)} <small>${esc(M.etz)} · ${esc(M.unidades)}</small><button type="button" class="btn-remove" data-mdel="${i}" style="margin-left:auto" title="Quitar este modelo">✕</button></h4>
+      <div class="field" style="max-width:620px"><label>Situación (nombre en la memoria)</label><input type="text" data-mrol="${i}" value="${esc(M.rol || '')}" placeholder="${esc(M._nom || 'Ej: Estructura existente')}"></div>
       <div class="note">${M.nudos.length} nudos · ${M.barras.length} elementos · ${G.length} grupos · ${M.estados.filter(e => !e.comb).length} estados · ${M.estados.filter(e => e.comb).length} combinaciones · ${mrmApoyos(M).reduce((a, x) => a + x.nudos.length, 0)} apoyos · masa ${mcmNum(G.reduce((a, g) => a + g.masa, 0), 0)} kg
       ${M.disenado ? ` · razón máx. <b style="color:${mx && mx.r > 1 ? '#b91c1c' : '#15803d'}">${mx ? mcmNum(mx.r) : '—'}</b>` : ' · <b>sin diseño corrido</b>'}${M.otras.length ? `<br>⚠ Cargas no leídas automáticamente: ${esc(M.otras.join(', '))}` : ''}${Object.keys(M.mats).length ? '' : '<br>⚠ El .zip no trae el archivo .mat: faltan Fy, Fu y densidad.'}</div></div>`;
   }
   function html() {
-    const M = MR.modelos[0], ests = M ? M.estados : [];
+    mrmRoles(MR); const M = MR.modelos[0], ests = M ? M.estados : [];
     return `<div class="calc-head"><h1>Memoria con archivo RAM</h1><div class="sub">Cargue los .zip de RAM Elements (los que arma «Archivo › Comprimir», con el .etz, .mat y .sec) del diseño y de la verificación. La memoria se arma sola con la geometría, perfiles, materiales, apoyos, cargas, combinaciones, reacciones, deformaciones y razones de diseño del modelo; usted revisa los textos y agrega fotos o planos si quiere.</div></div>
       <div class="panel"><h3>1 · Modelos RAM Elements</h3>
-        <div class="mcm-drop" data-ram="1" tabindex="0"><b>📦 Arrastre aquí los .zip (o .etz) de RAM Elements</b><span>o haga clic para elegirlos. Puede cargar más de uno (diseño y verificación).</span></div>
+        <div class="mcm-drop" data-ram="1" tabindex="0"><b>📦 Arrastre aquí los .zip (o .etz) de RAM Elements</b><span>o haga clic para elegirlos. Puede cargar varios a la vez (p. ej. estructura existente y estructura reforzada).</span></div>
         <input type="file" id="mrmIn" accept=".zip,.etz" multiple hidden>
-        <div id="mrmEst" class="note"></div>${MR.modelos.map(resumen).join('')}</div>
+        <div id="mrmEst" class="note"></div>${MR.modelos.map(resumen).join('')}
+        <div class="mem-blk mrm-instr"><h4>🎤 Instrucción para la memoria <small>díctela o escríbala: qué hacer con los modelos cargados</small><button type="button" class="btn-add${mrmRec ? ' on' : ''}" data-act="mic" style="margin:0 0 0 auto;padding:.15rem .6rem">${mrmRec ? '⏹ Detener' : '🎤 Dictar'}</button></h4>
+          <textarea data-e="instr" rows="2" placeholder="Ej: Compara la estructura existente con la reforzada y evalúa si el refuerzo cumple">${esc(MR.instr || '')}</textarea>
+          <div class="note" id="mrmAcc">${mrmInstrNota(MR)}</div>
+          <div class="note">La Mesa reconoce las acciones por sus palabras (comparar, evaluar, definir, verificar, diseñar) y arma la memoria según ellas; con dos o más modelos y la acción «comparar» agrega el capítulo de comparación. El nombre de cada situación se toma de lo que escriba arriba, del nombre del archivo (existente, reforzada, propuesta) o de la instrucción. El dictado funciona en Chrome y Edge (pide permiso de micrófono la primera vez).</div></div></div>
       <div class="panel"><h3>2 · Proyecto y portada</h3><div class="field-grid">${IP('proyecto', 'Proyecto')}${IP('mandante', 'Cliente / mandante')}${IP('codigo', 'Código POWER')}${IP('ubicacion', 'Ubicación')}
         ${IE('sub1', 'Subtítulo (qué se calcula)', 'Ej: Diseño de monorriel 1 t')}${IE('sub2', 'Segundo subtítulo (estructura)', 'vacío = nombre del proyecto')}${IP('fecha', 'Fecha')}${IP('rev', 'Revisión')}${IP('elaboro', 'Elaboró')}${IP('reviso', 'Revisó (opcional)')}</div>
         ${zona('portada', '🖼 Imagen de portada (opcional)', 'si no se pone, va el dibujo del modelo generado por la Mesa')}</div>
@@ -50381,6 +50526,21 @@ function renderMemoriaRam(container) {
         <div class="note">PDF: en el cuadro de impresión elija «Guardar como PDF», tamaño Carta y márgenes «Ninguno». El Word y una copia PDF quedan en Archivo ING con el código del proyecto.</div>
         <div class="mem-prev-wrap" id="mrmPrev">${MR.modelos.length ? '' : '<div class="note" style="padding:1rem">Cargue un modelo para ver la memoria.</div>'}</div></div>
       <input type="file" accept="image/*" multiple id="mrmImgIn" hidden>`;
+  }
+  // dictado de la instrucción (Web Speech API de Chrome/Edge)
+  let mrmRec = null;
+  function dictar() {
+    if (mrmRec) { mrmRec.stop(); return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { fsToast('Este navegador no permite dictar. Use Chrome o Edge, o el dictado de Windows (tecla Windows + H) sobre el cuadro de la instrucción.'); return; }
+    const ta = root.querySelector('[data-e="instr"]'), base = ta.value.trim() ? ta.value.trim() + ' ' : '';
+    let fin = '';
+    const r = new SR(); r.lang = 'es-CL'; r.continuous = true; r.interimResults = true;
+    r.onresult = ev => { let tmp = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const x = ev.results[i]; if (x.isFinal) fin += x[0].transcript.trim() + ' '; else tmp += x[0].transcript; }
+      ta.value = (base + fin + tmp).trim(); MR.instr = ta.value; const n = root.querySelector('#mrmAcc'); if (n) n.innerHTML = mrmInstrNota(MR); };
+    r.onerror = ev => fsToast(ev.error === 'not-allowed' || ev.error === 'service-not-allowed' ? 'El navegador no dio permiso al micrófono: permítalo en el candado de la barra de direcciones.' : ev.error === 'no-speech' ? 'No se escuchó nada: vuelva a pulsar «Dictar».' : 'Dictado: ' + ev.error);
+    r.onend = () => { mrmRec = null; MR.instr = ta.value.trim(); if (MR.instr) MR.instr = MR.instr.charAt(0).toUpperCase() + MR.instr.slice(1); sv(); draw(); };
+    try { r.start(); mrmRec = r; const b = root.querySelector('[data-act="mic"]'); if (b) { b.textContent = '⏹ Detener'; b.classList.add('on'); } } catch (e) { fsToast('No se pudo iniciar el dictado: ' + (e.message || e)); }
   }
   let tok = 0, tp = null;
   async function prev() { if (!MR.modelos.length) return; const t = ++tok; try { const R = await mpgPaginar(doc(), mrmBuild(MR, P)); if (t === tok) mpgMostrar(root.querySelector('#mrmPrev'), R.html); } catch (e) { console.error(e); const w = root.querySelector('#mrmPrev'); if (w) w.innerHTML = '<div class="note">No se pudo armar la vista previa: ' + esc(e.message || e) + '</div>'; } }
@@ -50400,7 +50560,8 @@ function renderMemoriaRam(container) {
   root.addEventListener('input', e => {
     const t = e.target, d = t.dataset;
     if (d.p != null) { P[d.p] = t.value; mcmSave(S0); }
-    else if (d.e != null) { MR[d.e] = t.value; sv(); }
+    else if (d.e != null) { MR[d.e] = t.value; sv(); if (d.e === 'instr') { const n = root.querySelector('#mrmAcc'); if (n) n.innerHTML = mrmInstrNota(MR); } }
+    else if (d.mrol != null) { MR.modelos[+d.mrol].rol = t.value; sv(); const n = root.querySelector('#mrmAcc'); if (n) n.innerHTML = mrmInstrNota(MR); }
     else if (d.d != null) { MR.defo[d.d] = t.value; sv(); }
     else if (d.f != null) { MR.figs[+d.f].cap = t.value; sv(); }
     else return;
@@ -50429,6 +50590,7 @@ function renderMemoriaRam(container) {
     if (z && !e.target.closest('input,button,.mcm-th')) { if (z.dataset.ram) root.querySelector('#mrmIn').click(); else { dest = z.dataset.drop; root.querySelector('#mrmImgIn').click(); } return; }
     const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
     if (d.mdel != null) { MR.modelos.splice(+d.mdel, 1); sv(); draw(); return; }
+    if (d.act === 'mic') { dictar(); return; }
     if (d.fdel != null) { MR.figs.splice(+d.fdel, 1); sv(); draw(); return; }
     if (d.ereset) { MR[d.ereset] = null; sv(); draw(); return; }
     if (d.act === 'nueva') { if (Date.now() - armado > 4000) { armado = Date.now(); fsToast('Vuelve a pulsar «Nueva memoria RAM» para borrar la actual.'); return; } MR = mrmDef(); sv(); draw(); return; }
