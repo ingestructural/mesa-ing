@@ -49527,7 +49527,7 @@ function renderMemoriaSimple(container) {
         <div class="mem-blk"><h4>Conclusiones</h4>${tA('concl', 3)}</div>
         <button type="button" class="btn-add" id="mvsReset">Restaurar textos sugeridos</button></div>
       <div class="panel"><h3>4 · Emitir memoria</h3>
-        <div class="mem-btns"><button type="button" class="mem-btn" data-act="todo">📦 Memoria Word + planilla Excel</button><button type="button" class="mem-btn" data-act="word">⬇ Word</button><button type="button" class="mem-btn" data-act="xlsx">📊 Excel</button><button type="button" class="mem-btn" data-act="pdf">⬇ PDF</button></div>
+        <div class="mem-btns"><button type="button" class="mem-btn" data-act="todo">📦 Memoria Word + planilla Excel</button><button type="button" class="mem-btn" data-act="word">⬇ Word</button><button type="button" class="mem-btn" data-act="xlsx">📊 Excel</button><button type="button" class="mem-btn" data-act="pdf">⬇ PDF</button><button type="button" class="mem-btn" data-act="verpdf" title="Ver la memoria en PDF sin descargarla">👁 Ver PDF</button></div>
         <div class="note">El PDF incluye al final la impresión completa de la planilla (Anexo B)${C.hoja ? '' : ' — <b>esta verificación se capturó antes de esa función: vuelve a la planilla y toca «📑 Memoria» otra vez para incluirla</b>'}. Word: el índice se actualiza al abrir (Word pregunta «¿actualizar campos?» → Sí). En iPad/iPhone los archivos se entregan con el menú Compartir.</div>
         <div class="mem-prev-wrap" id="mvsPrev"></div></div>` : ''}`;
   }
@@ -49557,6 +49557,7 @@ function renderMemoriaSimple(container) {
       if (b.dataset.act === 'word' || b.dataset.act === 'todo') out.push({nombre:base + '.docx', blob:await mcmDocx(Sx, B)});
       if (b.dataset.act === 'xlsx' || b.dataset.act === 'todo') out.push({nombre:mvsNombreXlsx(C, P), blob:mvsXlsx(C, P)});
       if (b.dataset.act === 'pdf') out.push({nombre:base + '.pdf', blob:await mvsPdf(C, Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO'}), B)});
+      if (b.dataset.act === 'verpdf') { mcmVerPdf(await mvsPdf(C, Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO'}), B), base + '.pdf'); return; }
       await mvsEntregar(out);
       archMemoria(out, Object.assign({}, P, {titulo:'Memoria de cálculo — ' + C.nombre.replace(/\s*\(.*?\)\s*/g, ' ').trim()}), {clase:'verificacion', planilla:C.nombre});
     } catch (er) { fsToast('No se pudo generar: ' + ((er && er.message) || er)); }
@@ -49818,6 +49819,24 @@ async function mpgAPdf(html, liviano) {
   } finally { oc.remove(); }
 }
 
+// visor de PDF dentro de la Mesa (todas las memorias): ventana sobre la página con descargar, abrir en pestaña y cerrar
+function mcmVerPdf(blob, nombre) {
+  const viejo = document.getElementById('mcmPdfVer'); if (viejo) viejo.remove();
+  const url = URL.createObjectURL(blob), ov = document.createElement('div'); ov.id = 'mcmPdfVer';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.72);display:flex;flex-direction:column;padding:12px';
+  ov.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem;background:#1F3864;color:#fff;padding:.45rem .7rem;border-radius:8px 8px 0 0;font:600 14px Arial">
+    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📄 ${esc(nombre)}</span>
+    <button type="button" data-v="dl" class="mem-btn" style="margin:0">⬇ Descargar</button><button type="button" data-v="tab" class="mem-btn" style="margin:0">↗ Abrir en pestaña</button><button type="button" data-v="x" class="mem-btn" style="margin:0" title="Cerrar (Esc)">✕ Cerrar</button></div>
+    <iframe src="${url}" title="${esc(nombre)}" style="flex:1;width:100%;border:0;background:#525659;border-radius:0 0 8px 8px"></iframe>`;
+  const cerrar = () => { ov.remove(); document.removeEventListener('keydown', tecla); setTimeout(() => URL.revokeObjectURL(url), 60000); };
+  const tecla = e => { if (e.key === 'Escape') cerrar(); };
+  ov.addEventListener('click', async e => { const v = e.target.closest('[data-v]'); if (!v) { if (e.target === ov) cerrar(); return; }
+    if (v.dataset.v === 'x') cerrar();
+    else if (v.dataset.v === 'tab') window.open(url, '_blank');
+    else if (v.dataset.v === 'dl') { try { await mcmGuardarArchivo(nombre, blob, 'application/pdf', 'Documento PDF', '.pdf'); } catch (er) { fsToast('No se pudo guardar: ' + ((er && er.message) || er)); } } });
+  document.addEventListener('keydown', tecla);
+  document.body.appendChild(ov);
+}
 // datos de portada/encabezado comunes a los cuatro tipos de memoria (proy compartido en mesaMemoria.v1)
 function mcmDoc(S) {
   const P = Object.assign({}, S.proy || {});
@@ -49951,7 +49970,7 @@ function renderMemoriaExpress(container) {
         ${zona('res', '⇩ Imagen de resultados (opcional)', 'razones de utilización, deformada, etc.')}
         ${blk('concl', 'Conclusiones', mexConcl(E), 3)}</div>
       <div class="panel"><h3>6 · Emitir memoria</h3>
-        <div class="mem-btns"><button type="button" class="mem-btn" data-act="word">⬇ Word</button><button type="button" class="mem-btn" data-act="pdf">🖨 Imprimir / Guardar PDF</button><button type="button" class="btn-add" data-act="nueva">🗋 Nueva memoria express</button></div>
+        <div class="mem-btns"><button type="button" class="mem-btn" data-act="word">⬇ Word</button><button type="button" class="mem-btn" data-act="verpdf" title="Ver la memoria en PDF sin descargarla">👁 Ver PDF</button><button type="button" class="mem-btn" data-act="pdf">🖨 Imprimir / Guardar PDF</button><button type="button" class="btn-add" data-act="nueva">🗋 Nueva memoria express</button></div>
         <div class="note">PDF: en el cuadro de impresión elija «Guardar como PDF», tamaño Carta y márgenes «Ninguno». El Word y una copia PDF quedan en Archivo ING con el código del proyecto.</div>
         <div class="mem-prev-wrap" id="mexPrev"></div></div>
       <input type="file" accept="image/*" multiple id="mexImgIn" hidden>`;
@@ -50001,12 +50020,13 @@ function renderMemoriaExpress(container) {
     if (d.act === 'addC') { E.cargas.push({sym:'', n:'', v:''}); sv(); draw(); return; }
     if (d.act === 'addR') { E.res.push({elem:'', sec:'', verif:'', dc:''}); sv(); draw(); return; }
     if (d.act === 'nueva') { if (Date.now() - armado > 4000) { armado = Date.now(); fsToast('Vuelve a pulsar «Nueva memoria express» para borrar la actual.'); return; } E = mexDef(); sv(); draw(); return; }
-    if (d.act === 'word' || d.act === 'pdf') {
+    if (d.act === 'word' || d.act === 'pdf' || d.act === 'verpdf') {
       const t0 = b.textContent; b.disabled = true; b.textContent = '⏳ Generando…';
       try {
         const D = doc(), B = mexBuild(E, P), R = await mpgPaginar(D, B, {indicePortada:true}), base = mcmNombre(P, 'Memoria_Express');
         const Sx = {proy:D.proy, portada:D.portada, indicePortada:true};
         if (d.act === 'word') { const blob = await mcmDocx(Sx, B, R); await mcmGuardarArchivo(base + '.docx', blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Documento de Word', '.docx'); archMemoria([{nombre:base + '.docx', blob}], D.proy, {clase:'express'}); }
+        else if (d.act === 'verpdf') mcmVerPdf(await mpgAPdf(R.html), base + '.pdf');
         else {
           const arch = () => { window.removeEventListener('afterprint', arch); setTimeout(async () => { try { archMemoria([{nombre:base + '.pdf', blob:await mpgAPdf(R.html, true)}], D.proy, {clase:'express'}); } catch (er) {} }, 300); };
           window.addEventListener('afterprint', arch); mpgImprimir(R.html);
@@ -50678,7 +50698,7 @@ function renderMemoriaRam(container) {
         <div class="mem-checks" style="margin-top:.5rem"><label><input type="checkbox" data-v="1" ${MR.verTodos ? 'checked' : ''}> <span>Tabla de razón de diseño de todos los elementos (en modelos de más de 30 elementos va solo la tabla por grupo)</span></label></div>
         ${zona('cargas', '⇩ Imágenes adicionales de cargas (opcional)', 'van al final del capítulo Cargas')}${zona('res', '⇩ Imágenes adicionales de resultados (opcional)', 'van al final del capítulo Diseño')}</div>
       <div class="panel"><h3>5 · Emitir memoria</h3>
-        <div class="mem-btns"><button type="button" class="mem-btn" data-act="word">⬇ Word</button><button type="button" class="mem-btn" data-act="pdf">🖨 Imprimir / Guardar PDF</button><button type="button" class="btn-add" data-act="nueva">🗋 Nueva memoria RAM</button></div>
+        <div class="mem-btns"><button type="button" class="mem-btn" data-act="word">⬇ Word</button><button type="button" class="mem-btn" data-act="verpdf" title="Ver la memoria en PDF sin descargarla">👁 Ver PDF</button><button type="button" class="mem-btn" data-act="pdf">🖨 Imprimir / Guardar PDF</button><button type="button" class="btn-add" data-act="nueva">🗋 Nueva memoria RAM</button></div>
         <div class="note">PDF: en el cuadro de impresión elija «Guardar como PDF», tamaño Carta y márgenes «Ninguno». El Word y una copia PDF quedan en Archivo ING con el código del proyecto.</div>
         <div class="mem-prev-wrap" id="mrmPrev">${MR.modelos.length ? '' : '<div class="note" style="padding:1rem">Cargue un modelo para ver la memoria.</div>'}</div></div>
       <input type="file" accept="image/*" multiple id="mrmImgIn" hidden>`;
@@ -50753,12 +50773,13 @@ function renderMemoriaRam(container) {
     if (d.fdel != null) { MR.figs.splice(+d.fdel, 1); sv(); draw(); return; }
     if (d.ereset) { MR[d.ereset] = null; sv(); draw(); return; }
     if (d.act === 'nueva') { if (Date.now() - armado > 4000) { armado = Date.now(); fsToast('Vuelve a pulsar «Nueva memoria RAM» para borrar la actual.'); return; } MR = mrmDef(); sv(); draw(); return; }
-    if (d.act === 'word' || d.act === 'pdf') {
+    if (d.act === 'word' || d.act === 'pdf' || d.act === 'verpdf') {
       if (!MR.modelos.length) { fsToast('Cargue primero el .zip del modelo RAM.'); return; }
       const t0 = b.textContent; b.disabled = true; b.textContent = '⏳ Generando…';
       try {
         const D = doc(), B = mrmBuild(MR, P), R = await mpgPaginar(D, B), base = mcmNombre(P, 'Memoria_RAM');
         if (d.act === 'word') { const blob = await mcmDocx({proy:D.proy, portada:D.portada}, B, R); await mcmGuardarArchivo(base + '.docx', blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Documento de Word', '.docx'); archMemoria([{nombre:base + '.docx', blob}], D.proy, {clase:'ram'}); }
+        else if (d.act === 'verpdf') mcmVerPdf(await mpgAPdf(R.html), base + '.pdf');
         else {
           const arch = () => { window.removeEventListener('afterprint', arch); setTimeout(async () => { try { archMemoria([{nombre:base + '.pdf', blob:await mpgAPdf(R.html, true)}], D.proy, {clase:'ram'}); } catch (er) {} }, 300); };
           window.addEventListener('afterprint', arch); mpgImprimir(R.html);
@@ -50956,7 +50977,7 @@ function renderMemorias(container) {
     <div class="panel"><h3>9 · Capítulos y textos</h3><div class="mem-checks">${[['intro','1. Introducción y alcance'],['desc','2. Descripción de la estructura'],['normas','3. Normativa'],['mat','4. Materiales'],['cargas','5. Cargas y combinaciones'],['anal','6. Modelo y análisis'],['verif','7. Resultados y verificaciones'],['concl','8. Conclusiones y recomendaciones'],['anexos','Anexos (figuras marcadas como anexo)']].map(([k, l]) => CHK(l, 'caps.' + k)).join('')}</div>
       ${['intro','alcance','descGen','descSis'].concat(E.hormigon ? ['descFund'] : []).concat(['anal','hip','concl','recom']).filter(k => S.caps[MCM_TXT[k].cap]).map(blk).join('')}</div>
     <div class="panel"><h3>10 · Emitir memoria</h3>${esq}
-      <div class="mem-btns"><button type="button" class="mem-btn" data-act="word">⬇ Descargar Word</button><button type="button" class="mem-btn" data-act="pdf">🖨 Imprimir / Guardar PDF</button><button type="button" class="btn-add" data-act="guardar">💾 Guardar memoria</button></div>
+      <div class="mem-btns"><button type="button" class="mem-btn" data-act="word">⬇ Descargar Word</button><button type="button" class="mem-btn" data-act="verpdf" title="Ver la memoria en PDF sin descargarla">👁 Ver PDF</button><button type="button" class="mem-btn" data-act="pdf">🖨 Imprimir / Guardar PDF</button><button type="button" class="btn-add" data-act="guardar">💾 Guardar memoria</button></div>
       <div class="note">Word: el índice se actualiza al abrir (Word pregunta «¿actualizar campos?» → Sí). PDF: en el diálogo de impresión elige «Guardar como PDF», tamaño Carta.</div>
       <div class="mem-prev-wrap" id="mcmPrevWrap"></div></div>`;
   }
@@ -51011,6 +51032,10 @@ function renderMemorias(container) {
     else if (a === 'nueva') { if (!confirmMem()) return; S = mcmDef(); mcmFH = null; }
     else if (a === 'abrir') { const r = await mcmAbrirJson('Memoria de cálculo (.json)', root.querySelector('#mcmFile')); if (!r) return; try { const o = JSON.parse(r.text); if (!o || o.v !== 1 || !o.proy) throw 0; S = mcmMerge(o); mcmFH = r.fh; mcmSave(S); draw(); fsToast('Memoria abierta: ' + r.name); } catch (err) { fsToast('Ese archivo no es una memoria guardada.'); } return; }
     else if (a === 'guardar' || a === 'guardarComo') { mcmFH = await mcmGuardarEn(mcmFH, `Memoria_${mcmSlug(S.proy.codigo || S.proy.proyecto) || 'calculo'}_Rev${mcmSlug(S.proy.rev)}.json`, JSON.stringify(S), 'application/json', 'Memoria de cálculo (.json)', '.json', a === 'guardarComo'); draw(); return; }
+    else if (a === 'verpdf') { b.disabled = true; const t0 = b.textContent; b.textContent = '⏳ Generando…';
+      try { const Rv = await mpgPaginar(mcmDoc(S), mcmBuild(S)); mcmVerPdf(await mpgAPdf(Rv.html), `Memoria_${mcmSlug(S.proy.codigo || S.proy.proyecto) || 'calculo'}_Rev${mcmSlug(S.proy.rev)}.pdf`); }
+      catch (err) { fsToast('No se pudo generar el PDF: ' + ((err && err.message) || err)); }
+      b.disabled = false; b.textContent = t0; return; }
     else if (a === 'pdf') {
       const Sa = JSON.parse(JSON.stringify(S)), nomPdf = `Memoria_${mcmSlug(S.proy.codigo || S.proy.proyecto) || 'calculo'}_Rev${mcmSlug(S.proy.rev)}.pdf`;
       // tras cerrar el cuadro de impresión se arma una copia PDF de la memoria y se guarda en Archivo ING
