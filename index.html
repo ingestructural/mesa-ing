@@ -49073,6 +49073,7 @@ function renderInformes(container) {
     try { PROY = await A.proyectos(); c.textContent = 'Cuenta: ' + (A.email || 'POWER') + ' · ' + PROY.filter(p => p.codigo).length + ' proyectos.'; opcProy(); }
     catch (e) { if (e.code === 'auth') { cargarProy(); return; } c.textContent = 'No se pudieron leer los proyectos: ' + e.message + '. Complete los datos a mano.'; }
   }
+  mcmMicObservar(container);   // 🎤 dictar, 📋 copiar todo y 🗑 borrar todo en cada cuadro de texto (como en las memorias)
   container.addEventListener('input', e => {
     const k = e.target.dataset && e.target.dataset.inf; if (k) { I[k] = e.target.value; pintar(); }
     if (e.target.id === 'inf_tipo') { I.tipo = e.target.value; pintar(); }
@@ -50902,12 +50903,14 @@ function mcmMicDecorar(cont) {
     const conMic = !ta.hasAttribute('data-nomic');
     const w = document.createElement('div'); w.className = 'mcm-micw' + (conMic ? ' dos' : '');
     ta.parentNode.insertBefore(w, ta); w.appendChild(ta);
+    if (ta.style.maxWidth) w.style.maxWidth = ta.style.maxWidth;   // los botones quedan dentro del cuadro aunque este no use todo el ancho
     if (conMic) { const b = document.createElement('button'); b.type = 'button'; b.className = 'mcm-micb'; b.title = 'Dictar: lo dictado se agrega al final de este texto'; b.textContent = '🎤'; w.appendChild(b); }
     const c = document.createElement('button'); c.type = 'button'; c.className = 'mcm-copyb'; c.title = 'Copiar todo el texto'; c.textContent = '📋'; w.appendChild(c);
     const x = document.createElement('button'); x.type = 'button'; x.className = 'mcm-clrb'; x.title = 'Borrar todo el texto (se puede deshacer unos segundos)'; x.textContent = '🗑'; w.appendChild(x);
   });
 }
 function mcmMicObservar(cont) {
+  if (!document.getElementById('mcmCss')) { const st = document.createElement('style'); st.id = 'mcmCss'; st.textContent = MCM_CSS; document.head.appendChild(st); }   // estilos de los botones fuera del Constructor (p. ej. Informes)
   if (cont._micObs) { mcmMicDecorar(cont); return; }
   const o = new MutationObserver(() => mcmMicDecorar(cont)); o.observe(cont, {childList:true, subtree:true}); cont._micObs = o; mcmMicDecorar(cont);
   cont.addEventListener('click', e => {
