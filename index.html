@@ -44885,19 +44885,20 @@ function renderAsimilacionFuego(container) {
     </div>
 
     <div class="panel">
-      <h3>6 · Informe de asimilación (memoria de cálculo)</h3>
-      <div class="note" style="margin-bottom:.6rem">Datos para el informe. El informe incluye introducción, descripción de la estructura, marco regulatorio, desarrollo teórico con fórmulas, tablas, gráficos, resultados y conclusiones, con los elementos y parámetros de esta calculadora.</div>
+      <h3>6 · Memoria de cálculo</h3>
+      <div class="note" style="margin-bottom:.6rem">Datos para la portada (formato estándar de las memorias de ING: antecedentes y cuadro de revisiones) y para el texto. El proyecto es el «Título del proyecto» de la planilla. Los campos vacíos de fecha, revisión, descripción y elaboró toman los valores por defecto del Constructor de Memorias.</div>
       <div class="field-grid">
-        <div class="field"><label>Cliente / mandante</label><input type="text" id="afi_cliente" placeholder="Ej: CMPC"></div>
-        <div class="field"><label>Ubicación</label><input type="text" id="afi_ubic" placeholder="Ej: Los Ángeles, Región del Biobío"></div>
-        <div class="field"><label>Edificio / estructura</label><input type="text" id="afi_edif" placeholder="Ej: Ampliación Nave 4/4"></div>
-        <div class="field"><label>Destino (OGUC)</label><input type="text" id="afi_destino" list="dl_afi_destino" placeholder="Ej: Establecimiento industrial"><datalist id="dl_afi_destino"><option value="Establecimiento industrial"></option><option value="Establecimiento de bodegaje"></option><option value="Supermercados y centros comerciales"></option><option value="Oficinas"></option><option value="Habitacional"></option></datalist></div>
+        <div class="field"><label>Mandante</label><input type="text" data-noupper id="afi_cliente" placeholder="Ej: CMPC"></div>
+        <div class="field"><label>Ubicación</label><input type="text" data-noupper id="afi_ubic" placeholder="Ej: Los Ángeles, Región del Biobío"></div>
+        <div class="field"><label>Edificio / estructura</label><input type="text" data-noupper id="afi_edif" placeholder="Ej: Ampliación Nave 4/4"></div>
+        <div class="field"><label>Destino (OGUC)</label><input type="text" data-noupper id="afi_destino" list="dl_afi_destino" placeholder="Ej: Establecimiento industrial"><datalist id="dl_afi_destino"><option value="Establecimiento industrial"></option><option value="Establecimiento de bodegaje"></option><option value="Supermercados y centros comerciales"></option><option value="Oficinas"></option><option value="Habitacional"></option></datalist></div>
         <div class="field"><label>Clasificación OGUC Art. 4.3.3 (tipo)</label><select id="afi_tipo"><option value="">— no indicar —</option><option value="a">Tipo a</option><option value="b">Tipo b</option><option value="c">Tipo c</option><option value="d">Tipo d</option></select></div>
-        <div class="field"><label>N° de informe / revisión</label><input type="text" id="afi_num" placeholder="Ej: INF-FU-001 Rev. A"></div>
-        <div class="field"><label>Preparado por</label><input type="text" id="afi_autor"></div>
-        <div class="field"><label>Profesión (preparado por)</label><input type="text" id="afi_autorProf" placeholder="Ej: Ingeniero Civil"></div>
-        <div class="field"><label>Revisado / aprobado por</label><input type="text" id="afi_revisor"></div>
-        <div class="field"><label>Profesión (revisado por)</label><input type="text" id="afi_revisorProf" placeholder="Ej: Ingeniero Civil Estructural"></div>
+        <div class="field"><label>Código del documento</label><input type="text" data-noupper id="afi_num" placeholder="Ej: MC-FU-001"></div>
+        <div class="field"><label>Fecha</label><input type="text" data-noupper id="afi_fecha" placeholder="vacío = hoy"></div>
+        <div class="field"><label>Revisión</label><input type="text" data-noupper id="afi_rev" placeholder="0"></div>
+        <div class="field"><label>Descripción de la revisión</label><input type="text" data-noupper id="afi_descRev" list="dl_afi_descRev" placeholder="Emitida para revisión"><datalist id="dl_afi_descRev">${MCM_REVS.map(x => `<option value="${x}"></option>`).join('')}</datalist></div>
+        <div class="field"><label>Elaboró</label><input type="text" data-noupper id="afi_autor" list="dl_afi_ing" placeholder="${MCM_ING[0]}"><datalist id="dl_afi_ing">${MCM_ING.map(x => `<option value="${x}"></option>`).join('')}</datalist></div>
+        <div class="field"><label>Revisó</label><input type="text" data-noupper id="afi_revisor" list="dl_afi_ing"></div>
         <div class="field" style="grid-column:1/-1"><label>Descripción de la estructura (texto libre)</label><textarea id="afi_desc" rows="4" style="width:100%;box-sizing:border-box;font-family:'IBM Plex Sans',sans-serif;font-size:.9rem;padding:.5rem;border:1px solid var(--input-border);border-radius:4px;background:var(--input-bg);color:var(--ink)" placeholder="Ej: Galpón de 34,4 m de luz con marcos de columnas de hormigón armado y vigas de techo reticuladas de acero en perfiles circulares Sch 40..."></textarea></div>
       </div>
       <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.9rem">
@@ -45063,8 +45064,10 @@ function renderAsimilacionFuego(container) {
   document.getElementById('af_add').addEventListener('click', () => { addRow(); recalc(); });
   const imprimirInforme = detallada => {
     if (!ultimo) return;
-    const v = id => (document.getElementById(id).value || '').trim();
-    const meta = {cliente:v('afi_cliente'), ubic:v('afi_ubic'), edif:v('afi_edif'), destino:v('afi_destino'), tipo:v('afi_tipo'), num:v('afi_num'), autor:v('afi_autor'), autorProf:v('afi_autorProf'), revisor:v('afi_revisor'), revisorProf:v('afi_revisorProf'), desc:v('afi_desc')};
+    const v = id => { const e = document.getElementById(id); return e ? (e.value || '').trim() : ''; };
+    const pw = (typeof PROYECTO_POWER !== 'undefined' && PROYECTO_POWER) ? PROYECTO_POWER : {};
+    const meta = {cliente:v('afi_cliente') || pw.mandante || '', ubic:v('afi_ubic'), edif:v('afi_edif'), destino:v('afi_destino'), tipo:v('afi_tipo'), num:v('afi_num') || pw.codigo || '',
+      fecha:v('afi_fecha') || MCM_HOY(), rev:v('afi_rev') || '0', descRev:v('afi_descRev') || MCM_REVS[0], autor:v('afi_autor') || MCM_ING[0], revisor:v('afi_revisor'), desc:v('afi_desc')};
     document.getElementById('printSheetInforme').innerHTML = afInformeHtml(ultimo.p, ultimo.res, meta, {detallada});
     document.documentElement.classList.add('informe-print-active');
     const limpiar = () => { document.documentElement.classList.remove('informe-print-active'); window.removeEventListener('afterprint', limpiar); };
@@ -45258,10 +45261,13 @@ function afInformeHtml(p, res, meta, opts) {
       .af-inf .inf-t td.ok{ color:#1E7A46; font-weight:700; } .af-inf .inf-t td.bad{ color:#B3261E; font-weight:700; }
       .af-inf .inf-cap{ font-size:9pt; font-weight:700; color:#1F3864; margin:.6rem 0 .15rem; }
       .af-inf .eq{ font-family: 'Cambria Math', 'Times New Roman', serif; font-size:11pt; text-align:center; margin:.4rem 0; }
-      .af-inf .portada{ text-align:center; padding-top:3.5cm; }
-      .af-inf .portada .t1{ font-size:20pt; font-weight:700; color:#1F3864; text-decoration:underline; margin-bottom:.6rem; }
-      .af-inf .portada .t2{ font-size:14pt; color:#2E5395; margin-bottom:2rem; }
-      .af-inf .portada table{ margin:2.5rem auto 0; font-size:10.5pt; text-align:left; } .af-inf .portada td{ padding:.2rem .6rem; }
+      .af-inf .portada{ padding-top:40px; }
+      .af-inf .portada .t1{ text-align:center; font-size:22pt; font-weight:700; color:#1F3864; text-decoration:underline; margin-bottom:12px; }
+      .af-inf .portada .t0{ text-align:center; font-size:13pt; color:#1F3864; margin-bottom:10px; }
+      .af-inf .portada .t2{ text-align:center; font-size:16pt; color:#2E5395; text-decoration:underline; margin-bottom:36px; }
+      .af-inf .portada .ant{ font-size:10.5pt; margin-bottom:18px; } .af-inf .portada .ant td{ padding:3px 6px; } .af-inf .portada .ant td.k{ width:28%; font-weight:700; background:#F2F5FA; text-align:left; }
+      .af-inf .portada .rev{ font-size:9pt; }
+      .af-inf .af-ix .ix{ margin:3px 0; font-weight:700; color:#1F3864; } .af-inf .af-ix .ix.l2{ font-weight:400; color:#111; margin-left:22px; }
       .af-inf .salto{ break-before:page; page-break-before:always; }
       .af-inf .keep{ break-inside:avoid; page-break-inside:avoid; }
       .af-inf h1, .af-inf h2{ break-after:avoid; page-break-after:avoid; }
@@ -45282,23 +45288,18 @@ function afInformeHtml(p, res, meta, opts) {
     </style>
 
     <div class="portada">
-      <div class="t1">${det ? 'MEMORIA DE CÁLCULO DETALLADA' : 'INFORME DE ASIMILACIÓN Y COMPORTAMIENTO AL FUEGO'}</div>
-      ${det ? '<div class="t2" style="margin-bottom:.4rem">Asimilación y comportamiento al fuego</div>' : ''}
-      <div class="t2">Elementos estructurales de acero${meta.edif ? ' — ' + esc(meta.edif) : ''}</div>
-      <div style="font-size:12pt;font-weight:700">${esc(proyecto || meta.edif || '')}</div>
-      <table>
-        ${meta.cliente ? `<tr><td><b>Cliente</b></td><td>: ${esc(meta.cliente)}</td></tr>` : ''}
-        ${meta.ubic ? `<tr><td><b>Ubicación</b></td><td>: ${esc(meta.ubic)}</td></tr>` : ''}
-        ${meta.num ? `<tr><td><b>Informe</b></td><td>: ${esc(meta.num)}</td></tr>` : ''}
-        <tr><td><b>Fecha</b></td><td>: ${fecha}</td></tr>
-        ${meta.autor ? `<tr><td><b>Preparado por</b></td><td>: ${esc(meta.autor)}${meta.autorProf ? ', ' + esc(meta.autorProf) : ''}</td></tr>` : ''}
-        ${meta.revisor ? `<tr><td><b>Revisado por</b></td><td>: ${esc(meta.revisor)}${meta.revisorProf ? ', ' + esc(meta.revisorProf) : ''}</td></tr>` : ''}
-      </table>
+      <div class="t1">${det ? 'MEMORIA DE CÁLCULO DETALLADA' : 'MEMORIA DE CÁLCULO'}</div>
+      <div class="t0">Asimilación y comportamiento al fuego de elementos estructurales de acero</div>
+      <div class="t2">${esc(proyecto || meta.edif || '')}</div>
+      <table class="inf-t ant"><tbody>${[['Mandante', meta.cliente], ['Proyecto', proyecto || meta.edif], ['Código', meta.num], ['Ubicación', meta.ubic], ['Elaboró', meta.autor], ['Revisó', meta.revisor]].map(x => `<tr><td class="k">${x[0]}</td><td class="l">${esc(x[1] || '—')}</td></tr>`).join('')}</tbody></table>
+      <table class="inf-t rev"><tr><th>Rev.</th><th>Fecha</th><th>Descripción</th><th>Elaboró</th><th>Revisó</th></tr>
+        <tr><td>${esc(meta.rev || '')}</td><td>${esc(meta.fecha || fecha)}</td><td class="l">${esc(meta.descRev || '')}</td><td class="l">${esc(meta.autor || '')}</td><td class="l">${esc(meta.revisor || '')}</td></tr></table>
     </div>
 
     <div class="salto"></div>
-    <h1>ÍNDICE</h1>
-    <p>1. Introducción<br>2. Descripción de la estructura<br>3. Marco regulatorio<br>4. Resistencia al fuego exigida<br>5. Desarrollo teórico<br>&nbsp;&nbsp;&nbsp;5.1 Factor de masividad<br>&nbsp;&nbsp;&nbsp;5.2 Asimilación de vigas a soluciones ensayadas para pilares<br>&nbsp;&nbsp;&nbsp;5.3 Protección con pintura intumescente<br>&nbsp;&nbsp;&nbsp;5.4 Evolución térmica del acero sin protección<br>&nbsp;&nbsp;&nbsp;5.5 Pérdida de propiedades mecánicas<br>&nbsp;&nbsp;&nbsp;5.6 Pandeo en caliente de elementos comprimidos<br>6. Resultados (incluye resultados por elemento)<br>${det ? '7. Desarrollo detallado de los cálculos por elemento<br>' + res.map((r, i) => '&nbsp;&nbsp;&nbsp;7.' + (i+1) + ' ' + esc(r.nombre) + ' — ' + esc(r.perfil)).join('<br>') + '<br>8. Conclusiones' : '7. Conclusiones'}</p>
+    <h1 class="ix-h">ÍNDICE</h1>
+    <div class="af-ix"></div>
+    <div class="salto"></div>
 
     <h1>1. INTRODUCCIÓN</h1>
     <p>El presente informe tiene por objeto determinar el comportamiento frente a la acción del fuego de los elementos estructurales de acero de ${esc(edif)}${meta.cliente ? ', de ' + esc(meta.cliente) : ''}${meta.ubic ? ', ubicada en ' + esc(meta.ubic) : ''}, y fundamentar la asimilación de las vigas de acero a soluciones de protección pasiva ensayadas para elementos verticales (pilares), conforme a NCh 3684/1 y NCh 3684/2:2022.</p>
@@ -45376,9 +45377,13 @@ function afInformeHtml(p, res, meta, opts) {
     ${conPand.length ? `<h2>6.4 Pandeo en caliente</h2>${tablaPand}` : ''}
 
     <div class="salto"></div>
-    <h1>6.${conPand.length ? 5 : 4} RESULTADOS POR ELEMENTO</h1>
+    <h2>6.${conPand.length ? 5 : 4} Resultados por elemento</h2>
     <p>Para cada elemento se muestra la sección con sus caras expuestas, la evolución de la temperatura del acero sin revestimiento y con el revestimiento de pintura intumescente (${p.prodMem === 'stofire' ? 'Stofire, IDIEM 305.751' : 'Cerefire X200, IDIEM 300.465'}) con el espesor de tabla para ${rfT}, y la comparación entre el factor de reducción de fluencia alcanzado (max = ky,θ) y el grado de utilización requerido (req = μ0 = σfi/Fy). La temperatura con revestimiento se estima con EN 1993-1-2 §4.2.5.2 y una conductividad efectiva λp,ef = ${N(p.lamP,4)} W/m·K; es informativa, ya que el espesor está respaldado por el ensayo IDIEM.</p>
     ${res.map(r => afFichaElemento(r, p, meta, F, TB)).join('')}
+
+    <h2>6.${conPand.length ? 6 : 5} Resumen de estatus y solución requerida</h2>
+    <p>La tabla resume, para cada elemento, su estatus frente a la exigencia ${rfT} sin protección (verificación por tensión y, cuando corresponde, a pandeo en caliente) y la solución requerida para cumplir. Los espesores provienen de las tablas IDIEM con la masividad asimilada a 4 caras.</p>
+    ${afTablaResumen(res, p, TB)}
 
     ${det ? `<div class="salto"></div>
     <h1>7. DESARROLLO DETALLADO DE LOS CÁLCULOS POR ELEMENTO</h1>
@@ -45388,7 +45393,7 @@ function afInformeHtml(p, res, meta, opts) {
     <h1>${det ? 8 : 7}. CONCLUSIONES</h1>
     <ul>${concl.map(c => `<li>${c}</li>`).join('')}</ul>
     <p>Las tensiones y esfuerzos en situación de incendio fueron calculados fuera de este informe e ingresados como datos. Los espesores de protección deben aplicarse según las recomendaciones del fabricante y controlarse en obra (espesor de película seca). La vigencia de los informes de ensayo debe verificarse a la fecha de la recepción de la obra.</p>
-    ${meta.autor || meta.revisor ? `<table style="margin:2.5rem auto 0;text-align:center"><tr>${meta.autor ? `<td style="padding:0 2.5rem"><div style="border-top:1px solid #000;padding-top:.3rem;min-width:180px">${esc(meta.autor)}${meta.autorProf ? '<br><span style="font-size:9.5pt">' + esc(meta.autorProf) + '</span>' : ''}<br><span style="font-size:9pt">Preparado por</span></div></td>` : ''}${meta.revisor ? `<td style="padding:0 2.5rem"><div style="border-top:1px solid #000;padding-top:.3rem;min-width:180px">${esc(meta.revisor)}${meta.revisorProf ? '<br><span style="font-size:9.5pt">' + esc(meta.revisorProf) + '</span>' : ''}<br><span style="font-size:9pt">Revisado / aprobado por</span></div></td>` : ''}</tr></table>` : ''}
+    ${memFirmas({autor: meta.autor, autorProf: '', revisor: meta.revisor, revisorProf: ''})}
   </div>`;
   const numerado = html.replace(/@@FIG@@/g, () => ++fig).replace(/@@TAB@@/g, () => ++tab);
   // Títulos numerados: cada título (h1/h2) se agrupa con el bloque que lo sigue para que nunca quede
@@ -45396,6 +45401,10 @@ function afInformeHtml(p, res, meta, opts) {
   const tmp = document.createElement('div');
   tmp.innerHTML = numerado;
   const raiz = tmp.querySelector('.af-inf');
+  // índice automático (formato del Constructor de Memorias): capítulos en negrita y secciones numeradas con sangría
+  const ix = raiz.querySelector('.af-ix');
+  if (ix) ix.innerHTML = Array.from(raiz.querySelectorAll('h1, h2')).filter(h => !h.classList.contains('ix-h') && /^\d/.test(h.textContent.trim()))
+    .map(h => `<div class="ix${h.tagName === 'H2' ? ' l2' : ''}">${esc(h.textContent.trim())}</div>`).join('');
   Array.from(raiz.querySelectorAll('h1, h2, h3')).forEach(h => {
     if (h.parentElement && h.parentElement.classList.contains('ficha')) return; // la ficha completa ya es indivisible
     const sig = h.nextElementSibling;
@@ -45502,7 +45511,7 @@ function afFichaElemento(r, p, meta, capFig, capTab) {
     const ts = r.curva ? r.curva.hitos[t] : null, tp = r.curvaProt ? r.curvaProt.hitos[t] : null;
     return `<tr${t === rfMin ? ' class="hlr"' : ''}><td>F-${t}</td><td>${N(ts,0)}</td><td>${ts != null ? N(afKy(ts),2) : '—'}</td><td>${N(tp,0)}</td><td>${tp != null ? N(afKy(tp),2) : '—'}</td></tr>`;
   }).join('');
-  const titulo = `${rolTxt} ${esc(r.nombre)} — ${esc(r.perfil)}`;
+  const titulo = `${new RegExp('^' + rolTxt, 'i').test(r.nombre) ? '' : rolTxt + ' '}${esc(r.nombre)} — ${esc(r.perfil)}`;
   const concl = req == null
     ? `No se ingresó la tensión en situación de incendio, por lo que no se determina el grado de utilización requerido; ${r.curvaProt ? 'con el revestimiento indicado' : 'sin revestimiento'} el factor de reducción de fluencia alcanzado a ${rfT} es ${N(maxv,2)}.`
     : `Para ${r.rol === 'viga' ? 'la viga' : 'el pilar'} de la gráfica se obtiene que la reducción de resistencia alcanzada para ${rfT} ${r.curvaProt ? 'con revestimiento' : 'sin revestimiento'} es ${N(maxv,2)} y solo requiere ${N(req,2)}, por lo que ${status === 'OK' ? 'podría resistir ' + rfT : 'no alcanza a resistir ' + rfT + (r.curvaProt ? ' con el espesor indicado' : ' y requiere protección')}.`;
@@ -45723,6 +45732,29 @@ function afGraficoFyElemento(r, rfMin) {
     <text x="12" y="${T+ph/2}" text-anchor="middle" font-size="10" fill="#57636F" transform="rotate(-90 12 ${T+ph/2})">fy,θ (kg/cm²)</text></svg>`;
 }
 
+// Tabla resumen de estatus por elemento y solución requerida (capítulo 6 de ambas memorias).
+function afTablaResumen(res, p, TB) {
+  const N = AF_DN, rfT = afRfTxt(p.rf);
+  const filas = res.map(r => {
+    const fT = r.ok === false, fP = !!(r.pand && !r.pand.ok);
+    const verif = r.ok !== null || !!r.pand;
+    const est = (fT || fP) ? 'NO CUMPLE' : (verif ? 'CUMPLE' : 'NO VERIFICADO');
+    const mot = [];
+    if (r.ok !== null) mot.push(`Tensión: fy,θ = ${N(r.hReq.fyr,0)} ${r.ok ? '≥' : '&lt;'} σfi = ${N(r.sigma,0)} kg/cm²`);
+    if (r.pand) mot.push(`Pandeo: Nb,fi,t,Rd = ${N(r.pand.req.Nb,2)} ${r.pand.ok ? '≥' : '&lt;'} Nfi = ${N(r.N,2)} tonf`);
+    if (!verif) mot.push('Sin σfi ni Nfi ingresados: no se verifica la resistencia propia');
+    const esp = [r.esp.stofire.v ? `Renner STOFIRE ${r.esp.stofire.v} µm (IDIEM I.E. 305.751)` : '', r.esp.cerefire.v ? `CEREFIRE X200 ${r.esp.cerefire.v} µm (IDIEM I.E. 300.465)` : ''].filter(Boolean);
+    let sol;
+    if (est === 'CUMPLE') sol = `No requiere protección para ${rfT}.`;
+    else if (esp.length) sol = `Pintura intumescente, espesor de película seca: ${esp.join(' o ')}; F asimilado = ${N(r.Fasim,0)} m⁻¹ (fila ${r.esp.stofire.fila || r.esp.cerefire.fila}).` + (est === 'NO VERIFICADO' ? ' Si se verifica con las solicitaciones de incendio que resiste sin protección, puede omitirse.' : '');
+    else sol = `Sin espesor en las tablas IDIEM para ${rfT} y F = ${N(r.Fasim,0)} m⁻¹: requiere otra solución de protección respaldada por ensayo o por el Listado Oficial de Comportamiento al Fuego.`;
+    return `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${r.rol === 'viga' ? 'Viga (3 caras)' : 'Pilar (4 caras)'}</td><td class="l">${esc(r.perfil)}</td>
+      <td class="${est === 'CUMPLE' ? 'ok' : (est === 'NO CUMPLE' ? 'bad' : '')}">${est}</td><td class="l">${mot.join('<br>')}</td><td class="l">${sol}</td></tr>`;
+  }).join('');
+  return `${TB('Resumen de estatus por elemento frente a ' + rfT + ' y solución requerida')}
+    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Función</th><th>Perfil</th><th>Estatus sin protección</th><th>Verificación</th><th>Solución requerida</th></tr>${filas}</table>`;
+}
+
 // Desarrollo completo de un elemento.
 function afDetalleElemento(r, p, meta, idx) {
   const N = AF_DN, rfT = afRfTxt(p.rf), rfMin = +p.rf.replace('F',''), sec = '7.' + idx;
@@ -45734,7 +45766,8 @@ function afDetalleElemento(r, p, meta, idx) {
   let n = 0;
   const sub = t => `<h3>${sec}.${++n} ${t}</h3>`;
 
-  out.push(`<div class="salto"></div><h2>${sec} ${rolTxt} ${esc(r.nombre)} — ${esc(r.perfil)}</h2>`);
+  const rolPre = new RegExp('^' + rolTxt, 'i').test(r.nombre) ? '' : rolTxt + ' ';   // evita «Viga Viga techo…»
+  out.push(`<div class="salto"></div><h2>${sec} ${rolPre}${esc(r.nombre)} — ${esc(r.perfil)}</h2>`);
 
   // 1. Datos
   out.push(sub('Datos del elemento'));
