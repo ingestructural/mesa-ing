@@ -44664,11 +44664,17 @@ function afCatalogo() {
   afCatalogo._c = out;
   return out;
 }
+// Designación corta para tablas y memorias: sin las dimensiones entre paréntesis (p. ej. «Sch 40 4"»).
+function afDesigCorta(d) { return String(d || '').replace(/\s*\([^)]*\)\s*$/, ''); }
 function afOpciones() {
   const fams = [];
   afCatalogo().forEach(p => { if (!fams.includes(p.fam)) fams.push(p.fam); });
-  return fams.map(f => `<optgroup label="${esc(f)}">${afCatalogo().filter(p => p.fam === f).map(p => `<option value="${esc(p.desig)}">${esc(p.desig)}</option>`).join('')}</optgroup>`).join('');
+  return fams.map(f => `<optgroup label="${esc(f)}">${afCatalogo().filter(p => p.fam === f).map(p => `<option value="${esc(p.desig)}" title="${esc(p.desig)}">${esc(afDesigCorta(p.desig))}</option>`).join('')}</optgroup>`).join('');
 }
+// Abreviaturas de tipo de sección (planilla y memorias) y su significado para la leyenda.
+const AF_TIPOS = [['I-H','I/H','perfil I o H'],['U','U','canal U'],['L','L','ángulo'],['CHS','○','tubo circular o cañería'],['RHS','□','tubo rectangular/cuadrado o cajón'],['TUB','TUB','Tubest (Cintac)'],['C','C','conformado en frío C/CA'],['DECK','PC','placa colaborante']];
+const afTipoCorto = t => (AF_TIPOS.find(x => x[0] === t) || [t, t])[1];
+const AF_LEYENDA = 'Función: V = viga (3 caras expuestas, ala superior bajo losa o cubierta); P = pilar (4 caras). Tipo: ' + AF_TIPOS.map(x => x[1] + ' = ' + x[2]).join('; ') + '.';
 
 // Masividad a 3 caras (viga con el ala superior bajo losa) y a 4 caras, por tipo de perfil.
 function afMasividades(it) {
@@ -44846,14 +44852,23 @@ function renderAsimilacionFuego(container) {
         <option value="0.35">0,35 — galvanizado en caliente, hasta 500 °C</option></datalist>
       <div style="overflow-x:auto">
         <style>
-          table.af-lista input, table.af-lista select{ font-size:.82rem !important; padding:.26rem .3rem !important; }
-          table.af-lista td{ padding:.22rem .18rem; }
+          table.af-lista{ width:100%; table-layout:fixed; }
+          table.af-lista input, table.af-lista select{ font-size:.74rem !important; padding:.22rem .18rem !important; width:100% !important; min-width:0 !important; max-width:none !important; box-sizing:border-box; }
+          table.af-lista input, table.af-lista select{ font-family:'IBM Plex Sans', Arial, sans-serif !important; letter-spacing:0 !important; }
+          table.af-lista select{ padding-right:0 !important; -webkit-appearance:none; appearance:none; background-image:none !important; text-align:center; text-align-last:center; cursor:pointer; }
+          table.af-lista select[data-f="desig"]{ text-align:left; text-align-last:left; }
+          table.af-lista input::-webkit-calendar-picker-indicator{ display:none !important; }
+          table.af-lista .btn-remove{ padding:.15rem .25rem !important; min-width:0 !important; }
+          table.af-lista td{ padding:.18rem .08rem; }
+          table.af-lista th{ padding:.3rem .1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:.7rem; }
         </style>
-        <table class="results editable af-lista" style="min-width:1480px">
-          <thead><tr><th>N°</th><th>Elemento</th><th>Rol</th><th>Origen</th><th>Perfil</th><th>Tipo</th><th>h</th><th>b</th><th>tw</th><th>tf</th><th>r</th><th>A (cm²)</th><th>εm</th><th>Fy (kg/cm²)</th><th>σ incendio (kg/cm²)</th><th>N comp. (tonf)</th><th>Lcr (m)</th><th>i mín (cm)</th><th></th></tr></thead>
+        <table class="results editable af-lista" style="min-width:760px">
+          <colgroup>${[3,10,4,5,12.5,4.5,5.5,5,4.5,4.5,4,5.5,4,5.5,5.5,4.5,4.5,4.5,3.5].map(w => `<col style="width:${w}%">`).join('')}</colgroup>
+          <thead><tr><th>N°</th><th>Elemento</th><th title="V = viga (3 caras) · P = pilar (4 caras)">Rol</th><th title="Cat. = catálogo · Man. = manual">Orig.</th><th>Perfil</th><th>Tipo</th><th>h</th><th>b</th><th>tw</th><th>tf</th><th>r</th><th>A cm²</th><th>εm</th><th>Fy</th><th>σfi</th><th>N t</th><th>Lcr m</th><th>i cm</th><th></th></tr></thead>
           <tbody id="af_body"></tbody>
         </table>
       </div>
+      <div class="note" style="margin-top:.3rem">Rol: V = viga, P = pilar. Orig.: Cat. = catálogo, Man. = manual. Tipo: ${AF_TIPOS.map(x => x[1] + ' ' + x[2]).join(' · ')}. Fy y σfi en kg/cm²; N en tonf. Las medidas h, b, tw, tf, r van en mm.</div>
       <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
         <button type="button" class="btn-add" id="af_add">+ Agregar elemento</button>
         <span class="note" id="af_count" style="margin-top:.7rem"></span>
@@ -44914,8 +44929,8 @@ function renderAsimilacionFuego(container) {
   `;
 
   const body = document.getElementById('af_body');
-  const tipoOpts = [['I-H','I / H'],['U','Canal U'],['L','Ángulo L'],['CHS','Tubo circular / cañería'],['RHS','Tubo RHS/SHS o cajón'],['TUB','Tubest'],['C','Conformado en frío C/CA'],['DECK','Placa colaborante']].map(t => `<option value="${t[0]}">${t[1]}</option>`).join('');
-  const inp = (f, w) => `<input type="text" inputmode="decimal" data-f="${f}" style="min-width:${w||54}px">`;
+  const tipoOpts = AF_TIPOS.map(t => `<option value="${t[0]}" title="${t[2]}">${t[1]}</option>`).join('');
+  const inp = (f, w) => `<input type="text" inputmode="decimal" data-f="${f}" style="min-width:${w||46}px;width:${w||46}px">`;
 
   function addRow(pre) {
     if (body.children.length >= AF_MAX) return;
@@ -44923,13 +44938,13 @@ function renderAsimilacionFuego(container) {
     tr.innerHTML = `
       <td class="num" data-role="n"></td>
       <td><input type="text" data-f="nombre" style="min-width:110px" placeholder="Ej: Viga V1"></td>
-      <td><select data-f="rol" style="min-width:74px"><option value="viga">Viga</option><option value="pilar">Pilar</option></select></td>
-      <td><select data-f="origen" style="min-width:92px"><option value="catalogo">Catálogo</option><option value="manual">Manual</option></select></td>
-      <td><select data-f="desig" style="min-width:170px">${afOpciones()}</select></td>
-      <td><select data-f="tipo" style="min-width:120px">${tipoOpts}</select></td>
-      <td>${inp('h')}</td><td>${inp('b')}</td><td>${inp('tw',46)}</td><td>${inp('tf',46)}</td><td>${inp('r',40)}</td><td>${inp('A',58)}</td>
-      <td><input type="text" inputmode="decimal" data-f="em" style="min-width:44px" placeholder="glob." list="dl_af_emrow"></td><td><input type="text" inputmode="decimal" data-f="Fy" style="min-width:64px" list="dl_af_fy"></td><td>${inp('sigma',64)}</td>
-      <td>${inp('N',56)}</td><td>${inp('Lcr',50)}</td><td><input type="text" inputmode="decimal" data-f="iUser" style="min-width:50px" placeholder="auto"></td>
+      <td><select data-f="rol" style="min-width:44px" title="V = viga (3 caras) · P = pilar (4 caras)"><option value="viga" title="Viga, 3 caras">V</option><option value="pilar" title="Pilar, 4 caras">P</option></select></td>
+      <td><select data-f="origen" style="min-width:52px" title="Cat. = catálogo · Man. = manual"><option value="catalogo">Cat.</option><option value="manual">Man.</option></select></td>
+      <td><select data-f="desig" style="min-width:110px;max-width:130px">${afOpciones()}</select></td>
+      <td><select data-f="tipo" style="min-width:54px">${tipoOpts}</select></td>
+      <td>${inp('h')}</td><td>${inp('b')}</td><td>${inp('tw',40)}</td><td>${inp('tf',40)}</td><td>${inp('r',34)}</td><td>${inp('A',50)}</td>
+      <td><input type="text" inputmode="decimal" data-f="em" style="min-width:40px;width:40px" placeholder="glob." list="dl_af_emrow"></td><td><input type="text" inputmode="decimal" data-f="Fy" style="min-width:52px;width:52px" list="dl_af_fy"></td><td>${inp('sigma',52)}</td>
+      <td>${inp('N',44)}</td><td>${inp('Lcr',40)}</td><td><input type="text" inputmode="decimal" data-f="iUser" style="min-width:42px;width:42px" placeholder="auto"></td>
       <td><button type="button" class="btn-remove" title="Eliminar">✕</button></td>`;
     body.appendChild(tr);
     const q = f => tr.querySelector(`[data-f="${f}"]`);
@@ -44958,7 +44973,7 @@ function renderAsimilacionFuego(container) {
       const q = f => tr.querySelector(`[data-f="${f}"]`);
       const num = f => { const v = parseFloat(String(q(f).value).replace(',', '.')); return isNaN(v) ? 0 : v; };
       const manual = q('origen').value === 'manual';
-      const perfil = manual ? 'Manual' : q('desig').value;
+      const perfil = manual ? 'Manual' : afDesigCorta(q('desig').value);
       const pc = manual ? null : afCatalogo().find(x => x.desig === q('desig').value);
       return {imin: pc && pc.imin ? pc.imin : 0, N:num('N'), Lcr:num('Lcr'), iUser:num('iUser'), n:i+1, nombre: q('nombre').value.trim() || ('Elemento ' + (i+1)), rol: q('rol').value, origen: manual ? 'Manual' : 'Catálogo',
         perfil, tipo: q('tipo').value, h:num('h'), b:num('b'), tw:num('tw'), tf:num('tf'), r:num('r'), A:num('A'), Fy:num('Fy'), sigma:num('sigma'), em:num('em')};
@@ -45184,8 +45199,9 @@ function afInformeHtml(p, res, meta, opts) {
   const TB = t => `<div class="inf-cap">Tabla @@TAB@@: ${t}</div>`;
 
   const tablaElementos = `${TB('Elementos estructurales de acero analizados')}
-    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Función</th><th>Perfil</th><th>Tipo</th><th>h (mm)</th><th>b (mm)</th><th>tw (mm)</th><th>tf (mm)</th><th>A (cm²)</th><th>Fy (kg/cm²)</th></tr>
-    ${res.map(r => `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${r.rol === 'viga' ? 'Viga (3 caras)' : 'Pilar (4 caras)'}</td><td class="l">${esc(r.perfil)}</td><td>${esc(r.tipo)}</td><td>${N(r.h,1)}</td><td>${N(r.b,1)}</td><td>${N(r.tw,2)}</td><td>${N(r.tf,2)}</td><td>${N(r.A,2)}</td><td>${N(r.Fy,0)}</td></tr>`).join('')}</table>`;
+    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Func.</th><th>Perfil</th><th>Tipo</th><th>h (mm)</th><th>b (mm)</th><th>tw (mm)</th><th>tf (mm)</th><th>A (cm²)</th><th>Fy (kg/cm²)</th></tr>
+    ${res.map(r => `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${r.rol === 'viga' ? 'V' : 'P'}</td><td class="l" style="white-space:nowrap">${esc(r.perfil)}</td><td>${esc(afTipoCorto(r.tipo))}</td><td>${N(r.h,1)}</td><td>${N(r.b,1)}</td><td>${N(r.tw,2)}</td><td>${N(r.tf,2)}</td><td>${N(r.A,2)}</td><td>${N(r.Fy,0)}</td></tr>`).join('')}</table>
+    <p style="font-size:8.5pt;margin-top:-.5rem">${AF_LEYENDA}</p>`;
 
   const tablaMasiv = `${TB('Factores de masividad, asimilación viga → pilar y espesor de pintura intumescente para ' + rfT)}
     <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Función</th><th>F 3 caras (m⁻¹)</th><th>F 4 caras (m⁻¹)</th><th>F asimilado (m⁻¹)</th><th>Fila de tabla</th><th>Stofire (µm)</th><th>Cerefire X200 (µm)</th></tr>
@@ -45748,11 +45764,12 @@ function afTablaResumen(res, p, TB) {
     if (est === 'CUMPLE') sol = `No requiere protección para ${rfT}.`;
     else if (esp.length) sol = `Pintura intumescente, espesor de película seca: ${esp.join(' o ')}; F asimilado = ${N(r.Fasim,0)} m⁻¹ (fila ${r.esp.stofire.fila || r.esp.cerefire.fila}).` + (est === 'NO VERIFICADO' ? ' Si se verifica con las solicitaciones de incendio que resiste sin protección, puede omitirse.' : '');
     else sol = `Sin espesor en las tablas IDIEM para ${rfT} y F = ${N(r.Fasim,0)} m⁻¹: requiere otra solución de protección respaldada por ensayo o por el Listado Oficial de Comportamiento al Fuego.`;
-    return `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${r.rol === 'viga' ? 'Viga (3 caras)' : 'Pilar (4 caras)'}</td><td class="l">${esc(r.perfil)}</td>
+    return `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${r.rol === 'viga' ? 'V' : 'P'}</td><td class="l" style="white-space:nowrap">${esc(r.perfil)}</td>
       <td class="${est === 'CUMPLE' ? 'ok' : (est === 'NO CUMPLE' ? 'bad' : '')}">${est}</td><td class="l">${mot.join('<br>')}</td><td class="l">${sol}</td></tr>`;
   }).join('');
   return `${TB('Resumen de estatus por elemento frente a ' + rfT + ' y solución requerida')}
-    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Función</th><th>Perfil</th><th>Estatus sin protección</th><th>Verificación</th><th>Solución requerida</th></tr>${filas}</table>`;
+    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Func.</th><th>Perfil</th><th>Estatus sin protección</th><th>Verificación</th><th>Solución requerida</th></tr>${filas}</table>
+    <p style="font-size:8.5pt;margin-top:-.5rem">Func.: V = viga (3 caras expuestas); P = pilar (4 caras).</p>`;
 }
 
 // Desarrollo completo de un elemento.
@@ -45774,7 +45791,7 @@ function afDetalleElemento(r, p, meta, idx) {
   out.push(`${MEM_T('Datos de entrada — ' + esc(r.nombre))}
     <table class="inf-t"><tr><th>Parámetro</th><th>Símbolo</th><th>Valor</th><th>Origen</th></tr>
       <tr><td class="l">Función / exposición</td><td>—</td><td>${r.rol === 'viga' ? 'Viga, 3 caras (ala superior bajo losa o cubierta)' : 'Pilar, 4 caras'}</td><td class="l">Proyecto</td></tr>
-      <tr><td class="l">Perfil</td><td>—</td><td>${esc(r.perfil)} (tipo ${esc(r.tipo)})</td><td class="l">${r.origen === 'Manual' ? 'Ingresado' : 'Catálogo'}</td></tr>
+      <tr><td class="l">Perfil</td><td>—</td><td>${esc(r.perfil)} (tipo ${esc(afTipoCorto(r.tipo))}: ${esc((AF_TIPOS.find(x => x[0] === r.tipo) || [0,0,r.tipo])[2])})</td><td class="l">${r.origen === 'Manual' ? 'Ingresado' : 'Catálogo'}</td></tr>
       <tr><td class="l">Altura / diámetro</td><td>h</td><td>${N(r.h,1)} mm</td><td class="l" rowspan="5">${r.origen === 'Manual' ? 'Ingresado' : 'Catálogo de perfiles'}</td></tr>
       <tr><td class="l">Ancho</td><td>b</td><td>${N(r.b,1)} mm</td></tr>
       <tr><td class="l">Espesor de alma / pared</td><td>tw</td><td>${N(r.tw,2)} mm</td></tr>
