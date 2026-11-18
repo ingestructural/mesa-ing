@@ -48773,7 +48773,7 @@ function mcmB64(dataUrl) { const b = atob(dataUrl.split(',')[1] || ''); const u 
 async function mcmDocx(S, Bx, R) {
   const d = await mcmLoadDocx();
   const B0 = Bx || mcmBuild(S), DD = mcmDoc(S);
-  if (!R) { try { R = await mpgPaginar(DD, B0, {indicePortada:DD.indicePortada}); } catch (e) { R = null; } }
+  if (!R) { try { R = await mpgPaginar(DD, B0, {indicePortada:DD.indicePortada, sinPortada:DD.sinPortada}); } catch (e) { R = null; } }
   const {Document, Packer, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, Header, Footer, AlignmentType, WidthType, BorderStyle, ShadingType, PageNumber, HeadingLevel, PageBreak, TabStopType, VerticalAlign, LevelFormat, TableLayoutType, TableOfContents, HeightRule} = d;
   const NAVY = '1F3864', BLUE = '2E5395', GREY = '595959', W = 9920, FONT = 'Arial';
   const run = (t, o = {}) => new TextRun({text:String(t), font:FONT, size:o.size || 24, bold:o.bold, italics:o.italics, color:o.color, underline:o.underline, highlight:o.hl});
@@ -48786,7 +48786,7 @@ async function mcmDocx(S, Bx, R) {
       shading: hdr ? {fill:NAVY, type:ShadingType.CLEAR, color:'auto'} : (extra.fill ? {fill:extra.fill, type:ShadingType.CLEAR, color:'auto'} : undefined), margins:{top:40, bottom:40, left:70, right:70},
       children:[new Paragraph({alignment: hdr || align[i] === 'c' ? AlignmentType.CENTER : AlignmentType.LEFT, spacing:{after:0}, children:runs(t, {size:o.size || 17, bold:hdr || extra.bold || t === 'CUMPLE' || t === 'NO CUMPLE', color:hdr ? 'FFFFFF' : (t === 'NO CUMPLE' ? 'B91C1C' : t === 'CUMPLE' ? '15803D' : '000000')})})]});
     const trs = []; if (head) trs.push(new TableRow({tableHeader:true, children:head.map((h, i) => cell(h, i, true))}));
-    rows.forEach((r, k) => trs.push(new TableRow({cantSplit:true, children:r.map((t, i) => cell(t, i, false, o.key && i === 0 ? {bold:true, fill:o.keyFill === false ? undefined : 'F2F5FA'} : {fill: k % 2 && !o.key ? 'F2F5FA' : undefined}))})));
+    rows.forEach((r, k) => trs.push(new TableRow({cantSplit:true, children:r.map((t, i) => cell(t, i, false, (o.key && i === 0) || (o.key2 && i % 2 === 0) ? {bold:true, fill:o.keyFill === false ? undefined : 'F2F5FA'} : {fill: k % 2 && !o.key ? 'F2F5FA' : undefined}))})));
     return new Table({width:{size:W, type:WidthType.DXA}, columnWidths:widths, layout:TableLayoutType.FIXED, rows:trs});
   };
   const cap = t => P([run(t.replace(/:.*/, ':') + ' ', {size:19, bold:true, color:NAVY}), run(t.replace(/^[^:]*:\s*/, ''), {size:19, italics:true, color:GREY})], {align:AlignmentType.CENTER, after:200});
@@ -48804,6 +48804,13 @@ async function mcmDocx(S, Bx, R) {
   const footer = new Footer({children:[new Paragraph({border:{top:{style:BorderStyle.SINGLE, size:6, color:NAVY, space:4}}, spacing:{before:0, after:0}, tabStops:[{type:TabStopType.RIGHT, position:W}],
     children:[run(MPG_PIE, {size:16, bold:true, color:NAVY}), new TextRun({children:['\tPágina ', PageNumber.CURRENT, ' de ', PageNumber.TOTAL_PAGES], font:FONT, size:16, color:GREY})]})]});
   const K = [], POR = DD.portada || {}, subs = mpgSubs(Pp);
+  if (DD.sinPortada) {   // memoria express: título y resumen de antecedentes arriba; el desarrollo sigue en la misma hoja
+    K.push(new Paragraph({spacing:{after:subs.length ? 40 : 120}, children:[run(mcmV(Pp.titulo, 'MEMORIA DE CÁLCULO'), {size:30, bold:true, color:NAVY})]}));
+    if (subs.length) K.push(new Paragraph({spacing:{after:120}, children:runs(subs.join(' — '), {size:22, bold:true, color:BLUE})}));
+    const A = mpgAntecedentes(Pp), fil = []; for (let i = 0; i < A.length; i += 2) fil.push([A[i][0], A[i][1], A[i + 1] ? A[i + 1][0] : '', A[i + 1] ? A[i + 1][1] : '']);
+    K.push(table(null, fil, [1500, 3460, 1500, 3460], ['l', 'l', 'l', 'l'], {size:17, key2:true}));
+    K.push(new Paragraph({spacing:{after:120}, children:[]}));
+  } else {
   // portada (memoria modelo de ING): cliente, título y subtítulos subrayados, imagen del modelo y tabla de antecedentes
   if (POR.logo && POR.logo.src) { const lw = POR.logo.w || 568, lh = POR.logo.h || 67, k = Math.min(568 / lw, 67 / lh, 1); K.push(new Paragraph({alignment:AlignmentType.CENTER, spacing:{after:400}, children:[imgRun(POR.logo, lw * k, lh * k)]})); K.push(new Paragraph({spacing:{after:400}, children:[]})); }
   else if (String(Pp.mandante || '').trim()) { K.push(new Paragraph({alignment:AlignmentType.CENTER, spacing:{after:400}, children:[run(Pp.mandante, {size:40, bold:true})]})); K.push(new Paragraph({spacing:{after:400}, children:[]})); }
@@ -48814,9 +48821,10 @@ async function mcmDocx(S, Bx, R) {
   const ixT = new Paragraph({spacing:{after:200, before:DD.indicePortada ? 400 : 0}, children:[run('ÍNDICE', {size:30, bold:true, color:NAVY})]});
   const ixC = new TableOfContents('Índice', {hyperlink:true, headingStyleRange:'1-2', cachedEntries:R && R.toc && R.toc.length ? R.toc.map(e => ({title:e.title, level:e.level, page:e.page})) : undefined});
   if (DD.indicePortada) K.push(ixT, ixC); else K.push(new Paragraph({children:[new PageBreak()]}), ixT, ixC);
+  }
   // el cuerpo parte en hoja nueva con pageBreakBefore (un párrafo de salto suelto puede caer a la hoja siguiente y dejar una en blanco)
-  const BB = firmaIngBloques(B0), pbb0 = BB.length && (BB[0].t === 'h1' || BB[0].t === 'ha');
-  if (!pbb0) K.push(new Paragraph({spacing:{before:0, after:0}, children:[new PageBreak()]}));
+  const BB = firmaIngBloques(B0), pbb0 = !DD.sinPortada && BB.length && (BB[0].t === 'h1' || BB[0].t === 'ha');
+  if (!pbb0 && !DD.sinPortada) K.push(new Paragraph({spacing:{before:0, after:0}, children:[new PageBreak()]}));
   for (const b of BB) {
     if (b.t === 'firma') { K.push(...firmaIngDocx(d, FONT)); continue; }
     if (b.t === 'h1' || b.t === 'ha') K.push(new Paragraph({heading:HeadingLevel.HEADING_1, pageBreakBefore:pbb0 && b === BB[0], keepNext:true, spacing:{before:280, after:140}, children:[run((b.num ? b.num + ' ' : '') + b.text, {size:30, bold:true, color:NAVY})]}));
@@ -49585,6 +49593,9 @@ const MPG_CSS = `
 .mpg-hd div{text-align:right;font-size:8pt;line-height:1.25;color:#595959;max-width:360px} .mpg-hd div b{color:#1F3864;font-size:9pt}
 .mpg-ft{position:absolute;left:${MPG.L}px;width:${MPG.CW}px;bottom:15px;border-top:1px solid #1F3864;padding-top:5px;display:flex;justify-content:space-between;font-size:8pt;color:#595959}
 .mpg-ft b{color:#1F3864}
+.mpg-xt{font-size:15pt;font-weight:700;color:#1F3864;line-height:1.15;margin:0 0 2px}
+.mpg-xs{font-size:11pt;font-weight:700;color:#2E5395;line-height:1.2;margin:0 0 8px}
+.mpg-bd table.mpg-xres{margin:0 0 12px} .mpg-bd table.mpg-xres td{font-size:8.5pt;padding:2px 5px} .mpg-bd table.mpg-xres td.k{font-weight:700;color:#1F3864;background:#F2F5FA}
 .mpg-bd{position:absolute;left:${MPG.L}px;top:${MPG.T}px;width:${MPG.CW}px;height:${MPG.CH}px;overflow:hidden;font-size:12pt;line-height:1.15}
 .mpg-bd > :first-child{margin-top:0 !important}
 .mpg-bd .mp-p{text-align:justify;margin:0 0 8px} .mpg-bd .mp-p.mpg-c1{text-align-last:justify;margin-bottom:0}
@@ -49729,14 +49740,21 @@ async function mpgPaginar(D, B0, o = {}) {
   const ixEnt = B.filter(b => b.t === 'h1' || b.t === 'ha' || b.t === 'h2');
   const ixHtml = (b, k) => `<div class="mpg-ix ${b.t === 'h2' ? 'l2' : 'l1'}"><span class="t">${esc((b.num ? b.num + ' ' : '') + b.text)}</span><span class="d"></span><span class="n" data-pn="${k}"></span></div>`;
 
+  const subs = mpgSubs(P);
+  let covH = 0;
+  if (o.sinPortada) {
+    nueva();
+    const R = mpgAntecedentes(P), fil = [];
+    for (let i = 0; i < R.length; i += 2) fil.push(`<tr><td class="k">${esc(R[i][0])}</td><td>${mpgE(R[i][1])}</td>${R[i + 1] ? `<td class="k">${esc(R[i + 1][0])}</td><td>${mpgE(R[i + 1][1])}</td>` : '<td></td><td></td>'}</tr>`);
+    colocar(`<div class="mpg-xt">${esc(mcmV(P.titulo, 'MEMORIA DE CÁLCULO'))}</div>` + (subs.length ? `<div class="mpg-xs">${subs.map(mpgE).join(' — ')}</div>` : ''), true);
+    colocar(`<table class="mp-t mpg-xres"><colgroup><col style="width:15%"><col style="width:35%"><col style="width:15%"><col style="width:35%"></colgroup><tbody>${fil.join('')}</tbody></table>`, false);
+  } else {
   // ---- portada ----
   nueva(); pages[0].classList.add('mpg-portada');
-  const subs = mpgSubs(P);
   const cab = (logo ? `<div class="mpg-cli"><img src="${logo.src}" alt=""></div>` : (String(P.mandante || '').trim() ? `<div class="mpg-cli t">${esc(P.mandante)}</div>` : ''))
     + `<div class="mpg-tit">${esc(mcmV(P.titulo, 'MEMORIA DE CÁLCULO'))}</div>` + subs.map((s, i) => `<div class="mpg-st${i === subs.length - 1 ? ' u' : ''}">${mpgE(s)}</div>`).join('');
   const ant = mpgTablaPartes({head:['Antecedente', 'Detalle'], rows:mpgAntecedentes(P), widths:[2600, 7320], align:['l', 'l'], key:true, cls:'mpg-ant'});
   const antHtml = `<table class="mp-t mpg-ant">${ant.cols}${ant.th}<tbody>${ant.rows.join('')}</tbody></table>`;
-  let covH = 0;
   const ixTodo = '<div class="mpg-ixt">ÍNDICE</div>' + ixEnt.map((b, k) => ixHtml(b, k)).join('');
   const imgHtml = h => `<div class="mpg-cimg"><img src="${img.src}" style="width:${Math.round(h * img.w / img.h)}px;height:${Math.round(h)}px" alt=""></div>`;
   const portada = (h, ix) => { while (grupos.length) sacar(); poner(nodos(cab + (h ? imgHtml(h) : '') + antHtml + (ix ? ixTodo : '')), false); return cabe(); };
@@ -49752,9 +49770,10 @@ async function mpgPaginar(D, B0, o = {}) {
     colocar('<div class="mpg-ixt">ÍNDICE</div>', true);
     ixEnt.forEach((b, k) => colocar(ixHtml(b, k), false));
   }
+  nueva();
+  }
   const covW = covH && img ? Math.round(covH * img.w / img.h) : 0;
   // ---- cuerpo ----
-  nueva();
   for (const b of B) {
     if (b.t === 'h1') colocar(tocEnt(b, `<h1 class="mp-h1">${esc(b.num + ' ' + b.text)}</h1>`), true);
     else if (b.t === 'ha') colocar(tocEnt(b, `<h1 class="mp-h1">${esc(b.text)}</h1>`), true);
@@ -49803,14 +49822,15 @@ function mpgImprimir(html) {
 async function mpgAPdf(html, liviano) {
   mpgCss();
   const lib = await pdfCargarLib();
-  const oc = document.createElement('div'); oc.style.cssText = `position:fixed;left:-30000px;top:0;width:${MPG.W}px;z-index:-1`;
+  // en el origen de la ventana y detrás del contenido: fuera de pantalla (left negativo) html2canvas recorta el lado izquierdo de cada hoja
+  const oc = document.createElement('div'); oc.style.cssText = `position:fixed;left:0;top:0;width:${MPG.W}px;z-index:-10;pointer-events:none`;
   oc.className = 'mpg-doc'; oc.innerHTML = html;
   oc.querySelectorAll('.mpg-page').forEach(p => { p.style.boxShadow = 'none'; p.style.margin = '0'; });
   oc.querySelectorAll('mark').forEach(m => m.style.background = 'none');
   document.body.appendChild(oc);
   try {
     const pages = [...oc.querySelectorAll('.mpg-page')];
-    const opt = {margin:0, image:{type:'jpeg', quality:liviano ? 0.8 : 0.95}, html2canvas:{scale:liviano ? 1.5 : 2, backgroundColor:'#ffffff', scrollX:0, scrollY:0, logging:false, width:MPG.W, height:MPG.H, windowWidth:MPG.W, onclone:pdfLimpiarColores},
+    const opt = {margin:0, image:{type:'jpeg', quality:liviano ? 0.8 : 0.95}, html2canvas:{scale:liviano ? 1.5 : 2, backgroundColor:'#ffffff', scrollX:0, scrollY:0, logging:false, width:MPG.W, height:MPG.H, onclone:pdfLimpiarColores},
       jsPDF:{unit:'in', format:'letter', orientation:'portrait'}, pagebreak:{mode:[]}};
     let w = lib().set(opt).from(pages[0]).toPdf();
     for (const pg of pages.slice(1)) w = w.get('pdf').then(pdf => { pdf.addPage(); }).from(pg).toContainer().toCanvas().toPdf();
@@ -49844,7 +49864,7 @@ function mcmDoc(S) {
   const por = Object.assign({}, S.portada || {});
   if (!por.logo && P.logoCli && P.logoCli.src) por.logo = P.logoCli;
   if (!por.img && Array.isArray(S.figs)) { const f = S.figs.find(x => x.where === 'modelo' && x.src) || S.figs.find(x => x.src); if (f) por.img = {src:f.src, w:f.w, h:f.h}; }
-  return {proy:P, portada:por, indicePortada:!!S.indicePortada};
+  return {proy:P, portada:por, indicePortada:!!S.indicePortada, sinPortada:!!S.sinPortada};
 }
 /* Barra «Proyecto POWER» del Constructor (todas las memorias): el código del proyecto fijado va a la
    portada, al encabezado de cada hoja, al nombre de los archivos y a Archivo ING. */
@@ -49938,7 +49958,7 @@ function mexBuild(E, P) {
 function renderMemoriaExpress(container) {
   const S0 = mcmLoad(), P = S0.proy; let E = mexLoad();
   const root = document.createElement('div'); root.className = 'mcm-ui'; container.appendChild(root);
-  const doc = () => ({proy:Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO', sub1:E.sub1, sub2:E.sub2, software:E.software}), portada:{img:(E.figs.find(f => f.where === 'modelo' && f.src) || null), logo:P.logoCli || null}, indicePortada:true});
+  const doc = () => ({proy:Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO', sub1:E.sub1, sub2:E.sub2, software:E.software}), portada:{img:(E.figs.find(f => f.where === 'modelo' && f.src) || null), logo:P.logoCli || null}, sinPortada:true});
   const sv = () => mcmLsGuardar(MEX_LS, E, 'Las imágenes son grandes para el autoguardado de la memoria express.');
   const IP = (k, lab, ph) => `<div class="field"><label>${lab}</label><input type="text" data-p="${k}" value="${esc(P[k] || '')}" placeholder="${esc(ph || '')}"${k === 'codigo' && PROYECTO_POWER ? ' readonly title="Lo fija el proyecto de POWER"' : ''}></div>`;
   const IE = (k, lab, ph) => `<div class="field"><label>${lab}</label><input type="text" data-e="${k}" value="${esc(E[k] || '')}" placeholder="${esc(ph || '')}"></div>`;
@@ -49976,7 +49996,7 @@ function renderMemoriaExpress(container) {
       <input type="file" accept="image/*" multiple id="mexImgIn" hidden>`;
   }
   let tok = 0, tp = null;
-  async function prev() { const t = ++tok; try { const R = await mpgPaginar(doc(), mexBuild(E, P), {indicePortada:true}); if (t === tok) mpgMostrar(root.querySelector('#mexPrev'), R.html); } catch (e) { console.error(e); } }
+  async function prev() { const t = ++tok; try { const R = await mpgPaginar(doc(), mexBuild(E, P), {sinPortada:true}); if (t === tok) mpgMostrar(root.querySelector('#mexPrev'), R.html); } catch (e) { console.error(e); } }
   const prevLuego = () => { clearTimeout(tp); tp = setTimeout(prev, 350); };
   function draw() { const y = window.scrollY; root.innerHTML = html(); window.scrollTo(0, y); prev(); }
   draw();
@@ -50023,8 +50043,8 @@ function renderMemoriaExpress(container) {
     if (d.act === 'word' || d.act === 'pdf' || d.act === 'verpdf') {
       const t0 = b.textContent; b.disabled = true; b.textContent = '⏳ Generando…';
       try {
-        const D = doc(), B = mexBuild(E, P), R = await mpgPaginar(D, B, {indicePortada:true}), base = mcmNombre(P, 'Memoria_Express');
-        const Sx = {proy:D.proy, portada:D.portada, indicePortada:true};
+        const D = doc(), B = mexBuild(E, P), R = await mpgPaginar(D, B, {sinPortada:true}), base = mcmNombre(P, 'Memoria_Express');
+        const Sx = {proy:D.proy, portada:D.portada, sinPortada:true};
         if (d.act === 'word') { const blob = await mcmDocx(Sx, B, R); await mcmGuardarArchivo(base + '.docx', blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Documento de Word', '.docx'); archMemoria([{nombre:base + '.docx', blob}], D.proy, {clase:'express'}); }
         else if (d.act === 'verpdf') mcmVerPdf(await mpgAPdf(R.html), base + '.pdf');
         else {
