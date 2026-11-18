@@ -50052,8 +50052,8 @@ function renderMemoriaExpress(container) {
    Lo que el lector no reconoce se informa en la memoria como «no leído»; nada se supone.
    ========================================================================= */
 const MRM_LS = 'mesaMemRam.v1';
-function mrmDef() { return {v:1, sub1:'', sub2:'', intro:null, desc:null, crit:null, concl:null, alc:null, normExtra:'', instr:'', extra:{}, modelos:[], figs:[], defo:{L:'', n:'', est:''}, verTodos:false}; }
-function mrmLoad() { const s = mcmLsLeer(MRM_LS), o = Object.assign(mrmDef(), s && typeof s === 'object' ? s : {}); if (!o.extra || typeof o.extra !== 'object') o.extra = {}; return o; }
+function mrmDef() { return {v:1, sub1:'', sub2:'', intro:null, desc:null, crit:null, concl:null, alc:null, normExtra:'', instr:'', extra:{}, modelos:[], figs:[], defo:{L:'', n:'', est:''}, verTodos:false, tol:{modo:'norma', pct:'', just:''}}; }
+function mrmLoad() { const s = mcmLsLeer(MRM_LS), o = Object.assign(mrmDef(), s && typeof s === 'object' ? s : {}); if (!o.extra || typeof o.extra !== 'object') o.extra = {}; if (!o.tol || typeof o.tol !== 'object') o.tol = {modo:'norma', pct:'', just:''}; return o; }
 // unidades RAM («Ton-m», «Kg-cm», «kN-m», «Lb-in»…): fuerza y largo
 function mrmUnid(u) {
   const [f, l] = String(u || 'Ton-m').split('-').map(x => x.trim().toLowerCase());
@@ -50160,6 +50160,7 @@ async function mrmLeer(file) {
     const L = a && z ? Math.hypot(z.x - a.x, z.y - a.y, z.z - a.z) : 0;
     const s = sec[String(b.secc || '').toUpperCase()], mt = mats[String(b.mat || '').toUpperCase()];
     return {i:j + 1, id:(c['ModelData1/Members/VigasID/Values'] || [])[j] || j + 1, n1:b.n1, n2:b.n2, grupo:String(b.desc || '').trim(), secc:b.secc, mat:b.mat, L,
+      aux:String(b.mat || '').trim().toUpperCase() === 'NONE',   // elemento auxiliar del modelo (material NONE): no se informa en la memoria
       A:s && s.area ? s.area : null, masa:s && s.area && mt && mt.rho != null ? s.area * L * mt.rho : null};   // material con densidad 0 (p. ej. «NONE»): RAM no le asigna peso
   });
   return {archivo:file.name, etz:nombreEtz, archivos:Object.keys(archivos), unidades:m.unidades, U, version:props('AnalysisVersion'),
@@ -50182,9 +50183,40 @@ function mrmFormula(txt, idx) {
   }
   return re.lastIndex === s.length && out.length ? out : null;
 }
+// elementos estructurales: sin los auxiliares de material NONE (sus cargas y su efecto en el análisis sí quedan en los resultados de RAM)
+const mrmEl = M => M.barras.filter(b => !b.aux);
+const mrmNAux = M => M.barras.length - mrmEl(M).length;
+// razón D/C aceptable: 1,00 según norma, o 1 + % que adopta el proyectista con justificación (no la contempla la norma)
+function mrmLim(MR) { const t = (MR && MR.tol) || {}, q = parseFloat(String(t.pct || '').replace(',', '.'));
+  return t.modo === 'proy' && q > 0 && q <= 10 && String(t.just || '').trim() ? 1 + q / 100 : 1; }
+const mrmR2 = r => Math.round((r || 0) * 100 + 1e-7) / 100;   // razón con dos decimales: con ese valor se clasifica
+// IEBC (International Existing Building Code, alteraciones, sección 503): un elemento existente que no se modifica se acepta sin
+// refuerzo si la solicitación aumenta no más de 5 % (cargas gravitacionales, §503.3) o si su razón D/C aumenta no más de 10 %
+// (cargas laterales). Aquí el aumento se mide con la razón de diseño del mismo elemento (misma posición y sección) en la
+// situación de referencia (primer modelo) y en la evaluada. Elementos nuevos o modificados: razón ≤ 1,00.
+const mrmIebcPct = MR => (MR && MR.tol && MR.tol.carga === 'lat') ? 10 : 5;
+const mrmIebcOk = MR => !!(MR && MR.tol && MR.tol.modo === 'iebc' && MR.modelos && MR.modelos.length >= 2 && MR.modelos[0].disenado);
+const MRM_REFC = new WeakMap();   // caché (no se guarda): modelo de referencia → razones por posición y sección
+function mrmRefR(MR, b) {   // razón del mismo elemento en la situación de referencia (o null)
+  if (!mrmIebcOk(MR) || !b) return null;
+  const A = MR.modelos[0]; if (A.barras.includes(b)) return null;
+  let m = MRM_REFC.get(A);
+  if (!m) { m = new Map(); mrmDiseno(A).forEach(x => m.set(mrmClave(A, x.b.n1, x.b.n2) + '|' + String(x.b.secc).toUpperCase(), x.r)); MRM_REFC.set(A, m); }
+  const M = MR.modelos.find(q => q.barras.includes(b)); if (!M) return null;
+  const r = m.get(mrmClave(M, b.n1, b.n2) + '|' + String(b.secc).toUpperCase());
+  return r == null ? null : r;
+}
+function mrmMalo(MR, r, b) {
+  const v = mrmR2(r); if (v <= mrmLim(MR) + 1e-9) return false;
+  const rr = mrmRefR(MR, b); return !(rr != null && rr > 0 && v <= mrmR2(rr) * (1 + mrmIebcPct(MR) / 100) + 1e-9);
+}
+const mrmTolX = (MR, r, b) => mrmR2(r) > 1 && !mrmMalo(MR, r, b);
+const mrmEstado = (MR, r, b) => r == null ? '—' : mrmR2(r) <= 1 ? 'CUMPLE' : mrmMalo(MR, r, b) ? 'NO CUMPLE' : 'CUMPLE CON TOLERANCIA';
+// frase que describe el criterio de tolerancia (para conclusiones y títulos)
+const mrmTolTxt = MR => mrmIebcOk(MR) ? `razón mayor que 1,00 en elementos existentes no modificados cuya razón aumenta no más de ${mrmIebcPct(MR)} % respecto de ${mrmLa(MR.modelos[0])} (IEBC)` : `razón entre 1,00 y ${mcmNum(mrmLim(MR))}`;
 function mrmGrupos(M) {
   const g = new Map();
-  M.barras.forEach(b => { const k = [b.grupo, b.secc, b.mat].join('|'); if (!g.has(k)) g.set(k, {grupo:b.grupo, secc:b.secc, mat:b.mat, n:0, L:0, masa:0, sinMasa:0, barras:[]}); const x = g.get(k); x.n++; x.L += b.L; if (b.masa != null) x.masa += b.masa; else x.sinMasa++; x.barras.push(b); });
+  M.barras.forEach(b => { if (b.aux) return; const k = [b.grupo, b.secc, b.mat].join('|'); if (!g.has(k)) g.set(k, {grupo:b.grupo, secc:b.secc, mat:b.mat, n:0, L:0, masa:0, sinMasa:0, barras:[]}); const x = g.get(k); x.n++; x.L += b.L; if (b.masa != null) x.masa += b.masa; else x.sinMasa++; x.barras.push(b); });
   return [...g.values()];
 }
 function mrmApoyos(M) {
@@ -50200,7 +50232,7 @@ function mrmDiseno(M) {   // razón máxima por barra entre las combinaciones (o
   const ks = M.estados.map((e, k) => k).filter(k => M.R[k].ratio || (M.disenado && M.estados[k].comb));
   return M.barras.map((b, j) => { let best = {r:0, k:-1};
     ks.forEach(k => { const r = M.R[k].ratio ? M.R[k].ratio[j] : 0; if (r > best.r || best.k < 0) best = {r, k, loc:M.R[k].loc ? M.R[k].loc[j] : 0, ref:M.R[k].ref ? M.R[k].ref[j] : 0}; });
-    return Object.assign({b}, best, {cl:best.k >= 0 ? (M.refs[best.ref] || '') : ''}); });
+    return Object.assign({b, j}, best, {cl:best.k >= 0 ? (M.refs[best.ref] || '') : ''}); }).filter(x => !x.b.aux);
 }
 // carga repartida en una barra: tramo [x1, x2] en largo del modelo y resultante (trapecio)
 function mrmRepTramo(M, r) {
@@ -50270,10 +50302,10 @@ function mrmFigura(M, modo, k) {
   g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
   const T = p => [mg + (p[0] - x0) * sc + ((W - 2 * mg) - (x1 - x0) * sc) / 2, H - mg - (modo === 'util' ? 60 : 0) - (p[1] - y0) * sc];
   const S = M.nudos.map((n, i) => T(P2[i]));
-  const D = modo === 'util' ? mrmDiseno(M) : null;
+  const D = modo === 'util' ? new Map(mrmDiseno(M).map(x => [x.j, x.r])) : null;
   const col = r => r > 1 ? '#c0392b' : r > 0.9 ? '#e67e22' : r > 0.7 ? '#f1c40f' : r > 0.5 ? '#27ae60' : '#2e86c1';
   g.lineCap = 'round';
-  M.barras.forEach((b, j) => { const a = S[b.n1 - 1], z = S[b.n2 - 1]; if (!a || !z) return; g.strokeStyle = D ? col(D[j].r) : '#1b1b1b'; g.lineWidth = D ? 6 : 4; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(z[0], z[1]); g.stroke(); });
+  M.barras.forEach((b, j) => { const a = S[b.n1 - 1], z = S[b.n2 - 1]; if (!a || !z || b.aux) return; g.strokeStyle = D ? col(D.get(j) || 0) : '#1b1b1b'; g.lineWidth = D ? 6 : 4; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(z[0], z[1]); g.stroke(); });
   // apoyos
   M.nudos.forEach((n, i) => { if (!/1/.test(n.r)) return; const [x, y] = S[i]; g.strokeStyle = '#1F3864'; g.fillStyle = '#1F3864'; g.lineWidth = 2.5;
     if (n.r === '111111') { g.fillRect(x - 16, y + 2, 32, 9); for (let q = -16; q < 16; q += 7) { g.beginPath(); g.moveTo(x + q, y + 11); g.lineTo(x + q - 6, y + 19); g.stroke(); } }
@@ -50378,28 +50410,28 @@ function mrmInstrNota(MR) {
     + (I.comparar ? ' Se agrega el capítulo «Comparación de situaciones».' : '');
 }
 // indicadores de un modelo para la comparación
-function mrmInd(M) {
+function mrmInd(M, MR) {
   const G = mrmGrupos(M), masa = G.reduce((a, g) => a + g.masa, 0), D = M.disenado ? mrmDiseno(M) : [];
   const mx = D.length ? D.reduce((a, b) => b.r > a.r ? b : a) : null;
   const ks = M.estados.map((e, k) => k).filter(k => M.estados[k].comb && M.estados[k].res !== 'no'), lista = ks.length ? ks : M.estados.map((e, k) => k).filter(k => M.estados[k].res !== 'no');
   let dm = {d:0}, ke = -1; lista.forEach(k => { const d = mrmDesp(M, k); if (d.d > dm.d) { dm = d; ke = k; } });
   let fy = 0; lista.forEach(k => (M.R[k].reac[1] || []).forEach(v => { if (Math.abs(v || 0) > Math.abs(fy)) fy = v; }));
-  return {G, masa, D, mx, malos:D.filter(x => x.r > 1), dm, ke, fy, lista};
+  return {G, masa, D, mx, malos:D.filter(x => mrmMalo(MR, x.r, x.b)), tolx:D.filter(x => mrmTolX(MR, x.r, x.b)), dm, ke, fy, lista};
 }
 const mrmClave = (M, n1, n2) => { const f = M.U.fL * 1000, p = n => { const q = M.nudos[n - 1]; return q ? [q.x, q.y, q.z].map(v => Math.round(v * f / 5)).join(',') : '?'; }; return [p(n1), p(n2)].sort().join('|'); };
 const mrmClaveN = (M, n) => [n.x, n.y, n.z].map(v => Math.round(v * M.U.fL * 1000 / 5)).join(',');
 function mrmComparacion(MR, B, tab, par) {
-  const Ms = MR.modelos, X = Ms.map(mrmInd), A = Ms[0], XA = X[0], nM = Ms.length;
+  const Ms = MR.modelos, X = Ms.map(m => mrmInd(m, MR)), A = Ms[0], XA = X[0], nM = Ms.length;
   B.push({t:'h1', text:'COMPARACIÓN DE SITUACIONES'});
   par(`Se comparan ${nM === 2 ? 'las dos situaciones' : 'las ' + nM + ' situaciones'} analizadas: ${mcmList(Ms.map(M => mrmNom(M) + ' (modelo «' + M.etz + '»)'))}. La primera se toma como referencia para las variaciones.`);
   B.push({t:'h2', text:'Resumen comparativo'});
   const wM = Math.floor((9920 - 3200) / nM), wid = [3200].concat(Ms.map((M, i) => i === nM - 1 ? 9920 - 3200 - wM * (nM - 1) : wM));
   const fila = (n, f) => [n].concat(X.map((x, i) => f(x, Ms[i])));
   const rows = [
-    fila('N° de elementos', (x, M) => String(M.barras.length)),
+    fila('N° de elementos', (x, M) => String(mrmEl(M).length)),
     fila('Masa de acero [kg]', x => mcmNum(x.masa, 0)),
     fila('Razón de diseño máxima', (x, M) => x.mx ? `${mcmNum(x.mx.r)} (elem. ${x.mx.b.id}, ${x.mx.b.secc})` : 'sin diseño'),
-    fila('Elementos con razón > 1,00', (x, M) => M.disenado ? `${x.malos.length} de ${x.D.length}` : '—'),
+    fila('Elementos que no cumplen', (x, M) => M.disenado ? `${x.malos.length} de ${x.D.length}` : '—'),
     fila('Desplazamiento máximo |δ| [mm]', (x, M) => x.ke >= 0 ? `${mcmNum(x.dm.d, 1)} (${M.estados[x.ke].id})` : '—'),
     fila('Reacción vertical máxima', (x, M) => `${mcmNum(x.fy, 3)} ${M.U.f}`)];
   tab('Resumen comparativo de las situaciones', ['Indicador'].concat(Ms.map(mrmNom)), rows, wid, ['l'].concat(Ms.map(() => 'c')));
@@ -50411,24 +50443,24 @@ function mrmComparacion(MR, B, tab, par) {
   if (txt.length) par(txt.join(' '));
   // elementos: se emparejan por la posición de sus extremos (tolerancia 5 mm)
   Ms.slice(1).forEach((M, j) => {
-    const x = X[j + 1], mapA = new Map();
-    A.barras.forEach((b, i) => mapA.set(mrmClave(A, b.n1, b.n2), i));
-    const dA = XA.D, dB = x.D, par2 = [], nuevos = [], usados = new Set();
-    M.barras.forEach((b, i) => { const ia = mapA.get(mrmClave(M, b.n1, b.n2)); if (ia == null) { nuevos.push(b); return; } usados.add(ia); par2.push({a:A.barras[ia], b, ra:dA[ia] ? dA[ia].r : null, rb:dB[i] ? dB[i].r : null}); });
-    const quitados = A.barras.filter((b, i) => !usados.has(i));
+    const x = X[j + 1], mapA = new Map(), EA = mrmEl(A), EM = mrmEl(M);
+    EA.forEach((b, i) => mapA.set(mrmClave(A, b.n1, b.n2), i));
+    const rA = new Map(XA.D.map(q => [q.b, q.r])), rB = new Map(x.D.map(q => [q.b, q.r])), par2 = [], nuevos = [], usados = new Set();
+    EM.forEach(b => { const ia = mapA.get(mrmClave(M, b.n1, b.n2)); if (ia == null) { nuevos.push(b); return; } usados.add(ia); par2.push({a:EA[ia], b, ra:rA.has(EA[ia]) ? rA.get(EA[ia]) : null, rb:rB.has(b) ? rB.get(b) : null}); });
+    const quitados = EA.filter((b, i) => !usados.has(i));
     B.push({t:'h2', text:`Elementos: ${mrmNom(A)} y ${mrmNom(M)}`});
     const cambia = par2.filter(p => String(p.a.secc).toUpperCase() !== String(p.b.secc).toUpperCase() || (p.ra != null && p.rb != null && Math.abs(p.rb - p.ra) > 0.005));
-    par(`De los ${M.barras.length} elementos de ${mrmLa(M)}, ${par2.length} coinciden en posición con elementos de ${mrmLa(A)}; ${cambia.length} de ellos cambian de sección o de razón de diseño.`
+    par(`De los ${EM.length} elementos de ${mrmLa(M)}, ${par2.length} coinciden en posición con elementos de ${mrmLa(A)}; ${cambia.length} de ellos cambian de sección o de razón de diseño.`
       + (nuevos.length ? ` Se agregan ${nuevos.length} ${nuevos.length === 1 ? 'elemento' : 'elementos'} (${mcmList([...new Set(nuevos.map(b => b.secc))])}).` : '')
       + (quitados.length ? ` ${quitados.length} ${quitados.length === 1 ? 'elemento' : 'elementos'} de ${mrmLa(A)} no tienen par en ${mrmLa(M)}.` : ''));
     const lim = 40, ord = cambia.slice().sort((p, q) => Math.abs((q.rb || 0) - (q.ra || 0)) - Math.abs((p.rb || 0) - (p.ra || 0))).slice(0, lim).sort((p, q) => (+p.a.id || 0) - (+q.a.id || 0));
     if (ord.length) tab(`Elementos que cambian de sección o de razón de diseño (${mrmNom(A)} → ${mrmNom(M)})${cambia.length > lim ? ', ' + lim + ' de mayor variación' : ''}`,
       ['Elem.', 'Sección (ref.)', 'Razón (ref.)', 'Sección', 'Razón', 'Variación', 'Estado'],
       ord.map(p => [p.a.id === p.b.id ? String(p.a.id) : p.a.id + ' / ' + p.b.id, p.a.secc, p.ra != null ? mcmNum(p.ra) : '—', p.b.secc, p.rb != null ? mcmNum(p.rb) : '—',
-        p.ra && p.rb != null ? (p.rb >= p.ra ? '+' : '') + mcmNum(100 * (p.rb - p.ra) / p.ra, 1) + ' %' : '—', p.rb == null ? '—' : p.rb <= 1 ? 'CUMPLE' : 'NO CUMPLE']),
+        p.ra && p.rb != null ? (p.rb >= p.ra ? '+' : '') + mcmNum(100 * (p.rb - p.ra) / p.ra, 1) + ' %' : '—', mrmEstado(MR, p.rb, p.b)]),
       [1100, 1800, 1200, 1800, 1200, 1400, 1420], ['c','l','c','l','c','c','c']);
     if (nuevos.length && M.disenado) tab(`Elementos agregados en ${mrmNom(M)}`, ['Elem.', 'Grupo', 'Sección', 'L [m]', 'Razón', 'Estado'],
-      nuevos.slice(0, lim).map(b => { const i = M.barras.indexOf(b), r = dB[i] ? dB[i].r : null; return [String(b.id), b.grupo || '—', b.secc, mcmNum(b.L), r != null ? mcmNum(r) : '—', r == null ? '—' : r <= 1 ? 'CUMPLE' : 'NO CUMPLE']; }),
+      nuevos.slice(0, lim).map(b => { const r = rB.has(b) ? rB.get(b) : null; return [String(b.id), b.grupo || '—', b.secc, mcmNum(b.L), r != null ? mcmNum(r) : '—', mrmEstado(MR, r, b)]; }),
       [1200, 1700, 2300, 1300, 1500, 1920], ['c','l','l','c','c','c']);
     // reacciones en los apoyos que coinciden en posición
     if (A.U.f !== M.U.f) { par(`Las reacciones no se comparan: los modelos usan unidades de fuerza distintas (${A.U.f} y ${M.U.f}).`); return; }
@@ -50445,7 +50477,7 @@ function mrmComparacion(MR, B, tab, par) {
 function mrmTxt(MR, P, k) {
   if (MR[k] != null) return MR[k];
   const M = MR.modelos[0]; if (!M) return '';
-  const G = mrmGrupos(M), mats = [...new Set(M.barras.map(b => b.mat).filter(Boolean))], dim = mrmDim(M), U = M.U;
+  const G = mrmGrupos(M), mats = [...new Set(mrmEl(M).map(b => b.mat).filter(Boolean))], dim = mrmDim(M), U = M.U;
   const est = MR.sub1 ? mpgOracion(MR.sub1).charAt(0).toLowerCase() + mpgOracion(MR.sub1).slice(1) : 'la estructura';
   if (k === 'intro') {
     mrmRoles(MR); const I = mrmInstr(MR), Ms = MR.modelos, varios = Ms.length > 1;
@@ -50466,13 +50498,17 @@ function mrmTxt(MR, P, k) {
   if (k === 'crit') {
     const c = [M.codigos.hr ? `${mrmCodigo(M.codigos.hr)}` : '', mrmCF(M) && M.codigos.cf ? mrmCodigo(M.codigos.cf) : ''].filter(Boolean);
     return `El diseño de los elementos de acero se verificó en RAM Elements según ${mcmList(c) || '[completar]'}, con las combinaciones de carga definidas en el modelo. `
-      + `Un elemento cumple cuando su razón de diseño (demanda/capacidad) es menor o igual a 1,00. El análisis es ${M.pdelta ? 'de segundo orden (P-Δ)' : 'elástico lineal de primer orden'}.`;
+      + `Un elemento cumple cuando su razón de diseño (demanda/capacidad) es menor o igual a 1,00, que es el requisito de la norma. Las razones se informan con dos decimales y la clasificación se hace con el valor informado. `
+      + (mrmIebcOk(MR) ? `Para los elementos existentes que no se modifican (misma posición y sección en ${mrmLa(MR.modelos[0])} y en la situación evaluada) se aplica el criterio del International Existing Building Code (IEBC), sección 503 «Alteraciones», para ${MR.tol.carga === 'lat' ? 'cargas laterales: el elemento existente se acepta sin refuerzo si su razón demanda/capacidad no aumenta más de 10 %' : 'cargas gravitacionales (§503.3): el elemento existente se acepta sin refuerzo si la carga de diseño que recibe no aumenta más de 5 %'} respecto de la situación de referencia. El aumento se mide con la razón de diseño del mismo elemento en ambos modelos; los elementos aceptados así se informan como «CUMPLE CON TOLERANCIA». Los elementos nuevos o modificados deben cumplir con razón ≤ 1,00. El IEBC no es norma chilena; su uso es criterio del proyectista${String(MR.tol.just || '').trim() ? ' (' + String(MR.tol.just).trim().replace(/\.$/, '') + ')' : ''}. ` : '')
+      + (mrmLim(MR) > 1 ? `Como criterio del proyectista, se aceptan además los elementos con razón de diseño hasta ${mcmNum(mrmLim(MR))} (${mcmNum(100 * (mrmLim(MR) - 1), 0)} % sobre la unidad), que se informan como «CUMPLE CON TOLERANCIA», por la siguiente razón: ${String(MR.tol.just).trim().replace(/\.$/, '')}. Esta tolerancia no está contemplada en la norma y es responsabilidad del ingeniero que suscribe la memoria. ` : '')
+      + `El análisis es ${M.pdelta ? 'de segundo orden (P-Δ)' : 'elástico lineal de primer orden'}.`;
   }
   if (k === 'concl' && MR.modelos.length > 1) {
-    mrmRoles(MR); const I = mrmInstr(MR), Ms = MR.modelos, X = Ms.map(mrmInd);
+    mrmRoles(MR); const I = mrmInstr(MR), Ms = MR.modelos, X = Ms.map(m => mrmInd(m, MR));
     const ver = Ms.map((m, i) => { const x = X[i]; if (!m.disenado) return `${mrmNom(m)}: el modelo no tiene el diseño de acero corrido.`;
-      return x.malos.length ? `${mrmNom(m)}: ${x.malos.length} de ${x.D.length} elementos superan la razón de diseño 1,00 (máxima ${mcmNum(x.mx.r)} en el elemento ${x.mx.b.id}, ${x.mx.b.secc}).`
-        : `${mrmNom(m)}: todos los elementos verificados (${x.D.length}) cumplen con la razón de diseño ≤ 1,00; la máxima es ${mcmNum(x.mx.r)}, en el elemento ${x.mx.b.id} (${x.mx.b.secc}).`; });
+      const tx = x.tolx.length ? ` ${x.tolx.length} ${x.tolx.length === 1 ? 'elemento se acepta' : 'elementos se aceptan'} con tolerancia (${mrmTolTxt(MR)}).` : '';
+      return x.malos.length ? `${mrmNom(m)}: ${x.malos.length} de ${x.D.length} elementos superan la razón de diseño ${mcmNum(mrmLim(MR))} (máxima ${mcmNum(x.mx.r)} en el elemento ${x.mx.b.id}, ${x.mx.b.secc}).${tx}`
+        : `${mrmNom(m)}: todos los elementos verificados (${x.D.length}) cumplen con la razón de diseño ≤ ${mcmNum(mrmLim(MR))}; la máxima es ${mcmNum(x.mx.r)}, en el elemento ${x.mx.b.id} (${x.mx.b.secc}).${tx}`; });
     let c = ver.join('\n\n');
     if (I.comparar && X[0].mx && X[Ms.length - 1].mx) { const a = X[0], b = X[Ms.length - 1], ul = Ms[Ms.length - 1];
       c += `\n\nAl comparar ${mrmLa(Ms[0])} con ${mrmLa(ul)}, la razón de diseño máxima pasa de ${mcmNum(a.mx.r)} a ${mcmNum(b.mx.r)}`
@@ -50485,10 +50521,11 @@ function mrmTxt(MR, P, k) {
   if (k === 'concl') {
     const D = MR.modelos.flatMap(m => m.disenado ? mrmDiseno(m).map(x => Object.assign(x, {m})) : []);
     if (!D.length) return 'Los modelos entregados no tienen el diseño de acero corrido en RAM Elements: no hay razones de diseño que informar. [completar]';
-    const mx = D.reduce((a, b) => b.r > a.r ? b : a), malos = D.filter(x => x.r > 1);
+    const mx = D.reduce((a, b) => b.r > a.r ? b : a), malos = D.filter(x => mrmMalo(MR, x.r, x.b)), tolx = D.filter(x => mrmTolX(MR, x.r, x.b)), lim = mcmNum(mrmLim(MR));
     const dv = mrmDefo(MR);
-    return (malos.length ? `${malos.length} de ${D.length} elementos superan la razón de diseño 1,00 (máxima ${mcmNum(mx.r)} en el elemento ${mx.b.id}, ${mx.b.secc}); deben reforzarse o redimensionarse antes de la emisión definitiva.`
-      : `Todos los elementos de acero verificados (${D.length}) cumplen con la razón de diseño ≤ 1,00. La razón máxima es ${mcmNum(mx.r)}, en el elemento ${mx.b.id} (${mx.b.secc}${mx.b.grupo && mx.b.grupo !== '0' ? ', grupo ' + mx.b.grupo : ''}) para la combinación ${mx.m.estados[mx.k].id}${mx.cl ? ', gobernada por ' + mx.cl : ''}.`)
+    const tx = tolx.length ? ` ${tolx.length} ${tolx.length === 1 ? 'elemento se acepta' : 'elementos se aceptan'} con tolerancia, ${mrmTolTxt(MR)} (${tolx.slice(0, 8).map(x => x.b.id + ': ' + mcmNum(x.r)).join('; ')}${tolx.length > 8 ? '…' : ''}), según Criterios de diseño.` : '';
+    return (malos.length ? `${malos.length} de ${D.length} elementos superan la razón de diseño ${lim} (máxima ${mcmNum(mx.r)} en el elemento ${mx.b.id}, ${mx.b.secc}); deben reforzarse o redimensionarse antes de la emisión definitiva.${tx}`
+      : `Todos los elementos de acero verificados (${D.length}) cumplen con la razón de diseño ≤ ${lim}.${tx} La razón máxima es ${mcmNum(mx.r)}, en el elemento ${mx.b.id} (${mx.b.secc}${mx.b.grupo && mx.b.grupo !== '0' ? ', grupo ' + mx.b.grupo : ''}) para la combinación ${mx.m.estados[mx.k].id}${mx.cl ? ', gobernada por ' + mx.cl : ''}.`)
       + (dv ? ` ${dv.ok ? 'La deformación cumple' : 'La deformación NO cumple'} el límite L/${dv.n} (${mcmNum(dv.d, 1)} mm ${dv.ok ? '≤' : '>'} ${mcmNum(dv.adm, 1)} mm).` : '');
   }
   if (k === 'alc') return 'Esta memoria se basa en los modelos de RAM Elements indicados: la geometría, las secciones, los materiales, las cargas y las combinaciones son las definidas en ellos. Los factores de las combinaciones de carga son los definidos en el programa. '
@@ -50521,7 +50558,7 @@ function mrmBuild(MR, P) {
     .concat(String(MR.normExtra || '').split('\n').map(x => x.trim()).filter(Boolean));
   B.push({t:'ul', items:N});
   B.push({t:'h2', text:'Materiales'});
-  const usados = [...new Set(Ms.flatMap(M => M.barras.map(b => String(b.mat || '').toUpperCase())))];
+  const usados = [...new Set(Ms.flatMap(M => mrmEl(M).map(b => String(b.mat || '').toUpperCase())))];
   const matRows = usados.map(k => { const m = Ms.map(M => M.mats[k]).find(Boolean); if (!m) return [k, 'Propiedades no incluidas en el .zip (falta el archivo .mat)', '—', '—', '—'];
     const mpa = v => v != null ? `${mcmNum(v * 0.0980665, 0)} MPa (${mcmNum(v, 0)} kgf/cm²)` : '—';
     return [m.nombre, mpa(m.Fy), mpa(m.Fu), m.E != null ? mcmNum(m.E * 0.0980665, 0) + ' MPa' : '—', m.rho != null ? mcmNum(m.rho, 0) + ' kg/m³' : '—']; });
@@ -50534,7 +50571,7 @@ function mrmBuild(MR, P) {
     else B.push({t:'h2', text:'Software y archivos'});
     par(`Programa: RAM Elements. Archivo: «${M.etz}»${M.archivo !== M.etz ? ' (dentro de «' + M.archivo + '»)' : ''}. Unidades del modelo: ${M.unidades}. ${M.analizado ? 'Modelo analizado' : 'El modelo NO registra análisis'}${M.disenado ? ' y con el diseño de acero corrido' : ', sin diseño de acero corrido'}.`);
     if (!varios) B.push({t:'h2', text:'Geometría, secciones y material'});
-    par(`El modelo tiene ${M.nudos.length} nudos y ${M.barras.length} elementos. Dimensiones generales: ${mcmNum(dim.x)} m (X) × ${mcmNum(dim.y)} m (Y, vertical) × ${mcmNum(dim.z)} m (Z). La Tabla ${nT + 1} resume los grupos de elementos.`);
+    par(`El modelo tiene ${M.nudos.length} nudos y ${mrmEl(M).length} elementos${mrmNAux(M) ? ` (además de ${mrmNAux(M)} ${mrmNAux(M) === 1 ? 'elemento auxiliar' : 'elementos auxiliares'} de material NONE, que no forman parte de la estructura y no se informan)` : ''}. Dimensiones generales: ${mcmNum(dim.x)} m (X) × ${mcmNum(dim.y)} m (Y, vertical) × ${mcmNum(dim.z)} m (Z). La Tabla ${nT + 1} resume los grupos de elementos.`);
     tab('Grupos de elementos del modelo' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Grupo RAM', 'Sección', 'Material', 'N° elem.', 'Largo total [m]', 'Masa [kg]'],
       G.map(x => [x.grupo || '—', x.secc, x.mat, String(x.n), mcmNum(x.L), x.sinMasa ? (x.masa ? mcmNum(x.masa, 0) + ' *' : '—') : mcmNum(x.masa, 0)]), [1700, 2200, 1500, 1100, 1700, 1720], ['l','l','l','c','c','c']);
     if (G.some(x => x.sinMasa)) B.push({t:'p', text:'* Masa parcial o no calculada: el .zip no trae el área de alguna sección o la densidad de su material.'});
@@ -50600,8 +50637,8 @@ function mrmBuild(MR, P) {
     const D = mrmDiseno(M), G = mrmGrupos(M);
     tab('Razón de diseño máxima por grupo' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Grupo', 'Sección', 'N°', 'Razón máx.', 'Elem.', 'Combinación', 'Referencia', 'Estado'], G.map(g => {
       const xs = D.filter(x => g.barras.includes(x.b)), mx = xs.reduce((a, b) => b.r > a.r ? b : a, xs[0]);
-      return [g.grupo || '—', g.secc, String(g.n), mcmNum(mx.r), String(mx.b.id), mx.k >= 0 ? M.estados[mx.k].id : '—', mx.cl || '—', mx.r <= 1 ? 'CUMPLE' : 'NO CUMPLE']; }), [1100, 1700, 600, 1100, 800, 1400, 1820, 1400], ['l','l','c','c','c','c','c','c']);
-    if (MR.verTodos || M.barras.length <= 30) tab('Razón de diseño por elemento' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Elem.', 'Grupo', 'Sección', 'L [m]', 'Razón', 'Combinación', 'Ubicación', 'Referencia'],
+      return [g.grupo || '—', g.secc, String(g.n), mcmNum(mx.r), String(mx.b.id), mx.k >= 0 ? M.estados[mx.k].id : '—', mx.cl || '—', mrmEstado(MR, mx.r, mx.b)]; }), [1100, 1700, 600, 1100, 800, 1400, 1820, 1400], ['l','l','c','c','c','c','c','c']);
+    if (MR.verTodos || mrmEl(M).length <= 30) tab('Razón de diseño por elemento' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Elem.', 'Grupo', 'Sección', 'L [m]', 'Razón', 'Combinación', 'Ubicación', 'Referencia'],
       D.map(x => [String(x.b.id), x.b.grupo || '—', x.b.secc, mcmNum(x.b.L), mcmNum(x.r), x.k >= 0 ? M.estados[x.k].id : '—', x.k >= 0 ? mcmNum(x.loc, 0) + ' % de L' : '—', x.cl || '—']), [800, 1200, 1700, 900, 1000, 1400, 1300, 1620], ['c','l','l','c','c','c','c','c']);
     fig(mrmFigura(M, 'util'), 'Razón de diseño de los elementos de acero' + (varios ? ' (' + mrmNom(M) + ')' : ''), 90);
   });
@@ -50642,7 +50679,12 @@ function mrmBuild(MR, P) {
   if (I.comparar) mrmComparacion(MR, B, tab, par);
   B.push({t:'h1', text:'CONCLUSIONES Y RECOMENDACIONES'}); txt('concl');
   // elementos que no cumplen (para evaluar o definir refuerzos) y perfiles definidos
-  Ms.forEach(M => { if (!M.disenado) return; const mal = mrmDiseno(M).filter(x => x.r > 1); if (!mal.length) return;
+  Ms.forEach(M => { if (!M.disenado) return; const tl = mrmDiseno(M).filter(x => mrmTolX(MR, x.r, x.b)); if (!tl.length) return;
+    if (mrmIebcOk(MR)) tab(`Elementos existentes aceptados con tolerancia IEBC (aumento de razón ≤ ${mrmIebcPct(MR)} %)` + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Elem.', 'Grupo', 'Sección', 'Razón ' + mrmNom(MR.modelos[0]).toLowerCase(), 'Razón', 'Aumento', 'Combinación'],
+      tl.slice(0, 60).map(x => { const rr = mrmRefR(MR, x.b); return [String(x.b.id), x.b.grupo || '—', x.b.secc, rr != null ? mcmNum(rr) : '—', mcmNum(x.r), rr ? '+' + mcmNum(100 * (mrmR2(x.r) / mrmR2(rr) - 1), 1) + ' %' : '—', x.k >= 0 ? M.estados[x.k].id : '—']; }), [1000, 1300, 2000, 1700, 1100, 1200, 1620], ['c','l','l','c','c','c','c']);
+    else tab(`Elementos aceptados con tolerancia (razón entre 1,00 y ${mcmNum(mrmLim(MR))})` + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Elem.', 'Grupo', 'Sección', 'L [m]', 'Razón', 'Combinación', 'Referencia'],
+      tl.slice(0, 60).map(x => [String(x.b.id), x.b.grupo || '—', x.b.secc, mcmNum(x.b.L), mcmNum(x.r), x.k >= 0 ? M.estados[x.k].id : '—', x.cl || '—']), [1000, 1300, 2000, 1100, 1100, 1700, 1720], ['c','l','l','c','c','c','c']); });
+  Ms.forEach(M => { if (!M.disenado) return; const mal = mrmDiseno(M).filter(x => mrmMalo(MR, x.r, x.b)); if (!mal.length) return;
     tab('Elementos que no cumplen' + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Elem.', 'Grupo', 'Sección', 'L [m]', 'Razón', 'Combinación', 'Referencia'],
       mal.slice(0, 60).map(x => [String(x.b.id), x.b.grupo || '—', x.b.secc, mcmNum(x.b.L), mcmNum(x.r), x.k >= 0 ? M.estados[x.k].id : '—', x.cl || '—']), [1000, 1300, 2000, 1100, 1100, 1700, 1720], ['c','l','l','c','c','c','c']); });
   if (I.acc.includes('definir')) { const M = Ms[Ms.length - 1], G = mrmGrupos(M);
@@ -50671,8 +50713,8 @@ function renderMemoriaRam(container) {
     const G = mrmGrupos(M), D = M.disenado ? mrmDiseno(M) : [], mx = D.length ? D.reduce((a, b) => b.r > a.r ? b : a) : null;
     return `<div class="mem-blk"><h4>📦 ${esc(M.archivo)} <small>${esc(M.etz)} · ${esc(M.unidades)}</small><button type="button" class="btn-remove" data-mdel="${i}" style="margin-left:auto" title="Quitar este modelo">✕</button></h4>
       <div class="field" style="max-width:620px"><label>Situación (<b class="mrm-kw s">existente</b> · <b class="mrm-kw s">reforzada</b> · <b class="mrm-kw s">propuesta</b>, o el nombre que quiera)</label><input type="text" data-mrol="${i}" value="${esc(M.rol || '')}" placeholder="${esc(M._nom || 'Ej: Estructura existente')}"></div>
-      <div class="note">${M.nudos.length} nudos · ${M.barras.length} elementos · ${G.length} grupos · ${M.estados.filter(e => !e.comb).length} estados · ${M.estados.filter(e => e.comb).length} combinaciones · ${mrmApoyos(M).reduce((a, x) => a + x.nudos.length, 0)} apoyos · masa ${mcmNum(G.reduce((a, g) => a + g.masa, 0), 0)} kg
-      ${M.disenado ? ` · razón máx. <b style="color:${mx && mx.r > 1 ? '#b91c1c' : '#15803d'}">${mx ? mcmNum(mx.r) : '—'}</b>` : ' · <b>sin diseño corrido</b>'}${M.otras.length ? `<br>⚠ Cargas no leídas automáticamente: ${esc(M.otras.join(', '))}` : ''}${Object.keys(M.mats).length ? '' : '<br>⚠ El .zip no trae el archivo .mat: faltan Fy, Fu y densidad.'}</div></div>`;
+      <div class="note">${M.nudos.length} nudos · ${mrmEl(M).length} elementos${mrmNAux(M) ? ` (+${mrmNAux(M)} auxiliares NONE, no se informan)` : ''} · ${G.length} grupos · ${M.estados.filter(e => !e.comb).length} estados · ${M.estados.filter(e => e.comb).length} combinaciones · ${mrmApoyos(M).reduce((a, x) => a + x.nudos.length, 0)} apoyos · masa ${mcmNum(G.reduce((a, g) => a + g.masa, 0), 0)} kg
+      ${M.disenado ? ` · razón máx. <b style="color:${mx && mrmMalo(MR, mx.r, mx.b) ? '#b91c1c' : mx && mrmTolX(MR, mx.r, mx.b) ? '#b45309' : '#15803d'}">${mx ? mcmNum(mx.r) : '—'}</b>` : ' · <b>sin diseño corrido</b>'}${M.otras.length ? `<br>⚠ Cargas no leídas automáticamente: ${esc(M.otras.join(', '))}` : ''}${Object.keys(M.mats).length ? '' : '<br>⚠ El .zip no trae el archivo .mat: faltan Fy, Fu y densidad.'}</div></div>`;
   }
   function html() {
     mrmRoles(MR); const M = MR.modelos[0], ests = M ? M.estados : [];
@@ -50684,7 +50726,17 @@ function renderMemoriaRam(container) {
         <div class="mem-blk mrm-instr"><h4>🎤 Instrucción para la memoria <small>(<b class="mrm-kw a">comparar</b> · <b class="mrm-kw a">evaluar</b> · <b class="mrm-kw a">definir</b> · <b class="mrm-kw a">verificar</b> · <b class="mrm-kw a">diseñar</b> · <b class="mrm-kw s">existente</b> · <b class="mrm-kw s">reforzada</b> · <b class="mrm-kw s">propuesta</b>)</small><button type="button" class="btn-add${mrmRecK === 'instr' ? ' on' : ''}" data-act="mic" data-k="instr" style="margin:0 0 0 auto;padding:.15rem .6rem">${mrmRecK === 'instr' ? '⏹ Detener' : '🎤 Dictar'}</button></h4>
           <textarea data-e="instr" data-nomic rows="2" placeholder="Ej: Compara la estructura existente con la reforzada y evalúa si el refuerzo cumple">${esc(MR.instr || '')}</textarea>
           <div class="note" id="mrmAcc">${mrmInstrNota(MR)}</div>
-          <div class="note">Díctela o escríbala. La Mesa reconoce las acciones por las palabras clave entre paréntesis (también sus formas: compara, comparación, evalúa, define, propone, dimensiona, verifica, revisa, diseña) y arma la memoria según ellas; con dos o más modelos y la acción «comparar» agrega el capítulo de comparación. El nombre de cada situación se toma de lo que escriba arriba, del nombre del archivo (existente, reforzada, propuesta) o de la instrucción. El dictado funciona en Chrome y Edge (pide permiso de micrófono la primera vez).</div></div></div>
+          <div class="note">Díctela o escríbala. La Mesa reconoce las acciones por las palabras clave entre paréntesis (también sus formas: compara, comparación, evalúa, define, propone, dimensiona, verifica, revisa, diseña) y arma la memoria según ellas; con dos o más modelos y la acción «comparar» agrega el capítulo de comparación. El nombre de cada situación se toma de lo que escriba arriba, del nombre del archivo (existente, reforzada, propuesta) o de la instrucción. El dictado funciona en Chrome y Edge (pide permiso de micrófono la primera vez).</div></div>
+        <div class="mem-blk"><h4>📏 Razón demanda/capacidad aceptable</h4>
+          <div class="field-grid"><div class="field"><label>Criterio</label><select data-tol="modo"><option value="norma"${MR.tol.modo !== 'proy' ? ' selected' : ''}>1,00 — según norma (AISC 360 / AISI S100 / NCh427)</option><option value="proy"${MR.tol.modo === 'proy' ? ' selected' : ''}>Tolerancia del proyectista</option><option value="iebc"${MR.tol.modo === 'iebc' ? ' selected' : ''}>Estructura existente según IEBC</option></select></div>
+          ${MR.tol.modo === 'iebc' ? `<div class="field"><label>Cargas que gobiernan la alteración</label><select data-tol="carga"><option value="grav"${MR.tol.carga !== 'lat' ? ' selected' : ''}>Gravitacionales — aumento ≤ 5 % (IEBC §503.3)</option><option value="lat"${MR.tol.carga === 'lat' ? ' selected' : ''}>Laterales — aumento de razón D/C ≤ 10 %</option></select></div>` : ''}
+          ${MR.tol.modo === 'proy' ? `<div class="field"><label>Tolerancia sobre 1,00 [%] (máx. 10)</label><input type="text" inputmode="decimal" data-tol="pct" value="${esc(MR.tol.pct || '')}" placeholder="Ej: 3"></div>` : ''}</div>
+          ${MR.tol.modo === 'proy' ? `<div class="field"><label>Justificación (va en Criterios de diseño)</label><textarea data-tol="just" rows="2" placeholder="Ej: elementos existentes cuya carga aumenta menos de 5 % respecto del estado original (IEBC §503.3); o precisión del modelo y de los datos de carga">${esc(MR.tol.just || '')}</textarea></div>
+          <div class="note" id="mrmTolN">${mrmLim(MR) > 1 ? `Límite adoptado: <b>${mcmNum(mrmLim(MR))}</b>. Los elementos entre 1,00 y ${mcmNum(mrmLim(MR))} se informan como «CUMPLE CON TOLERANCIA».` : '⚠ Para aplicar la tolerancia indique el % (mayor que 0 y hasta 10) y la justificación; mientras tanto rige 1,00.'}</div>` : ''}
+          ${MR.tol.modo === 'iebc' ? `<div class="field"><label>Comentario (opcional, va en Criterios de diseño)</label><textarea data-tol="just" rows="2" placeholder="Ej: refuerzo de estructura existente; se mantiene el uso">${esc(MR.tol.just || '')}</textarea></div>
+          <div class="note" id="mrmTolN">${mrmIebcOk(MR) ? `Referencia: <b>${esc(mrmNom(MR.modelos[0]))}</b> (primer modelo cargado). Un elemento existente no modificado (misma posición y sección) con razón > 1,00 se acepta si su razón no aumenta más de ${mrmIebcPct(MR)} % respecto de la referencia. Elementos nuevos o modificados: ≤ 1,00.` : '⚠ Este criterio necesita dos modelos con diseño corrido: primero la estructura original (referencia) y luego la modificada. Mientras tanto rige 1,00.'}</div>` : ''}
+          <div class="note">AISC 360, AISI S100 y NCh427 exigen razón ≤ 1,00 y no contemplan tolerancia. Una tolerancia es criterio del proyectista: la memoria la declara con su justificación y bajo su responsabilidad. La razón se clasifica con dos decimales (1,004 → 1,00 → CUMPLE).</div></div>
+      </div>
       <div class="panel"><h3>2 · Proyecto y portada</h3><div class="field-grid">${IP('proyecto', 'Proyecto')}${IP('mandante', 'Cliente / mandante')}${IP('codigo', 'Código POWER')}${IP('ubicacion', 'Ubicación')}
         ${IE('sub1', 'Subtítulo (qué se calcula)', 'Ej: Diseño de monorriel 1 t')}${IE('sub2', 'Segundo subtítulo (estructura)', 'vacío = nombre del proyecto')}${IP('fecha', 'Fecha')}${IP('rev', 'Revisión')}${IP('elaboro', 'Elaboró')}${IP('reviso', 'Revisó (opcional)')}</div>
         ${zona('portada', '🖼 Imagen de portada (opcional)', 'si no se pone, va el dibujo del modelo generado por la Mesa')}</div>
@@ -50740,6 +50792,8 @@ function renderMemoriaRam(container) {
     if (d.p != null) { P[d.p] = t.value; mcmSave(S0); }
     else if (d.e != null) { MR[d.e] = t.value; sv(); if (d.e === 'instr') { const n = root.querySelector('#mrmAcc'); if (n) n.innerHTML = mrmInstrNota(MR); } }
     else if (d.x != null) { MR.extra = MR.extra || {}; MR.extra[d.x] = t.value; sv(); }
+    else if (d.tol != null && d.tol !== 'modo' && d.tol !== 'carga') { MR.tol[d.tol] = t.value; sv(); const n = root.querySelector('#mrmTolN');
+      if (n && MR.tol.modo === 'proy') n.innerHTML = mrmLim(MR) > 1 ? `Límite adoptado: <b>${mcmNum(mrmLim(MR))}</b>. Los elementos entre 1,00 y ${mcmNum(mrmLim(MR))} se informan como «CUMPLE CON TOLERANCIA».` : '⚠ Para aplicar la tolerancia indique el % (mayor que 0 y hasta 10) y la justificación; mientras tanto rige 1,00.'; }
     else if (d.mrol != null) { MR.modelos[+d.mrol].rol = t.value; sv(); const n = root.querySelector('#mrmAcc'); if (n) n.innerHTML = mrmInstrNota(MR); }
     else if (d.d != null) { MR.defo[d.d] = t.value; sv(); }
     else if (d.f != null) { MR.figs[+d.f].cap = t.value; sv(); }
@@ -50750,6 +50804,7 @@ function renderMemoriaRam(container) {
     const t = e.target, d = t.dataset;
     if (d.d === 'est') { MR.defo.est = t.value; sv(); prevLuego(); }
     else if (d.v) { MR.verTodos = t.checked; sv(); prevLuego(); }
+    else if (d.tol === 'modo' || d.tol === 'carga') { MR.tol[d.tol] = t.value; sv(); draw(); prevLuego(); }
     else if (t.id === 'mrmIn') { cargar([...t.files]); t.value = ''; }
     else if (t.id === 'mrmImgIn') { addImgs([...t.files], dest); t.value = ''; }
   });
