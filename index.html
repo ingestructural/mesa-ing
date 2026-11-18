@@ -41632,32 +41632,54 @@ const FMP_TIPOS_ENTEROS = [0x05, 0x06, 0x07, 0x14, 0x15, 0x16];
 
 /* ---------------- 1) Lector .zip / .etz ---------------- */
 async function fmpUnzip(buf) {
-  const u8 = new Uint8Array(buf), dv = new DataView(buf);
+  // lector .zip: directorio central, ZIP64 (tamaños/offsets de 64 bits), métodos 0 (sin compresión) y 8 (deflate)
+  const u8 = new Uint8Array(buf), dv = new DataView(buf), N = u8.length;
+  const u16 = o => (o >= 0 && o + 2 <= N) ? dv.getUint16(o, true) : NaN;
+  const u32 = o => (o >= 0 && o + 4 <= N) ? dv.getUint32(o, true) : NaN;
+  const u64 = o => (o >= 0 && o + 8 <= N) ? dv.getUint32(o, true) + dv.getUint32(o + 4, true) * 4294967296 : NaN;
   let eocd = -1;
-  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) {
-    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  for (let i = N - 22; i >= Math.max(0, N - 65557); i--) if (u32(i) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error('el archivo no es un .zip válido (no se encontró el fin del directorio).');
+  let nEnt = u16(eocd + 10), p = u32(eocd + 16);
+  // ZIP64: registro de fin de directorio de 64 bits
+  if (nEnt === 0xFFFF || p === 0xFFFFFFFF || u32(eocd - 20) === 0x07064b50) {
+    const loc = eocd - 20;
+    if (u32(loc) === 0x07064b50) { const z = u64(loc + 8); if (u32(z) === 0x06064b50) { nEnt = u64(z + 32); p = u64(z + 48); } }
   }
-  if (eocd < 0) throw new Error('El archivo no es un .zip válido.');
-  const nEnt = dv.getUint16(eocd + 10, true);
-  let p = dv.getUint32(eocd + 16, true);
+  // .zip con datos antepuestos (autoextraíbles o con cabecera extra): se corrige el desplazamiento
+  if (u32(p) !== 0x02014b50) {
+    const tamCD = u32(eocd + 12), q = eocd - tamCD;
+    if (u32(q) === 0x02014b50) p = q; else throw new Error('directorio del .zip dañado o incompleto (¿descarga cortada?).');
+  }
+  const delta = p - u32(eocd + 16) > 0 && u32(eocd + 16) !== 0xFFFFFFFF ? p - u32(eocd + 16) : 0;
   const archivos = {};
   for (let k = 0; k < nEnt; k++) {
-    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('Directorio del .zip dañado.');
-    const metodo = dv.getUint16(p + 10, true);
-    const tamC = dv.getUint32(p + 20, true);
-    const lNom = dv.getUint16(p + 28, true), lExt = dv.getUint16(p + 30, true), lCom = dv.getUint16(p + 32, true);
-    const offLocal = dv.getUint32(p + 42, true);
-    const nombre = new TextDecoder('latin1').decode(u8.subarray(p + 46, p + 46 + lNom));
+    if (u32(p) !== 0x02014b50) throw new Error('directorio del .zip dañado (entrada ' + (k + 1) + ').');
+    const flags = u16(p + 8), metodo = u16(p + 10);
+    let tamC = u32(p + 20), tamU = u32(p + 24), offLocal = u32(p + 42);
+    const lNom = u16(p + 28), lExt = u16(p + 30), lCom = u16(p + 32);
+    const nombre = new TextDecoder(flags & 0x800 ? 'utf-8' : 'latin1').decode(u8.subarray(p + 46, p + 46 + lNom));
+    // campo extra ZIP64 (id 0x0001): trae los valores que en el directorio figuran como 0xFFFFFFFF
+    for (let e = p + 46 + lNom, fin = e + lExt; e + 4 <= fin;) {
+      const id = u16(e), ln = u16(e + 2);
+      if (id === 0x0001) { let q = e + 4; if (tamU === 0xFFFFFFFF) { tamU = u64(q); q += 8; } if (tamC === 0xFFFFFFFF) { tamC = u64(q); q += 8; } if (offLocal === 0xFFFFFFFF) { offLocal = u64(q); q += 8; } }
+      e += 4 + ln;
+    }
     p += 46 + lNom + lExt + lCom;
-    const ini = offLocal + 30 + dv.getUint16(offLocal + 26, true) + dv.getUint16(offLocal + 28, true);
+    if (nombre.endsWith('/')) continue;   // carpeta
+    offLocal += delta;
+    if (u32(offLocal) !== 0x04034b50) throw new Error('cabecera local dañada en «' + nombre + '».');
+    if (flags & 1) throw new Error('«' + nombre + '» está cifrado con contraseña; comprima el modelo sin contraseña.');
+    const ini = offLocal + 30 + u16(offLocal + 26) + u16(offLocal + 28);
+    if (!(ini + tamC <= N)) throw new Error('«' + nombre + '» está incompleto dentro del .zip (¿descarga o copia cortada?).');
     const comp = u8.subarray(ini, ini + tamC);
     let datos;
     if (metodo === 0) datos = comp.slice();
     else if (metodo === 8) {
-      if (typeof DecompressionStream === 'undefined') throw new Error('Este navegador no puede descomprimir .zip; cargue el .etz directamente.');
+      if (typeof DecompressionStream === 'undefined') throw new Error('este navegador no puede descomprimir .zip; cargue el .etz directamente.');
       const ds = new Blob([comp]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
       datos = new Uint8Array(await new Response(ds).arrayBuffer());
-    } else throw new Error(`Método de compresión ${metodo} no soportado en ${nombre}.`);
+    } else throw new Error(`«${nombre}» usa el método de compresión ${metodo === 9 ? 'Deflate64' : metodo === 12 ? 'BZip2' : metodo === 14 ? 'LZMA' : metodo === 93 ? 'Zstandard' : metodo === 99 ? 'AES (cifrado)' : metodo}, que el navegador no lee. Comprima el modelo con «Archivo › Comprimir» de RAM Elements o con la compresión estándar (Deflate) de Windows.`);
     archivos[nombre.split('/').pop()] = datos;
   }
   return archivos;
@@ -41712,11 +41734,20 @@ function fmpEtzArreglo(b, tipo) {
     return leerInt(wv);
   };
   const out = [];
+  const anchoIdx = (cod, cnt) => {
+    const cand = [{1:1, 4:2, 5:4, 6:4}[cod] || cod, cod, 1, 2, 4].filter((x, k, a) => x >= 1 && x <= 8 && a.indexOf(x) === k);
+    for (const w of cand) {
+      if (esTexto) return w;
+      const v = (b.length - 10) / Math.max(cnt, 1) - w;
+      if (esReal ? v === 8 : (Number.isInteger(v) && [1, 2, 4, 8].includes(v))) return w;
+    }
+    return cand[0];
+  };
   if (enc === 1) {
     if (!esReal && !esTexto) wv = (b.length - 5) / Math.max(n, 1);
     while (out.length < n) out.push(leer());
   } else if (enc === 2) {
-    const nd = dv.getUint32(i, true); i += 4; const w = b[i++];
+    const nd = dv.getUint32(i, true); i += 4; const w = anchoIdx(b[i++], nd);
     if (!esReal && !esTexto) wv = (b.length - 10) / Math.max(nd, 1) - w;
     for (let k = 0; k < nd; k++) { const r = leerInt(w) + 1; const v = leer(); for (let j = 0; j < r; j++) out.push(v); }
   } else if (enc === 3) {
@@ -41726,7 +41757,7 @@ function fmpEtzArreglo(b, tipo) {
     if (!esReal && !esTexto) wv = (b.length - i) / Math.max(marcados, 1);
     for (let j = 0; j < n; j++) out.push(((mask[j >> 3] >> (7 - (j & 7))) & 1) ? leer() : vacio);
   } else if (enc === 4) {
-    const cnt = dv.getUint32(i, true); i += 4; const w = b[i++];
+    const cnt = dv.getUint32(i, true); i += 4; const w = anchoIdx(b[i++], cnt);
     if (!esReal && !esTexto) wv = (b.length - 10) / Math.max(cnt, 1) - w;
     for (let j = 0; j < n; j++) out.push(vacio);
     for (let k = 0; k < cnt; k++) { const idx = leerInt(w); out[idx] = leer(); }
@@ -41870,7 +41901,7 @@ async function fmpLeerArchivo(file) {
   const u8 = new Uint8Array(buf);
   let etz = null, archivos = {}, nombreEtz = file.name;
   if (u8[0] === 0x50 && u8[1] === 0x4b) {
-    archivos = await fmpUnzip(buf);
+    try { archivos = await fmpUnzip(buf); } catch (e) { throw new Error('al abrir el .zip: ' + ((e && e.message) || e)); }
     const k = Object.keys(archivos).find(n => /\.etz$/i.test(n));
     if (!k) throw new Error('El .zip no contiene un archivo .etz.');
     etz = archivos[k]; nombreEtz = k;
@@ -50026,12 +50057,13 @@ async function mrmLeer(file) {
   const buf = await file.arrayBuffer(), u8 = new Uint8Array(buf);
   let archivos = {}, etz = u8, nombreEtz = file.name;
   if (u8[0] === 0x50 && u8[1] === 0x4b) {
-    archivos = await fmpUnzip(buf);
+    try { archivos = await fmpUnzip(buf); } catch (e) { throw new Error('al abrir el .zip: ' + ((e && e.message) || e)); }
     const k = Object.keys(archivos).find(n => /\.etz$/i.test(n));
     if (!k) throw new Error('El .zip no contiene un archivo .etz de RAM Elements.');
     etz = archivos[k]; nombreEtz = k;
   }
-  const m = fmpEtzLeer(etz, true), c = m.campos, U = mrmUnid(m.unidades);
+  let m; try { m = fmpEtzLeer(etz, true); } catch (e) { throw new Error(`al leer el modelo «${nombreEtz}»: ${(e && e.message) || e}. El formato de este .etz no se pudo interpretar (versión de RAM Elements u objetos no soportados)`); }
+  const c = m.campos, U = mrmUnid(m.unidades);
   if (!U.ok) throw new Error(`Unidades del modelo «${m.unidades}» no reconocidas.`);
   const sec = fmpSecciones(archivos), mats = mrmMats(archivos);
   const ids = c['ModelData1/LoadCases/EstadosIdCarga/Values'] || [], nE = ids.length;
