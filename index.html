@@ -41870,15 +41870,24 @@ function fmpSecciones(archivos) {
       const A = g('area');
       if (A > 0) area = A * u * u;
       else if (/rccol/.test(plantilla) && g('b') > 0 && g('h') > 0) { area = g('b') * g('h') * u * u; solido = true; fuente = 'archivo .sec (b×h)'; }
+      else if (/^rectbar$/.test(plantilla) && g('a') > 0 && g('b') > 0) { area = g('a') * g('b') * u * u; solido = true; fuente = 'archivo .sec (pletina a×b)'; }
+      else if (/^rndbar$/.test(plantilla) && g('d') > 0) { area = Math.PI / 4 * g('d') * g('d') * u * u; solido = true; fuente = 'archivo .sec (barra redonda π·D²/4)'; }
+      else if (/^aisi(c|i)$/.test(plantilla) && g('a') > 0 && g('b') > 0 && g('t') > 0) {
+        // canal plegado sin labios (aisiC) o dos canales espalda con espalda (aisiI): tramos rectos + 2 esquinas de radio medio r + t/2
+        const a = g('a'), b = g('b'), t = g('t'), r = g('r') > 0 ? g('r') : 0;
+        const ac = t * ((b - 2 * (r + t)) + 2 * (a - (r + t)) + Math.PI * (r + t / 2));
+        area = (plantilla === 'aisii' ? 2 : 1) * ac * u * u; fuente = `archivo .sec (${plantilla === 'aisii' ? 'dos canales plegados' : 'canal plegado'} a×b×t, r)`;
+      }
       else if (/box/.test(plantilla) && g('a') > 0 && g('b') > 0 && g('t') > 0) {
         const a = g('a'), b = g('b'), t = g('t'), r = g('r') > 0 ? g('r') : 0;
         area = (2 * t * (a + b) - 4 * t * t - (4 - Math.PI) * t * (2 * r + t)) * u * u; fuente = 'archivo .sec (cajón a×b×t, r)';
       } else if (/^2c/.test(plantilla) && g('bf') > 0 && g('d') > 0 && g('tf') > 0 && g('tw') > 0) {
         area = 2 * (2 * g('bf') * g('tf') + (g('d') - 2 * g('tf')) * g('tw')) * u * u; fuente = 'archivo .sec (2 canales, sin filetes)';
       } else if (g('bf') > 0 && g('d') > 0 && g('tf') > 0 && g('tw') > 0 && /^(w|en_ipn|en_i|en_h|ipb|hea|heb|i)/.test(plantilla)) {
-        area = (2 * g('bf') * g('tf') + (g('d') - 2 * g('tf')) * g('tw')) * u * u; fuente = 'archivo .sec (perfil I, sin filetes)';
+        const rf = g('k') > g('tf') ? g('k') - g('tf') : 0;   // radio de filete = k − tf (k: distancia del borde exterior del ala al fin del filete)
+        area = (2 * g('bf') * g('tf') + (g('d') - 2 * g('tf')) * g('tw') + (4 - Math.PI) * rf * rf) * u * u; fuente = rf ? 'archivo .sec (perfil I, filetes r = k − tf)' : 'archivo .sec (perfil I, sin filetes)';
       } else if (leos[lib.toLowerCase()]) {
-        const vars = {}; Object.entries(f).forEach(([k, v]) => { const x = parseFloat(String(v).replace(',', '.')); if (isFinite(x)) vars[k] = x; });
+        const vars = {}; Object.entries(f).forEach(([k, v]) => { const x = parseFloat(String(v).replace(',', '.')); if (isFinite(x)) { vars[k] = x; if (!(k.toLowerCase() in f)) vars[k.toLowerCase()] = x; } });
         const al = fmpLeoLineaMedia(leos[lib.toLowerCase()], vars);
         if (al) { area = al * u * u; fuente = `archivo .sec (línea media de ${lib})`; }
       }
@@ -50086,7 +50095,30 @@ async function mrmLeer(file) {
       if (!Array.isArray(val)) return [];
       return val.map((v, j) => ({b:j, dir:(dir || [])[j] || '', v:+v, d:+((dist || [])[j] || 0), pct:!!(por || [])[j]})).filter(x => x.v && x.dir);
     }).flat(),
+    // cargas repartidas en barras (hasta 3 por barra): dirección, valor inicial y final [fuerza/largo], tramo desde/hasta
+    // (Porc = 1 → % del largo; si no, largo del modelo). Incluye las que RAM genera al descargar las áreas cargadas.
+    rep:[['VigasRepartidaDir', 'VigasRepartidaVal', 'VigasRepartidaVal2', 'VigasRepartidaDist1', 'VigasRepartidaDist2', 'VigasRepartidaPorc1', 'VigasRepartidaPorc2', 'VigasCatD1'],
+      ['VigasRepartida2Dir', 'VigasRepartida2Val1', 'VigasRepartida2Val2', 'VigasRepartida2Dist1', 'VigasRepartida2Dist2', 'VigasRepartida2Porc1', 'VigasRepartida2Porc2', 'VigasCatD2'],
+      ['VigasRepartida3Dir', 'VigasRepartida3Val1', 'VigasRepartida3Val2', 'VigasRepartida3Dist1', 'VigasRepartida3Dist2', 'VigasRepartida3Porc1', 'VigasRepartida3Porc2', 'VigasCatD3']].map(q => {
+      q.forEach(x => marcar(`ModelData1/Members/${x}/${k}`));
+      const [dir, w1, w2, d1, d2, p1, p2] = q.map(x => c[`ModelData1/Members/${x}/${k}`] || []), out = [];
+      for (let j = 0; j < nB; j++) { const dr = dir[j], a = +(w1[j] || 0), z = +(w2[j] || 0); if (!dr || (!a && !z)) continue;
+        out.push({b:j, dir:String(dr), w1:a, w2:z, d1:+(d1[j] || 0), d2:+(d2[j] || 0), p1:!!p1[j], p2:!!p2[j]}); }
+      return out;
+    }).flat(),
+    areaP:c['ModelData1/DeckAreas/loadAreaPresion/' + k] || null,
+    areaD:['X', 'Y', 'Z'].map(d => c[`ModelData1/DeckAreas/loadAreaDir${d}/${k}`] || null),
   }));
+  // áreas de carga (superficies que no son elementos; RAM reparte su carga a las barras del contorno)
+  const areas = [], nA = +(c['ModelData1/DeckAreas/Count'] || 0), porN = {};
+  m.nudos.forEach((x, i) => porN[x.n] = i);
+  for (let i = 0; i < nA; i++) {
+    const P = [];
+    for (let q = 0; q < 100; q++) { const arr = c['ModelData1/DeckAreas/loadAreaNudo' + q + '/Values']; if (!arr) break; const v = arr[i]; if (v && porN[v] != null) P.push(porN[v]); }
+    let nx = 0, ny = 0, nz = 0;
+    P.forEach((ip, j) => { const p = m.nudos[ip], o = m.nudos[P[(j + 1) % P.length]]; nx += (p.y - o.y) * (p.z + o.z); ny += (p.z - o.z) * (p.x + o.x); nz += (p.x - o.x) * (p.y + o.y); });
+    areas.push({id:(c['ModelData1/DeckAreas/loadAreaID/Values'] || [])[i] || i + 1, desc:String((c['ModelData1/DeckAreas/loadAreaDescripcion/Values'] || [])[i] || '').trim(), nudos:P, A:P.length >= 3 ? Math.hypot(nx, ny, nz) / 2 : 0});
+  }
   // otras cargas presentes en el modelo que este lector no interpreta (se avisan, no se suponen)
   const otras = Object.keys(c).filter(k => /^ModelData1\/(Nodes|Members|Shells|Areas)\/.+\/\d+$/.test(k) && !leidos.has(k) && Array.isArray(c[k]) && c[k].some(v => v && v !== '' && v !== 0))
     .map(k => k.replace(/^ModelData1\//, '').replace(/\/\d+$/, '')).filter((v, i, a) => a.indexOf(v) === i);
@@ -50108,12 +50140,12 @@ async function mrmLeer(file) {
     const L = a && z ? Math.hypot(z.x - a.x, z.y - a.y, z.z - a.z) : 0;
     const s = sec[String(b.secc || '').toUpperCase()], mt = mats[String(b.mat || '').toUpperCase()];
     return {i:j + 1, id:(c['ModelData1/Members/VigasID/Values'] || [])[j] || j + 1, n1:b.n1, n2:b.n2, grupo:String(b.desc || '').trim(), secc:b.secc, mat:b.mat, L,
-      A:s && s.area ? s.area : null, masa:s && s.area && mt && mt.rho ? s.area * L * mt.rho : null};
+      A:s && s.area ? s.area : null, masa:s && s.area && mt && mt.rho != null ? s.area * L * mt.rho : null};   // material con densidad 0 (p. ej. «NONE»): RAM no le asigna peso
   });
   return {archivo:file.name, etz:nombreEtz, archivos:Object.keys(archivos), unidades:m.unidades, U, version:props('AnalysisVersion'),
     analizado:!!props('Analyzed'), disenado:!!props('Designed'), pdelta:!!props('AnalysisPdelta'),
     codigos:{hr:props('DesignCodeSteelHR') || '', cf:props('DesignCodeSteelCF') || '', hormigon:props('DesignCodeConcrete') || '', madera:props('DesignCode_Wood') || ''},
-    nudos:m.nudos.map(n => ({n:n.n, id:n.id, x:n.x, y:n.y, z:n.z, r:n.restr.join('')})), barras, estados, R, refs, mats, otras,
+    nudos:m.nudos.map(n => ({n:n.n, id:n.id, x:n.x, y:n.y, z:n.z, r:n.restr.join('')})), barras, estados, R, refs, mats, otras, areas,
     secciones:Object.fromEntries(Object.entries(sec).map(([k, s]) => [k, {area:s.area, lib:s.lib, fuente:s.fuente}]))};
 }
 // --- cálculos sobre el modelo leído ---
@@ -50150,16 +50182,50 @@ function mrmDiseno(M) {   // razón máxima por barra entre las combinaciones (o
     ks.forEach(k => { const r = M.R[k].ratio ? M.R[k].ratio[j] : 0; if (r > best.r || best.k < 0) best = {r, k, loc:M.R[k].loc ? M.R[k].loc[j] : 0, ref:M.R[k].ref ? M.R[k].ref[j] : 0}; });
     return Object.assign({b}, best, {cl:best.k >= 0 ? (M.refs[best.ref] || '') : ''}); });
 }
-function mrmAplicadaY(M, k) {   // carga vertical aplicada (FY) del estado k, cuando todas sus cargas son legibles
-  const R = M.R[k]; let s = 0;
-  (R.cargasN[1] || []).forEach(v => s += v || 0);
-  R.puntual.forEach(p => { if (p.dir === 'Y') s += p.v; });
+// carga repartida en una barra: tramo [x1, x2] en largo del modelo y resultante (trapecio)
+function mrmRepTramo(M, r) {
+  const b = M.barras[r.b], L = b ? b.L : 0;
+  const x1 = r.p1 ? r.d1 * L / 100 : r.d1, x2 = r.p2 ? r.d2 * L / 100 : r.d2;
+  return {x1, x2, L, F:(r.w1 + r.w2) / 2 * (x2 - x1)};
+}
+const mrmGlobal = d => d === 'X' || d === 'Y' || d === 'Z';
+// cargas de superficie del estado k: resultante por dirección global y resumen por tipo de área
+function mrmAreasEst(M, k) {
+  const R = M.R[k], P = R.areaP, out = {X:0, Y:0, Z:0, sinDir:0, sinDirF:0, grupos:[]};
+  if (!P || !M.areas || !M.areas.length) return out;
+  const g = new Map();
+  M.areas.forEach((a, i) => { const p = +(P[i] || 0); if (!p) return;
+    const v = R.areaD.map(arr => arr ? +(arr[i] || 0) : 0), nv = Math.hypot(...v);
+    if (nv) ['X', 'Y', 'Z'].forEach((d, q) => out[d] += p * a.A * v[q] / nv); else { out.sinDir++; out.sinDirF += Math.abs(p * a.A); }
+    const dir = nv ? ['X', 'Y', 'Z'].map((d, q) => v[q] ? (v[q] < 0 ? '−' : '+') + d : '').join('') : '?';
+    const key = a.desc + '|' + p + '|' + dir; if (!g.has(key)) g.set(key, {desc:a.desc, p, dir, n:0, A:0, ids:[]});
+    const x = g.get(key); x.n++; x.A += a.A; x.ids.push(a.id); });
+  out.grupos = [...g.values()];
+  return out;
+}
+// resultante aplicada por dirección global del estado k (nudos, puntuales, repartidas en barras y peso propio);
+// las cargas de superficie no se suman: llegan a las barras como repartidas generadas por RAM
+function mrmAplicada(M, k) {
+  const R = M.R[k], s = {X:0, Y:0, Z:0, rep:{X:0, Y:0, Z:0}, local:0};
+  ['X', 'Y', 'Z'].forEach((d, q) => (R.cargasN[q] || []).forEach(v => s[d] += v || 0));
+  R.puntual.forEach(p => { if (mrmGlobal(p.dir)) s[p.dir] += p.v; else s.local++; });
+  (R.rep || []).forEach(r => { if (mrmGlobal(r.dir)) { const F = mrmRepTramo(M, r).F; s[r.dir] += F; s.rep[r.dir] += F; } else s.local++; });
   const masa = M.barras.reduce((a, b) => a + (b.masa || 0), 0);
   const fPP = {tonf:1e-3, kgf:1, kN:MRM_G / 1000, N:MRM_G, lbf:2.20462, kip:0.00220462}[M.U.f];
-  if (M.estados[k].pp[1]) s += M.estados[k].pp[1] * masa * (fPP || 0);
+  ['X', 'Y', 'Z'].forEach((d, q) => { if (M.estados[k].pp[q]) s[d] += M.estados[k].pp[q] * masa * (fPP || 0); });
   return s;
 }
+function mrmAplicadaY(M, k) { return mrmAplicada(M, k).Y; }
+// ¿las repartidas en barras del estado k son la descarga de sus áreas cargadas? (misma resultante en X, Y y Z, ±0,5 %)
+function mrmOrigenRep(M, k) {
+  const A = mrmAreasEst(M, k), ap = mrmAplicada(M, k), hayA = A.grupos.length > 0, hayR = (M.R[k].rep || []).length > 0;
+  const tol = d => Math.max(0.005 * Math.abs(A[d]), 1e-6);
+  // un área con presión y sin dirección legible en el archivo se acepta si la diferencia no supera su resultante
+  const igual = hayA && ['X', 'Y', 'Z'].every(d => Math.abs(ap.rep[d] - A[d]) <= tol(d) + A.sinDirF);
+  return {A, ap, hayA, hayR, deAreas:igual, directa:{X:ap.rep.X - (hayA ? A.X : 0), Y:ap.rep.Y - (hayA ? A.Y : 0), Z:ap.rep.Z - (hayA ? A.Z : 0)}};
+}
 const mrmSumY = (M, k) => (M.R[k].reac[1] || []).reduce((a, v) => a + (v || 0), 0);
+const mrmSumR = (M, k, q) => (M.R[k].reac[q] || []).reduce((a, v) => a + (v || 0), 0);
 function mrmDesp(M, k) {   // desplazamiento máximo (traslación) del estado k, en mm
   const D = M.R[k].disp, fmm = M.U.fL * 1000; let best = {d:0, n:null, t:[0, 0, 0]};
   M.nudos.forEach((n, i) => { const t = [0, 1, 2].map(q => (D[q] ? D[q][i] : 0) * fmm), d = Math.hypot(...t); if (d > best.d) best = {d, n, t}; });
@@ -50201,6 +50267,35 @@ function mrmFigura(M, modo, k) {
   const dirV = d => { const o = pr(0, 0, 0), u = pr(d === 'X' ? 1 : 0, d === 'Y' ? 1 : 0, d === 'Z' ? 1 : 0); const vx = u[0] - o[0], vy = -(u[1] - o[1]), L = Math.hypot(vx, vy); return L < 0.2 ? null : [vx / L, vy / L]; };
   if (modo === 'cargas') {
     const R = M.R[k], items = [];
+    // áreas cargadas: sombreado y un rótulo por tipo de área y presión
+    if (R.areaP && M.areas && M.areas.length) {
+      const vistos = new Set();
+      g.save(); g.globalAlpha = 0.18; g.fillStyle = '#2e86c1';
+      M.areas.forEach((a, i) => { if (!+(R.areaP[i] || 0) || a.nudos.length < 3) return; g.beginPath(); a.nudos.forEach((ip, j) => { const p = S[ip]; if (j) g.lineTo(p[0], p[1]); else g.moveTo(p[0], p[1]); }); g.closePath(); g.fill(); });
+      g.restore();
+      g.font = 'bold 24px Arial'; g.fillStyle = '#1a5276';
+      M.areas.forEach((a, i) => { const p = +(R.areaP[i] || 0); if (!p || a.nudos.length < 3) return; const key = a.desc + '|' + p; if (vistos.has(key)) return; vistos.add(key);
+        const cx = a.nudos.reduce((s2, ip) => s2 + S[ip][0], 0) / a.nudos.length, cy = a.nudos.reduce((s2, ip) => s2 + S[ip][1], 0) / a.nudos.length;
+        g.fillText(`${a.desc ? a.desc + ': ' : ''}${mcmNum(Math.abs(p), 3)} ${M.U.f}/${M.U.lu}²`, cx + 8, cy - 8); });
+    }
+    // repartidas en barras: flechas a lo largo del tramo (sin rótulo por barra; el valor máximo va en la leyenda)
+    const O = mrmOrigenRep(M, k), reps = (R.rep || []).filter(r => mrmGlobal(r.dir));
+    if (reps.length) {
+      const wmax = Math.max(1e-9, ...reps.map(r => Math.max(Math.abs(r.w1), Math.abs(r.w2))));
+      const colR = O.deAreas ? '#7f8c8d' : '#b03a2e';
+      reps.forEach(r => { const b = M.barras[r.b]; if (!b) return; const a = S[b.n1 - 1], z = S[b.n2 - 1], t = mrmRepTramo(M, r); if (!a || !z || !(t.L > 0)) return;
+        const u = dirV(r.dir); if (!u) return;
+        const n = Math.max(2, Math.min(6, Math.round(Math.hypot(z[0] - a[0], z[1] - a[1]) * (t.x2 - t.x1) / t.L / 45)));
+        const tips = [], tails = [];
+        for (let q = 0; q <= n; q++) { const f = (t.x1 + (t.x2 - t.x1) * q / n) / t.L, w = r.w1 + (r.w2 - r.w1) * q / n, s2 = Math.sign(w) || Math.sign(r.w1 + r.w2) || 1, Lf = 14 + 34 * Math.abs(w) / wmax;
+          const px = a[0] + (z[0] - a[0]) * f, py = a[1] + (z[1] - a[1]) * f; tips.push([px, py]); tails.push([px - u[0] * s2 * Lf, py - u[1] * s2 * Lf]); }
+        g.strokeStyle = colR; g.fillStyle = colR; g.lineWidth = 1.6;
+        g.beginPath(); tails.forEach((p, q) => q ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke();
+        tips.forEach((p, q) => { const tl = tails[q], dx = p[0] - tl[0], dy = p[1] - tl[1], L2 = Math.hypot(dx, dy) || 1, ux = dx / L2, uy = dy / L2;
+          g.beginPath(); g.moveTo(tl[0], tl[1]); g.lineTo(p[0], p[1]); g.stroke(); g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(p[0] - 8 * ux - 4 * uy, p[1] - 8 * uy + 4 * ux); g.lineTo(p[0] - 8 * ux + 4 * uy, p[1] - 8 * uy - 4 * ux); g.closePath(); g.fill(); }); });
+      g.font = 'italic 24px Arial'; g.fillStyle = colR;
+      g.fillText((O.deAreas ? 'Descarga de las áreas a las barras (generada por RAM)' : 'Cargas repartidas en barras') + ` · máx. ${mcmNum(wmax, 3)} ${M.U.f}/${M.U.lu}`, mg * 0.4, M.estados[k].pp.some(v => v) ? 74 : 40);
+    }
     ['X', 'Y', 'Z'].forEach((d, q) => (R.cargasN[q] || []).forEach((v, i) => { if (v) items.push({p:S[i], d, v}); }));
     R.puntual.forEach(pp => { const b = M.barras[pp.b]; if (!b) return; const a = S[b.n1 - 1], z = S[b.n2 - 1]; const t = pp.pct ? pp.d / 100 : (b.L ? pp.d / b.L : 0); items.push({p:[a[0] + (z[0] - a[0]) * t, a[1] + (z[1] - a[1]) * t], d:pp.dir.toUpperCase(), v:pp.v, loc:pp.dir !== pp.dir.toUpperCase()}); });
     const vmax = Math.max(1e-9, ...items.map(it => Math.abs(it.v)));
@@ -50439,14 +50534,36 @@ function mrmBuild(MR, P) {
       if (e.pp.some(v => v)) q.push('peso propio (programa)');
       const nN = R.cargasN.reduce((a, arr) => a + (arr ? arr.filter(v => v).length : 0), 0); if (nN) q.push(`${nN} ${nN === 1 ? 'carga' : 'cargas'} en nudos`);
       if (R.puntual.length) q.push(`${R.puntual.length} ${R.puntual.length === 1 ? 'carga puntual' : 'cargas puntuales'} en barras`);
+      const O = mrmOrigenRep(M, k), nA = O.A.grupos.reduce((a, x) => a + x.n, 0);
+      if (nA) q.push(`carga de superficie en ${nA} ${nA === 1 ? 'área' : 'áreas'}`);
+      if (O.hayR && !O.deAreas) q.push(O.hayA ? 'cargas repartidas directas en barras' : `${R.rep.length} ${R.rep.length === 1 ? 'carga repartida' : 'cargas repartidas'} en barras`);
       return [e.id, e.desc || '—', e.cat || '—', q.join('; ') || 'sin cargas leídas']; }), [1200, 3400, 1600, 3720], ['c','l','c','l']);
+    if (M.areas && M.areas.length && E.some(({k}) => mrmOrigenRep(M, k).hayA)) B.push({t:'p', text:`Las cargas por unidad de superficie se aplican en RAM Elements sobre áreas de carga (${M.areas.length} áreas, ${mcmNum(M.areas.reduce((a, x) => a + x.A, 0) * M.U.fL * M.U.fL, 1)} m² en total), que no son elementos estructurales: el programa reparte la carga de cada área a las barras de su contorno como cargas repartidas. En los estados en que la resultante de esas cargas en barras coincide con la de las áreas, se informa solo la carga de superficie ingresada; la descarga a las barras no es una carga adicional.`});
     if (M.otras.length) B.push({t:'p', text:`El modelo tiene además cargas de otro tipo que esta memoria no lee automáticamente (${M.otras.join(', ')}); se deben describir a mano. [completar]`});
     E.forEach(({e, k}) => {
       const R = M.R[k], rows = [];
       ['FX', 'FY', 'FZ', 'MX', 'MY', 'MZ'].forEach((nm, q) => (R.cargasN[q] || []).forEach((v, i) => { if (v) rows.push([`Nudo ${M.nudos[i].id}`, nm, `${mcmNum(v, 3)} ${M.U.f}${q > 2 ? '·' + M.U.lu : ''}`, '—']); }));
       R.puntual.forEach(p => { const b = M.barras[p.b]; rows.push([`Elemento ${b ? b.id : p.b + 1}`, 'Puntual ' + p.dir + (p.dir !== p.dir.toUpperCase() ? ' (local)' : ''), `${mcmNum(p.v, 3)} ${M.U.f}`, p.pct ? mcmNum(p.d, 0) + ' % de L' : mcmNum(p.d * M.U.fL, 3) + ' m']); });
+      const O = mrmOrigenRep(M, k), fu = `${M.U.f}/${M.U.lu}`;
+      // cargas de superficie (lo que ingresa el usuario) agrupadas por tipo de área y presión
+      if (O.hayA) { const m2 = M.U.fL * M.U.fL;
+        tab(`Cargas de superficie del estado ${e.id} (${e.desc || '—'})`, ['Área de carga', 'N° áreas', 'Superficie [m²]', `Presión [${M.U.f}/${M.U.lu}²]`, 'Dirección', `Resultante [${M.U.f}]`],
+          O.A.grupos.map(x => [x.desc || '—', String(x.n), mcmNum(x.A * m2, 2), mcmNum(x.p, 3), x.dir === '?' ? 'no legible' : x.dir, mcmNum(x.p * x.A, 3)]), [2400, 1000, 1600, 1700, 1200, 2020], ['l','c','c','c','c','c']);
+        par(O.deAreas ? `RAM Elements reparte estas cargas a las barras del contorno de cada área; la resultante de las cargas repartidas que resultan en las barras (${['X', 'Y', 'Z'].filter(d => Math.abs(O.ap.rep[d]) > 1e-9).map(d => d + ' = ' + mcmNum(O.ap.rep[d], 3)).join('; ')} ${M.U.f}) es igual a la de las áreas${O.A.sinDir ? ` (${O.A.sinDir} ${O.A.sinDir === 1 ? 'área no trae' : 'áreas no traen'} la dirección de carga legible en el archivo; su carga está incluida en esa descarga)` : ''}.`
+          : `La resultante de las cargas repartidas en barras (${['X', 'Y', 'Z'].map(d => d + ' = ' + mcmNum(O.ap.rep[d], 3)).join('; ')} ${M.U.f}) no coincide con la de las áreas (${['X', 'Y', 'Z'].map(d => d + ' = ' + mcmNum(O.A[d], 3)).join('; ')} ${M.U.f})${O.A.sinDir ? '; hay áreas sin dirección de carga legible' : ''}: la diferencia corresponde a cargas repartidas aplicadas directamente en las barras.`); }
+      // repartidas directas en barras (no provenientes de áreas): agrupadas por valor y tramo
+      if (O.hayR && !O.deAreas) {
+        const gr = new Map();
+        R.rep.forEach(r => { const t = mrmRepTramo(M, r), b = M.barras[r.b];
+          const tramo = (t.x1 <= 1e-9 && Math.abs(t.x2 - t.L) <= 1e-6) || (r.p1 && r.p2 && r.d1 === 0 && r.d2 === 100) ? 'todo el largo' : `${r.p1 ? mcmNum(r.d1, 0) + ' %' : mcmNum(r.d1 * M.U.fL, 2) + ' m'} a ${r.p2 ? mcmNum(r.d2, 0) + ' %' : mcmNum(r.d2 * M.U.fL, 2) + ' m'}`;
+          const val = Math.abs(r.w1 - r.w2) < 1e-9 ? mcmNum(r.w1, 4) : mcmNum(r.w1, 4) + ' a ' + mcmNum(r.w2, 4);
+          const key = [r.dir, val, tramo].join('|'); if (!gr.has(key)) gr.set(key, {dir:r.dir, val, tramo, ids:[], F:0}); const x = gr.get(key); x.ids.push(b ? b.id : r.b + 1); x.F += t.F; });
+        const lista = ids => ids.length > 12 ? ids.slice(0, 12).join(', ') + ` … (${ids.length})` : ids.join(', ');
+        tab(`Cargas repartidas en barras del estado ${e.id} (${e.desc || '—'})${O.hayA ? ' — incluye la descarga de las áreas' : ''}`, ['Elementos', 'Dirección', `Valor [${fu}]`, 'Tramo', `Resultante [${M.U.f}]`],
+          [...gr.values()].map(x => [lista(x.ids), x.dir + (mrmGlobal(x.dir) ? '' : ' (local)'), x.val, x.tramo, mcmNum(x.F, 3)]), [3300, 1100, 1900, 1900, 1720], ['l','c','c','c','c']);
+        if (R.rep.some(r => !mrmGlobal(r.dir))) par('Las cargas en ejes locales de las barras se informan con su valor, pero no se incluyen en el control de equilibrio global.'); }
       if (rows.length) tab(`Cargas del estado ${e.id} (${e.desc || '—'})`, ['Ubicación', 'Tipo / dirección', 'Valor', 'Posición'], rows, [2600, 2600, 2400, 2320], ['l','c','c','c']);
-      if (rows.length || e.pp.some(v => v)) fig(mrmFigura(M, 'cargas', k), `Estado ${e.id}: ${e.desc || ''}`, 80);
+      if (rows.length || e.pp.some(v => v) || O.hayA || O.hayR) fig(mrmFigura(M, 'cargas', k), `Estado ${e.id}: ${e.desc || ''}`, 80);
     });
     const C = M.estados.filter(e => e.comb);
     if (C.length) { if (!varios) B.push({t:'h2', text:'Combinaciones de carga'});
@@ -50487,9 +50604,13 @@ function mrmBuild(MR, P) {
     const rows = []; lista.forEach(k => ap.forEach(({n, i}) => { const R = M.R[k].reac; rows.push([M.estados[k].id, String(n.id)].concat([0, 1, 2].map(q => mcmNum(R[q] ? R[q][i] : 0, 3)), [3, 4, 5].map(q => mcmNum((R[q] ? R[q][i] : 0) * mf, 3)))); }));
     if (rows.length) tab(`Reacciones en los apoyos por ${ks.length ? 'combinación' : 'estado'} [${M.U.f}; ${fM}]` + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Estado', 'Nudo', 'FX', 'FY', 'FZ', 'MX', 'MY', 'MZ'], rows, [1300, 800, 1300, 1300, 1300, 1300, 1300, 1320], ['c','c','c','c','c','c','c','c']);
     // control: suma de reacciones verticales vs carga aplicada (solo si todas las cargas del estado son legibles)
-    const ctl = M.estados.map((e, k) => ({e, k})).filter(x => !x.e.comb).map(({e, k}) => { const ap2 = mrmAplicadaY(M, k), sr = mrmSumY(M, k); return [e.id, mcmNum(-ap2, 3), mcmNum(sr, 3), Math.abs(ap2) > 1e-9 ? mcmNum(100 * (sr + ap2) / Math.abs(ap2), 2) + ' %' : '—']; });
-    if (ctl.length && !M.otras.length) { B.push({t:'p', text:'Como control del modelo, la suma de las reacciones verticales de cada estado se compara con la carga vertical aplicada (cargas en nudos y en barras más el peso propio calculado con las áreas y densidades del .zip):'});
-      tab(`Control de equilibrio vertical [${M.U.f}]` + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Estado', 'Carga vertical aplicada', 'Σ reacciones FY', 'Diferencia'], ctl, [1600, 3000, 3000, 2320], ['c','c','c','c']); }
+    const ctl = []; let conLocal = false, conPP = false;
+    M.estados.forEach((e, k) => { if (e.comb) return; const ap2 = mrmAplicada(M, k); if (ap2.local) { conLocal = true; return; }
+      ['X', 'Y', 'Z'].forEach((d, q) => { const a = -ap2[d], sr = mrmSumR(M, k, q); if (Math.abs(a) < 1e-6 && Math.abs(sr) < 1e-6) return; if (e.pp[q]) conPP = true;
+        ctl.push([e.id, 'F' + d, mcmNum(a, 3), mcmNum(sr, 3), Math.abs(a) > 1e-9 ? mcmNum(100 * (sr - a) / Math.abs(a), 2) + ' %' : '—']); }); });
+    if (ctl.length && !M.otras.length) { B.push({t:'p', text:'Como control del modelo, la suma de las reacciones de cada estado se compara, en cada dirección, con la carga aplicada: cargas en nudos, cargas puntuales y repartidas en barras (incluida la descarga de las áreas cargadas) y el peso propio calculado con las áreas de las secciones y las densidades del .zip.' + (conLocal ? ' Los estados con cargas en ejes locales de las barras no se incluyen.' : '')});
+      tab(`Control de equilibrio [${M.U.f}]` + (varios ? ' (' + mrmNom(M) + ')' : ''), ['Estado', 'Dirección', 'Carga aplicada', 'Σ reacciones', 'Diferencia'], ctl, [1500, 1300, 2600, 2600, 1920], ['c','c','c','c','c']);
+      if (conPP) par('En los estados con peso propio, una diferencia pequeña proviene de que el programa calcula las propiedades de cada sección con su propia geometría (radios, filetes), mientras que aquí el área se calcula con las dimensiones del archivo .sec.'); }
   });
   B.push({t:'h1', text:'MASA DE ACERO'});
   Ms.forEach(M => {
