@@ -45412,11 +45412,12 @@ function afInformeHtml(p, res, meta, opts) {
   const reqProt = res.filter(r => r.ok === false || (r.pand && !r.pand.ok) || flexFalla(r));
   const conComb = res.filter(r => r.comb), conFlex = res.filter(r => r.flex);
   let n6 = 0; const s6 = () => '6.' + (++n6);
-  const tablaComb = () => !conComb.length ? '' : `${TB('Solicitaciones en situación de incendio — AISC 360-16 Anexo 4, ec. (A-4-1)')}
+  const tablaComb = () => `${TB('Solicitaciones en situación de incendio — AISC 360-16 Anexo 4, ec. (A-4-1)')}
     <table class="inf-t"><tr><th rowspan="2">N°</th><th rowspan="2">Elemento</th><th colspan="3">N nominal (tonf)</th><th colspan="3">M nominal (tonf·m)</th><th rowspan="2">Combinación que rige</th><th rowspan="2">Nfi (tonf)</th><th rowspan="2">Mfi (tonf·m)</th><th rowspan="2">Wel (cm³)</th><th rowspan="2">σfi (kg/cm²)</th></tr>
     <tr><th>D</th><th>L</th><th>S</th><th>D</th><th>L</th><th>S</th></tr>
-    ${conComb.map(r => { const g = r.comb.gov; return `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${N(r.ND,2)}</td><td>${N(r.NL,2)}</td><td>${N(r.NS,2)}</td><td>${N(r.MD,2)}</td><td>${N(r.ML,2)}</td><td>${N(r.MS,2)}</td><td>${g.nom}</td><td>${N(g.N,2)}</td><td>${N(g.M,2)}</td><td>${N(r.Wel,1)}</td><td><b>${r.comb.faltaW ? 'falta Wel' : N(g.sig,0)}</b></td></tr>`; }).join('')}</table>
-    <p style="font-size:8.5pt;margin-top:-.5rem">N positivo = compresión. σfi = |Nfi|/A + |Mfi|/Wel. Rige la combinación con mayor σfi. Los demás elementos usan σfi y N ingresados directamente.</p>`;
+    ${res.map(r => { if (!r.comb) return `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td colspan="6" class="l"><i>Sin estados de carga: valores ingresados directamente</i></td><td>Ingreso directo</td><td>${r.N > 0 ? N(r.N,2) : '—'}</td><td>—</td><td>${N(r.Wel,1)}</td><td><b>${r.sigma > 0 ? N(r.sigma,0) : 'no ingresada'}</b></td></tr>`;
+      const g = r.comb.gov; return `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${N(r.ND,2)}</td><td>${N(r.NL,2)}</td><td>${N(r.NS,2)}</td><td>${N(r.MD,2)}</td><td>${N(r.ML,2)}</td><td>${N(r.MS,2)}</td><td>${g.nom}</td><td>${N(g.N,2)}</td><td>${N(g.M,2)}</td><td>${N(r.Wel,1)}</td><td><b>${r.comb.faltaW ? 'falta Wel' : N(g.sig,0)}</b></td></tr>`; }).join('')}</table>
+    <p style="font-size:8.5pt;margin-top:-.5rem">N positivo = compresión. σfi = |Nfi|/A + |Mfi|/Wel. Rige la combinación con mayor σfi. ${conComb.length ? (conComb.length < res.length ? 'Los elementos sin estados de carga usan σfi y N ingresados directamente.' : '') : 'No se ingresaron estados de carga: σfi y N provienen directamente del análisis estructural (combinación de incendio aplicada fuera de esta memoria). Para que la memoria desarrolle la combinación (A-4-1), ingrese N y M de D, L y S en el panel 2b de la planilla.'}</p>`;
   const tablaFlex = () => !conFlex.length ? '' : `${TB('Flexión y flexo-compresión en caliente, acero sin protección, ' + rfT + ' (EN 1993-1-2 §4.2.3.4 y §4.2.3.5)')}
     <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Mfi (tonf·m)</th><th>Nfi (tonf)</th><th>θa (°C)</th><th>ky,θ</th><th>κ1</th><th>Mfi,t,Rd (tonf·m)</th><th>Flexión</th><th>Interacción 4.21c</th><th>Flexo-compresión</th></tr>
     ${conFlex.map(r => { const x = r.flex, it = x.inter; return `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${N(r.M,2)}</td><td>${N(r.N,2)}</td><td>${N(x.th,0)}</td><td>${N(x.ky,4)}</td><td>${N(x.kappa1,2)}</td><td><b>${N(x.MRd,2)}</b></td><td class="${x.okM ? 'ok' : 'bad'}">${x.okM ? 'CUMPLE' : 'NO CUMPLE'}</td><td>${it ? N(it.util,3) : '—'}</td><td class="${it ? (it.ok ? 'ok' : 'bad') : ''}">${it ? (it.ok ? 'CUMPLE' : 'NO CUMPLE') : (r.N > 0 ? 'falta Lcr' : 'No aplica (N = 0)')}</td></tr>`; }).join('')}</table>`;
@@ -45566,7 +45567,7 @@ function afInformeHtml(p, res, meta, opts) {
       <li>NCh 1916, NCh 1993 y NCh 934 — Carga combustible y clasificación de fuegos.</li>
       <li>EN 1991-1-2 (Eurocódigo 1, parte 1-2) — Acciones en estructuras expuestas al fuego.</li>
       <li>EN 1993-1-2 (Eurocódigo 3, parte 1-2) — Proyecto de estructuras de acero. Proyecto en situación de incendio.</li>
-      ${conComb.length ? '<li>ANSI/AISC 360-16 — Specification for Structural Steel Buildings, Anexo 4 «Structural Design for Fire Conditions», §4.1.4 (combinación de cargas en incendio), y ASCE/SEI 7-16 §2.5 (combinaciones para eventos extraordinarios).</li>' : ''}
+      ${true ? '<li>ANSI/AISC 360-16 — Specification for Structural Steel Buildings, Anexo 4 «Structural Design for Fire Conditions», §4.1.4 (combinación de cargas en incendio), y ASCE/SEI 7-16 §2.5 (combinaciones para eventos extraordinarios).</li>' : ''}
       <li>Informes de ensayo IDIEM I.E. N° 305.751 (pintura intumescente Renner STOFIRE) e I.E. N° 300.465 (pintura intumescente CEREFIRE X200).</li>
     </ul>
     <p>Conforme a la OGUC, los elementos y componentes que no figuren en el Listado Oficial ni cuenten con certificación oficial deben acreditarse mediante la certificación de un profesional especialista que los asimile a alguno de los tipos del Art. 4.3.3, lo que se efectúa en este informe siguiendo NCh 3684.</p>
@@ -45612,7 +45613,7 @@ function afInformeHtml(p, res, meta, opts) {
     <div class="eq">χfi = 1 / [φθ + √(φθ² − λ̄θ²)] &nbsp;&nbsp;&nbsp; φθ = ½·[1 + α·λ̄θ + λ̄θ²] &nbsp;&nbsp;&nbsp; α = 0,65·ε</div>
     <p>Se supone temperatura uniforme en el elemento y pandeo respecto del eje de menor radio de giro. No se incluye flexo-compresión ni pandeo lateral-torsional; las secciones clase 4 requieren área efectiva (EN 1993-1-2 §4.2.3.6).</p>
 
-    ${conComb.length || conFlex.length ? `<h2>5.7 Solicitaciones en situación de incendio, flexión y flexo-compresión</h2>
+    ${true ? `<h2>5.7 Solicitaciones en situación de incendio, flexión y flexo-compresión</h2>
     <p>Cuando se dispone de los estados de carga nominales (sin mayorar) de un elemento, la resistencia requerida en incendio se obtiene con la combinación de AISC 360-16 Anexo 4 §4.1.4, la misma de ASCE/SEI 7-16 §2.5 para eventos extraordinarios:</p>
     <div class="eq">(0,9 ó 1,2)·D + AT + 0,5·L + 0,2·S &nbsp;&nbsp;&nbsp;(A-4-1)</div>
     <p>donde D es la carga muerta nominal, L la sobrecarga de uso nominal (se permite su reducción) y S la nieve nominal; la sobrecarga de techo no forma parte de la combinación. AT corresponde a los esfuerzos por dilatación térmica restringida, que no se consideran en esta memoria (elementos con libre dilatación). Se evalúan los factores 1,2 y 0,9 para D y rige el que produce la mayor tensión:</p>
@@ -45627,7 +45628,7 @@ function afInformeHtml(p, res, meta, opts) {
     <h1>6. RESULTADOS</h1>
     <h2>${s6()} Masividad, asimilación y espesor de protección</h2>
     ${tablaMasiv}
-    ${conComb.length ? `<h2>${s6()} Solicitaciones en situación de incendio</h2>${tablaComb()}` : ''}
+    <h2>${s6()} Solicitaciones en situación de incendio</h2>${tablaComb()}
     <h2>${s6()} Evolución térmica del acero sin protección</h2>
     <div class="fig">${afGraficoTemp(res, p.em, true)}</div>${F('Temperatura del acero sin protección versus tiempo, por factor de masividad, y curva de incendio normalizado NCh 935/1')}
     ${tablaTemp}
@@ -46075,6 +46076,12 @@ function afDetalleElemento(r, p, meta, idx) {
     </table>`);
 
   // 1b. Solicitaciones de incendio desde estados de carga
+  if (!r.comb) {
+    out.push(sub('Solicitaciones en situación de incendio (AISC 360-16 Anexo 4, ec. A-4-1)'));
+    out.push(r.sigma > 0 || r.N > 0
+      ? `<p>No se ingresaron estados de carga para este elemento. Las solicitaciones de incendio se ingresaron directamente desde el análisis estructural, que debe considerar la combinación de incendio (0,9 ó 1,2)·D + 0,5·L + 0,2·S: σfi = ${r.sigma > 0 ? N(r.sigma,0) + ' kg/cm²' : 'no ingresada'}${r.N > 0 ? `, Nfi = ${N(r.N,2)} tonf (compresión)` : ''}.</p>`
+      : `<p>No se ingresaron estados de carga ni solicitaciones de incendio para este elemento: no se verifica su resistencia propia y solo se determina el espesor de protección asimilado.</p>`);
+  }
   if (r.comb) {
     out.push(sub('Solicitaciones en situación de incendio (AISC 360-16 Anexo 4, ec. A-4-1)'));
     out.push(`${MEM_T('Estados de carga nominales sin mayorar — ' + esc(r.nombre))}
