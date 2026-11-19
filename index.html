@@ -1919,6 +1919,10 @@ function fsCurrentTool(){
   return TOOLS.find(function(t){ return t.id === id && t.calc && CALC_RENDERERS[t.calc]; });
 }
 
+// 2026-11-18: Chrome/Edge 157 (actualización del 11-11-2026) cancelan showSaveFilePicker (AbortError) en carpetas de Dropbox.
+// Probado en DELLMAN: una descarga normal con «Preguntar dónde guardar cada archivo» abre el «Guardar como» clásico de
+// Windows y SÍ guarda en Dropbox. Por eso todos los guardados de archivos van por descarga.
+window.ING_GUARDAR_DESCARGA = true;
 // "Guardar como…": el usuario elige nombre y ubicación en el diálogo nativo del sistema
 // (showSaveFilePicker, Chrome/Edge). Si el navegador no lo ofrece o lo bloquea, se descarga el
 // archivo .json con el nombre que el usuario indique (queda en la carpeta de descargas).
@@ -1929,7 +1933,7 @@ async function fsSaveAsCurrentCalc(){
   var sugerido = (fsSlug(PROYECTO_META.proyecto) ? fsSlug(PROYECTO_META.proyecto) + '_' : '') +
                  (fsSlug(PROYECTO_META.calculo) || fsSlug(tool.name) || 'calculo') + '.json';
   var texto = JSON.stringify(record, null, 1);
-  if (typeof window.showSaveFilePicker === 'function') {
+  if (!window.ING_GUARDAR_DESCARGA && typeof window.showSaveFilePicker === 'function') {
     try {
       var opts = { suggestedName: sugerido, types: [{ description: 'Cálculo de la Mesa de Cálculo (.json)', accept: {'application/json': ['.json']} }] };
       var si0 = await fsStartIn(); if (si0) opts.startIn = si0;
@@ -1945,7 +1949,7 @@ async function fsSaveAsCurrentCalc(){
       // otro error (p.ej. bloqueado por el navegador): se usa la descarga como alternativa
     }
   }
-  var nombre = await fsAskFilename(sugerido);
+  var nombre = window.ING_GUARDAR_DESCARGA ? sugerido : await fsAskFilename(sugerido);
   if (!nombre) return;
   if (!/\.json$/i.test(nombre)) nombre += '.json';
   // 1) Visor de claude.ai: la descarga pasa por la capacidad "downloads" (el visor pide confirmación).
@@ -48857,7 +48861,7 @@ async function mcmDocx(S, Bx, R) {
 // Guardar en el mismo archivo (si se abrió o guardó antes con el selector de archivos) o pedir nombre ("Guardar como")
 async function mcmGuardarEn(fh, nombre, data, mime, desc, ext, como) {
   if (fh && !como) { try { const w = await fh.createWritable(); await w.write(data); await w.close(); fsToast('Guardado: ' + fh.name); return fh; } catch (e) { /* sin permiso: se pide nombre */ } }
-  if (typeof window.showSaveFilePicker === 'function') {
+  if (!window.ING_GUARDAR_DESCARGA && typeof window.showSaveFilePicker === 'function') {
     try { const o = {suggestedName: fh ? fh.name : nombre, types:[{description:desc, accept:{[mime]:[ext]}}]}; { const si0 = typeof fsStartIn === 'function' ? await fsStartIn() : null; if (si0) o.startIn = si0; }
       const h = await window.showSaveFilePicker(o); const w = await h.createWritable(); await w.write(data); await w.close(); fsToast('Guardado: ' + h.name); return h; }
     catch (e) { if (e && e.name === 'AbortError') return fh; }
@@ -48873,7 +48877,7 @@ async function mcmAbrirJson(desc, inputEl) {
   return new Promise(res => { inputEl.onchange = () => { const f = inputEl.files[0]; inputEl.value = ''; if (!f) return res(null); f.text().then(t => res({fh:null, name:f.name, text:t})); }; inputEl.click(); });
 }
 async function mcmGuardarArchivo(nombre, data, mime, desc, ext) {
-  if (typeof window.showSaveFilePicker === 'function') {
+  if (!window.ING_GUARDAR_DESCARGA && typeof window.showSaveFilePicker === 'function') {
     try { const o = {suggestedName:nombre, types:[{description:desc, accept:{[mime]:[ext]}}]}; { const si0 = typeof fsStartIn === 'function' ? await fsStartIn() : null; if (si0) o.startIn = si0; }
       const fh = await window.showSaveFilePicker(o); const w = await fh.createWritable(); await w.write(data); await w.close(); fsToast('Guardado: ' + fh.name); return; }
     catch (e) { if (e && e.name === 'AbortError') return; }
