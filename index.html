@@ -686,6 +686,7 @@
     <button id="printResumenBtn" class="print-btn alt" onclick="printResumen()" title="Imprimir solo un resumen de una hoja (inputs relevantes y resultados)">📄 Resumen</button>
     <button id="pdfBtn" class="print-btn" onclick="pdfMenu(this)" title="Descargar PDF (sirve en iPad y celular)">⬇ PDF</button>
     <button id="memBtn" class="print-btn alt" onclick="mvsCapturar()" title="Llevar este cálculo al Constructor de Memorias: memoria resumida + planilla Excel">📑 Memoria</button>
+    <button id="verPdfBtn" class="print-btn alt" style="display:none" onclick="verPdfMenu(this)" title="Ver la memoria en PDF antes de imprimirla">👁 Ver PDF</button>
     <button id="revBtn" class="print-btn alt" onclick="revMenu(this)" title="Exportar para revisión externa: Excel, PDF y código fuente de esta planilla">🔎 Revisión</button>
   </div>
   <div class="fs-overlay" id="fsOverlay"></div>
@@ -1085,6 +1086,20 @@
     m.style.left = Math.max(8, Math.min(window.innerWidth - 180, r.right - 170)) + 'px';
     if (r.top > window.innerHeight / 2) m.style.bottom = (window.innerHeight - r.top + 6) + 'px'; else m.style.top = (r.bottom + 6) + 'px';
     m.addEventListener('click', function(e){ var b = e.target.closest('button'); if (!b) return; m.remove(); exportarPDF(b.dataset.r === '1'); });
+    setTimeout(function(){ document.addEventListener('click', function cerrar(e){ if (!m.contains(e.target) && e.target !== btn) { m.remove(); } document.removeEventListener('click', cerrar); }); }, 0);
+  }
+  // «Ver PDF» de la barra superior: solo en planillas que registran window.__verPdfOpciones = [{t, fn}]
+  function verPdfMenu(btn){
+    var ops = window.__verPdfOpciones || [];
+    var m = document.getElementById('pdfMenu');
+    if (m) { m.remove(); return; }
+    m = document.createElement('div'); m.id = 'pdfMenu';
+    m.innerHTML = ops.map(function(o, i){ return '<button type="button" data-i="' + i + '">' + o.t + '</button>'; }).join('');
+    document.body.appendChild(m);
+    var r = btn.getBoundingClientRect();
+    m.style.left = Math.max(8, Math.min(window.innerWidth - 220, r.right - 210)) + 'px';
+    if (r.top > window.innerHeight / 2) m.style.bottom = (window.innerHeight - r.top + 6) + 'px'; else m.style.top = (r.bottom + 6) + 'px';
+    m.addEventListener('click', function(e){ var b = e.target.closest('button'); if (!b) return; m.remove(); ops[+b.dataset.i].fn(btn); });
     setTimeout(function(){ document.addEventListener('click', function cerrar(e){ if (!m.contains(e.target) && e.target !== btn) { m.remove(); } document.removeEventListener('click', cerrar); }); }, 0);
   }
   function pdfResolverColores(root){
@@ -44942,12 +44957,17 @@ function renderAsimilacionFuego(container) {
       <h3>2b · Estados de carga sin mayorar y combinación de incendio</h3>
       <div class="note" style="margin-bottom:.6rem">Esfuerzos nominales (sin mayorar) de cada estado en la sección más solicitada del elemento: N en tonf (positivo = compresión) y M en tonf·m (eje fuerte). La planilla aplica la combinación de incendio de AISC 360-16 Anexo 4 §4.1.4, ec. (A-4-1): (0,9 ó 1,2)·D + 0,5·L + 0,2·S, y usa la que da la mayor tensión σfi = |N|/A + |M|/Wel. Si la fila queda vacía se usan σfi y N ingresados en la sección 2. Wel se calcula del perfil (I/H, U, tubos, Tubest); para L, C/CA y placa debe ingresarse.</div>
       <div style="overflow-x:auto">
-        <table class="results editable af-lista" style="min-width:760px">
+        <style>.af-cargas thead th{ text-transform:none; letter-spacing:0; font-family:inherit; } .af-cargas thead small{ font-size:.72em; opacity:.9; }</style>
+        <table class="results editable af-lista af-cargas" style="min-width:760px">
           <colgroup>${[3,15,7,7,7,7,7,7,7,11,11,11].map(w => `<col style="width:${w}%">`).join('')}</colgroup>
-          <thead><tr><th>N°</th><th>Elemento</th><th>N D</th><th>N L</th><th>N S</th><th>M D</th><th>M L</th><th>M S</th><th>Wel cm³</th><th>Rige</th><th>Nfi · Mfi</th><th>σfi kg/cm²</th></tr></thead>
+          <thead>
+            <tr><th rowspan="2">N°</th><th rowspan="2">Elemento</th><th colspan="3" style="border-bottom:1px solid rgba(255,255,255,.35)">Carga axial N [tonf]<br><small style="font-weight:400">compresión +</small></th><th colspan="3" style="border-bottom:1px solid rgba(255,255,255,.35)">Momento M [tonf·m]<br><small style="font-weight:400">eje fuerte</small></th><th rowspan="2">W<sub>el</sub><br><small style="font-weight:400">[cm³]</small></th><th rowspan="2">Combinación<br>que rige</th><th rowspan="2">N<sub>fi</sub> [tonf]<br>M<sub>fi</sub> [tonf·m]</th><th rowspan="2">σ<sub>fi</sub><br><small style="font-weight:400">[kg/cm²]</small></th></tr>
+            <tr><th title="Carga axial por peso propio y carga muerta">N<sub>D</sub><br><small style="font-weight:400">muerta</small></th><th title="Carga axial por sobrecarga de uso">N<sub>L</sub><br><small style="font-weight:400">sobrecarga</small></th><th title="Carga axial por nieve">N<sub>S</sub><br><small style="font-weight:400">nieve</small></th><th title="Momento por peso propio y carga muerta">M<sub>D</sub><br><small style="font-weight:400">muerta</small></th><th title="Momento por sobrecarga de uso">M<sub>L</sub><br><small style="font-weight:400">sobrecarga</small></th><th title="Momento por nieve">M<sub>S</sub><br><small style="font-weight:400">nieve</small></th></tr>
+          </thead>
           <tbody id="af_cargas"></tbody>
         </table>
       </div>
+      <div class="note" style="margin-top:.4rem">N<sub>D</sub>, M<sub>D</sub>: carga axial y momento por peso propio y carga muerta (D) · N<sub>L</sub>, M<sub>L</sub>: por sobrecarga de uso (L) · N<sub>S</sub>, M<sub>S</sub>: por nieve (S). Unidades: N en tonf, M en tonf·m, W<sub>el</sub> en cm³, σ<sub>fi</sub> en kg/cm². Valores nominales, sin mayorar.</div>
       <div class="disclosure">AISC 360-16 Anexo 4 §4.1.4: a falta de disposiciones del código de edificación para el diseño bajo exposición al fuego, la resistencia requerida se determina con (0,9 ó 1,2)·D + AT + 0,5·L + 0,2·S (A-4-1), la misma combinación de ASCE/SEI 7-16 §2.5 para eventos extraordinarios; se permite reducir la sobrecarga de uso. D = carga muerta nominal, L = sobrecarga de uso nominal, S = nieve nominal; la sobrecarga de techo Lr no forma parte de la combinación. AT (esfuerzos por dilatación térmica restringida) no se calcula: vale para elementos con libre dilatación; si hay restricción debe agregarse fuera de la planilla.</div>
     </div>
 
@@ -44989,13 +45009,14 @@ function renderAsimilacionFuego(container) {
         <div class="field"><label>Fecha</label><input type="text" data-noupper id="afi_fecha" placeholder="vacío = hoy"></div>
         <div class="field"><label>Revisión</label><input type="text" data-noupper id="afi_rev" placeholder="0"></div>
         <div class="field"><label>Descripción de la revisión</label><input type="text" data-noupper id="afi_descRev" list="dl_afi_descRev" placeholder="Emitida para revisión"><datalist id="dl_afi_descRev">${MCM_REVS.map(x => `<option value="${x}"></option>`).join('')}</datalist></div>
-        <div class="field"><label>Elaboró</label><input type="text" data-noupper id="afi_autor" list="dl_afi_ing" placeholder="${MCM_ING[0]}"><datalist id="dl_afi_ing">${MCM_ING.map(x => `<option value="${x}"></option>`).join('')}</datalist></div>
-        <div class="field"><label>Revisó</label><input type="text" data-noupper id="afi_revisor" list="dl_afi_ing"></div>
+        <div class="field"><label>Elaboró</label><input type="text" data-noupper id="afi_autor" list="dl_afi_ing" placeholder="${MCM_ING[0]}"><datalist id="dl_afi_ing">${MCM_ING.filter(x => !/Villagr/i.test(x)).map(x => `<option value="${x}"></option>`).join('')}</datalist></div>
         <div class="field" style="grid-column:1/-1"><label>Descripción de la estructura (texto libre)</label><textarea id="afi_desc" rows="4" style="width:100%;box-sizing:border-box;font-family:'IBM Plex Sans',sans-serif;font-size:.9rem;padding:.5rem;border:1px solid var(--input-border);border-radius:4px;background:var(--input-bg);color:var(--ink)" placeholder="Ej: Galpón de 34,4 m de luz con marcos de columnas de hormigón armado y vigas de techo reticuladas de acero en perfiles circulares Sch 40..."></textarea></div>
       </div>
       <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.9rem">
         <button type="button" class="print-btn" id="afi_imprimir">📑 Memoria</button>
         <button type="button" class="print-btn" id="afi_imprimirDet">📘 Memoria detallada</button>
+        <button type="button" class="print-btn alt" id="afi_verPdf" title="Ver la memoria en PDF antes de imprimir">👁 Ver PDF memoria</button>
+        <button type="button" class="print-btn alt" id="afi_verPdfDet" title="Ver la memoria detallada en PDF antes de imprimir">👁 Ver PDF detallada</button>
       </div>
       <div class="note" style="margin-top:.4rem"><b>Memoria</b>: informe con antecedentes, marco regulatorio, desarrollo teórico, tablas, gráficos, resultados por elemento y conclusiones. <b>Memoria detallada</b>: lo mismo, más un capítulo con el desarrollo completo de los cálculos de cada elemento (perímetro y masividad, fila de tabla IDIEM, pasos del cálculo térmico con valores sustituidos, tabla minuto a minuto, ky,θ y fy,θ en cada tiempo de control, temperatura y tiempo críticos, pandeo en caliente, acero con revestimiento y gráficos propios). En el diálogo de impresión elija "Guardar como PDF". Los botones "Imprimir completo" y "Resumen" siguen entregando la hoja de cálculo tipo planilla.</div>
     </div>
@@ -45028,7 +45049,7 @@ function renderAsimilacionFuego(container) {
     // fila de estados de carga del mismo elemento (misma posición en #af_cargas)
     const tc = document.createElement('tr');
     tc.innerHTML = `<td class="num" data-role="n"></td><td data-role="nom" style="font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></td>` +
-      ['ND','NL','NS','MD','ML','MS'].map(k => `<td><input type="text" inputmode="decimal" data-f="${k}"></td>`).join('') +
+      ['ND','NL','NS','MD','ML','MS'].map(k => `<td><input type="text" inputmode="decimal" data-f="${k}" placeholder="${k[0] === 'N' ? 'tonf' : 'tonf·m'}" title="${{N:'Carga axial', M:'Momento'}[k[0]]} por ${{D:'peso propio y carga muerta', L:'sobrecarga de uso', S:'nieve'}[k[1]]} [${k[0] === 'N' ? 'tonf' : 'tonf·m'}]"></td>`).join('') +
       `<td><input type="text" inputmode="decimal" data-f="WUser" placeholder="auto"></td><td data-role="rige" style="font-size:.72rem"></td><td class="num" data-role="nm" style="font-size:.72rem"></td><td class="num" data-role="sig" style="font-size:.78rem"></td>`;
     cargas.appendChild(tc);
     if (pre && pre.cargas) Object.keys(pre.cargas).forEach(k => { const e = tc.querySelector(`[data-f="${k}"]`); if (e) e.value = pre.cargas[k]; });
@@ -45186,12 +45207,33 @@ function renderAsimilacionFuego(container) {
   body.addEventListener('click', e => { const b = e.target.closest('.btn-remove'); if (!b) return; const tr = b.closest('tr'); const i = Array.from(body.children).indexOf(tr); tr.remove(); if (cargas.children[i]) cargas.children[i].remove(); recalc(); });
   cargas.addEventListener('input', recalc);
   document.getElementById('af_add').addEventListener('click', () => { addRow(); recalc(); });
+  const metaInforme = () => {
+    const v = id => { const e = document.getElementById(id); return e ? (e.value || '').trim() : ''; };
+    const pw = (typeof PROYECTO_POWER !== 'undefined' && PROYECTO_POWER) ? PROYECTO_POWER : {};
+    return {cliente:v('afi_cliente') || pw.mandante || '', ubic:v('afi_ubic'), edif:v('afi_edif'), destino:v('afi_destino'), tipo:v('afi_tipo'), num:v('afi_num') || pw.codigo || '',
+      fecha:v('afi_fecha') || MCM_HOY(), rev:v('afi_rev') || '0', descRev:v('afi_descRev') || MCM_REVS[0], autor:v('afi_autor') || MCM_ING[0], desc:v('afi_desc')};
+  };
+  const verPdf = async (detallada, btn) => {
+    if (!ultimo) return;
+    const t0 = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando PDF…'; }
+    try {
+      const meta = metaInforme();
+      const blob = await afMemoriaPdf(afInformeHtml(ultimo.p, ultimo.res, meta, {detallada}));
+      const slug = x => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '');
+      mcmVerPdf(blob, `Memoria${detallada ? '_detallada' : ''}_Asimilacion_${slug(meta.num) || 'fuego'}_Rev${slug(meta.rev)}.pdf`);
+    } catch (e) { fsToast('No se pudo generar el PDF: ' + ((e && e.message) || e)); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = t0; } }
+  };
+  document.getElementById('afi_verPdf').addEventListener('click', e => verPdf(false, e.currentTarget));
+  document.getElementById('afi_verPdfDet').addEventListener('click', e => verPdf(true, e.currentTarget));
+  window.__verPdfOpciones = [{t:'👁 Memoria', fn: b => verPdf(false, b)}, {t:'👁 Memoria detallada', fn: b => verPdf(true, b)}];
   const imprimirInforme = detallada => {
     if (!ultimo) return;
     const v = id => { const e = document.getElementById(id); return e ? (e.value || '').trim() : ''; };
     const pw = (typeof PROYECTO_POWER !== 'undefined' && PROYECTO_POWER) ? PROYECTO_POWER : {};
     const meta = {cliente:v('afi_cliente') || pw.mandante || '', ubic:v('afi_ubic'), edif:v('afi_edif'), destino:v('afi_destino'), tipo:v('afi_tipo'), num:v('afi_num') || pw.codigo || '',
-      fecha:v('afi_fecha') || MCM_HOY(), rev:v('afi_rev') || '0', descRev:v('afi_descRev') || MCM_REVS[0], autor:v('afi_autor') || MCM_ING[0], revisor:v('afi_revisor'), desc:v('afi_desc')};
+      fecha:v('afi_fecha') || MCM_HOY(), rev:v('afi_rev') || '0', descRev:v('afi_descRev') || MCM_REVS[0], autor:v('afi_autor') || MCM_ING[0], desc:v('afi_desc')};
     document.getElementById('printSheetInforme').innerHTML = afInformeHtml(ultimo.p, ultimo.res, meta, {detallada});
     document.documentElement.classList.add('informe-print-active');
     const limpiar = () => { document.documentElement.classList.remove('informe-print-active'); window.removeEventListener('afterprint', limpiar); };
@@ -45292,6 +45334,71 @@ function afGraficoKyKe() {
 }
 
 // Informe de asimilación tipo memoria de cálculo (impresión aparte).
+// PDF de la memoria para ver antes de imprimir: se dibuja por tramos (cortes de hoja «.salto») para no exceder el
+// alto máximo de un canvas; encabezado con logo y pie con número de página en cada hoja, como la memoria impresa.
+async function afMemoriaPdf(html) {
+  const lib = await pdfCargarLib();
+  const tmp = document.createElement('div'); tmp.innerHTML = html;
+  const raiz = tmp.querySelector('.af-inf') || tmp, estilo = raiz.querySelector('style');
+  // html2canvas parte mal las líneas justificadas en el guion de «F-60»: esas palabras van sin corte
+  const tw = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT), nodos = [];
+  while (tw.nextNode()) if (/F-\d/.test(tw.currentNode.nodeValue) && tw.currentNode.parentNode.tagName !== 'STYLE') nodos.push(tw.currentNode);
+  nodos.forEach(nd => { const sp = document.createElement('span'); sp.innerHTML = esc(nd.nodeValue).replace(/(F-\d+)/g, '<span style="white-space:nowrap">$1</span>'); nd.replaceWith(...sp.childNodes); });
+  raiz.insertAdjacentHTML('beforeend', firmaIngHtml({}));   // pie de firma estándar de ING, como en la memoria impresa
+  const tramos = []; let act = null;
+  Array.from(raiz.children).forEach(ch => {
+    if (ch.tagName === 'STYLE') return;
+    if (ch.classList.contains('salto') || !act) { act = document.createElement('div'); act.className = 'af-inf'; if (estilo) act.appendChild(estilo.cloneNode(true)); tramos.push(act); }
+    if (!ch.classList.contains('salto') || ch.children.length || ch.textContent.trim()) act.appendChild(ch);
+  });
+  const oc = document.createElement('div'); oc.style.cssText = 'position:fixed;left:0;top:0;width:703px;z-index:-10;pointer-events:none;background:#fff';
+  tramos.forEach(t => oc.appendChild(t)); document.body.appendChild(oc);
+  try {
+    // Tablas: la leyenda va unida a la tabla y ninguna tabla se corta entre hojas. Si una tabla es más alta que una
+    // hoja se divide en tramos que caben, cada uno con su encabezado repetido y la leyenda «(continuación)».
+    const altoHoja = (297 - 27 - 17)*703/186, maxT = altoHoja*0.9;
+    Array.from(oc.querySelectorAll('table.inf-t')).forEach(t => {
+      let grupo = t.parentElement, cap = t.previousElementSibling; if (!(cap && cap.classList.contains('inf-cap'))) cap = null;
+      if (!grupo.classList.contains('af-tb')) { grupo = document.createElement('div'); grupo.className = 'af-tb'; t.parentNode.insertBefore(grupo, cap || t);
+        if (cap) grupo.appendChild(cap); grupo.appendChild(t); }
+      if (t.offsetHeight <= maxT || !t.tHead) return;
+      const cuerpo = Array.from(t.rows).filter(r => r.parentNode !== t.tHead), hT = t.tHead.offsetHeight + (cap ? cap.offsetHeight : 0);
+      let actual = null, alto = 0, previo = grupo;
+      cuerpo.forEach(r => {
+        if (alto > 0 && alto + r.offsetHeight > maxT - hT) {
+          const g2 = document.createElement('div'); g2.className = 'af-tb';
+          if (cap) { const c2 = cap.cloneNode(true); c2.textContent = c2.textContent.replace(/\s*\(continuación\)$/, '') + ' (continuación)'; g2.appendChild(c2); }
+          const t2 = t.cloneNode(false); t2.appendChild(t.tHead.cloneNode(true)); actual = document.createElement('tbody'); t2.appendChild(actual); g2.appendChild(t2);
+          previo.after(g2); previo = g2; alto = 0;
+        }
+        alto += r.offsetHeight;
+        if (actual) actual.appendChild(r);   // las primeras filas quedan en la tabla original
+      });
+    });
+    pdfResolverColores(oc);
+    const opt = {margin:[27, 12, 17, 12], image:{type:'jpeg', quality:0.93}, html2canvas:{scale:2, backgroundColor:'#ffffff', scrollX:0, scrollY:0, logging:false, onclone:pdfLimpiarColores},
+      jsPDF:{unit:'mm', format:'a4', orientation:'portrait'},
+      pagebreak:{mode:['css', 'legacy'], avoid:['.af-tb', 'tr', 'svg', 'img', '.keep', '.eq', '.eq-l', '.inf-cap', 'p', 'li', '.fig', '.paso', '.ficha-g', '.firma-ing', 'h1', 'h2', 'h3']}};
+    let w = lib().set(opt).from(tramos[0]).toPdf();
+    for (const t of tramos.slice(1)) w = w.get('pdf').then(pdf => { pdf.addPage(); }).from(t).toContainer().toCanvas().toPdf();
+    const pdf = await w.get('pdf');
+    const n = pdf.internal.getNumberOfPages(), W = pdf.internal.pageSize.getWidth(), H = pdf.internal.pageSize.getHeight();
+    const logo = document.querySelector('.brand-logo');
+    for (let i = 1; i <= n; i++) {
+      pdf.setPage(i);
+      if (logo && logo.src) { try { pdf.addImage(logo.src, 'PNG', 12, 7, 50, 50*logo.naturalHeight/(logo.naturalWidth || 1)); } catch (e) {} }
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(31, 56, 100);
+      pdf.text('ING ESTRUCTURAL', W - 12, 14, {align:'right'}); pdf.text('PROYECTOS CIVILES E INDUSTRIALES', W - 12, 18, {align:'right'});
+      pdf.setDrawColor(31, 56, 100); pdf.setLineWidth(0.5); pdf.line(12, 22, W - 12, 22);
+      pdf.setLineWidth(0.3); pdf.line(12, H - 13, W - 12, H - 13);
+      pdf.text('ING ESTRUCTURAL — Proyectos Civiles e Industriales', 12, H - 9.5);
+      pdf.setFont('helvetica', 'normal'); pdf.text('Angol 47, of. 404, Concepción · +56 9 9884 7164', 12, H - 6);
+      pdf.text('Página ' + i + ' de ' + n, W - 12, H - 9.5, {align:'right'});
+    }
+    return pdf.output('blob');
+  } finally { oc.remove(); }
+}
+
 function afInformeHtml(p, res, meta, opts) {
   const det = !!(opts && opts.detallada);   // memoria detallada: agrega el desarrollo completo de los cálculos por elemento
   const rfT = afRfTxt(p.rf);
@@ -45412,6 +45519,7 @@ function afInformeHtml(p, res, meta, opts) {
       .af-inf p, .af-inf li, .af-inf .eq, .af-inf .inf-cap{ break-inside:avoid; page-break-inside:avoid; orphans:3; widows:3; }
       .af-inf .inf-cap{ break-after:avoid; page-break-after:avoid; }
       .af-inf .inf-t tr{ break-inside:avoid; page-break-inside:avoid; }
+      .af-inf .inf-t thead{ display:table-header-group; } .af-inf .inf-t{ max-width:100%; }
       .af-inf .fig{ margin:.4rem 0 .2rem; break-inside:avoid; }
       .af-inf .ficha{ break-inside:avoid; page-break-inside:avoid; margin-bottom:1rem; padding-top:.3rem; border-top:1px solid #cfd6e0; }
       .af-inf .ficha h2{ margin-top:.5rem; }
@@ -45429,9 +45537,9 @@ function afInformeHtml(p, res, meta, opts) {
       <div class="t1">${det ? 'MEMORIA DE CÁLCULO DETALLADA' : 'MEMORIA DE CÁLCULO'}</div>
       <div class="t0">Asimilación y comportamiento al fuego de elementos estructurales de acero</div>
       <div class="t2">${esc(proyecto || meta.edif || '')}</div>
-      <table class="inf-t ant"><tbody>${[['Mandante', meta.cliente], ['Proyecto', proyecto || meta.edif], ['Código', meta.num], ['Ubicación', meta.ubic], ['Elaboró', meta.autor], ['Revisó', meta.revisor]].map(x => `<tr><td class="k">${x[0]}</td><td class="l">${esc(x[1] || '—')}</td></tr>`).join('')}</tbody></table>
-      <table class="inf-t rev"><tr><th>Rev.</th><th>Fecha</th><th>Descripción</th><th>Elaboró</th><th>Revisó</th></tr>
-        <tr><td>${esc(meta.rev || '')}</td><td>${esc(meta.fecha || fecha)}</td><td class="l">${esc(meta.descRev || '')}</td><td class="l">${esc(meta.autor || '')}</td><td class="l">${esc(meta.revisor || '')}</td></tr></table>
+      <table class="inf-t ant"><tbody>${[['Mandante', meta.cliente], ['Proyecto', proyecto || meta.edif], ['Código', meta.num], ['Ubicación', meta.ubic], ['Elaboró', meta.autor]].map(x => `<tr><td class="k">${x[0]}</td><td class="l">${esc(x[1] || '—')}</td></tr>`).join('')}</tbody></table>
+      <table class="inf-t rev"><tr><th>Rev.</th><th>Fecha</th><th>Descripción</th><th>Elaboró</th></tr>
+        <tr><td>${esc(meta.rev || '')}</td><td>${esc(meta.fecha || fecha)}</td><td class="l">${esc(meta.descRev || '')}</td><td class="l">${esc(meta.autor || '')}</td></tr></table>
     </div>
 
     <div class="salto"></div>
@@ -45544,8 +45652,7 @@ function afInformeHtml(p, res, meta, opts) {
     <div class="salto"></div>` : ''}
     <h1>${det ? 8 : 7}. CONCLUSIONES</h1>
     <ul>${concl.map(c => `<li>${c}</li>`).join('')}</ul>
-    <p>Las tensiones y esfuerzos en situación de incendio fueron calculados fuera de este informe e ingresados como datos. Los espesores de protección deben aplicarse según las recomendaciones del fabricante y controlarse en obra (espesor de película seca). La vigencia de los informes de ensayo debe verificarse a la fecha de la recepción de la obra.</p>
-    ${memFirmas({autor: meta.autor, autorProf: '', revisor: meta.revisor, revisorProf: ''})}
+    <p>${conComb.length ? 'Las solicitaciones en situación de incendio se obtuvieron de los estados de carga nominales ingresados (combinación A-4-1); los esfuerzos de cada estado provienen del análisis estructural, fuera de este informe' + (conComb.length < res.length ? ', y los demás elementos usan tensiones y esfuerzos ingresados directamente' : '') + '.' : 'Las tensiones y esfuerzos en situación de incendio fueron calculados fuera de este informe e ingresados como datos.'} Los espesores de protección deben aplicarse según las recomendaciones del fabricante y controlarse en obra (espesor de película seca). La vigencia de los informes de ensayo debe verificarse a la fecha de la recepción de la obra.</p>
   </div>`;
   const numerado = html.replace(/@@FIG@@/g, () => ++fig).replace(/@@TAB@@/g, () => ++tab);
   // Títulos numerados: cada título (h1/h2) se agrupa con el bloque que lo sigue para que nunca quede
@@ -45572,6 +45679,23 @@ function afInformeHtml(p, res, meta, opts) {
       const sig2 = w.nextElementSibling;
       if (sig.classList.contains('inf-cap') && sig2 && sig2.tagName === 'TABLE') { if (!(sig2.rows && sig2.rows.length > 8)) w.appendChild(sig2); }
     }
+  });
+  // Tablas que pasan de una hoja a otra: las filas de encabezado van en <thead> para que se repitan en cada hoja,
+  // y la leyenda se une a las primeras filas para que nunca quede sola al pie de la hoja.
+  Array.from(raiz.querySelectorAll('table.inf-t')).forEach(t => {
+    if (t.tHead) return;
+    const filas = Array.from(t.rows), enc = [];
+    for (const tr of filas) { if (tr.cells.length && Array.from(tr.cells).every(c => c.tagName === 'TH')) enc.push(tr); else break; }
+    if (!enc.length || enc.length === filas.length) return;
+    const th = document.createElement('thead'); enc.forEach(tr => th.appendChild(tr)); t.insertBefore(th, t.firstChild);
+  });
+  // Leyenda + tabla en un bloque indivisible cuando la tabla cabe en una hoja (hasta 30 filas); las más largas
+  // pasan de hoja con el encabezado repetido.
+  Array.from(raiz.querySelectorAll('table.inf-t')).forEach(t => {
+    if (t.parentElement.classList.contains('af-tb')) return;
+    let cap = t.previousElementSibling; if (!(cap && cap.classList.contains('inf-cap'))) cap = null;
+    const g = document.createElement('div'); g.className = 'af-tb' + (t.rows.length <= 30 ? ' keep' : '');
+    t.parentNode.insertBefore(g, cap || t); if (cap) g.appendChild(cap); g.appendChild(t);
   });
   return tmp.innerHTML;
 }
@@ -58550,9 +58674,13 @@ function route() {
   if (!id) { renderHome(main); CURRENT_ROUTE_ID = id; return; }
   const tool = TOOLS.find(t => t.id===id);
   if (!tool) { renderHome(main); CURRENT_ROUTE_ID = id; return; }
+  window.__verPdfOpciones = null;
   if (tool.calc && CALC_RENDERERS[tool.calc]) CALC_RENDERERS[tool.calc](main);
   else renderFicha(main, tool);
   injectCalcMeta(main);
+  { // planillas con memoria propia (p. ej. asimilación): sin «📑 Memoria» del Constructor y con «👁 Ver PDF»
+    const vp = !!window.__verPdfOpciones, mb = document.getElementById('memBtn'), vb = document.getElementById('verPdfBtn');
+    if (mb) mb.style.display = vp ? 'none' : ''; if (vb) vb.style.display = vp ? '' : 'none'; }
   CURRENT_ROUTE_ID = id;
 
   if (typeof PENDING_RESTORE !== 'undefined' && PENDING_RESTORE && PENDING_RESTORE.toolId === id) {
