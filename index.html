@@ -44664,15 +44664,21 @@ function afCatalogo() {
   const out = [];
   CATALOG_MASIVIDAD.filter(p => p.fam !== 'Tubest (Cintac)').forEach(p => out.push(Object.assign({}, p, {fam: p.fam === 'HEB' ? 'HEB (= IPB)' : (p.fam === 'HEA' ? 'HEA (= IPBl)' : (p.fam === 'HEM' ? 'HEM (= IPBv)' : p.fam))})));
   AF_SCH40.forEach(p => out.push(p));
-  if (typeof TUBEST_CATALOGO !== 'undefined') TUBEST_CATALOGO.forEach(t => out.push({desig:t.cod, fam:'Tubest (Cintac)', tipo:'TUB', h:t.H, b:t.B, tw:t.eo, tf:t.es, r:0, A:t.A, imin: Math.min(t.ix, t.iy)}));
+  if (typeof TUBEST_CATALOGO !== 'undefined') TUBEST_CATALOGO.forEach(t => out.push({desig:t.cod, fam:'Tubest (Cintac)', tipo:'TUB', h:t.H, b:t.B, tw:t.eo, tf:t.es, r:0, A:t.A, imin: Math.min(t.ix, t.iy), Wcat: t.W}));
   afCatalogo._c = out;
   return out;
 }
+// Designación corta para tablas y memorias: sin las dimensiones entre paréntesis (p. ej. «Sch 40 4"»).
+function afDesigCorta(d) { return String(d || '').replace(/\s*\([^)]*\)\s*$/, ''); }
 function afOpciones() {
   const fams = [];
   afCatalogo().forEach(p => { if (!fams.includes(p.fam)) fams.push(p.fam); });
-  return fams.map(f => `<optgroup label="${esc(f)}">${afCatalogo().filter(p => p.fam === f).map(p => `<option value="${esc(p.desig)}">${esc(p.desig)}</option>`).join('')}</optgroup>`).join('');
+  return fams.map(f => `<optgroup label="${esc(f)}">${afCatalogo().filter(p => p.fam === f).map(p => `<option value="${esc(p.desig)}" title="${esc(p.desig)}">${esc(afDesigCorta(p.desig))}</option>`).join('')}</optgroup>`).join('');
 }
+// Abreviaturas de tipo de sección (planilla y memorias) y su significado para la leyenda.
+const AF_TIPOS = [['I-H','I/H','perfil I o H'],['U','U','canal U'],['L','L','ángulo'],['CHS','○','tubo circular o cañería'],['RHS','□','tubo rectangular/cuadrado o cajón'],['TUB','TUB','Tubest (Cintac)'],['C','C','conformado en frío C/CA'],['DECK','PC','placa colaborante']];
+const afTipoCorto = t => (AF_TIPOS.find(x => x[0] === t) || [t, t])[1];
+const AF_LEYENDA = 'Función: V = viga (3 caras expuestas, ala superior bajo losa o cubierta); P = pilar (4 caras). Tipo: ' + AF_TIPOS.map(x => x[1] + ' = ' + x[2]).join('; ') + '.';
 
 // Masividad a 3 caras (viga con el ala superior bajo losa) y a 4 caras, por tipo de perfil.
 function afMasividades(it) {
@@ -44692,9 +44698,65 @@ function afMasividades(it) {
   return {F3, F4, nota};
 }
 
+/* ---- Solicitaciones de incendio a partir de estados de carga sin mayorar ----
+   AISC 360-16 Anexo 4 §4.1.4, ec. (A-4-1): (0,9 ó 1,2)·D + AT + 0,5·L + 0,2·S (misma combinación de
+   ASCE/SEI 7-16 §2.5 para eventos extraordinarios). D = carga muerta nominal, L = sobrecarga de uso nominal
+   (se permite su reducción), S = nieve nominal. La sobrecarga de techo Lr no forma parte de la combinación.
+   AT (esfuerzos por dilatación térmica restringida) no se calcula aquí. */
+const AF_COMBOS = [{id:'c12', nom:'1,2D + 0,5L + 0,2S', D:1.2, L:0.5, S:0.2}, {id:'c09', nom:'0,9D + 0,5L + 0,2S', D:0.9, L:0.5, S:0.2}];
+// Módulo resistente elástico del eje fuerte [cm³] (sección idealizada en rectángulos, sin radios; Tubest: catálogo Cintac).
+function afWel(it) {
+  const {tipo, h, b, tw, tf} = it;
+  if (it.Wcat > 0) return it.Wcat;
+  if (!(h > 0)) return null;
+  if (tipo === 'I-H' || tipo === 'U') { const Ix = (b*Math.pow(h,3) - (b - tw)*Math.pow(h - 2*tf, 3))/12; return Ix/(h/2)/1000; }
+  if (tipo === 'RHS' || tipo === 'TUB') { const t = tw, Ix = (b*Math.pow(h,3) - (b - 2*t)*Math.pow(h - 2*t, 3))/12; return Ix/(h/2)/1000; }
+  if (tipo === 'CHS') { const d = h - 2*tw; return Math.PI*(Math.pow(h,4) - Math.pow(d,4))/(32*h)/1000; }
+  return null; // L, C/CA, placa: ingresar W
+}
+function afWelDet(r) {
+  const N = AF_DN, {tipo, h, b, tw, tf} = r;
+  if (r.WUser > 0) return `Wel = ${N(r.WUser,1)} cm³ (valor ingresado)`;
+  if (r.Wcat > 0) return `Wel,x = ${N(r.Wcat,1)} cm³ (catálogo Cintac del perfil Tubest)`;
+  if (tipo === 'I-H' || tipo === 'U') { const Ix = (b*Math.pow(h,3) - (b - tw)*Math.pow(h - 2*tf, 3))/12;
+    return `Ix = [b·h³ − (b − tw)·(h − 2tf)³]/12 = [${N(b,1)}·${N(h,1)}³ − ${N(b-tw,2)}·${N(h-2*tf,2)}³]/12 = ${N(Ix/1e4,1)} cm⁴ ; Wel = Ix/(h/2) = <b>${N(Ix/(h/2)/1000,1)} cm³</b> (sección idealizada sin radios)`; }
+  if (tipo === 'RHS' || tipo === 'TUB') { const t = tw, Ix = (b*Math.pow(h,3) - (b - 2*t)*Math.pow(h - 2*t, 3))/12;
+    return `Ix = [B·H³ − (B − 2t)·(H − 2t)³]/12 = [${N(b,1)}·${N(h,1)}³ − ${N(b-2*t,2)}·${N(h-2*t,2)}³]/12 = ${N(Ix/1e4,1)} cm⁴ ; Wel = Ix/(H/2) = <b>${N(Ix/(h/2)/1000,1)} cm³</b>`; }
+  if (tipo === 'CHS') { const d = h - 2*tw;
+    return `Wel = π·(D⁴ − d⁴)/(32·D) = π·(${N(h,1)}⁴ − ${N(d,2)}⁴)/(32·${N(h,1)}) = <b>${N(Math.PI*(Math.pow(h,4) - Math.pow(d,4))/(32*h)/1000,2)} cm³</b>`; }
+  return 'Wel no calculable para este tipo de sección: debe ingresarse.';
+}
+// Flexión (EN 1993-1-2 §4.2.3.4, clase 3, conservador para clases 1 y 2) y flexo-compresión (§4.2.3.5, ec. 4.21c)
+// a la temperatura θ. M en tonf·m, N en tonf, W en cm³, Fy en kg/cm². κ2 = 1,0.
+function afFlexion(r, th, kappa1, chi, lamT) {
+  if (!(r.M > 0) || !(r.Wel > 0) || th == null) return null;
+  const ky = afKy(th), MRd = ky*r.Wel*r.Fy/(kappa1*1.0)/1e5;
+  const out = {th, ky, kappa1, MRd, okM: r.M <= MRd, utilM: MRd > 0 ? r.M/MRd : Infinity};
+  if (r.N > 0 && chi != null && lamT != null) {
+    const bM = 1.1, mu = Math.min(0.8, (1.2*bM - 3)*lamT + 0.44*bM - 0.29);
+    const NbRd = chi*r.A*ky*r.Fy/1000, kint = Math.min(3, 1 - mu*r.N/(NbRd > 0 ? NbRd : Infinity));
+    const MyRd = ky*r.Wel*r.Fy/1e5;
+    const util = (NbRd > 0 ? r.N/NbRd : Infinity) + (MyRd > 0 ? kint*r.M/MyRd : Infinity);
+    Object.assign(out, {inter:{bM, mu, NbRd, kint, MyRd, chi, lamT, util, ok: util <= 1}});
+  }
+  return out;
+}
+
 function calcAsimilacion(elems, p) {
   const RF = ['F15','F30','F60','F90','F120'], MIN = {F15:15,F30:30,F60:60,F90:90,F120:120};
-  const res = elems.map(it => {
+  const res = elems.map(it0 => {
+    let it = Object.assign({}, it0, {Wel: it0.WUser > 0 ? it0.WUser : afWel(it0), M: 0, sigmaOrigen: it0.sigma > 0 ? 'manual' : null});
+    let comb = null;
+    if ([it.ND, it.NL, it.NS, it.MD, it.ML, it.MS].some(v => v)) {
+      const cs = AF_COMBOS.map(c => {
+        const N = c.D*(it.ND||0) + c.L*(it.NL||0) + c.S*(it.NS||0), M = c.D*(it.MD||0) + c.L*(it.ML||0) + c.S*(it.MS||0);
+        const sN = it.A > 0 ? Math.abs(N)*1000/it.A : null, sM = M ? (it.Wel > 0 ? Math.abs(M)*1e5/it.Wel : null) : 0;
+        return Object.assign({}, c, {N, M, sN, sM, sig: (sN != null && sM != null) ? sN + sM : null});
+      });
+      const gov = cs.reduce((a, c) => (c.sig != null && (a.sig == null || c.sig > a.sig)) ? c : a, cs[0]);
+      comb = {cs, gov, faltaW: cs.some(c => c.M && !(it.Wel > 0))};
+      it = Object.assign(it, {sigma: gov.sig != null ? gov.sig : 0, N: Math.max(0, gov.N), M: Math.abs(gov.M), Ntrac: gov.N < 0 ? -gov.N : 0, sigmaOrigen: 'estados'});
+    }
     const m = afMasividades(it);
     const Freal = it.rol === 'viga' ? (m.F3 != null ? m.F3 : m.F4) : m.F4;
     const Fasim = m.F4; // se entra a la tabla de pilares con la masividad a 4 caras
@@ -44735,7 +44797,10 @@ function calcAsimilacion(elems, p) {
         pand = {i: iG, iAuto: !(it.iUser > 0), esbeltez: it.Lcr*100/iG, frio, porRF, req, ok: req.Nb >= it.N, util: req.Nb > 0 ? it.N/req.Nb*100 : Infinity, tcr: tcrP};
       }
     }
-    return Object.assign({}, it, m, {Freal, Fasim, esp, curva, hitos, hReq, mu, thcr, tcr, ok, emUsado: pe.em, kshUsado: ksh, pand, curvaProt, espMem, prodMem});
+    // Flexión y flexo-compresión en caliente (acero sin protección, temperatura a la exigencia)
+    const k1s = (it.rol === 'viga' && m.F3 != null) ? 0.7 : 1.0;   // EN 1993-1-2 §4.2.3.3(8): viga sin protección, 3 caras con losa: 0,7; 4 caras: 1,0
+    const flex = hReq && hReq.th != null ? afFlexion(it, hReq.th, k1s, pand ? pand.req.chi : null, pand ? pand.req.lamT : null) : null;
+    return Object.assign({}, it, m, {Freal, Fasim, esp, curva, hitos, hReq, mu, thcr, tcr, ok, emUsado: pe.em, kshUsado: ksh, pand, curvaProt, espMem, prodMem, comb, flex, kappa1: k1s});
   });
   return res;
 }
@@ -44850,18 +44915,40 @@ function renderAsimilacionFuego(container) {
         <option value="0.35">0,35 — galvanizado en caliente, hasta 500 °C</option></datalist>
       <div style="overflow-x:auto">
         <style>
-          table.af-lista input, table.af-lista select{ font-size:.82rem !important; padding:.26rem .3rem !important; }
-          table.af-lista td{ padding:.22rem .18rem; }
+          table.af-lista{ width:100%; table-layout:fixed; }
+          table.af-lista input, table.af-lista select{ font-size:.74rem !important; padding:.22rem .18rem !important; width:100% !important; min-width:0 !important; max-width:none !important; box-sizing:border-box; }
+          table.af-lista input, table.af-lista select{ font-family:'IBM Plex Sans', Arial, sans-serif !important; letter-spacing:0 !important; }
+          table.af-lista select{ padding-right:0 !important; -webkit-appearance:none; appearance:none; background-image:none !important; text-align:center; text-align-last:center; cursor:pointer; }
+          table.af-lista select[data-f="desig"]{ text-align:left; text-align-last:left; }
+          table.af-lista input::-webkit-calendar-picker-indicator{ display:none !important; }
+          table.af-lista .btn-remove{ padding:.15rem .25rem !important; min-width:0 !important; }
+          table.af-lista td{ padding:.18rem .08rem; }
+          table.af-lista th{ padding:.3rem .1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:.7rem; }
         </style>
-        <table class="results editable af-lista" style="min-width:1480px">
-          <thead><tr><th>N°</th><th>Elemento</th><th>Rol</th><th>Origen</th><th>Perfil</th><th>Tipo</th><th>h</th><th>b</th><th>tw</th><th>tf</th><th>r</th><th>A (cm²)</th><th>εm</th><th>Fy (kg/cm²)</th><th>σ incendio (kg/cm²)</th><th>N comp. (tonf)</th><th>Lcr (m)</th><th>i mín (cm)</th><th></th></tr></thead>
+        <table class="results editable af-lista" style="min-width:760px">
+          <colgroup>${[3,10,4,5,12.5,4.5,5.5,5,4.5,4.5,4,5.5,4,5.5,5.5,4.5,4.5,4.5,3.5].map(w => `<col style="width:${w}%">`).join('')}</colgroup>
+          <thead><tr><th>N°</th><th>Elemento</th><th title="V = viga (3 caras) · P = pilar (4 caras)">Rol</th><th title="Cat. = catálogo · Man. = manual">Orig.</th><th>Perfil</th><th>Tipo</th><th>h</th><th>b</th><th>tw</th><th>tf</th><th>r</th><th>A cm²</th><th>εm</th><th>Fy</th><th>σfi</th><th>N t</th><th>Lcr m</th><th>i cm</th><th></th></tr></thead>
           <tbody id="af_body"></tbody>
         </table>
       </div>
+      <div class="note" style="margin-top:.3rem">Rol: V = viga, P = pilar. Orig.: Cat. = catálogo, Man. = manual. Tipo: ${AF_TIPOS.map(x => x[1] + ' ' + x[2]).join(' · ')}. Fy y σfi en kg/cm²; N en tonf. Las medidas h, b, tw, tf, r van en mm.</div>
       <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
         <button type="button" class="btn-add" id="af_add">+ Agregar elemento</button>
         <span class="note" id="af_count" style="margin-top:.7rem"></span>
       </div>
+    </div>
+
+    <div class="panel">
+      <h3>2b · Estados de carga sin mayorar y combinación de incendio</h3>
+      <div class="note" style="margin-bottom:.6rem">Esfuerzos nominales (sin mayorar) de cada estado en la sección más solicitada del elemento: N en tonf (positivo = compresión) y M en tonf·m (eje fuerte). La planilla aplica la combinación de incendio de AISC 360-16 Anexo 4 §4.1.4, ec. (A-4-1): (0,9 ó 1,2)·D + 0,5·L + 0,2·S, y usa la que da la mayor tensión σfi = |N|/A + |M|/Wel. Si la fila queda vacía se usan σfi y N ingresados en la sección 2. Wel se calcula del perfil (I/H, U, tubos, Tubest); para L, C/CA y placa debe ingresarse.</div>
+      <div style="overflow-x:auto">
+        <table class="results editable af-lista" style="min-width:760px">
+          <colgroup>${[3,15,7,7,7,7,7,7,7,11,11,11].map(w => `<col style="width:${w}%">`).join('')}</colgroup>
+          <thead><tr><th>N°</th><th>Elemento</th><th>N D</th><th>N L</th><th>N S</th><th>M D</th><th>M L</th><th>M S</th><th>Wel cm³</th><th>Rige</th><th>Nfi · Mfi</th><th>σfi kg/cm²</th></tr></thead>
+          <tbody id="af_cargas"></tbody>
+        </table>
+      </div>
+      <div class="disclosure">AISC 360-16 Anexo 4 §4.1.4: a falta de disposiciones del código de edificación para el diseño bajo exposición al fuego, la resistencia requerida se determina con (0,9 ó 1,2)·D + AT + 0,5·L + 0,2·S (A-4-1), la misma combinación de ASCE/SEI 7-16 §2.5 para eventos extraordinarios; se permite reducir la sobrecarga de uso. D = carga muerta nominal, L = sobrecarga de uso nominal, S = nieve nominal; la sobrecarga de techo Lr no forma parte de la combinación. AT (esfuerzos por dilatación térmica restringida) no se calcula: vale para elementos con libre dilatación; si hay restricción debe agregarse fuera de la planilla.</div>
     </div>
 
     <div class="panel" data-resumen="force">
@@ -44878,9 +44965,10 @@ function renderAsimilacionFuego(container) {
     </div>
 
     <div class="panel" data-resumen="force">
-      <h3>4b · Pandeo por flexión en caliente — elementos comprimidos (EN 1993-1-2 §4.2.3.2)</h3>
+      <h3>4b · Pandeo, flexión y flexo-compresión en caliente (EN 1993-1-2 §4.2.3.2 a §4.2.3.5)</h3>
       <div id="af_pandeo"></div>
-      <div class="disclosure">Nb,fi,t,Rd = χfi·A·ky,θ·fy/γM,fi, con γM,fi = 1,0; esbeltez relativa en caliente λ̄θ = λ̄·√(ky,θ/kE,θ), con λ̄ = (Lcr/i)/(93,9·ε) y ε = √(235/fy[MPa]); χfi = 1/(φθ + √(φθ² − λ̄θ²)), φθ = ½·[1 + α·λ̄θ + λ̄θ²], α = 0,65·ε. kE,θ según EN 1993-1-2 Tabla 3.1 (1,0 hasta 100 °C; 0,9 a 200; 0,8 a 300; 0,7 a 400; 0,6 a 500; 0,31 a 600; 0,13 a 700; 0,09 a 800; 0,0675 a 900; 0,045 a 1000; 0,0225 a 1100; 0 a 1200 °C). Pandeo por flexión respecto del eje de menor radio de giro; Lcr la define el calculista (para pilares arriostrados de un edificio de varios pisos, EN 1993-1-2 §4.2.3.2(5) permite 0,5·L en pisos intermedios y 0,7·L en el último). Se supone temperatura uniforme en el elemento. No incluye pandeo lateral-torsional ni flexo-compresión (§4.2.3.5); secciones clase 4 (paredes muy esbeltas, p. ej. C/CA, Tubest) requieren área efectiva y θcr = 350 °C (§4.2.3.6): el resultado para ellas es solo referencial.</div>
+      <div id="af_flex" style="margin-top:.8rem"></div>
+      <div class="disclosure">Nb,fi,t,Rd = χfi·A·ky,θ·fy/γM,fi, con γM,fi = 1,0; esbeltez relativa en caliente λ̄θ = λ̄·√(ky,θ/kE,θ), con λ̄ = (Lcr/i)/(93,9·ε) y ε = √(235/fy[MPa]); χfi = 1/(φθ + √(φθ² − λ̄θ²)), φθ = ½·[1 + α·λ̄θ + λ̄θ²], α = 0,65·ε. kE,θ según EN 1993-1-2 Tabla 3.1 (1,0 hasta 100 °C; 0,9 a 200; 0,8 a 300; 0,7 a 400; 0,6 a 500; 0,31 a 600; 0,13 a 700; 0,09 a 800; 0,0675 a 900; 0,045 a 1000; 0,0225 a 1100; 0 a 1200 °C). Pandeo por flexión respecto del eje de menor radio de giro; Lcr la define el calculista (para pilares arriostrados de un edificio de varios pisos, EN 1993-1-2 §4.2.3.2(5) permite 0,5·L en pisos intermedios y 0,7·L en el último). Se supone temperatura uniforme en el elemento. No incluye pandeo lateral-torsional; la flexión y la flexo-compresión se verifican en la segunda tabla cuando la combinación de incendio tiene momento; secciones clase 4 (paredes muy esbeltas, p. ej. C/CA, Tubest) requieren área efectiva y θcr = 350 °C (§4.2.3.6): el resultado para ellas es solo referencial.</div>
     </div>
 
     <div class="panel">
@@ -44889,23 +44977,27 @@ function renderAsimilacionFuego(container) {
     </div>
 
     <div class="panel">
-      <h3>6 · Informe de asimilación (memoria de cálculo)</h3>
-      <div class="note" style="margin-bottom:.6rem">Datos para el informe. El informe incluye introducción, descripción de la estructura, marco regulatorio, desarrollo teórico con fórmulas, tablas, gráficos, resultados y conclusiones, con los elementos y parámetros de esta calculadora.</div>
+      <h3>6 · Memoria de cálculo</h3>
+      <div class="note" style="margin-bottom:.6rem">Datos para la portada (formato estándar de las memorias de ING: antecedentes y cuadro de revisiones) y para el texto. El proyecto es el «Título del proyecto» de la planilla. Los campos vacíos de fecha, revisión, descripción y elaboró toman los valores por defecto del Constructor de Memorias.</div>
       <div class="field-grid">
-        <div class="field"><label>Cliente / mandante</label><input type="text" id="afi_cliente" placeholder="Ej: CMPC"></div>
-        <div class="field"><label>Ubicación</label><input type="text" id="afi_ubic" placeholder="Ej: Los Ángeles, Región del Biobío"></div>
-        <div class="field"><label>Edificio / estructura</label><input type="text" id="afi_edif" placeholder="Ej: Ampliación Nave 4/4"></div>
-        <div class="field"><label>Destino (OGUC)</label><input type="text" id="afi_destino" list="dl_afi_destino" placeholder="Ej: Establecimiento industrial"><datalist id="dl_afi_destino"><option value="Establecimiento industrial"></option><option value="Establecimiento de bodegaje"></option><option value="Supermercados y centros comerciales"></option><option value="Oficinas"></option><option value="Habitacional"></option></datalist></div>
+        <div class="field"><label>Mandante</label><input type="text" data-noupper id="afi_cliente" placeholder="Ej: CMPC"></div>
+        <div class="field"><label>Ubicación</label><input type="text" data-noupper id="afi_ubic" placeholder="Ej: Los Ángeles, Región del Biobío"></div>
+        <div class="field"><label>Edificio / estructura</label><input type="text" data-noupper id="afi_edif" placeholder="Ej: Ampliación Nave 4/4"></div>
+        <div class="field"><label>Destino (OGUC)</label><input type="text" data-noupper id="afi_destino" list="dl_afi_destino" placeholder="Ej: Establecimiento industrial"><datalist id="dl_afi_destino"><option value="Establecimiento industrial"></option><option value="Establecimiento de bodegaje"></option><option value="Supermercados y centros comerciales"></option><option value="Oficinas"></option><option value="Habitacional"></option></datalist></div>
         <div class="field"><label>Clasificación OGUC Art. 4.3.3 (tipo)</label><select id="afi_tipo"><option value="">— no indicar —</option><option value="a">Tipo a</option><option value="b">Tipo b</option><option value="c">Tipo c</option><option value="d">Tipo d</option></select></div>
-        <div class="field"><label>N° de informe / revisión</label><input type="text" id="afi_num" placeholder="Ej: INF-FU-001 Rev. A"></div>
-        <div class="field"><label>Preparado por</label><input type="text" id="afi_autor"></div>
-        <div class="field"><label>Profesión (preparado por)</label><input type="text" id="afi_autorProf" placeholder="Ej: Ingeniero Civil"></div>
-        <div class="field"><label>Revisado / aprobado por</label><input type="text" id="afi_revisor"></div>
-        <div class="field"><label>Profesión (revisado por)</label><input type="text" id="afi_revisorProf" placeholder="Ej: Ingeniero Civil Estructural"></div>
+        <div class="field"><label>Código del documento</label><input type="text" data-noupper id="afi_num" placeholder="Ej: MC-FU-001"></div>
+        <div class="field"><label>Fecha</label><input type="text" data-noupper id="afi_fecha" placeholder="vacío = hoy"></div>
+        <div class="field"><label>Revisión</label><input type="text" data-noupper id="afi_rev" placeholder="0"></div>
+        <div class="field"><label>Descripción de la revisión</label><input type="text" data-noupper id="afi_descRev" list="dl_afi_descRev" placeholder="Emitida para revisión"><datalist id="dl_afi_descRev">${MCM_REVS.map(x => `<option value="${x}"></option>`).join('')}</datalist></div>
+        <div class="field"><label>Elaboró</label><input type="text" data-noupper id="afi_autor" list="dl_afi_ing" placeholder="${MCM_ING[0]}"><datalist id="dl_afi_ing">${MCM_ING.map(x => `<option value="${x}"></option>`).join('')}</datalist></div>
+        <div class="field"><label>Revisó</label><input type="text" data-noupper id="afi_revisor" list="dl_afi_ing"></div>
         <div class="field" style="grid-column:1/-1"><label>Descripción de la estructura (texto libre)</label><textarea id="afi_desc" rows="4" style="width:100%;box-sizing:border-box;font-family:'IBM Plex Sans',sans-serif;font-size:.9rem;padding:.5rem;border:1px solid var(--input-border);border-radius:4px;background:var(--input-bg);color:var(--ink)" placeholder="Ej: Galpón de 34,4 m de luz con marcos de columnas de hormigón armado y vigas de techo reticuladas de acero en perfiles circulares Sch 40..."></textarea></div>
       </div>
-      <button type="button" class="print-btn" id="afi_imprimir" style="margin-top:.9rem">📑 Imprimir informe de asimilación</button>
-      <div class="note" style="margin-top:.4rem">En el diálogo de impresión elija "Guardar como PDF" para obtener el informe en PDF. Los botones "Imprimir completo" y "Resumen" siguen entregando la hoja de cálculo tipo planilla.</div>
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.9rem">
+        <button type="button" class="print-btn" id="afi_imprimir">📑 Memoria</button>
+        <button type="button" class="print-btn" id="afi_imprimirDet">📘 Memoria detallada</button>
+      </div>
+      <div class="note" style="margin-top:.4rem"><b>Memoria</b>: informe con antecedentes, marco regulatorio, desarrollo teórico, tablas, gráficos, resultados por elemento y conclusiones. <b>Memoria detallada</b>: lo mismo, más un capítulo con el desarrollo completo de los cálculos de cada elemento (perímetro y masividad, fila de tabla IDIEM, pasos del cálculo térmico con valores sustituidos, tabla minuto a minuto, ky,θ y fy,θ en cada tiempo de control, temperatura y tiempo críticos, pandeo en caliente, acero con revestimiento y gráficos propios). En el diálogo de impresión elija "Guardar como PDF". Los botones "Imprimir completo" y "Resumen" siguen entregando la hoja de cálculo tipo planilla.</div>
     </div>
 
     <div id="printSheetCompleto"></div>
@@ -44914,8 +45006,9 @@ function renderAsimilacionFuego(container) {
   `;
 
   const body = document.getElementById('af_body');
-  const tipoOpts = [['I-H','I / H'],['U','Canal U'],['L','Ángulo L'],['CHS','Tubo circular / cañería'],['RHS','Tubo RHS/SHS o cajón'],['TUB','Tubest'],['C','Conformado en frío C/CA'],['DECK','Placa colaborante']].map(t => `<option value="${t[0]}">${t[1]}</option>`).join('');
-  const inp = (f, w) => `<input type="text" inputmode="decimal" data-f="${f}" style="min-width:${w||54}px">`;
+  const cargas = document.getElementById('af_cargas');
+  const tipoOpts = AF_TIPOS.map(t => `<option value="${t[0]}" title="${t[2]}">${t[1]}</option>`).join('');
+  const inp = (f, w) => `<input type="text" inputmode="decimal" data-f="${f}" style="min-width:${w||46}px;width:${w||46}px">`;
 
   function addRow(pre) {
     if (body.children.length >= AF_MAX) return;
@@ -44923,15 +45016,22 @@ function renderAsimilacionFuego(container) {
     tr.innerHTML = `
       <td class="num" data-role="n"></td>
       <td><input type="text" data-f="nombre" style="min-width:110px" placeholder="Ej: Viga V1"></td>
-      <td><select data-f="rol" style="min-width:74px"><option value="viga">Viga</option><option value="pilar">Pilar</option></select></td>
-      <td><select data-f="origen" style="min-width:92px"><option value="catalogo">Catálogo</option><option value="manual">Manual</option></select></td>
-      <td><select data-f="desig" style="min-width:170px">${afOpciones()}</select></td>
-      <td><select data-f="tipo" style="min-width:120px">${tipoOpts}</select></td>
-      <td>${inp('h')}</td><td>${inp('b')}</td><td>${inp('tw',46)}</td><td>${inp('tf',46)}</td><td>${inp('r',40)}</td><td>${inp('A',58)}</td>
-      <td><input type="text" inputmode="decimal" data-f="em" style="min-width:44px" placeholder="glob." list="dl_af_emrow"></td><td><input type="text" inputmode="decimal" data-f="Fy" style="min-width:64px" list="dl_af_fy"></td><td>${inp('sigma',64)}</td>
-      <td>${inp('N',56)}</td><td>${inp('Lcr',50)}</td><td><input type="text" inputmode="decimal" data-f="iUser" style="min-width:50px" placeholder="auto"></td>
+      <td><select data-f="rol" style="min-width:44px" title="V = viga (3 caras) · P = pilar (4 caras)"><option value="viga" title="Viga, 3 caras">V</option><option value="pilar" title="Pilar, 4 caras">P</option></select></td>
+      <td><select data-f="origen" style="min-width:52px" title="Cat. = catálogo · Man. = manual"><option value="catalogo">Cat.</option><option value="manual">Man.</option></select></td>
+      <td><select data-f="desig" style="min-width:110px;max-width:130px">${afOpciones()}</select></td>
+      <td><select data-f="tipo" style="min-width:54px">${tipoOpts}</select></td>
+      <td>${inp('h')}</td><td>${inp('b')}</td><td>${inp('tw',40)}</td><td>${inp('tf',40)}</td><td>${inp('r',34)}</td><td>${inp('A',50)}</td>
+      <td><input type="text" inputmode="decimal" data-f="em" style="min-width:40px;width:40px" placeholder="glob." list="dl_af_emrow"></td><td><input type="text" inputmode="decimal" data-f="Fy" style="min-width:52px;width:52px" list="dl_af_fy"></td><td>${inp('sigma',52)}</td>
+      <td>${inp('N',44)}</td><td>${inp('Lcr',40)}</td><td><input type="text" inputmode="decimal" data-f="iUser" style="min-width:42px;width:42px" placeholder="auto"></td>
       <td><button type="button" class="btn-remove" title="Eliminar">✕</button></td>`;
     body.appendChild(tr);
+    // fila de estados de carga del mismo elemento (misma posición en #af_cargas)
+    const tc = document.createElement('tr');
+    tc.innerHTML = `<td class="num" data-role="n"></td><td data-role="nom" style="font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></td>` +
+      ['ND','NL','NS','MD','ML','MS'].map(k => `<td><input type="text" inputmode="decimal" data-f="${k}"></td>`).join('') +
+      `<td><input type="text" inputmode="decimal" data-f="WUser" placeholder="auto"></td><td data-role="rige" style="font-size:.72rem"></td><td class="num" data-role="nm" style="font-size:.72rem"></td><td class="num" data-role="sig" style="font-size:.78rem"></td>`;
+    cargas.appendChild(tc);
+    if (pre && pre.cargas) Object.keys(pre.cargas).forEach(k => { const e = tc.querySelector(`[data-f="${k}"]`); if (e) e.value = pre.cargas[k]; });
     const q = f => tr.querySelector(`[data-f="${f}"]`);
     q('desig').value = (pre && pre.desig) || 'IPE300';
     q('rol').value = (pre && pre.rol) || 'viga';
@@ -44958,9 +45058,12 @@ function renderAsimilacionFuego(container) {
       const q = f => tr.querySelector(`[data-f="${f}"]`);
       const num = f => { const v = parseFloat(String(q(f).value).replace(',', '.')); return isNaN(v) ? 0 : v; };
       const manual = q('origen').value === 'manual';
-      const perfil = manual ? 'Manual' : q('desig').value;
+      const perfil = manual ? 'Manual' : afDesigCorta(q('desig').value);
       const pc = manual ? null : afCatalogo().find(x => x.desig === q('desig').value);
-      return {imin: pc && pc.imin ? pc.imin : 0, N:num('N'), Lcr:num('Lcr'), iUser:num('iUser'), n:i+1, nombre: q('nombre').value.trim() || ('Elemento ' + (i+1)), rol: q('rol').value, origen: manual ? 'Manual' : 'Catálogo',
+      const tc = cargas.children[i];
+      const nc = f => { const e = tc ? tc.querySelector(`[data-f="${f}"]`) : null; const v = e ? parseFloat(String(e.value).replace(',', '.')) : NaN; return isNaN(v) ? 0 : v; };
+      return {ND:nc('ND'), NL:nc('NL'), NS:nc('NS'), MD:nc('MD'), ML:nc('ML'), MS:nc('MS'), WUser:nc('WUser'), Wcat: pc && pc.Wcat ? pc.Wcat : 0,
+        imin: pc && pc.imin ? pc.imin : 0, N:num('N'), Lcr:num('Lcr'), iUser:num('iUser'), n:i+1, nombre: q('nombre').value.trim() || ('Elemento ' + (i+1)), rol: q('rol').value, origen: manual ? 'Manual' : 'Catálogo',
         perfil, tipo: q('tipo').value, h:num('h'), b:num('b'), tw:num('tw'), tf:num('tf'), r:num('r'), A:num('A'), Fy:num('Fy'), sigma:num('sigma'), em:num('em')};
     });
   }
@@ -45041,6 +45144,25 @@ function renderAsimilacionFuego(container) {
       </table>
       <div class="note">* radio de giro ingresado por el usuario; sin asterisco, calculado del perfil. tcr = minuto en que Nb,fi,t,Rd baja de N.</div>`;
 
+    // estados de carga: rótulos y resultados de la combinación
+    Array.from(cargas.children).forEach((tc, i) => {
+      const r = res[i]; if (!r) return;
+      tc.querySelector('[data-role="n"]').textContent = i + 1;
+      tc.querySelector('[data-role="nom"]').textContent = r.nombre;
+      const w = tc.querySelector('[data-f="WUser"]'); if (w) w.placeholder = r.Wel > 0 && !(r.WUser > 0) ? fmt1(r.Wel) : (r.WUser > 0 ? '' : 'ingresar');
+      const g = r.comb ? r.comb.gov : null;
+      tc.querySelector('[data-role="rige"]').textContent = g ? g.nom : 'manual';
+      tc.querySelector('[data-role="nm"]').textContent = g ? fmt2(g.N) + ' · ' + fmt2(g.M) : (r.N > 0 ? fmt2(r.N) + ' · —' : '—');
+      tc.querySelector('[data-role="sig"]').innerHTML = r.comb && r.comb.faltaW ? '<span class="chip warn">falta Wel</span>' : (r.sigma > 0 ? fmt0(r.sigma) : '—');
+    });
+    const conFlex = res.filter(r => r.flex);
+    document.getElementById('af_flex').innerHTML = !conFlex.length ? '<div class="note">Flexión y flexo-compresión en caliente: se verifican cuando hay momento en la combinación de incendio (sección 2b).</div>' : `
+      <table class="results">
+        <tr><th>N°</th><th>Elemento</th><th style="text-align:right">Mfi (tonf·m)</th><th style="text-align:right">Wel (cm³)</th><th style="text-align:right">θ ${rfT}</th><th style="text-align:right">ky,θ</th><th style="text-align:right">κ1</th><th style="text-align:right">Mfi,Rd (tonf·m)</th><th>Flexión</th><th style="text-align:right">N/Nb,fi + k·M/MRd</th><th>Flexo-compresión</th></tr>
+        ${conFlex.map(r => { const x = r.flex, it = x.inter; return `<tr><td>${r.n}</td><td>${esc(r.nombre)}</td><td class="num">${fmt2(r.M)}</td><td class="num">${fmt1(r.Wel)}</td><td class="num">${fmt0(x.th)} °C</td><td class="num">${fmt3(x.ky)}</td><td class="num">${fmt2(x.kappa1)}</td><td class="num"><b>${fmt2(x.MRd)}</b></td>
+          <td>${x.okM ? chip(true, 'Cumple') : chip(false, '', 'No cumple')}</td><td class="num">${it ? fmt3(it.util) : '—'}</td><td>${it ? (it.ok ? chip(true, 'Cumple') : chip(false, '', 'No cumple')) : (r.N > 0 ? '<span class="chip neutral">Falta Lcr</span>' : '<span class="chip neutral">N = 0</span>')}</td></tr>`; }).join('')}
+      </table>
+      <div class="note">Flexión: Mfi,t,Rd = ky,θ·Wel·fy/(γM,fi·κ1·κ2), EN 1993-1-2 §4.2.3.4 (clase 3; conservador para clases 1 y 2), κ1 = 0,7 viga sin protección expuesta a 3 caras con losa y 1,0 a 4 caras (§4.2.3.3), κ2 = 1,0. Flexo-compresión: ec. 4.21c de §4.2.3.5 con χmin,fi, βM = 1,1 (momento uniforme, valor que da el mayor ky) y ky ≤ 3. No incluye pandeo lateral-torsional (se supone ala comprimida arriostrada).</div>`;
     const conSigma = res.filter(r => r.ok !== null);
     const req = conSigma.filter(r => !r.ok).length;
     const sinTabla = res.filter(r => r.esp.stofire.v == null && r.esp.cerefire.v == null).length;
@@ -45048,6 +45170,7 @@ function renderAsimilacionFuego(container) {
       <div class="verdict-row"><span>Resistencia al fuego exigida</span><span class="mono">${rfT}</span></div>
       <div class="verdict-row"><span>Elementos analizados</span><span class="mono">${res.length}</span></div>
       <div class="verdict-row"><span>Elementos con σ que requieren protección en ${rfT}</span><span>${conSigma.length ? (req ? '<span class="chip bad">' + req + ' de ' + conSigma.length + '</span>' : chip(true, 'Ninguno')) : '<span class="chip neutral">Sin σ ingresado</span>'}</span></div>
+      ${conFlex.length ? `<div class="verdict-row"><span>Elementos que fallan a flexión o flexo-compresión en caliente en ${rfT}</span><span>${conFlex.some(r => !r.flex.okM || (r.flex.inter && !r.flex.inter.ok)) ? '<span class="chip bad">' + conFlex.filter(r => !r.flex.okM || (r.flex.inter && !r.flex.inter.ok)).length + ' de ' + conFlex.length + '</span>' : chip(true, 'Ninguno')}</span></div>` : ''}
       ${conPand.length ? `<div class="verdict-row"><span>Elementos comprimidos que fallan por pandeo en caliente en ${rfT}</span><span>${conPand.some(r => !r.pand.ok) ? '<span class="chip bad">' + conPand.filter(r => !r.pand.ok).length + ' de ' + conPand.length + '</span>' : chip(true, 'Ninguno')}</span></div>` : ''}
       <div class="verdict-row"><span>Elementos sin espesor en tablas IDIEM (fuera de rango o ${rfT} sin tabla)</span><span>${sinTabla ? '<span class="chip warn">' + sinTabla + ' — requieren otra solución (placas, mortero u otro producto)</span>' : chip(true, 'Ninguno')}</span></div>`;
 
@@ -45060,18 +45183,23 @@ function renderAsimilacionFuego(container) {
     if (tr && (e.target.dataset.f === 'origen' || e.target.dataset.f === 'desig')) syncRow(tr);
     recalc();
   });
-  body.addEventListener('click', e => { const b = e.target.closest('.btn-remove'); if (!b) return; b.closest('tr').remove(); recalc(); });
+  body.addEventListener('click', e => { const b = e.target.closest('.btn-remove'); if (!b) return; const tr = b.closest('tr'); const i = Array.from(body.children).indexOf(tr); tr.remove(); if (cargas.children[i]) cargas.children[i].remove(); recalc(); });
+  cargas.addEventListener('input', recalc);
   document.getElementById('af_add').addEventListener('click', () => { addRow(); recalc(); });
-  document.getElementById('afi_imprimir').addEventListener('click', () => {
+  const imprimirInforme = detallada => {
     if (!ultimo) return;
-    const v = id => (document.getElementById(id).value || '').trim();
-    const meta = {cliente:v('afi_cliente'), ubic:v('afi_ubic'), edif:v('afi_edif'), destino:v('afi_destino'), tipo:v('afi_tipo'), num:v('afi_num'), autor:v('afi_autor'), autorProf:v('afi_autorProf'), revisor:v('afi_revisor'), revisorProf:v('afi_revisorProf'), desc:v('afi_desc')};
-    document.getElementById('printSheetInforme').innerHTML = afInformeHtml(ultimo.p, ultimo.res, meta);
+    const v = id => { const e = document.getElementById(id); return e ? (e.value || '').trim() : ''; };
+    const pw = (typeof PROYECTO_POWER !== 'undefined' && PROYECTO_POWER) ? PROYECTO_POWER : {};
+    const meta = {cliente:v('afi_cliente') || pw.mandante || '', ubic:v('afi_ubic'), edif:v('afi_edif'), destino:v('afi_destino'), tipo:v('afi_tipo'), num:v('afi_num') || pw.codigo || '',
+      fecha:v('afi_fecha') || MCM_HOY(), rev:v('afi_rev') || '0', descRev:v('afi_descRev') || MCM_REVS[0], autor:v('afi_autor') || MCM_ING[0], revisor:v('afi_revisor'), desc:v('afi_desc')};
+    document.getElementById('printSheetInforme').innerHTML = afInformeHtml(ultimo.p, ultimo.res, meta, {detallada});
     document.documentElement.classList.add('informe-print-active');
     const limpiar = () => { document.documentElement.classList.remove('informe-print-active'); window.removeEventListener('afterprint', limpiar); };
     window.addEventListener('afterprint', limpiar);
     window.__printOficial = true; setTimeout(() => window.print(), 150);
-  });
+  };
+  document.getElementById('afi_imprimir').addEventListener('click', () => imprimirInforme(false));
+  document.getElementById('afi_imprimirDet').addEventListener('click', () => imprimirInforme(true));
   ['af_rf','af_rho','af_caModo','af_ca','af_alfa','af_ef','af_em','af_phi','af_ksh','af_dt','af_prodMem','af_lamP'].forEach(id => document.getElementById(id).addEventListener('input', recalc));
 
   // Ejemplos del informe (puntos 5.1.1 y 5.2.1)
@@ -45164,7 +45292,8 @@ function afGraficoKyKe() {
 }
 
 // Informe de asimilación tipo memoria de cálculo (impresión aparte).
-function afInformeHtml(p, res, meta) {
+function afInformeHtml(p, res, meta, opts) {
+  const det = !!(opts && opts.detallada);   // memoria detallada: agrega el desarrollo completo de los cálculos por elemento
   const rfT = afRfTxt(p.rf);
   const proyecto = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META.proyecto) ? PROYECTO_META.proyecto : '';
   const fecha = new Date().toLocaleDateString('es-CL', {day:'numeric', month:'long', year:'numeric'});
@@ -45172,15 +45301,27 @@ function afInformeHtml(p, res, meta) {
   const edif = meta.edif || 'la estructura en estudio';
   const vigas = res.filter(r => r.rol === 'viga'), pilares = res.filter(r => r.rol === 'pilar');
   const conSig = res.filter(r => r.ok !== null), conPand = res.filter(r => r.pand);
-  const reqProt = res.filter(r => r.ok === false || (r.pand && !r.pand.ok));
+  const flexFalla = r => !!(r.flex && (!r.flex.okM || (r.flex.inter && !r.flex.inter.ok)));
+  const reqProt = res.filter(r => r.ok === false || (r.pand && !r.pand.ok) || flexFalla(r));
+  const conComb = res.filter(r => r.comb), conFlex = res.filter(r => r.flex);
+  let n6 = 0; const s6 = () => '6.' + (++n6);
+  const tablaComb = () => !conComb.length ? '' : `${TB('Solicitaciones en situación de incendio — AISC 360-16 Anexo 4, ec. (A-4-1)')}
+    <table class="inf-t"><tr><th rowspan="2">N°</th><th rowspan="2">Elemento</th><th colspan="3">N nominal (tonf)</th><th colspan="3">M nominal (tonf·m)</th><th rowspan="2">Combinación que rige</th><th rowspan="2">Nfi (tonf)</th><th rowspan="2">Mfi (tonf·m)</th><th rowspan="2">Wel (cm³)</th><th rowspan="2">σfi (kg/cm²)</th></tr>
+    <tr><th>D</th><th>L</th><th>S</th><th>D</th><th>L</th><th>S</th></tr>
+    ${conComb.map(r => { const g = r.comb.gov; return `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${N(r.ND,2)}</td><td>${N(r.NL,2)}</td><td>${N(r.NS,2)}</td><td>${N(r.MD,2)}</td><td>${N(r.ML,2)}</td><td>${N(r.MS,2)}</td><td>${g.nom}</td><td>${N(g.N,2)}</td><td>${N(g.M,2)}</td><td>${N(r.Wel,1)}</td><td><b>${r.comb.faltaW ? 'falta Wel' : N(g.sig,0)}</b></td></tr>`; }).join('')}</table>
+    <p style="font-size:8.5pt;margin-top:-.5rem">N positivo = compresión. σfi = |Nfi|/A + |Mfi|/Wel. Rige la combinación con mayor σfi. Los demás elementos usan σfi y N ingresados directamente.</p>`;
+  const tablaFlex = () => !conFlex.length ? '' : `${TB('Flexión y flexo-compresión en caliente, acero sin protección, ' + rfT + ' (EN 1993-1-2 §4.2.3.4 y §4.2.3.5)')}
+    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Mfi (tonf·m)</th><th>Nfi (tonf)</th><th>θa (°C)</th><th>ky,θ</th><th>κ1</th><th>Mfi,t,Rd (tonf·m)</th><th>Flexión</th><th>Interacción 4.21c</th><th>Flexo-compresión</th></tr>
+    ${conFlex.map(r => { const x = r.flex, it = x.inter; return `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${N(r.M,2)}</td><td>${N(r.N,2)}</td><td>${N(x.th,0)}</td><td>${N(x.ky,4)}</td><td>${N(x.kappa1,2)}</td><td><b>${N(x.MRd,2)}</b></td><td class="${x.okM ? 'ok' : 'bad'}">${x.okM ? 'CUMPLE' : 'NO CUMPLE'}</td><td>${it ? N(it.util,3) : '—'}</td><td class="${it ? (it.ok ? 'ok' : 'bad') : ''}">${it ? (it.ok ? 'CUMPLE' : 'NO CUMPLE') : (r.N > 0 ? 'falta Lcr' : 'No aplica (N = 0)')}</td></tr>`; }).join('')}</table>`;
   const sinTabla = res.filter(r => r.esp.stofire.v == null && r.esp.cerefire.v == null);
   let fig = 0, tab = 0;
   const F = t => `<div class="inf-cap">Figura @@FIG@@: ${t}</div>`;
   const TB = t => `<div class="inf-cap">Tabla @@TAB@@: ${t}</div>`;
 
   const tablaElementos = `${TB('Elementos estructurales de acero analizados')}
-    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Función</th><th>Perfil</th><th>Tipo</th><th>h (mm)</th><th>b (mm)</th><th>tw (mm)</th><th>tf (mm)</th><th>A (cm²)</th><th>Fy (kg/cm²)</th></tr>
-    ${res.map(r => `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${r.rol === 'viga' ? 'Viga (3 caras)' : 'Pilar (4 caras)'}</td><td class="l">${esc(r.perfil)}</td><td>${esc(r.tipo)}</td><td>${N(r.h,1)}</td><td>${N(r.b,1)}</td><td>${N(r.tw,2)}</td><td>${N(r.tf,2)}</td><td>${N(r.A,2)}</td><td>${N(r.Fy,0)}</td></tr>`).join('')}</table>`;
+    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Func.</th><th>Perfil</th><th>Tipo</th><th>h (mm)</th><th>b (mm)</th><th>tw (mm)</th><th>tf (mm)</th><th>A (cm²)</th><th>Fy (kg/cm²)</th></tr>
+    ${res.map(r => `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${r.rol === 'viga' ? 'V' : 'P'}</td><td class="l" style="white-space:nowrap">${esc(r.perfil)}</td><td>${esc(afTipoCorto(r.tipo))}</td><td>${N(r.h,1)}</td><td>${N(r.b,1)}</td><td>${N(r.tw,2)}</td><td>${N(r.tf,2)}</td><td>${N(r.A,2)}</td><td>${N(r.Fy,0)}</td></tr>`).join('')}</table>
+    <p style="font-size:8.5pt;margin-top:-.5rem">${AF_LEYENDA}</p>`;
 
   const tablaMasiv = `${TB('Factores de masividad, asimilación viga → pilar y espesor de pintura intumescente para ' + rfT)}
     <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Función</th><th>F 3 caras (m⁻¹)</th><th>F 4 caras (m⁻¹)</th><th>F asimilado (m⁻¹)</th><th>Fila de tabla</th><th>Stofire (µm)</th><th>Cerefire X200 (µm)</th></tr>
@@ -45238,8 +45379,10 @@ function afInformeHtml(p, res, meta) {
   if (conEsp.length) concl.push(`Espesores de pintura intumescente para ${rfT}: ` + conEsp.map(r => `${esc(r.nombre)} (F = ${N(r.Fasim,0)} m⁻¹): Stofire ${r.esp.stofire.txt}, Cerefire X200 ${r.esp.cerefire.txt}`).join('; ') + '.');
   if (sinTabla.length) concl.push(`Los elementos ${sinTabla.map(r => esc(r.nombre)).join(', ')} quedan fuera del rango ensayado de las tablas IDIEM para ${rfT}; requieren otra solución de protección (placas, mortero proyectado u otro producto con ensayo aplicable).`);
   if (conSig.length) concl.push(`Sin protección, a los ${rfT.replace('F-','')} minutos la fluencia del acero se reduce a ky,θ·Fy; ` + conSig.map(r => `${esc(r.nombre)}: fy,θ = ${N(r.hReq.fyr,0)} kg/cm² frente a σfi = ${N(r.sigma,0)} kg/cm² (${r.ok ? 'cumple' : 'no cumple'})`).join('; ') + '.');
+  if (conComb.length) concl.push(`Las solicitaciones de incendio de ${conComb.map(r => esc(r.nombre)).join(', ')} se obtuvieron de sus estados de carga nominales con la combinación de AISC 360-16 Anexo 4, ec. (A-4-1).`);
+  if (conFlex.length) concl.push(`Flexión en caliente: ` + conFlex.map(r => `${esc(r.nombre)}: Mfi,t,Rd = ${N(r.flex.MRd,2)} tonf·m frente a Mfi = ${N(r.M,2)} tonf·m (${r.flex.okM ? 'cumple' : 'no cumple'})${r.flex.inter ? `, interacción N–M = ${N(r.flex.inter.util,2)} (${r.flex.inter.ok ? 'cumple' : 'no cumple'})` : ''}`).join('; ') + '.');
   if (conPand.length) concl.push(`Pandeo en caliente: ` + conPand.map(r => `${esc(r.nombre)}: Nb,fi,Rd = ${N(r.pand.req.Nb,2)} tonf frente a N = ${N(r.N,2)} tonf (${r.pand.ok ? 'cumple' : 'no cumple'})`).join('; ') + '.');
-  concl.push(reqProt.length ? `Los elementos ${reqProt.map(r => esc(r.nombre)).join(', ')} no alcanzan la resistencia ${rfT} por sí solos y deben protegerse con los espesores indicados o con otra solución aprobada.` : (conSig.length || conPand.length ? `Los elementos verificados alcanzan la resistencia ${rfT} sin protección adicional.` : `La necesidad de protección debe confirmarse ingresando las solicitaciones en situación de incendio.`));
+  concl.push(reqProt.length ? `Los elementos ${reqProt.map(r => esc(r.nombre)).join(', ')} no alcanzan la resistencia ${rfT} por sí solos y deben protegerse con los espesores indicados o con otra solución aprobada.` : (conSig.length || conPand.length || conFlex.length ? `Los elementos verificados alcanzan la resistencia ${rfT} sin protección adicional.` : `La necesidad de protección debe confirmarse ingresando las solicitaciones en situación de incendio.`));
 
   const html = `
   <div class="af-inf">
@@ -45256,10 +45399,13 @@ function afInformeHtml(p, res, meta) {
       .af-inf .inf-t td.ok{ color:#1E7A46; font-weight:700; } .af-inf .inf-t td.bad{ color:#B3261E; font-weight:700; }
       .af-inf .inf-cap{ font-size:9pt; font-weight:700; color:#1F3864; margin:.6rem 0 .15rem; }
       .af-inf .eq{ font-family: 'Cambria Math', 'Times New Roman', serif; font-size:11pt; text-align:center; margin:.4rem 0; }
-      .af-inf .portada{ text-align:center; padding-top:3.5cm; }
-      .af-inf .portada .t1{ font-size:20pt; font-weight:700; color:#1F3864; text-decoration:underline; margin-bottom:.6rem; }
-      .af-inf .portada .t2{ font-size:14pt; color:#2E5395; margin-bottom:2rem; }
-      .af-inf .portada table{ margin:2.5rem auto 0; font-size:10.5pt; text-align:left; } .af-inf .portada td{ padding:.2rem .6rem; }
+      .af-inf .portada{ padding-top:40px; }
+      .af-inf .portada .t1{ text-align:center; font-size:22pt; font-weight:700; color:#1F3864; text-decoration:underline; margin-bottom:12px; }
+      .af-inf .portada .t0{ text-align:center; font-size:13pt; color:#1F3864; margin-bottom:10px; }
+      .af-inf .portada .t2{ text-align:center; font-size:16pt; color:#2E5395; text-decoration:underline; margin-bottom:36px; }
+      .af-inf .portada .ant{ font-size:10.5pt; margin-bottom:18px; } .af-inf .portada .ant td{ padding:3px 6px; } .af-inf .portada .ant td.k{ width:28%; font-weight:700; background:#F2F5FA; text-align:left; }
+      .af-inf .portada .rev{ font-size:9pt; }
+      .af-inf .af-ix .ix{ margin:3px 0; font-weight:700; color:#1F3864; } .af-inf .af-ix .ix.l2{ font-weight:400; color:#111; margin-left:22px; }
       .af-inf .salto{ break-before:page; page-break-before:always; }
       .af-inf .keep{ break-inside:avoid; page-break-inside:avoid; }
       .af-inf h1, .af-inf h2{ break-after:avoid; page-break-after:avoid; }
@@ -45273,25 +45419,25 @@ function afInformeHtml(p, res, meta) {
       .af-inf .ficha-d{ font-size:8pt; font-weight:700; color:#333; margin-top:.2rem; }
       .af-inf .ficha-h{ font-size:9pt; font-weight:700; text-align:center; margin-bottom:.2rem; }
       .af-inf .inf-t tr.hlr td{ background:#e8eef7; font-weight:700; }
+      .af-inf h3{ font-size:11pt; color:#2E5395; margin:.75rem 0 .3rem; break-after:avoid; page-break-after:avoid; }
+      .af-inf .eq-l{ font-family:'Cambria Math','Times New Roman',serif; font-size:10.5pt; margin:.22rem 0 .22rem .6rem; break-inside:avoid; page-break-inside:avoid; }
+      .af-inf .paso{ border-left:3px solid #c9d3e3; padding:.15rem 0 .2rem .5rem; margin:.45rem 0; break-inside:avoid; page-break-inside:avoid; }
+      .af-inf .paso-t{ font-size:9.5pt; font-weight:700; color:#1F3864; }
     </style>
 
     <div class="portada">
-      <div class="t1">INFORME DE ASIMILACIÓN Y COMPORTAMIENTO AL FUEGO</div>
-      <div class="t2">Elementos estructurales de acero${meta.edif ? ' — ' + esc(meta.edif) : ''}</div>
-      <div style="font-size:12pt;font-weight:700">${esc(proyecto || meta.edif || '')}</div>
-      <table>
-        ${meta.cliente ? `<tr><td><b>Cliente</b></td><td>: ${esc(meta.cliente)}</td></tr>` : ''}
-        ${meta.ubic ? `<tr><td><b>Ubicación</b></td><td>: ${esc(meta.ubic)}</td></tr>` : ''}
-        ${meta.num ? `<tr><td><b>Informe</b></td><td>: ${esc(meta.num)}</td></tr>` : ''}
-        <tr><td><b>Fecha</b></td><td>: ${fecha}</td></tr>
-        ${meta.autor ? `<tr><td><b>Preparado por</b></td><td>: ${esc(meta.autor)}${meta.autorProf ? ', ' + esc(meta.autorProf) : ''}</td></tr>` : ''}
-        ${meta.revisor ? `<tr><td><b>Revisado por</b></td><td>: ${esc(meta.revisor)}${meta.revisorProf ? ', ' + esc(meta.revisorProf) : ''}</td></tr>` : ''}
-      </table>
+      <div class="t1">${det ? 'MEMORIA DE CÁLCULO DETALLADA' : 'MEMORIA DE CÁLCULO'}</div>
+      <div class="t0">Asimilación y comportamiento al fuego de elementos estructurales de acero</div>
+      <div class="t2">${esc(proyecto || meta.edif || '')}</div>
+      <table class="inf-t ant"><tbody>${[['Mandante', meta.cliente], ['Proyecto', proyecto || meta.edif], ['Código', meta.num], ['Ubicación', meta.ubic], ['Elaboró', meta.autor], ['Revisó', meta.revisor]].map(x => `<tr><td class="k">${x[0]}</td><td class="l">${esc(x[1] || '—')}</td></tr>`).join('')}</tbody></table>
+      <table class="inf-t rev"><tr><th>Rev.</th><th>Fecha</th><th>Descripción</th><th>Elaboró</th><th>Revisó</th></tr>
+        <tr><td>${esc(meta.rev || '')}</td><td>${esc(meta.fecha || fecha)}</td><td class="l">${esc(meta.descRev || '')}</td><td class="l">${esc(meta.autor || '')}</td><td class="l">${esc(meta.revisor || '')}</td></tr></table>
     </div>
 
     <div class="salto"></div>
-    <h1>ÍNDICE</h1>
-    <p>1. Introducción<br>2. Descripción de la estructura<br>3. Marco regulatorio<br>4. Resistencia al fuego exigida<br>5. Desarrollo teórico<br>&nbsp;&nbsp;&nbsp;5.1 Factor de masividad<br>&nbsp;&nbsp;&nbsp;5.2 Asimilación de vigas a soluciones ensayadas para pilares<br>&nbsp;&nbsp;&nbsp;5.3 Protección con pintura intumescente<br>&nbsp;&nbsp;&nbsp;5.4 Evolución térmica del acero sin protección<br>&nbsp;&nbsp;&nbsp;5.5 Pérdida de propiedades mecánicas<br>&nbsp;&nbsp;&nbsp;5.6 Pandeo en caliente de elementos comprimidos<br>6. Resultados (incluye resultados por elemento)<br>7. Conclusiones</p>
+    <h1 class="ix-h">ÍNDICE</h1>
+    <div class="af-ix"></div>
+    <div class="salto"></div>
 
     <h1>1. INTRODUCCIÓN</h1>
     <p>El presente informe tiene por objeto determinar el comportamiento frente a la acción del fuego de los elementos estructurales de acero de ${esc(edif)}${meta.cliente ? ', de ' + esc(meta.cliente) : ''}${meta.ubic ? ', ubicada en ' + esc(meta.ubic) : ''}, y fundamentar la asimilación de las vigas de acero a soluciones de protección pasiva ensayadas para elementos verticales (pilares), conforme a NCh 3684/1 y NCh 3684/2:2022.</p>
@@ -45312,6 +45458,7 @@ function afInformeHtml(p, res, meta) {
       <li>NCh 1916, NCh 1993 y NCh 934 — Carga combustible y clasificación de fuegos.</li>
       <li>EN 1991-1-2 (Eurocódigo 1, parte 1-2) — Acciones en estructuras expuestas al fuego.</li>
       <li>EN 1993-1-2 (Eurocódigo 3, parte 1-2) — Proyecto de estructuras de acero. Proyecto en situación de incendio.</li>
+      ${conComb.length ? '<li>ANSI/AISC 360-16 — Specification for Structural Steel Buildings, Anexo 4 «Structural Design for Fire Conditions», §4.1.4 (combinación de cargas en incendio), y ASCE/SEI 7-16 §2.5 (combinaciones para eventos extraordinarios).</li>' : ''}
       <li>Informes de ensayo IDIEM I.E. N° 305.751 (pintura intumescente Renner STOFIRE) e I.E. N° 300.465 (pintura intumescente CEREFIRE X200).</li>
     </ul>
     <p>Conforme a la OGUC, los elementos y componentes que no figuren en el Listado Oficial ni cuenten con certificación oficial deben acreditarse mediante la certificación de un profesional especialista que los asimile a alguno de los tipos del Art. 4.3.3, lo que se efectúa en este informe siguiendo NCh 3684.</p>
@@ -45357,26 +45504,48 @@ function afInformeHtml(p, res, meta) {
     <div class="eq">χfi = 1 / [φθ + √(φθ² − λ̄θ²)] &nbsp;&nbsp;&nbsp; φθ = ½·[1 + α·λ̄θ + λ̄θ²] &nbsp;&nbsp;&nbsp; α = 0,65·ε</div>
     <p>Se supone temperatura uniforme en el elemento y pandeo respecto del eje de menor radio de giro. No se incluye flexo-compresión ni pandeo lateral-torsional; las secciones clase 4 requieren área efectiva (EN 1993-1-2 §4.2.3.6).</p>
 
-    <div class="salto"></div>
-    <h1>6. RESULTADOS</h1>
-    <h2>6.1 Masividad, asimilación y espesor de protección</h2>
-    ${tablaMasiv}
-    <h2>6.2 Evolución térmica del acero sin protección</h2>
-    <div class="fig">${afGraficoTemp(res, p.em, true)}</div>${F('Temperatura del acero sin protección versus tiempo, por factor de masividad, y curva de incendio normalizado NCh 935/1')}
-    ${tablaTemp}
-    <h2>6.3 Verificación por tensión</h2>
-    ${tablaVerif}
-    ${conPand.length ? `<h2>6.4 Pandeo en caliente</h2>${tablaPand}` : ''}
+    ${conComb.length || conFlex.length ? `<h2>5.7 Solicitaciones en situación de incendio, flexión y flexo-compresión</h2>
+    <p>Cuando se dispone de los estados de carga nominales (sin mayorar) de un elemento, la resistencia requerida en incendio se obtiene con la combinación de AISC 360-16 Anexo 4 §4.1.4, la misma de ASCE/SEI 7-16 §2.5 para eventos extraordinarios:</p>
+    <div class="eq">(0,9 ó 1,2)·D + AT + 0,5·L + 0,2·S &nbsp;&nbsp;&nbsp;(A-4-1)</div>
+    <p>donde D es la carga muerta nominal, L la sobrecarga de uso nominal (se permite su reducción) y S la nieve nominal; la sobrecarga de techo no forma parte de la combinación. AT corresponde a los esfuerzos por dilatación térmica restringida, que no se consideran en esta memoria (elementos con libre dilatación). Se evalúan los factores 1,2 y 0,9 para D y rige el que produce la mayor tensión:</p>
+    <div class="eq">σfi = |Nfi|/A + |Mfi|/Wel</div>
+    <p>La resistencia a flexión en caliente se calcula con EN 1993-1-2 §4.2.3.4 (expresión de secciones clase 3, conservadora para clases 1 y 2) y la flexo-compresión con §4.2.3.5 (ec. 4.21c), con γM,fi = 1,0:</p>
+    <div class="eq">Mfi,t,Rd = ky,θ · Wel · fy / (γM,fi · κ1 · κ2)</div>
+    <div class="eq">Nfi / (χmin,fi · A · ky,θ · fy / γM,fi) + ky · Mfi / (Wel · ky,θ · fy / γM,fi) ≤ 1</div>
+    <div class="eq">ky = 1 − μy · Nfi / (χy,fi · A · ky,θ · fy / γM,fi) ≤ 3 &nbsp;&nbsp;&nbsp; μy = (1,2·βM − 3)·λ̄θ + 0,44·βM − 0,29 ≤ 0,8</div>
+    <p>κ1 = 1,0 para elementos expuestos en sus cuatro caras y 0,7 para vigas sin protección expuestas en tres caras con losa en la cuarta (§4.2.3.3); κ2 = 1,0. Se adopta βM = 1,1 (momento uniforme), que entrega el mayor ky, y χy,fi = χmin,fi, ambos del lado de la seguridad. No se incluye pandeo lateral-torsional: se supone el ala comprimida arriostrada por la losa o cubierta.</p>` : ''}
 
     <div class="salto"></div>
-    <h1>6.${conPand.length ? 5 : 4} RESULTADOS POR ELEMENTO</h1>
+    <h1>6. RESULTADOS</h1>
+    <h2>${s6()} Masividad, asimilación y espesor de protección</h2>
+    ${tablaMasiv}
+    ${conComb.length ? `<h2>${s6()} Solicitaciones en situación de incendio</h2>${tablaComb()}` : ''}
+    <h2>${s6()} Evolución térmica del acero sin protección</h2>
+    <div class="fig">${afGraficoTemp(res, p.em, true)}</div>${F('Temperatura del acero sin protección versus tiempo, por factor de masividad, y curva de incendio normalizado NCh 935/1')}
+    ${tablaTemp}
+    <h2>${s6()} Verificación por tensión</h2>
+    ${tablaVerif}
+    ${conPand.length ? `<h2>${s6()} Pandeo en caliente</h2>${tablaPand}` : ''}
+    ${conFlex.length ? `<h2>${s6()} Flexión y flexo-compresión en caliente</h2>${tablaFlex()}` : ''}
+
+    <div class="salto"></div>
+    <h2>${s6()} Resultados por elemento</h2>
     <p>Para cada elemento se muestra la sección con sus caras expuestas, la evolución de la temperatura del acero sin revestimiento y con el revestimiento de pintura intumescente (${p.prodMem === 'stofire' ? 'Stofire, IDIEM 305.751' : 'Cerefire X200, IDIEM 300.465'}) con el espesor de tabla para ${rfT}, y la comparación entre el factor de reducción de fluencia alcanzado (max = ky,θ) y el grado de utilización requerido (req = μ0 = σfi/Fy). La temperatura con revestimiento se estima con EN 1993-1-2 §4.2.5.2 y una conductividad efectiva λp,ef = ${N(p.lamP,4)} W/m·K; es informativa, ya que el espesor está respaldado por el ensayo IDIEM.</p>
     ${res.map(r => afFichaElemento(r, p, meta, F, TB)).join('')}
 
-    <h1>7. CONCLUSIONES</h1>
+    <h2>${s6()} Resumen de estatus y solución requerida</h2>
+    <p>La tabla resume, para cada elemento, su estatus frente a la exigencia ${rfT} sin protección (verificación por tensión y, cuando corresponde, a pandeo, flexión y flexo-compresión en caliente) y la solución requerida para cumplir. Los espesores provienen de las tablas IDIEM con la masividad asimilada a 4 caras.</p>
+    ${afTablaResumen(res, p, TB)}
+
+    ${det ? `<div class="salto"></div>
+    <h1>7. DESARROLLO DETALLADO DE LOS CÁLCULOS POR ELEMENTO</h1>
+    <p>Para cada elemento se desarrollan, con los valores sustituidos, todos los cálculos que sustentan los resultados del capítulo 6: factor de masividad, asimilación a la tabla de pilares y espesor de protección, evolución térmica del acero sin protección (pasos de cálculo de muestra y tabla minuto a minuto), pérdida de la tensión de fluencia en cada tiempo de control, temperatura y tiempo críticos, pandeo en caliente cuando corresponde y evolución térmica con revestimiento. Los valores intermedios se muestran redondeados; el cálculo se realiza sin redondeo.</p>
+    ${res.map((r, i) => afDetalleElemento(r, p, meta, i + 1)).join('')}
+    <div class="salto"></div>` : ''}
+    <h1>${det ? 8 : 7}. CONCLUSIONES</h1>
     <ul>${concl.map(c => `<li>${c}</li>`).join('')}</ul>
     <p>Las tensiones y esfuerzos en situación de incendio fueron calculados fuera de este informe e ingresados como datos. Los espesores de protección deben aplicarse según las recomendaciones del fabricante y controlarse en obra (espesor de película seca). La vigencia de los informes de ensayo debe verificarse a la fecha de la recepción de la obra.</p>
-    ${meta.autor || meta.revisor ? `<table style="margin:2.5rem auto 0;text-align:center"><tr>${meta.autor ? `<td style="padding:0 2.5rem"><div style="border-top:1px solid #000;padding-top:.3rem;min-width:180px">${esc(meta.autor)}${meta.autorProf ? '<br><span style="font-size:9.5pt">' + esc(meta.autorProf) + '</span>' : ''}<br><span style="font-size:9pt">Preparado por</span></div></td>` : ''}${meta.revisor ? `<td style="padding:0 2.5rem"><div style="border-top:1px solid #000;padding-top:.3rem;min-width:180px">${esc(meta.revisor)}${meta.revisorProf ? '<br><span style="font-size:9.5pt">' + esc(meta.revisorProf) + '</span>' : ''}<br><span style="font-size:9pt">Revisado / aprobado por</span></div></td>` : ''}</tr></table>` : ''}
+    ${memFirmas({autor: meta.autor, autorProf: '', revisor: meta.revisor, revisorProf: ''})}
   </div>`;
   const numerado = html.replace(/@@FIG@@/g, () => ++fig).replace(/@@TAB@@/g, () => ++tab);
   // Títulos numerados: cada título (h1/h2) se agrupa con el bloque que lo sigue para que nunca quede
@@ -45384,7 +45553,11 @@ function afInformeHtml(p, res, meta) {
   const tmp = document.createElement('div');
   tmp.innerHTML = numerado;
   const raiz = tmp.querySelector('.af-inf');
-  Array.from(raiz.querySelectorAll('h1, h2')).forEach(h => {
+  // índice automático (formato del Constructor de Memorias): capítulos en negrita y secciones numeradas con sangría
+  const ix = raiz.querySelector('.af-ix');
+  if (ix) ix.innerHTML = Array.from(raiz.querySelectorAll('h1, h2')).filter(h => !h.classList.contains('ix-h') && /^\d/.test(h.textContent.trim()))
+    .map(h => `<div class="ix${h.tagName === 'H2' ? ' l2' : ''}">${esc(h.textContent.trim())}</div>`).join('');
+  Array.from(raiz.querySelectorAll('h1, h2, h3')).forEach(h => {
     if (h.parentElement && h.parentElement.classList.contains('ficha')) return; // la ficha completa ya es indivisible
     const sig = h.nextElementSibling;
     const w = document.createElement('div');
@@ -45483,6 +45656,14 @@ function afFichaElemento(r, p, meta, capFig, capTab) {
     pandOk = nb != null && nb >= r.N;
     pandTxt = ` Como elemento comprimido (N = ${N(r.N,2)} tonf, Lcr = ${N(r.Lcr,2)} m), la resistencia a pandeo en caliente a ${rfT} ${r.curvaProt ? 'con revestimiento' : 'sin revestimiento'} es Nb,fi,Rd = ${N(nb,2)} tonf, por lo que ${pandOk ? 'cumple' : 'no cumple'} a pandeo.`;
   }
+  if (r.flex) {
+    const thP = r.curvaProt ? r.curvaProt.hitos[rfMin] : r.flex.th;
+    const k1 = r.curvaProt ? (r.kappa1 < 1 ? 0.85 : 1.0) : r.kappa1;
+    const pp = r.pand && thP != null ? afPandeo(r.A, r.Fy, r.Lcr, r.pand.i, thP) : null;
+    const fx = thP != null ? afFlexion(r, thP, k1, pp ? pp.chi : null, pp ? pp.lamT : null) : null;
+    if (fx) { const okF = fx.okM && (!fx.inter || fx.inter.ok); if (!okF) pandOk = false; else if (pandOk === null) pandOk = true;
+      pandTxt += ` Con Mfi = ${N(r.M,2)} tonf·m, la resistencia a flexión ${r.curvaProt ? 'con revestimiento' : 'sin revestimiento'} es Mfi,t,Rd = ${N(fx.MRd,2)} tonf·m (κ1 = ${N(k1,2)})${fx.inter ? ` y la interacción N–M vale ${N(fx.inter.util,2)}` : ''}, por lo que ${okF ? 'cumple' : 'no cumple'} a flexión${fx.inter ? ' y flexo-compresión' : ''}.`; }
+  }
   let status = req == null ? 'Sin σ' : (maxv != null && maxv >= req ? 'OK' : 'NO CUMPLE');
   if (pandOk === false) status = 'NO CUMPLE';
   else if (pandOk === true && status === 'Sin σ') status = 'OK';
@@ -45490,7 +45671,7 @@ function afFichaElemento(r, p, meta, capFig, capTab) {
     const ts = r.curva ? r.curva.hitos[t] : null, tp = r.curvaProt ? r.curvaProt.hitos[t] : null;
     return `<tr${t === rfMin ? ' class="hlr"' : ''}><td>F-${t}</td><td>${N(ts,0)}</td><td>${ts != null ? N(afKy(ts),2) : '—'}</td><td>${N(tp,0)}</td><td>${tp != null ? N(afKy(tp),2) : '—'}</td></tr>`;
   }).join('');
-  const titulo = `${rolTxt} ${esc(r.nombre)} — ${esc(r.perfil)}`;
+  const titulo = `${new RegExp('^' + rolTxt, 'i').test(r.nombre) ? '' : rolTxt + ' '}${esc(r.nombre)} — ${esc(r.perfil)}`;
   const concl = req == null
     ? `No se ingresó la tensión en situación de incendio, por lo que no se determina el grado de utilización requerido; ${r.curvaProt ? 'con el revestimiento indicado' : 'sin revestimiento'} el factor de reducción de fluencia alcanzado a ${rfT} es ${N(maxv,2)}.`
     : `Para ${r.rol === 'viga' ? 'la viga' : 'el pilar'} de la gráfica se obtiene que la reducción de resistencia alcanzada para ${rfT} ${r.curvaProt ? 'con revestimiento' : 'sin revestimiento'} es ${N(maxv,2)} y solo requiere ${N(req,2)}, por lo que ${status === 'OK' ? 'podría resistir ' + rfT : 'no alcanza a resistir ' + rfT + (r.curvaProt ? ' con el espesor indicado' : ' y requiere protección')}.`;
@@ -45516,6 +45697,439 @@ function afFichaElemento(r, p, meta, capFig, capTab) {
     </div>`;
 }
 
+
+/* ---- Memoria detallada: desarrollo completo de los cálculos por elemento ----
+   Reproduce paso a paso, con valores sustituidos, los mismos cálculos de calcAsimilacion
+   (masividad, fila de tabla IDIEM, ksh, método incremental EN 1993-1-2 §4.2.5.1 y §4.2.5.2,
+   ky,θ / kE,θ por interpolación en la Tabla 3.1, temperatura y tiempo críticos y pandeo §4.2.3.2).
+   Las rutinas *Det repiten la aritmética exacta de afCurva / afCurvaProt / afKy / afThetaCrit /
+   afPandeo / afRadioGiro, de modo que los valores mostrados coinciden con los de la planilla. */
+const AF_SB = 5.67e-8;
+const AF_DN = (v, d) => (v == null || !isFinite(v)) ? '—' : Number(v).toLocaleString('es-CL', {minimumFractionDigits:d, maximumFractionDigits:d});
+
+// Interpolación lineal en la Tabla 3.1 (ky,θ o kE,θ) con el desarrollo escrito.
+function afInterpDet(tab, th, sim) {
+  const N = AF_DN;
+  if (th == null || !isFinite(th)) return {v:null, txt:'—'};
+  if (th <= 100) return {v:1, txt:`θa = ${N(th,1)} °C ≤ 100 °C ⇒ ${sim} = 1,0000`};
+  if (th >= 1200) return {v:0, txt:`θa = ${N(th,1)} °C ≥ 1200 °C ⇒ ${sim} = 0`};
+  for (let i=1;i<tab.length;i++) if (th <= tab[i][0]) {
+    const [t0,k0] = tab[i-1], [t1,k1] = tab[i];
+    const v = k0 + (k1-k0)*(th-t0)/(t1-t0);
+    if (k0 === k1) return {v, txt:`${t0} °C < θa = ${N(th,1)} °C ≤ ${t1} °C (tramo de valor constante en la Tabla 3.1) ⇒ ${sim} = <b>${N(v,4)}</b>`};
+    return {v, txt:`${t0} °C < θa = ${N(th,1)} °C ≤ ${t1} °C: ${sim} = ${N(k0,4)} + (${N(k1,4)} − ${N(k0,4)})·(${N(th,1)} − ${t0})/(${t1} − ${t0}) = <b>${N(v,4)}</b>`};
+  }
+  return {v:0, txt:'—'};
+}
+// Calor específico EN 1993-1-2 §3.4.1.2 con el tramo y la sustitución.
+function afCaDet(th, p) {
+  const N = AF_DN;
+  if (!p.caVar) return {v:p.ca, txt:`ca = ${N(p.ca,0)} J/kg·K (valor constante adoptado)`};
+  const v = afCa(th);
+  if (th < 600) return {v, txt:`20 °C ≤ θa < 600 °C: ca = 425 + 0,773·θa − 1,69·10⁻³·θa² + 2,22·10⁻⁶·θa³ = 425 + 0,773·${N(th,2)} − 1,69·10⁻³·${N(th,2)}² + 2,22·10⁻⁶·${N(th,2)}³ = ${N(v,1)} J/kg·K`};
+  if (th < 735) return {v, txt:`600 °C ≤ θa < 735 °C: ca = 666 + 13002/(738 − θa) = 666 + 13002/(738 − ${N(th,2)}) = ${N(v,1)} J/kg·K`};
+  if (th < 900) return {v, txt:`735 °C ≤ θa < 900 °C: ca = 545 + 17820/(θa − 731) = 545 + 17820/(${N(th,2)} − 731) = ${N(v,1)} J/kg·K`};
+  return {v, txt:`900 °C ≤ θa ≤ 1200 °C: ca = 650 J/kg·K`};
+}
+
+// Acero sin protección: misma iteración que afCurva, registrando el estado minuto a minuto y los pasos de muestra.
+function afCurvaDet(F, pe, rfMin) {
+  const dt = pe.dt > 0 ? pe.dt : 5, tMax = 150*60;
+  const est = (t, th) => {
+    const m = t/60, tg = afIso(m);
+    const hc = pe.alfa*(tg - th);
+    const hr = pe.phi*pe.em*pe.ef*AF_SB*(Math.pow(tg+273,4) - Math.pow(th+273,4));
+    const ca = pe.caVar ? afCa(th) : pe.ca;
+    return {t, m, tg, th, hc, hr, hn: hc + hr, ca, d: pe.ksh*F/(ca*pe.rho)*(pe.alfa*(tg - th) + pe.phi*pe.em*pe.ef*5.67e-8*(Math.pow(tg+273,4) - Math.pow(th+273,4)))*dt};
+  };
+  let th = 20, t = 0, k = 0, pasoRf = null;
+  const pasos = [], filas = [est(0, 20)];
+  while (t < tMax - 1e-9) {
+    const s = est(t, th); k++;
+    if (k <= 3) pasos.push(Object.assign({k}, s));
+    if (rfMin && Math.abs(t + dt - rfMin*60) < 1e-6) pasoRf = Object.assign({k}, s);
+    th += s.d; t += dt;
+    if (Math.abs((t/60) % 1) < 1e-9 || Math.abs((t/60) % 1 - 1) < 1e-9) filas.push(est(t, th));
+  }
+  return {pasos, pasoRf, filas, dt};
+}
+// Acero protegido: misma iteración que afCurvaProt.
+function afCurvaProtDet(F, dp, p, rfMin) {
+  const dt = p.dt > 0 ? p.dt : 5, tMax = 150*60, lam = p.lamP > 0 ? p.lamP : 0.0064;
+  const rp = p.rhoP > 0 ? p.rhoP : 0, cpP = p.cpP > 0 ? p.cpP : 1000;
+  let th = 20, t = 0, k = 0, pasoRf = null;
+  const pasos = [], filas = [{t:0, th:20}];
+  while (t < tMax - 1e-9) {
+    const m = t/60, tg = afIso(m), tg2 = afIso(m + dt/60);
+    const ca = p.caVar ? afCa(th) : p.ca;
+    const phi = cpP*rp*dp*F/(ca*p.rho);
+    const d0 = lam*F*(tg - th)/(dp*ca*p.rho*(1 + phi/3))*dt - (Math.exp(phi/10) - 1)*(tg2 - tg);
+    let d = d0;
+    if (d < 0 && tg2 > tg) d = 0;
+    k++;
+    const s = {k, t, m, tg, tg2, th, ca, phi, d0, d, lam, dp, rp, cpP};
+    if (k <= 2) pasos.push(s);
+    if (rfMin && Math.abs(t + dt - rfMin*60) < 1e-6) pasoRf = s;
+    th += d; t += dt;
+    if (Math.abs((t/60) % 1) < 1e-9 || Math.abs((t/60) % 1 - 1) < 1e-9) filas.push({t:t/60, th});
+  }
+  return {pasos, pasoRf, filas, dt};
+}
+
+// Perímetro y masividad con la fórmula sustituida, según el tipo de sección.
+function afMasivDet(r) {
+  const N = AF_DN, {tipo, h, b, tw, tf, A} = r, rr = r.r || 0;
+  const L = [];
+  const fF = (P, cond) => `F${cond} = 10·P${cond}/A = 10·${N(P,1)}/${N(A,2)} = <b>${N(10*P/A,1)} m⁻¹</b>`;
+  if (tipo === 'I-H') {
+    const P4 = 2*h + 4*b + 2*Math.PI*rr - 8*rr - 2*tw, P3 = 2*h + 3*b + 2*Math.PI*rr - 8*rr - 2*tw;
+    L.push(`Perfil I/H, perímetro siguiendo el contorno del perfil (h = ${N(h,1)} mm, b = ${N(b,1)} mm, tw = ${N(tw,2)} mm, r = ${N(rr,1)} mm):`);
+    L.push(`P4 = 2h + 4b + 2πr − 8r − 2tw = 2·${N(h,1)} + 4·${N(b,1)} + 2π·${N(rr,1)} − 8·${N(rr,1)} − 2·${N(tw,2)} = ${N(P4,1)} mm`);
+    L.push(fF(P4, '4'));
+    L.push(`P3 = 2h + 3b + 2πr − 8r − 2tw = 2·${N(h,1)} + 3·${N(b,1)} + 2π·${N(rr,1)} − 8·${N(rr,1)} − 2·${N(tw,2)} = ${N(P3,1)} mm (ala superior en contacto con la losa)`);
+    L.push(fF(P3, '3'));
+  } else if (tipo === 'U') {
+    const P4 = 2*h + 4*b - 2*tw;
+    L.push(`Canal U, perímetro completo (h = ${N(h,1)} mm, b = ${N(b,1)} mm, tw = ${N(tw,2)} mm):`);
+    L.push(`P4 = 2h + 4b − 2tw = 2·${N(h,1)} + 4·${N(b,1)} − 2·${N(tw,2)} = ${N(P4,1)} mm`);
+    L.push(fF(P4, '4'));
+    L.push('Para canales no se tabula la condición de 3 caras: se usa el contorno completo.');
+  } else if (tipo === 'RHS' || tipo === 'TUB') {
+    const P4 = 2*(h + b), P3 = 2*h + b;
+    L.push(`${tipo === 'TUB' ? 'Perfil Tubest (Cintac)' : 'Tubo rectangular / cajón'}, perímetro proyectado (caja) (H = ${N(h,1)} mm, B = ${N(b,1)} mm):`);
+    L.push(`P4 = 2·(H + B) = 2·(${N(h,1)} + ${N(b,1)}) = ${N(P4,1)} mm`);
+    L.push(fF(P4, '4'));
+    L.push(`P3 = 2H + B = 2·${N(h,1)} + ${N(b,1)} = ${N(P3,1)} mm (cara superior en contacto con la losa)`);
+    L.push(fF(P3, '3'));
+  } else if (tipo === 'CHS') {
+    const P = Math.PI*h;
+    L.push(`Tubo circular (D = ${N(h,1)} mm, e = ${N(tw,2)} mm). El contorno circular no distingue una cara superior protegida:`);
+    L.push(`P = π·D = π·${N(h,1)} = ${N(P,1)} mm`);
+    L.push(fF(P, '4'));
+  } else if (tipo === 'L') {
+    const P = 2*(h + b);
+    L.push(`Ángulo (a = ${N(h,1)} mm, b = ${N(b,1)} mm):`);
+    L.push(`P = 2·(a + b) = 2·(${N(h,1)} + ${N(b,1)}) = ${N(P,1)} mm`);
+    L.push(fF(P, '4'));
+  } else if (tipo === 'C') {
+    L.push(`Perfil conformado en frío de pared delgada (e = ${N(tw,2)} mm), método de pared delgada:`);
+    L.push(`F = 2/e = 2/(${N(tw,2)}/1000 m) = <b>${N(2000/tw,1)} m⁻¹</b> (igual para 3 y 4 caras)`);
+  } else if (tipo === 'DECK') {
+    const k = tf > 0 ? tf : 1, Aef = 10*k*tw;
+    L.push(`Placa colaborante por metro de ancho (e = ${N(tw,2)} mm, k = ${N(k,3)} m de lámina por m de ancho):`);
+    L.push(`A = 10·k·e = 10·${N(k,3)}·${N(tw,2)} = ${N(Aef,2)} cm²/m`);
+    L.push(`P4 = 2000·k = ${N(2000*k,1)} mm/m (2 caras) ⇒ F4 = 10·${N(2000*k,1)}/${N(Aef,2)} = <b>${N(20000*k/Aef,1)} m⁻¹</b>`);
+    L.push(`P3 = 1000·k = ${N(1000*k,1)} mm/m (1 cara, hormigón encima) ⇒ F3 = 10·${N(1000*k,1)}/${N(Aef,2)} = <b>${N(10000*k/Aef,1)} m⁻¹</b>`);
+  }
+  return L;
+}
+
+// Radio de giro mínimo con el desarrollo (misma idealización que afRadioGiro).
+function afRadioDet(r) {
+  const N = AF_DN, {tipo, h, b, tw, tf} = r, L = [];
+  if (r.iUser > 0) { L.push(`i mín = ${N(r.iUser,2)} cm (valor ingresado por el calculista)`); return L; }
+  if (r.imin > 0) { L.push(`i mín = mín(ix; iy) = ${N(r.imin,2)} cm (catálogo Cintac del perfil Tubest)`); return L; }
+  if (tipo === 'CHS') {
+    const di = h - 2*tw;
+    L.push(`Tubo circular: i = √(D² + d²)/4, con d = D − 2e = ${N(h,1)} − 2·${N(tw,2)} = ${N(di,2)} mm`);
+    L.push(`i = √(${N(h,1)}² + ${N(di,2)}²)/4 = ${N(Math.sqrt(h*h + di*di)/4,2)} mm = <b>${N(Math.sqrt(h*h + di*di)/40,2)} cm</b>`);
+  } else if (tipo === 'RHS' || tipo === 'TUB') {
+    const t = tw, Ac = h*b - (h-2*t)*(b-2*t);
+    const Iy = (h*Math.pow(b,3) - (h-2*t)*Math.pow(b-2*t,3))/12, Ix = (b*Math.pow(h,3) - (b-2*t)*Math.pow(h-2*t,3))/12;
+    L.push(`Tubo rectangular idealizado sin radios: A = H·B − (H − 2t)·(B − 2t) = ${N(h,1)}·${N(b,1)} − ${N(h-2*t,2)}·${N(b-2*t,2)} = ${N(Ac,1)} mm²`);
+    L.push(`Ix = [B·H³ − (B − 2t)·(H − 2t)³]/12 = ${N(Ix/1e4,1)} cm⁴ ; Iy = [H·B³ − (H − 2t)·(B − 2t)³]/12 = ${N(Iy/1e4,1)} cm⁴`);
+    L.push(`i mín = √(mín(Ix; Iy)/A) = √(${N(Math.min(Ix,Iy),0)}/${N(Ac,1)}) = <b>${N(Math.sqrt(Math.min(Ix,Iy)/Ac)/10,2)} cm</b>`);
+  } else if (tipo === 'I-H') {
+    const Ac = 2*b*tf + (h-2*tf)*tw, Iy = 2*tf*Math.pow(b,3)/12 + (h-2*tf)*Math.pow(tw,3)/12;
+    L.push(`Perfil I/H idealizado en rectángulos (sin radios): A = 2·b·tf + (h − 2tf)·tw = 2·${N(b,1)}·${N(tf,2)} + ${N(h-2*tf,2)}·${N(tw,2)} = ${N(Ac,1)} mm²`);
+    L.push(`Iz (eje débil) = 2·tf·b³/12 + (h − 2tf)·tw³/12 = 2·${N(tf,2)}·${N(b,1)}³/12 + ${N(h-2*tf,2)}·${N(tw,2)}³/12 = ${N(Iy/1e4,1)} cm⁴`);
+    L.push(`i mín = √(Iz/A) = √(${N(Iy,0)}/${N(Ac,1)}) = <b>${N(Math.sqrt(Iy/Ac)/10,2)} cm</b>`);
+  } else if (tipo === 'U' || tipo === 'C') {
+    L.push(`Canal idealizado en rectángulos (alas y alma), eje débil por el centroide: i mín = <b>${N(afRadioGiro(r),2)} cm</b>`);
+  } else if (tipo === 'L') {
+    L.push(`Ángulo, eje principal menor v-v (aproximación): i ≈ 0,195·mín(a; b) = 0,195·${N(Math.min(h,b),1)} mm = <b>${N(afRadioGiro(r),2)} cm</b>`);
+  }
+  return L;
+}
+
+// Extracto de las tablas IDIEM en la fila de masividad del elemento.
+function afTablaIdiemDet(r, p) {
+  const N = AF_DN, F = r.Fasim;
+  if (F == null) return '<p>Sin masividad calculada: no se entra a las tablas IDIEM.</p>';
+  const fila = Math.max(60, Math.ceil(F/10 - 1e-9)*10);
+  const RFs = ['F15','F30','F60','F90','F120'];
+  const celda = (prod, rf) => {
+    if (rf === 'F120') return 'sin tabla';
+    if (fila > 390) return 'F > 390';
+    const x = (AF_TABLAS[prod][rf] || []).find(z => fila >= z[0] && fila <= z[1]);
+    return x ? `${x[2]}<br><span style="font-size:7pt">(filas ${x[0]}–${x[1]})</span>` : 'fuera de rango';
+  };
+  return `<div class="eq-l">Fila de entrada = máx(60; ⌈F/10⌉·10) = máx(60; ⌈${N(F,1)}/10⌉·10) = <b>${fila} m⁻¹</b>${fila > 390 ? ' &gt; 390 m⁻¹: fuera del rango de las tablas' : ''}</div>
+    ${MEM_T('Extracto de las tablas IDIEM para F = ' + fila + ' m⁻¹ — espesor de película seca (µm)')}
+    <table class="inf-t"><tr><th>Producto / informe</th>${RFs.map(k => `<th${k === p.rf ? ' style="background:#2E5395"' : ''}>${afRfTxt(k)}</th>`).join('')}</tr>
+      ${['stofire','cerefire'].map(pr => `<tr><td class="l">${AF_TABLAS[pr].nombre}</td>${RFs.map(k => `<td${k === p.rf ? ' class="hl"' : ''}>${celda(pr, k)}</td>`).join('')}</tr>`).join('')}</table>
+    <div class="eq-l">Para la exigencia ${afRfTxt(p.rf)}: Stofire → <b>${r.esp.stofire.txt}</b> ; Cerefire X200 → <b>${r.esp.cerefire.txt}</b></div>`;
+}
+
+// Gráfico de la fluencia reducida fy,θ(t) del elemento, con la tensión de incendio σfi.
+function afGraficoFyElemento(r, rfMin) {
+  if (!r.curva || !(r.Fy > 0)) return '';
+  const W = 520, H = 260, L = 56, R = 110, T = 12, B = 34, pw = W-L-R, ph = H-T-B, ymax = Math.ceil(r.Fy*1.05/500)*500;
+  const x = t => L + t/120*pw, y = v => T + ph - v/ymax*ph;
+  let g = '';
+  for (let v=0; v<=ymax+1e-9; v+=ymax/5) g += `<line x1="${L}" x2="${L+pw}" y1="${y(v)}" y2="${y(v)}" stroke="#d7dce3"/><text x="${L-5}" y="${y(v)+4}" text-anchor="end" font-size="10" fill="#57636F">${Math.round(v)}</text>`;
+  [0,15,30,60,90,120].forEach(t => { g += `<line x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${T+ph}" stroke="#d7dce3"/><text x="${x(t)}" y="${T+ph+14}" text-anchor="middle" font-size="10" fill="#57636F">${t}</text>`; });
+  const path = serie => serie.filter(q => q.t <= 120).map((q, j) => (j?'L':'M') + x(q.t).toFixed(1) + ' ' + y(afKy(q.th)*r.Fy).toFixed(1)).join(' ');
+  g += `<path d="${path(r.curva.serie)}" fill="none" stroke="#e34948" stroke-width="2"/>`;
+  if (r.curvaProt) g += `<path d="${path(r.curvaProt.serie)}" fill="none" stroke="#2a78d6" stroke-width="3"/>`;
+  if (r.sigma > 0) g += `<line x1="${L}" x2="${L+pw}" y1="${y(r.sigma)}" y2="${y(r.sigma)}" stroke="#333" stroke-dasharray="5,3"/><text x="${L+4}" y="${y(r.sigma)-4}" font-size="10" fill="#333">σfi = ${Math.round(r.sigma)} kg/cm²</text>`;
+  if (rfMin <= 120) g += `<line x1="${x(rfMin)}" x2="${x(rfMin)}" y1="${T}" y2="${T+ph}" stroke="#1F3864" stroke-width="1.2"/><text x="${x(rfMin)+3}" y="${T+10}" font-size="10" fill="#1F3864">F-${rfMin}</text>`;
+  const ly = i => T + 10 + i*16;
+  g += `<g font-size="10"><line x1="${L+pw+8}" x2="${L+pw+24}" y1="${ly(0)}" y2="${ly(0)}" stroke="#e34948" stroke-width="2"/><text x="${L+pw+28}" y="${ly(0)+4}" fill="#111">fy,θ s/rev</text>
+    ${r.curvaProt ? `<line x1="${L+pw+8}" x2="${L+pw+24}" y1="${ly(1)}" y2="${ly(1)}" stroke="#2a78d6" stroke-width="3"/><text x="${L+pw+28}" y="${ly(1)+4}" fill="#111">fy,θ c/rev</text>` : ''}</g>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto;display:block;margin:0 auto" role="img" aria-label="Fluencia reducida versus tiempo">${g}
+    <text x="${L+pw/2}" y="${H-2}" text-anchor="middle" font-size="10" fill="#57636F">tiempo (min)</text>
+    <text x="12" y="${T+ph/2}" text-anchor="middle" font-size="10" fill="#57636F" transform="rotate(-90 12 ${T+ph/2})">fy,θ (kg/cm²)</text></svg>`;
+}
+
+// Tabla resumen de estatus por elemento y solución requerida (capítulo 6 de ambas memorias).
+function afTablaResumen(res, p, TB) {
+  const N = AF_DN, rfT = afRfTxt(p.rf);
+  const filas = res.map(r => {
+    const fT = r.ok === false, fP = !!(r.pand && !r.pand.ok), fF = !!(r.flex && (!r.flex.okM || (r.flex.inter && !r.flex.inter.ok)));
+    const verif = r.ok !== null || !!r.pand || !!r.flex;
+    const est = (fT || fP || fF) ? 'NO CUMPLE' : (verif ? 'CUMPLE' : 'NO VERIFICADO');
+    const mot = [];
+    if (r.ok !== null) mot.push(`Tensión: fy,θ = ${N(r.hReq.fyr,0)} ${r.ok ? '≥' : '&lt;'} σfi = ${N(r.sigma,0)} kg/cm²`);
+    if (r.pand) mot.push(`Pandeo: Nb,fi,t,Rd = ${N(r.pand.req.Nb,2)} ${r.pand.ok ? '≥' : '&lt;'} Nfi = ${N(r.N,2)} tonf`);
+    if (r.flex) mot.push(`Flexión: Mfi,t,Rd = ${N(r.flex.MRd,2)} ${r.flex.okM ? '≥' : '&lt;'} Mfi = ${N(r.M,2)} tonf·m`);
+    if (r.flex && r.flex.inter) mot.push(`N–M: ${N(r.flex.inter.util,2)} ${r.flex.inter.ok ? '≤' : '&gt;'} 1`);
+    if (!verif) mot.push('Sin σfi ni Nfi ingresados: no se verifica la resistencia propia');
+    const esp = [r.esp.stofire.v ? `Renner STOFIRE ${r.esp.stofire.v} µm (IDIEM I.E. 305.751)` : '', r.esp.cerefire.v ? `CEREFIRE X200 ${r.esp.cerefire.v} µm (IDIEM I.E. 300.465)` : ''].filter(Boolean);
+    let sol;
+    if (est === 'CUMPLE') sol = `No requiere protección para ${rfT}.`;
+    else if (esp.length) sol = `Pintura intumescente, espesor de película seca: ${esp.join(' o ')}; F asimilado = ${N(r.Fasim,0)} m⁻¹ (fila ${r.esp.stofire.fila || r.esp.cerefire.fila}).` + (est === 'NO VERIFICADO' ? ' Si se verifica con las solicitaciones de incendio que resiste sin protección, puede omitirse.' : '');
+    else sol = `Sin espesor en las tablas IDIEM para ${rfT} y F = ${N(r.Fasim,0)} m⁻¹: requiere otra solución de protección respaldada por ensayo o por el Listado Oficial de Comportamiento al Fuego.`;
+    return `<tr><td>${r.n}</td><td class="l">${esc(r.nombre)}</td><td>${r.rol === 'viga' ? 'V' : 'P'}</td><td class="l" style="white-space:nowrap">${esc(r.perfil)}</td>
+      <td class="${est === 'CUMPLE' ? 'ok' : (est === 'NO CUMPLE' ? 'bad' : '')}">${est}</td><td class="l">${mot.join('<br>')}</td><td class="l">${sol}</td></tr>`;
+  }).join('');
+  return `${TB('Resumen de estatus por elemento frente a ' + rfT + ' y solución requerida')}
+    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Func.</th><th>Perfil</th><th>Estatus sin protección</th><th>Verificación</th><th>Solución requerida</th></tr>${filas}</table>
+    <p style="font-size:8.5pt;margin-top:-.5rem">Func.: V = viga (3 caras expuestas); P = pilar (4 caras).</p>`;
+}
+
+// Desarrollo completo de un elemento.
+function afDetalleElemento(r, p, meta, idx) {
+  const N = AF_DN, rfT = afRfTxt(p.rf), rfMin = +p.rf.replace('F',''), sec = '7.' + idx;
+  const rolTxt = r.rol === 'viga' ? 'Viga' : 'Pilar';
+  const prodTxt = r.prodMem === 'stofire' ? 'Renner STOFIRE (IDIEM I.E. 305.751)' : 'CEREFIRE X200 (IDIEM I.E. 300.465)';
+  const pe = Object.assign({}, p, {em: r.emUsado, ksh: r.kshUsado});
+  const eq = s => `<div class="eq-l">${s}</div>`;
+  const out = [];
+  let n = 0;
+  const sub = t => `<h3>${sec}.${++n} ${t}</h3>`;
+
+  const rolPre = new RegExp('^' + rolTxt, 'i').test(r.nombre) ? '' : rolTxt + ' ';   // evita «Viga Viga techo…»
+  out.push(`<div class="salto"></div><h2>${sec} ${rolPre}${esc(r.nombre)} — ${esc(r.perfil)}</h2>`);
+
+  // 1. Datos
+  out.push(sub('Datos del elemento'));
+  out.push(`${MEM_T('Datos de entrada — ' + esc(r.nombre))}
+    <table class="inf-t"><tr><th>Parámetro</th><th>Símbolo</th><th>Valor</th><th>Origen</th></tr>
+      <tr><td class="l">Función / exposición</td><td>—</td><td>${r.rol === 'viga' ? 'Viga, 3 caras (ala superior bajo losa o cubierta)' : 'Pilar, 4 caras'}</td><td class="l">Proyecto</td></tr>
+      <tr><td class="l">Perfil</td><td>—</td><td>${esc(r.perfil)} (tipo ${esc(afTipoCorto(r.tipo))}: ${esc((AF_TIPOS.find(x => x[0] === r.tipo) || [0,0,r.tipo])[2])})</td><td class="l">${r.origen === 'Manual' ? 'Ingresado' : 'Catálogo'}</td></tr>
+      <tr><td class="l">Altura / diámetro</td><td>h</td><td>${N(r.h,1)} mm</td><td class="l" rowspan="5">${r.origen === 'Manual' ? 'Ingresado' : 'Catálogo de perfiles'}</td></tr>
+      <tr><td class="l">Ancho</td><td>b</td><td>${N(r.b,1)} mm</td></tr>
+      <tr><td class="l">Espesor de alma / pared</td><td>tw</td><td>${N(r.tw,2)} mm</td></tr>
+      <tr><td class="l">Espesor de ala</td><td>tf</td><td>${N(r.tf,2)} mm</td></tr>
+      <tr><td class="l">Área de la sección</td><td>A</td><td>${N(r.A,2)} cm²</td></tr>
+      <tr><td class="l">Tensión de fluencia a 20 °C</td><td>Fy</td><td>${N(r.Fy,0)} kg/cm² (${N(r.Fy*0.0980665,1)} MPa)</td><td class="l">Especificación del acero</td></tr>
+      <tr><td class="l">Emisividad de la superficie</td><td>εm</td><td>${N(r.emUsado,2)}</td><td class="l">${r.em > 0 ? 'Indicada para el elemento' : 'Valor global'}</td></tr>
+      <tr><td class="l">Tensión en situación de incendio</td><td>σfi</td><td>${r.sigma > 0 ? N(r.sigma,0) + ' kg/cm²' : 'no ingresada'}</td><td class="l">${r.comb ? 'Combinación de incendio (A-4-1), ver ' + sec + '.2' : 'Análisis estructural (fuera de esta memoria)'}</td></tr>
+      ${r.M > 0 ? `<tr><td class="l">Momento en situación de incendio</td><td>Mfi</td><td>${N(r.M,2)} tonf·m</td><td class="l">Combinación de incendio (A-4-1)</td></tr>` : ''}
+      ${r.N > 0 ? `<tr><td class="l">Compresión en situación de incendio</td><td>Nfi</td><td>${N(r.N,2)} tonf</td><td class="l">${r.comb ? 'Combinación de incendio (A-4-1)' : 'Análisis estructural'}</td></tr><tr><td class="l">Longitud de pandeo</td><td>Lcr</td><td>${N(r.Lcr,2)} m</td><td class="l">Calculista</td></tr>` : ''}
+    </table>`);
+
+  // 1b. Solicitaciones de incendio desde estados de carga
+  if (r.comb) {
+    out.push(sub('Solicitaciones en situación de incendio (AISC 360-16 Anexo 4, ec. A-4-1)'));
+    out.push(`${MEM_T('Estados de carga nominales sin mayorar — ' + esc(r.nombre))}
+      <table class="inf-t"><tr><th>Estado</th><th>N (tonf)</th><th>M (tonf·m)</th></tr>
+      <tr><td class="l">D: carga muerta</td><td>${N(r.ND||0,2)}</td><td>${N(r.MD||0,2)}</td></tr>
+      <tr><td class="l">L: sobrecarga de uso</td><td>${N(r.NL||0,2)}</td><td>${N(r.ML||0,2)}</td></tr>
+      <tr><td class="l">S: nieve</td><td>${N(r.NS||0,2)}</td><td>${N(r.MS||0,2)}</td></tr></table>
+      <p>N positivo = compresión. Se combinan con (0,9 ó 1,2)·D + AT + 0,5·L + 0,2·S, sin AT (libre dilatación).</p>`);
+    if (r.comb.cs.some(c => c.M)) out.push(eq('Módulo resistente elástico: ' + afWelDet(r)));
+    r.comb.cs.forEach(c => {
+      out.push(`<div class="paso"><div class="paso-t">Combinación ${c.nom}</div>
+        ${eq(`Nfi = ${N(c.D,1)}·${N(r.ND||0,2)} + ${N(c.L,1)}·${N(r.NL||0,2)} + ${N(c.S,1)}·${N(r.NS||0,2)} = ${N(c.N,2)} tonf`)}
+        ${eq(`Mfi = ${N(c.D,1)}·${N(r.MD||0,2)} + ${N(c.L,1)}·${N(r.ML||0,2)} + ${N(c.S,1)}·${N(r.MS||0,2)} = ${N(c.M,2)} tonf·m`)}
+        ${eq(c.sig != null ? `σ = |Nfi|·1000/A + |Mfi|·10⁵/Wel = ${N(Math.abs(c.N)*1000,0)}/${N(r.A,2)} + ${N(Math.abs(c.M)*1e5,0)}/${c.M ? N(r.Wel,1) : '—'} = ${N(c.sN,0)} + ${N(c.sM,0)} = <b>${N(c.sig,0)} kg/cm²</b>` : 'σ no calculable: falta Wel')}</div>`);
+    });
+    const g = r.comb.gov;
+    out.push(eq(`Rige ${g.nom}: σfi = <b>${N(g.sig,0)} kg/cm²</b>, Nfi = ${N(r.N,2)} tonf${r.Ntrac ? ` (tracción ${N(r.Ntrac,2)} tonf, sin pandeo)` : ''}, Mfi = ${N(r.M,2)} tonf·m`));
+  }
+
+  // 2. Masividad
+  out.push(sub('Factor de masividad'));
+  out.push(`<p>F = Am/V = P/A; con P en mm y A en cm², F [m⁻¹] = 10·P/A.</p>`);
+  afMasivDet(r).forEach(l => out.push(eq(l)));
+  out.push(eq(`Factor de forma real del elemento (${r.rol === 'viga' && r.F3 != null ? '3 caras' : '4 caras'}): F = <b>${N(r.Freal,1)} m⁻¹</b>`));
+
+  // 3. Asimilación y espesor
+  out.push(sub('Asimilación a la tabla de pilares y espesor de pintura intumescente'));
+  out.push(`<p>${r.rol === 'viga'
+    ? `La viga se asimila a la solución ensayada para pilares entrando a la tabla con su masividad a 4 caras, que es mayor o igual que la de 3 caras y por lo tanto más exigente: F asimilado = F4 = ${N(r.F4,1)} m⁻¹${r.F3 != null ? ` ≥ F3 = ${N(r.F3,1)} m⁻¹` : ''}.`
+    : `El pilar corresponde a la configuración ensayada (4 caras): F = F4 = ${N(r.F4,1)} m⁻¹.`}</p>`);
+  out.push(afTablaIdiemDet(r, p));
+
+  // 4. Cálculo térmico sin protección
+  const det = r.Fasim != null ? afCurvaDet(r.Fasim, pe, rfMin) : null;
+  out.push(sub('Evolución térmica del acero sin protección (EN 1993-1-2 §4.2.5.1)'));
+  if (!det) out.push('<p>Sin masividad: no se calcula.</p>');
+  else {
+    if (p.kshAuto) {
+      const Fbox = r.A > 0 ? 10*2*(r.h + r.b)/r.A : null;
+      out.push((r.tipo === 'I-H' || r.tipo === 'U')
+        ? eq(`Factor de sombra (EN 1993-1-2 ec. 4.26a): [Am/V]b = 10·2·(h + b)/A = 10·2·(${N(r.h,1)} + ${N(r.b,1)})/${N(r.A,2)} = ${N(Fbox,1)} m⁻¹ ⇒ ksh = mín(1; 0,9·[Am/V]b/[Am/V]) = mín(1; 0,9·${N(Fbox,1)}/${N(r.F4,1)}) = <b>${N(r.kshUsado,3)}</b>`)
+        : eq(`Factor de sombra: sección convexa ⇒ ksh = <b>1,000</b> (EN 1993-1-2 §4.2.5.1(2))`));
+    } else out.push(eq(`Factor de sombra adoptado: ksh = <b>${N(r.kshUsado,3)}</b>`));
+    out.push(`<p>Parámetros: Am/V = ${N(r.Fasim,1)} m⁻¹, ρa = ${N(p.rho,0)} kg/m³, ${p.caVar ? 'ca variable con θa (EN 1993-1-2 §3.4.1.2)' : 'ca = ' + N(p.ca,0) + ' J/kg·K'}, αc = ${N(p.alfa,0)} W/m²K, Φ = ${N(p.phi,2)}, εm = ${N(r.emUsado,2)}, εf = ${N(p.ef,2)}, σ = 5,67·10⁻⁸ W/m²K⁴, Δt = ${N(det.dt,0)} s. El incremento de cada paso se evalúa con las temperaturas al inicio del paso.</p>`);
+    const pasoHtml = (s, titulo) => {
+      const caD = afCaDet(s.th, p);
+      return `<div class="paso"><div class="paso-t">${titulo}: t = ${N(s.t,0)} s = ${N(s.m,3)} min, θa = ${N(s.th,2)} °C</div>
+        ${eq(`θg = 20 + 345·log₁₀(8·${N(s.m,3)} + 1) = ${N(s.tg,2)} °C`)}
+        ${eq(`ḣnet,c = αc·(θg − θa) = ${N(p.alfa,0)}·(${N(s.tg,2)} − ${N(s.th,2)}) = ${N(s.hc,1)} W/m²`)}
+        ${eq(`ḣnet,r = Φ·εm·εf·σ·[(θg + 273)⁴ − (θa + 273)⁴] = ${N(p.phi,2)}·${N(r.emUsado,2)}·${N(p.ef,2)}·5,67·10⁻⁸·[(${N(s.tg+273,2)})⁴ − (${N(s.th+273,2)})⁴] = ${N(s.hr,1)} W/m²`)}
+        ${eq(`ḣnet = ḣnet,c + ḣnet,r = ${N(s.hc,1)} + ${N(s.hr,1)} = ${N(s.hn,1)} W/m²`)}
+        ${eq(caD.txt)}
+        ${eq(`Δθa = ksh·(Am/V)/(ca·ρa)·ḣnet·Δt = ${N(r.kshUsado,3)}·${N(r.Fasim,1)}/(${N(s.ca,1)}·${N(p.rho,0)})·${N(s.hn,1)}·${N(det.dt,0)} = ${N(s.d,3)} °C`)}
+        ${eq(`θa(t + Δt) = ${N(s.th,2)} + ${N(s.d,3)} = <b>${N(s.th + s.d,2)} °C</b>`)}</div>`;
+    };
+    det.pasos.forEach(s => out.push(pasoHtml(s, 'Paso ' + s.k)));
+    if (det.pasoRf) out.push(pasoHtml(det.pasoRf, `Último paso hasta ${rfT} (paso ${det.pasoRf.k})`));
+    const mins = [0,1,2,3,4,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120];
+    if (rfMin > 120 || !mins.includes(rfMin)) mins.push(rfMin);
+    const fProt = r.curvaProt ? r.curvaProt.serie : null;
+    out.push(`${MEM_T('Evolución térmica y fluencia reducida — ' + esc(r.nombre) + ' (valores al minuto indicado)')}
+      <table class="inf-t"><tr><th>t (min)</th><th>θg (°C)</th><th>θa (°C)</th><th>ca (J/kg·K)</th><th>ḣnet,c (W/m²)</th><th>ḣnet,r (W/m²)</th><th>ḣnet (W/m²)</th><th>ky,θ</th><th>fy,θ (kg/cm²)</th>${fProt ? '<th>θa protegido (°C)</th><th>ky,θ protegido</th>' : ''}</tr>
+      ${det.filas.filter(f => mins.some(mm => Math.abs(f.m - mm) < 1e-6)).map(f => { const fp = fProt ? fProt.find(q => Math.abs(q.t - f.m) < 1e-6) : null; const ky = afKy(f.th);
+        return `<tr${Math.abs(f.m - rfMin) < 1e-6 ? ' class="hlr"' : ''}><td>${N(f.m,0)}</td><td>${N(f.tg,1)}</td><td>${N(f.th,1)}</td><td>${N(f.ca,1)}</td><td>${N(f.hc,0)}</td><td>${N(f.hr,0)}</td><td>${N(f.hn,0)}</td><td>${N(ky,4)}</td><td>${N(ky*r.Fy,0)}</td>${fProt ? `<td>${fp ? N(fp.th,1) : '—'}</td><td>${fp ? N(afKy(fp.th),4) : '—'}</td>` : ''}</tr>`; }).join('')}</table>`);
+  }
+
+  // 5. Pérdida de fluencia en los tiempos de control
+  out.push(sub('Pérdida de la tensión de fluencia en los tiempos de control (EN 1993-1-2 Tabla 3.1)'));
+  r.hitos.forEach(h => {
+    if (h.th == null) return;
+    const k = afInterpDet(AF_KY, h.th, 'ky,θ');
+    out.push(`<div class="paso"><div class="paso-t">${afRfTxt(h.rf)} (t = ${h.rf.replace('F','')} min): θa = ${N(h.th,1)} °C</div>${eq(k.txt)}${eq(`fy,θ = ky,θ·Fy = ${N(k.v,4)}·${N(r.Fy,0)} = <b>${N(k.v*r.Fy,0)} kg/cm²</b> (pérdida de ${N((1-k.v)*100,1)} % de la fluencia)`)}</div>`);
+  });
+
+  // 6. Temperatura crítica y verificación por tensión
+  out.push(sub('Temperatura crítica, tiempo crítico y verificación por tensión'));
+  if (!(r.sigma > 0)) out.push('<p>No se ingresó la tensión en situación de incendio σfi; la temperatura crítica y la verificación por tensión no se determinan para este elemento.</p>');
+  else {
+    out.push(eq(`Grado de utilización: μ0 = σfi/Fy = ${N(r.sigma,0)}/${N(r.Fy,0)} = <b>${N(r.mu,4)}</b>`));
+    if (r.mu >= 1) out.push(eq(`μ0 ≥ 1 ⇒ el elemento no tiene reserva a temperatura ambiente; se toma θcr = 400 °C (fin del tramo con ky,θ = 1).`));
+    else if (r.mu <= 0) out.push(eq(`μ0 ≤ 0 ⇒ θcr = 1200 °C`));
+    else {
+      for (let i=1;i<AF_KY.length;i++) { const [t0,k0] = AF_KY[i-1], [t1,k1] = AF_KY[i];
+        if (r.mu <= k0 && r.mu >= k1 && k0 !== k1) { out.push(eq(`ky,θ = μ0 en el tramo ${t0}–${t1} °C (ky = ${N(k0,2)} a ${N(k1,2)}): θcr = θ0 + (k0 − μ0)·(θ1 − θ0)/(k0 − k1) = ${t0} + (${N(k0,2)} − ${N(r.mu,4)})·(${t1} − ${t0})/(${N(k0,2)} − ${N(k1,2)}) = <b>${N(r.thcr,1)} °C</b>`)); break; } }
+    }
+    const s = r.curva ? r.curva.serie : [];
+    let ia = -1; for (let i=1;i<s.length;i++) if (s[i].th >= r.thcr) { ia = i; break; }
+    if (ia > 0) { const a = s[ia-1], b = s[ia];
+      out.push(eq(`Tiempo crítico (interpolación entre t = ${a.t} min, θa = ${N(a.th,1)} °C y t = ${b.t} min, θa = ${N(b.th,1)} °C): tcr = ${a.t} + (${N(r.thcr,1)} − ${N(a.th,1)})·(${b.t} − ${a.t})/(${N(b.th,1)} − ${N(a.th,1)}) = <b>${N(r.tcr,1)} min</b>`));
+    } else out.push(eq(`El acero sin protección no alcanza θcr = ${N(r.thcr,1)} °C en 150 min ⇒ tcr &gt; 150 min`));
+    out.push(eq(`Verificación a ${rfT}: fy,θ = ${N(r.hReq.fyr,0)} kg/cm² ${r.ok ? '≥' : '&lt;'} σfi = ${N(r.sigma,0)} kg/cm² ⇒ <b>${r.ok ? 'CUMPLE sin protección' : 'NO CUMPLE sin protección: requiere revestimiento'}</b>`));
+  }
+
+  // 7. Pandeo en caliente
+  if (r.pand) {
+    const q = r.pand, x = q.req, fyMPa = r.Fy*0.0980665, eps = Math.sqrt(235/fyMPa), thR = r.hReq ? r.hReq.th : null;
+    out.push(sub('Pandeo por flexión en caliente (EN 1993-1-2 §4.2.3.2)'));
+    afRadioDet(r).forEach(l => out.push(eq(l)));
+    const kyD = afInterpDet(AF_KY, thR, 'ky,θ'), keD = afInterpDet(AF_KE, thR, 'kE,θ');
+    const alfa = 0.65*eps, phi = x.lamT != null ? 0.5*(1 + alfa*x.lamT + x.lamT*x.lamT) : null;
+    out.push(eq(`fy = ${N(r.Fy,0)} kg/cm² · 0,0980665 = ${N(fyMPa,1)} MPa ; ε = √(235/fy) = √(235/${N(fyMPa,1)}) = ${N(eps,4)}`));
+    out.push(eq(`Esbeltez: Lcr/i = ${N(r.Lcr*100,1)}/${N(q.i,2)} = ${N(q.esbeltez,1)} ; λ̄ = (Lcr/i)/(93,9·ε) = ${N(q.esbeltez,1)}/(93,9·${N(eps,4)}) = ${N(q.frio.lam,4)}`));
+    out.push(eq(`Temperatura del acero sin protección a ${rfT}: θa = ${N(thR,1)} °C`));
+    out.push(eq(kyD.txt)); out.push(eq(keD.txt));
+    if (x.lamT != null) {
+      out.push(eq(`λ̄θ = λ̄·√(ky,θ/kE,θ) = ${N(q.frio.lam,4)}·√(${N(x.ky,4)}/${N(x.kE,4)}) = ${N(x.lamT,4)}`));
+      out.push(eq(`α = 0,65·ε = 0,65·${N(eps,4)} = ${N(alfa,4)} ; φθ = ½·[1 + α·λ̄θ + λ̄θ²] = ½·[1 + ${N(alfa,4)}·${N(x.lamT,4)} + ${N(x.lamT,4)}²] = ${N(phi,4)}`));
+      out.push(eq(`χfi = 1/[φθ + √(φθ² − λ̄θ²)] = 1/[${N(phi,4)} + √(${N(phi,4)}² − ${N(x.lamT,4)}²)] = ${N(x.chi,4)}${x.chi >= 1 ? ' (se limita a 1)' : ''}`));
+      out.push(eq(`Nb,fi,t,Rd = χfi·A·ky,θ·fy/γM,fi = ${N(x.chi,4)}·${N(r.A,2)}·${N(x.ky,4)}·${N(r.Fy,0)}/1,0 = ${N(x.Nb*1000,0)} kgf = <b>${N(x.Nb,2)} tonf</b>`));
+    } else out.push(eq('ky,θ = 0 o kE,θ = 0 ⇒ Nb,fi,t,Rd = 0'));
+    out.push(eq(`Referencia a 20 °C (ky = kE = 1, misma curva): χ = ${N(q.frio.chi,4)} ⇒ Nb = ${N(q.frio.Nb,2)} tonf`));
+    out.push(eq(`Verificación: Nfi = ${N(r.N,2)} tonf ${q.ok ? '≤' : '&gt;'} Nb,fi,t,Rd = ${N(x.Nb,2)} tonf (utilización ${isFinite(q.util) ? N(q.util,0) + ' %' : '∞'}) ⇒ <b>${q.ok ? 'CUMPLE a pandeo sin protección' : 'NO CUMPLE a pandeo sin protección'}</b>; Nb,fi,t,Rd baja de Nfi a los ${q.tcr != null ? N(q.tcr,0) + ' min' : '&gt; 150 min'}.`));
+  }
+
+  // 7b. Flexión y flexo-compresión
+  if (r.flex) {
+    const x = r.flex, it = x.inter, kyD = afInterpDet(AF_KY, x.th, 'ky,θ');
+    out.push(sub('Flexión y flexo-compresión en caliente (EN 1993-1-2 §4.2.3.3 a §4.2.3.5)'));
+    if (!r.comb || !r.comb.cs.some(c => c.M)) out.push(eq('Módulo resistente elástico: ' + afWelDet(r)));
+    out.push(eq(`Temperatura del acero sin protección a ${rfT}: θa = ${N(x.th,1)} °C ; ${kyD.txt}`));
+    out.push(eq(`κ1 = ${N(x.kappa1,2)} (${x.kappa1 < 1 ? 'viga sin protección expuesta en 3 caras con losa en la cuarta, §4.2.3.3(8)' : 'exposición en 4 caras, §4.2.3.3(8)'}) ; κ2 = 1,0 ; γM,fi = 1,0`));
+    out.push(eq(`Mfi,t,Rd = ky,θ·Wel·fy/(γM,fi·κ1·κ2) = ${N(x.ky,4)}·${N(r.Wel,1)}·${N(r.Fy,0)}/(1,0·${N(x.kappa1,2)}·1,0) = ${N(x.MRd*1e5,0)} kgf·cm = <b>${N(x.MRd,2)} tonf·m</b>`));
+    out.push(eq(`Flexión: Mfi = ${N(r.M,2)} tonf·m ${x.okM ? '≤' : '&gt;'} Mfi,t,Rd = ${N(x.MRd,2)} tonf·m ⇒ <b>${x.okM ? 'CUMPLE' : 'NO CUMPLE'} sin protección</b>`));
+    if (it) {
+      out.push(eq(`βM = 1,1 (momento uniforme, mayor ky) ; μy = (1,2·βM − 3)·λ̄θ + 0,44·βM − 0,29 = (1,2·1,1 − 3)·${N(it.lamT,4)} + 0,44·1,1 − 0,29 = ${N(it.mu,4)} ≤ 0,8 (un valor negativo es válido y aumenta ky)`));
+      out.push(eq(`χmin,fi·A·ky,θ·fy = ${N(it.chi,4)}·${N(r.A,2)}·${N(x.ky,4)}·${N(r.Fy,0)} = ${N(it.NbRd,2)} tonf ; ky = 1 − μy·Nfi/(χy,fi·A·ky,θ·fy) = 1 − ${it.mu < 0 ? '(' + N(it.mu,4) + ')' : N(it.mu,4)}·${N(r.N,2)}/${N(it.NbRd,2)} = ${N(it.kint,4)}${it.kint >= 3 ? ' (se limita a 3)' : ''}`));
+      out.push(eq(`Wel·ky,θ·fy = ${N(r.Wel,1)}·${N(x.ky,4)}·${N(r.Fy,0)}/10⁵ = ${N(it.MyRd,2)} tonf·m (κ = 1 en la interacción)`));
+      out.push(eq(`Ec. 4.21c: ${N(r.N,2)}/${N(it.NbRd,2)} + ${N(it.kint,4)}·${N(r.M,2)}/${N(it.MyRd,2)} = <b>${N(it.util,3)}</b> ${it.ok ? '≤' : '&gt;'} 1 ⇒ <b>${it.ok ? 'CUMPLE' : 'NO CUMPLE'} a flexo-compresión sin protección</b>`));
+    } else if (r.N > 0) out.push('<p>Sin longitud de pandeo no se verifica la interacción N–M (ec. 4.21c).</p>');
+    out.push('<p>No se verifica pandeo lateral-torsional: se supone el ala comprimida arriostrada por la losa o la cubierta.</p>');
+  }
+
+  // 8. Acero protegido (informativo)
+  out.push(sub('Acero con revestimiento de pintura intumescente (EN 1993-1-2 §4.2.5.2, informativo)'));
+  if (!r.curvaProt) out.push(`<p>No hay espesor de ${prodTxt} en la tabla para ${rfT} y F = ${N(r.Fasim,0)} m⁻¹; no se calcula la evolución térmica con revestimiento. El elemento requiere otra solución de protección con respaldo de ensayo.</p>`);
+  else {
+    const dp = r.espMem.v/1e6, dpr = afCurvaProtDet(r.Fasim, dp, p, rfMin);
+    out.push(`<p>Revestimiento: ${prodTxt}, espesor de tabla dp = ${r.espMem.v} µm = ${N(dp*1000,3)} mm; conductividad efectiva λp,ef = ${N(p.lamP,4)} W/m·K (valor de cálculo, no proviene del informe de ensayo). Para pintura intumescente se desprecia la capacidad calorífica del revestimiento (ρp = 0 ⇒ φ = 0):</p>`);
+    out.push(eq('Δθa,t = [λp/dp · (Ap/V)/(ca·ρa)] · (θg,t − θa,t)/(1 + φ/3) · Δt − (e^(φ/10) − 1)·Δθg,t ; φ = cp·ρp·dp·(Ap/V)/(ca·ρa)'));
+    const pasoP = (s, titulo) => `<div class="paso"><div class="paso-t">${titulo}: t = ${N(s.t,0)} s = ${N(s.m,3)} min, θa = ${N(s.th,2)} °C</div>
+      ${eq(`θg,t = ${N(s.tg,2)} °C ; θg,t+Δt = ${N(s.tg2,2)} °C ; Δθg = ${N(s.tg2 - s.tg,3)} °C ; ca = ${N(s.ca,1)} J/kg·K ; φ = ${N(s.phi,4)}`)}
+      ${eq(`Δθa = ${N(s.lam,4)}/${N(s.dp,6)}·${N(r.Fasim,1)}/(${N(s.ca,1)}·${N(p.rho,0)})·(${N(s.tg,2)} − ${N(s.th,2)})/(1 + ${N(s.phi,4)}/3)·${N(dpr.dt,0)} − (e^(${N(s.phi,4)}/10) − 1)·${N(s.tg2 - s.tg,3)} = ${N(s.d0,4)} °C${s.d !== s.d0 ? ' &lt; 0 con θg creciente ⇒ Δθa = 0' : ''}`)}
+      ${eq(`θa(t + Δt) = ${N(s.th,2)} + ${N(s.d,4)} = <b>${N(s.th + s.d,2)} °C</b>`)}</div>`;
+    dpr.pasos.slice(0, 2).forEach(s => out.push(pasoP(s, 'Paso ' + s.k)));
+    if (dpr.pasoRf) out.push(pasoP(dpr.pasoRf, `Último paso hasta ${rfT} (paso ${dpr.pasoRf.k})`));
+    const thP = r.curvaProt.hitos[rfMin], kP = afInterpDet(AF_KY, thP, 'ky,θ');
+    out.push(eq(`A ${rfT}: θa protegido = ${N(thP,1)} °C`));
+    out.push(eq(kP.txt));
+    out.push(eq(`fy,θ = ${N(kP.v,4)}·${N(r.Fy,0)} = <b>${N(kP.v*r.Fy,0)} kg/cm²</b>${r.sigma > 0 ? ` ${kP.v*r.Fy >= r.sigma ? '≥' : '&lt;'} σfi = ${N(r.sigma,0)} kg/cm²` : ''}`));
+    if (r.pand && thP != null) { const pp = afPandeo(r.A, r.Fy, r.Lcr, r.pand.i, thP);
+      out.push(eq(`Pandeo con revestimiento a ${rfT}: ky,θ = ${N(pp.ky,4)}, kE,θ = ${N(pp.kE,4)}, λ̄θ = ${pp.lamT != null ? N(pp.lamT,4) : '—'}, χfi = ${N(pp.chi,4)} ⇒ Nb,fi,t,Rd = ${N(pp.Nb,2)} tonf ${pp.Nb >= r.N ? '≥' : '&lt;'} Nfi = ${N(r.N,2)} tonf`)); }
+    if (r.flex && thP != null) { const k1p = r.kappa1 < 1 ? 0.85 : 1.0, pp = r.pand ? afPandeo(r.A, r.Fy, r.Lcr, r.pand.i, thP) : null,
+        fp = afFlexion(r, thP, k1p, pp ? pp.chi : null, pp ? pp.lamT : null);
+      out.push(eq(`Flexión con revestimiento a ${rfT} (κ1 = ${N(k1p,2)}${k1p < 1 ? ', viga protegida en 3 caras' : ''}): Mfi,t,Rd = ${N(fp.ky,4)}·${N(r.Wel,1)}·${N(r.Fy,0)}/(${N(k1p,2)}·10⁵) = ${N(fp.MRd,2)} tonf·m ${fp.okM ? '≥' : '&lt;'} Mfi = ${N(r.M,2)} tonf·m${fp.inter ? ` ; interacción N–M = ${N(fp.inter.util,3)} ${fp.inter.ok ? '≤' : '&gt;'} 1` : ''}`)); }
+    out.push(`<p>El espesor de protección queda respaldado por el informe de ensayo IDIEM; esta estimación térmica es solo informativa.</p>`);
+  }
+
+  // 9. Gráficos del elemento
+  out.push(sub('Gráficos del elemento'));
+  out.push(`<table class="ficha-g"><tr><td style="width:38%;vertical-align:top">${afSvgSeccion(r)}</td><td style="vertical-align:top">${afGraficoElemento(r, r.thcr)}</td></tr></table>${MEM_F(esc(r.nombre) + ': sección con caras expuestas y temperatura del fuego, del acero sin revestimiento y con revestimiento')}`);
+  const gfy = afGraficoFyElemento(r, rfMin);
+  if (gfy) out.push(`<div class="fig">${gfy}</div>${MEM_F(esc(r.nombre) + ': tensión de fluencia reducida fy,θ = ky,θ·Fy versus tiempo' + (r.sigma > 0 ? ' y tensión en situación de incendio σfi' : ''))}`);
+
+  // 10. Resultado
+  out.push(sub('Resultado del elemento'));
+  const estT = r.ok === null ? 'Sin σfi' : (r.ok ? 'CUMPLE' : 'NO CUMPLE');
+  const estP = r.pand ? (r.pand.ok ? 'CUMPLE' : 'NO CUMPLE') : 'No aplica';
+  const fF = !!(r.flex && (!r.flex.okM || (r.flex.inter && !r.flex.inter.ok)));
+  out.push(`<table class="inf-t"><tr><th>F asimilado (m⁻¹)</th><th>Fila tabla</th><th>Stofire ${rfT}</th><th>Cerefire X200 ${rfT}</th><th>θa ${rfT} s/prot. (°C)</th><th>ky,θ</th><th>fy,θ (kg/cm²)</th><th>Tensión s/prot.</th><th>Pandeo s/prot.</th>${r.flex ? '<th>Flexión / N–M s/prot.</th>' : ''}</tr>
+    <tr><td>${N(r.Fasim,1)}</td><td>${r.esp.stofire.fila || '—'}</td><td>${r.esp.stofire.txt}</td><td>${r.esp.cerefire.txt}</td><td>${N(r.hReq && r.hReq.th,1)}</td><td>${N(r.hReq && r.hReq.ky,4)}</td><td>${N(r.hReq && r.hReq.fyr,0)}</td>
+    <td class="${estT === 'CUMPLE' ? 'ok' : (estT === 'NO CUMPLE' ? 'bad' : '')}">${estT}</td><td class="${estP === 'CUMPLE' ? 'ok' : (estP === 'NO CUMPLE' ? 'bad' : '')}">${estP}</td>${r.flex ? `<td class="${fF ? 'bad' : 'ok'}">${fF ? 'NO CUMPLE' : 'CUMPLE'}</td>` : ''}</tr></table>`);
+  const falla = r.ok === false || (r.pand && !r.pand.ok) || fF;
+  out.push(`<p>${falla
+    ? `${rolTxt} ${esc(r.nombre)} no alcanza ${rfT} sin protección. ${r.esp.stofire.v || r.esp.cerefire.v ? `Debe protegerse con pintura intumescente de espesor seco ${[r.esp.stofire.v ? r.esp.stofire.v + ' µm (Stofire)' : '', r.esp.cerefire.v ? r.esp.cerefire.v + ' µm (Cerefire X200)' : ''].filter(Boolean).join(' o ')}, según la asimilación desarrollada.` : 'No tiene espesor en las tablas IDIEM para esta exigencia y requiere otra solución de protección con ensayo aplicable.'}`
+    : (r.ok === null && !r.pand
+      ? `Sin solicitaciones de incendio ingresadas no se verifica la resistencia propia del elemento; para ${rfT} el espesor de protección asimilado es ${[r.esp.stofire.v ? r.esp.stofire.v + ' µm (Stofire)' : '', r.esp.cerefire.v ? r.esp.cerefire.v + ' µm (Cerefire X200)' : ''].filter(Boolean).join(' o ') || 'inexistente en las tablas (requiere otra solución)'}.`
+      : `${rolTxt} ${esc(r.nombre)} alcanza ${rfT} sin protección con las solicitaciones ingresadas.`)}</p>`);
+  return out.join('\n');
+}
 
 /* =========================================================================
    MEMORIAS DE CÁLCULO (formato informe) — utilidades comunes
