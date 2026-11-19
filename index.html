@@ -45009,8 +45009,7 @@ function renderAsimilacionFuego(container) {
         <div class="field"><label>Fecha</label><input type="text" data-noupper id="afi_fecha" placeholder="vacío = hoy"></div>
         <div class="field"><label>Revisión</label><input type="text" data-noupper id="afi_rev" placeholder="0"></div>
         <div class="field"><label>Descripción de la revisión</label><input type="text" data-noupper id="afi_descRev" list="dl_afi_descRev" placeholder="Emitida para revisión"><datalist id="dl_afi_descRev">${MCM_REVS.map(x => `<option value="${x}"></option>`).join('')}</datalist></div>
-        <div class="field"><label>Elaboró</label><input type="text" data-noupper id="afi_autor" list="dl_afi_ing" placeholder="${MCM_ING[0]}"><datalist id="dl_afi_ing">${MCM_ING.map(x => `<option value="${x}"></option>`).join('')}</datalist></div>
-        <div class="field"><label>Revisó</label><input type="text" data-noupper id="afi_revisor" list="dl_afi_ing"></div>
+        <div class="field"><label>Elaboró</label><input type="text" data-noupper id="afi_autor" list="dl_afi_ing" placeholder="${MCM_ING[0]}"><datalist id="dl_afi_ing">${MCM_ING.filter(x => !/Villagr/i.test(x)).map(x => `<option value="${x}"></option>`).join('')}</datalist></div>
         <div class="field" style="grid-column:1/-1"><label>Descripción de la estructura (texto libre)</label><textarea id="afi_desc" rows="4" style="width:100%;box-sizing:border-box;font-family:'IBM Plex Sans',sans-serif;font-size:.9rem;padding:.5rem;border:1px solid var(--input-border);border-radius:4px;background:var(--input-bg);color:var(--ink)" placeholder="Ej: Galpón de 34,4 m de luz con marcos de columnas de hormigón armado y vigas de techo reticuladas de acero en perfiles circulares Sch 40..."></textarea></div>
       </div>
       <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.9rem">
@@ -45212,7 +45211,7 @@ function renderAsimilacionFuego(container) {
     const v = id => { const e = document.getElementById(id); return e ? (e.value || '').trim() : ''; };
     const pw = (typeof PROYECTO_POWER !== 'undefined' && PROYECTO_POWER) ? PROYECTO_POWER : {};
     return {cliente:v('afi_cliente') || pw.mandante || '', ubic:v('afi_ubic'), edif:v('afi_edif'), destino:v('afi_destino'), tipo:v('afi_tipo'), num:v('afi_num') || pw.codigo || '',
-      fecha:v('afi_fecha') || MCM_HOY(), rev:v('afi_rev') || '0', descRev:v('afi_descRev') || MCM_REVS[0], autor:v('afi_autor') || MCM_ING[0], revisor:v('afi_revisor'), desc:v('afi_desc')};
+      fecha:v('afi_fecha') || MCM_HOY(), rev:v('afi_rev') || '0', descRev:v('afi_descRev') || MCM_REVS[0], autor:v('afi_autor') || MCM_ING[0], desc:v('afi_desc')};
   };
   const verPdf = async (detallada, btn) => {
     if (!ultimo) return;
@@ -45234,7 +45233,7 @@ function renderAsimilacionFuego(container) {
     const v = id => { const e = document.getElementById(id); return e ? (e.value || '').trim() : ''; };
     const pw = (typeof PROYECTO_POWER !== 'undefined' && PROYECTO_POWER) ? PROYECTO_POWER : {};
     const meta = {cliente:v('afi_cliente') || pw.mandante || '', ubic:v('afi_ubic'), edif:v('afi_edif'), destino:v('afi_destino'), tipo:v('afi_tipo'), num:v('afi_num') || pw.codigo || '',
-      fecha:v('afi_fecha') || MCM_HOY(), rev:v('afi_rev') || '0', descRev:v('afi_descRev') || MCM_REVS[0], autor:v('afi_autor') || MCM_ING[0], revisor:v('afi_revisor'), desc:v('afi_desc')};
+      fecha:v('afi_fecha') || MCM_HOY(), rev:v('afi_rev') || '0', descRev:v('afi_descRev') || MCM_REVS[0], autor:v('afi_autor') || MCM_ING[0], desc:v('afi_desc')};
     document.getElementById('printSheetInforme').innerHTML = afInformeHtml(ultimo.p, ultimo.res, meta, {detallada});
     document.documentElement.classList.add('informe-print-active');
     const limpiar = () => { document.documentElement.classList.remove('informe-print-active'); window.removeEventListener('afterprint', limpiar); };
@@ -45538,9 +45537,9 @@ function afInformeHtml(p, res, meta, opts) {
       <div class="t1">${det ? 'MEMORIA DE CÁLCULO DETALLADA' : 'MEMORIA DE CÁLCULO'}</div>
       <div class="t0">Asimilación y comportamiento al fuego de elementos estructurales de acero</div>
       <div class="t2">${esc(proyecto || meta.edif || '')}</div>
-      <table class="inf-t ant"><tbody>${[['Mandante', meta.cliente], ['Proyecto', proyecto || meta.edif], ['Código', meta.num], ['Ubicación', meta.ubic], ['Elaboró', meta.autor], ['Revisó', meta.revisor]].map(x => `<tr><td class="k">${x[0]}</td><td class="l">${esc(x[1] || '—')}</td></tr>`).join('')}</tbody></table>
-      <table class="inf-t rev"><tr><th>Rev.</th><th>Fecha</th><th>Descripción</th><th>Elaboró</th><th>Revisó</th></tr>
-        <tr><td>${esc(meta.rev || '')}</td><td>${esc(meta.fecha || fecha)}</td><td class="l">${esc(meta.descRev || '')}</td><td class="l">${esc(meta.autor || '')}</td><td class="l">${esc(meta.revisor || '')}</td></tr></table>
+      <table class="inf-t ant"><tbody>${[['Mandante', meta.cliente], ['Proyecto', proyecto || meta.edif], ['Código', meta.num], ['Ubicación', meta.ubic], ['Elaboró', meta.autor]].map(x => `<tr><td class="k">${x[0]}</td><td class="l">${esc(x[1] || '—')}</td></tr>`).join('')}</tbody></table>
+      <table class="inf-t rev"><tr><th>Rev.</th><th>Fecha</th><th>Descripción</th><th>Elaboró</th></tr>
+        <tr><td>${esc(meta.rev || '')}</td><td>${esc(meta.fecha || fecha)}</td><td class="l">${esc(meta.descRev || '')}</td><td class="l">${esc(meta.autor || '')}</td></tr></table>
     </div>
 
     <div class="salto"></div>
@@ -45654,7 +45653,6 @@ function afInformeHtml(p, res, meta, opts) {
     <h1>${det ? 8 : 7}. CONCLUSIONES</h1>
     <ul>${concl.map(c => `<li>${c}</li>`).join('')}</ul>
     <p>${conComb.length ? 'Las solicitaciones en situación de incendio se obtuvieron de los estados de carga nominales ingresados (combinación A-4-1); los esfuerzos de cada estado provienen del análisis estructural, fuera de este informe' + (conComb.length < res.length ? ', y los demás elementos usan tensiones y esfuerzos ingresados directamente' : '') + '.' : 'Las tensiones y esfuerzos en situación de incendio fueron calculados fuera de este informe e ingresados como datos.'} Los espesores de protección deben aplicarse según las recomendaciones del fabricante y controlarse en obra (espesor de película seca). La vigencia de los informes de ensayo debe verificarse a la fecha de la recepción de la obra.</p>
-    ${memFirmas({autor: meta.autor, autorProf: '', revisor: meta.revisor, revisorProf: ''})}
   </div>`;
   const numerado = html.replace(/@@FIG@@/g, () => ++fig).replace(/@@TAB@@/g, () => ++tab);
   // Títulos numerados: cada título (h1/h2) se agrupa con el bloque que lo sigue para que nunca quede
