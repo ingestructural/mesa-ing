@@ -2449,6 +2449,7 @@ document.getElementById('fsCloseBtn').addEventListener('click', fsClosePanel);
 document.getElementById('fsToggleBtn').addEventListener('click', async function(){
   fsOpenPanel();
   await fsTryReconnect();
+  if (!FS_ROOT && (await fsReconnectWithGesture())) fsUpdateSaveBarLabel();   // clic explícito del usuario: aquí sí se pide el permiso
   fsDbGet('root').then(function(stored){
     document.getElementById('fsReconnectRow').style.display = (!FS_ROOT && stored) ? 'block' : 'none';
   });
@@ -2557,19 +2558,9 @@ if (!FS_SUPPORTED) {
       if (!stored) return;
       FS_STORED_NAME = stored.name || '';
       fsUpdateRootLabel(); fsUpdateSaveBarLabel();
-      // la carpeta base queda siempre la misma: al primer clic se vuelve a autorizar sola
-      var once = function(ev){
-        // el clic en «Elegir carpeta base…» es para el selector: no gastarlo en reautorizar la base anterior
-        if (ev && ev.target && ev.target.closest && ev.target.closest('#fsChooseRootBtn')) return;
-        document.removeEventListener('pointerdown', once, true); document.removeEventListener('keydown', once, true);
-        if (FS_ROOT) return;
-        fsReconnectWithGesture().then(function(ok2){
-          if (!ok2) return;
-          var rr = document.getElementById('fsReconnectRow'); if (rr) rr.style.display = 'none';
-          fsUpdateRootLabel(); fsUpdateSaveBarLabel(); try { fsRenderTree(); } catch(e){}
-        });
-      };
-      document.addEventListener('pointerdown', once, true); document.addEventListener('keydown', once, true);
+      // Sin reautorización automática al primer clic: Chrome mostraba su aviso de permiso de carpeta al pinchar
+      // cualquier planilla (había que cerrarlo con Escape). El permiso se pide solo cuando el usuario lo usa:
+      // «Carpetas de cálculos», «Reconectar», «Guardar cálculo».
     }).catch(function(){});
   });
 }
