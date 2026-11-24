@@ -682,12 +682,9 @@
   <div class="mob-bar" id="mobBar"><button type="button" id="mobMenu" aria-label="Volver a la lista de herramientas">☰ Herramientas</button><span id="mobTitle"></span></div>
   <main class="view" id="mainView"></main>
   <div class="print-actions">
-    <button id="printBtn" class="print-btn" onclick="printCompleto()" title="Imprimir el detalle completo de esta calculadora">🖨 Imprimir completo</button>
-    <button id="printResumenBtn" class="print-btn alt" onclick="printResumen()" title="Imprimir solo un resumen de una hoja (inputs relevantes y resultados)">📄 Resumen</button>
-    <button id="pdfBtn" class="print-btn" onclick="pdfMenu(this)" title="Descargar PDF (sirve en iPad y celular)">⬇ PDF</button>
-    <button id="memBtn" class="print-btn alt" onclick="mvsCapturar()" title="Llevar este cálculo al Constructor de Memorias: memoria resumida + planilla Excel">📑 Memoria</button>
-    <button id="verPdfBtn" class="print-btn alt" style="display:none" onclick="verPdfMenu(this)" title="Ver la memoria en PDF antes de imprimirla">👁 Ver PDF</button>
-    <button id="revBtn" class="print-btn alt" onclick="revMenu(this)" title="Exportar para revisión externa: Excel, PDF y código fuente de esta planilla">🔎 Revisión</button>
+    <button id="verMemBtn" class="print-btn alt" onclick="verMemoriaPdf(this)" title="Ver la memoria de cálculo en PDF dentro de la Mesa, sin descargarla">👁 Ver memoria PDF</button>
+    <button id="impBtn" class="print-btn" onclick="impMenu(this)" title="Imprimir o exportar: PDF completo, PDF resumen, memoria en Word o envío al Constructor de Memorias">🖨 Imprimir ▾</button>
+    <button id="revBtn" class="print-btn alt" onclick="revMenu(this)" title="Firma de la memoria y exportación para revisión externa">✍ Revisión y firma ▾</button>
   </div>
   <div class="fs-overlay" id="fsOverlay"></div>
   <div class="fs-panel" id="fsPanel">
@@ -1527,6 +1524,7 @@ async function firmaIngClick(ev){
     + '#firmaIngPanel{position:fixed;z-index:205;width:290px;background:var(--surface,#fff);color:var(--ink,#111);border:1px solid var(--line,#ccd6e0);border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.2);padding:.7rem;display:flex;flex-direction:column;gap:.35rem;font-size:.85rem}'
     + '#firmaIngPanel input{font:inherit;padding:.4rem .5rem;border:1px solid var(--line,#ccd6e0);border-radius:5px;background:var(--surface,#fff);color:var(--ink,#111)}'
     + '#firmaIngPanel .print-btn{box-shadow:none}'
+    + '.shell > .print-actions > #firmaBtn{display:none}html.mcm-on .shell > .print-actions > #firmaBtn{display:inline-flex}'
     + 'html.mcm-on .shell > .print-actions{display:flex !important}html.mcm-on .shell > .print-actions > :not(#firmaBtn){display:none !important}'
     + '@media print{.firma-ing-edit{margin:0;padding:3.2cm 0 0;border:0;border-radius:0;background:none}.firma-ing-nota,.firma-ing .fhandle{display:none !important}.firma-ing .fimg{outline:none !important}'
     + 'html.print-resumen-mode:not(.xlsx-print-active):not(.informe-print-active) .firma-ing{zoom:2.1739}#firmaIngPanel{display:none !important}}';
@@ -2400,19 +2398,11 @@ function injectSaveBar(main){
     '<span>Carpeta activa: <span class="fs-active-path"></span></span>' +
     '<button type="button" id="fsSaveBtn" title="Guardar en la carpeta activa con nombre automático (fecha + título del cálculo)">💾 Guardar cálculo</button>' +
     '<button type="button" id="fsSaveAsBtn" title="Elegir nombre y ubicación del archivo">💾 Guardar como…</button>' +
-    '<button type="button" id="fsOpenFileBtn" title="Abrir un cálculo .json guardado en cualquier ubicación">📂 Abrir archivo…</button>' +
-    '<button type="button" id="fsPrintBtn">🖨 Exportar PDF</button>' +
-    '<button type="button" id="fsBrowseBtn">📁 Carpetas…</button>';
+    '<button type="button" id="fsOpenFileBtn" title="Abrir un cálculo .json guardado en cualquier ubicación">📂 Abrir archivo…</button>';
   head.appendChild(bar);
   bar.querySelector('#fsSaveBtn').addEventListener('click', function(){ fsSaveCurrentCalc(); });
   bar.querySelector('#fsSaveAsBtn').addEventListener('click', function(){ fsSaveAsCurrentCalc(); });
   bar.querySelector('#fsOpenFileBtn').addEventListener('click', function(){ fsOpenFromDisk(); });
-  bar.querySelector('#fsPrintBtn').addEventListener('click', function(){
-    if (typeof pdfMenu === 'function') { pdfMenu(this); return; }
-    fsToast('En el diálogo de impresión, elige "Guardar como PDF" y guárdalo en: ' + (FS_ACTIVE_PATH.length ? FS_ACTIVE_PATH.join(' / ') : '(tu carpeta activa)'));
-    setTimeout(function(){ window.print(); }, 200);
-  });
-  bar.querySelector('#fsBrowseBtn').addEventListener('click', function(){ fsOpenPanel(); });
   fsUpdateSaveBarLabel();
 }
 
@@ -45012,7 +45002,7 @@ function renderAsimilacionFuego(container) {
         <div class="field"><label>Elaboró</label><input type="text" data-noupper id="afi_autor" list="dl_afi_ing" placeholder="${MCM_ING[0]}"><datalist id="dl_afi_ing">${MCM_ING.filter(x => !/Villagr/i.test(x)).map(x => `<option value="${x}"></option>`).join('')}</datalist></div>
         <div class="field" style="grid-column:1/-1"><label>Descripción de la estructura (texto libre)</label><textarea id="afi_desc" rows="4" style="width:100%;box-sizing:border-box;font-family:'IBM Plex Sans',sans-serif;font-size:.9rem;padding:.5rem;border:1px solid var(--input-border);border-radius:4px;background:var(--input-bg);color:var(--ink)" placeholder="Ej: Galpón de 34,4 m de luz con marcos de columnas de hormigón armado y vigas de techo reticuladas de acero en perfiles circulares Sch 40..."></textarea></div>
       </div>
-      <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.9rem">
+      <div style="display:none">
         <button type="button" class="print-btn" id="afi_imprimir">📑 Memoria</button>
         <button type="button" class="print-btn" id="afi_imprimirDet">📘 Memoria detallada</button>
         <button type="button" class="print-btn alt" id="afi_verPdf" title="Ver la memoria en PDF antes de imprimir">👁 Ver PDF memoria</button>
@@ -45339,7 +45329,7 @@ function afGraficoKyKe() {
 async function afMemoriaPdf(html) {
   const lib = await pdfCargarLib();
   const tmp = document.createElement('div'); tmp.innerHTML = html;
-  const raiz = tmp.querySelector('.af-inf') || tmp, estilo = raiz.querySelector('style');
+  const raiz = tmp.querySelector('.af-inf, .mem-inf') || tmp, estilo = raiz.querySelector('style'), claseRaiz = raiz.classList.contains('mem-inf') ? 'mem-inf' : 'af-inf';
   // html2canvas parte mal las líneas justificadas en el guion de «F-60»: esas palabras van sin corte
   const tw = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT), nodos = [];
   while (tw.nextNode()) if (/F-\d/.test(tw.currentNode.nodeValue) && tw.currentNode.parentNode.tagName !== 'STYLE') nodos.push(tw.currentNode);
@@ -45348,7 +45338,7 @@ async function afMemoriaPdf(html) {
   const tramos = []; let act = null;
   Array.from(raiz.children).forEach(ch => {
     if (ch.tagName === 'STYLE') return;
-    if (ch.classList.contains('salto') || !act) { act = document.createElement('div'); act.className = 'af-inf'; if (estilo) act.appendChild(estilo.cloneNode(true)); tramos.push(act); }
+    if (ch.classList.contains('salto') || !act) { act = document.createElement('div'); act.className = claseRaiz; if (estilo) act.appendChild(estilo.cloneNode(true)); tramos.push(act); }
     if (!ch.classList.contains('salto') || ch.children.length || ch.textContent.trim()) act.appendChild(ch);
   });
   const oc = document.createElement('div'); oc.style.cssText = 'position:fixed;left:0;top:0;width:703px;z-index:-10;pointer-events:none;background:#fff';
@@ -46315,8 +46305,8 @@ function memPanelHtml(pre, num, titulo, phDesc) {
         ${inp('revisorProf','Profesión (revisado por)','Ej: Ingeniero Civil Estructural')}
         <div class="field" style="grid-column:1/-1"><label>Descripción (texto libre)</label><textarea id="${pre}_desc" rows="4" style="width:100%;box-sizing:border-box;font-family:'IBM Plex Sans',sans-serif;font-size:.9rem;padding:.5rem;border:1px solid var(--input-border);border-radius:4px;background:var(--input-bg);color:var(--ink)" placeholder="${phDesc}"></textarea></div>
       </div>
-      <button type="button" class="print-btn" id="${pre}_imprimir" style="margin-top:.9rem">📑 Imprimir memoria de cálculo</button>
-      <div class="note" style="margin-top:.4rem">En el diálogo de impresión elija "Guardar como PDF" para obtener la memoria en PDF. Los botones "Imprimir completo" y "Resumen" siguen entregando la hoja de cálculo tipo planilla.</div>
+      <button type="button" class="print-btn" id="${pre}_imprimir" hidden>📑 Imprimir memoria de cálculo</button>
+      <div class="note" style="margin-top:.6rem">Estos datos van en la portada del informe. La memoria se revisa con <b>«👁 Ver memoria PDF»</b> y se imprime con <b>«🖨 Imprimir ▾ → Memoria de cálculo (informe)»</b>, en la barra superior.</div>
     </div>`;
 }
 function memMeta(pre) {
@@ -50032,13 +50022,22 @@ async function mvsHojaHtml(main) {
   return c.innerHTML;
 }
 async function mvsCapturar() {
+  const cap = await mvsCapturaObj(); if (!cap) return;
+  const id = cap.tool, secs = cap.secs;
+  const L = mvsLista().filter(c => !(c.tool === id && c.fecha === cap.fecha && JSON.stringify(c.secs) === JSON.stringify(secs)));
+  L.unshift(cap); mvsGuardarLista(L.slice(0, 10));
+  try { localStorage.setItem(MVS_TIPO, 'simple'); localStorage.setItem('mesaMemSel', cap.id); } catch (e) {}
+  fsToast('Resultado de «' + cap.nombre + '» enviado al Constructor de Memorias.');
+  location.hash = 'memorias';
+}
+async function mvsCapturaObj() {
   const main = document.getElementById('mainView'), id = (location.hash || '').replace('#', '');
   const tool = (typeof TOOLS !== 'undefined' ? TOOLS : []).find(t => t.id === id);
-  if (!tool || id === 'memorias') { fsToast('Abre primero la planilla que quieres llevar a la memoria.'); return; }
-  if (calcAvisoBloqueo()) return;
+  if (!tool || id === 'memorias') { fsToast('Abre primero la planilla de cálculo.'); return null; }
+  if (calcAvisoBloqueo()) return null;
   const sheet = document.getElementById('printSheetCompleto');
   const secs = sheet && sheet.innerHTML.trim() ? mvsLeerHoja(sheet) : mvsLeerPaneles(main);
-  if (!secs.length) { fsToast('Esta planilla no tiene resultados para llevar a la memoria.'); return; }
+  if (!secs.length) { fsToast('Esta planilla no tiene resultados para la memoria.'); return null; }
   const figs = [];
   try {
     const html = typeof printEsquemasHtml === 'function' ? printEsquemasHtml() : '';
@@ -50051,12 +50050,7 @@ async function mvsCapturar() {
   } catch (e) {}
   const meta = Array.from(main.querySelectorAll('.calc-meta input')).map(i => i.value).filter(Boolean);
   let hoja = ''; try { hoja = await mvsHojaHtml(main); } catch (e) { hoja = ''; }
-  const cap = {id:'c' + Date.now(), tool:id, nombre:mvsTxt(main.querySelector('.calc-head h1')) || tool.name, tag:tool.tag || '', desc:tool.desc || '', fecha:MCM_HOY(), meta, secs, figs, hoja, txt:{}};
-  const L = mvsLista().filter(c => !(c.tool === id && c.fecha === cap.fecha && JSON.stringify(c.secs) === JSON.stringify(secs)));
-  L.unshift(cap); mvsGuardarLista(L.slice(0, 10));
-  try { localStorage.setItem(MVS_TIPO, 'simple'); localStorage.setItem('mesaMemSel', cap.id); } catch (e) {}
-  fsToast('Resultado de «' + cap.nombre + '» enviado al Constructor de Memorias.');
-  location.hash = 'memorias';
+  return {id:'c' + Date.now(), tool:id, nombre:mvsTxt(main.querySelector('.calc-head h1')) || tool.name, tag:tool.tag || '', desc:tool.desc || '', fecha:MCM_HOY(), meta, secs, figs, hoja, txt:{}};
 }
 /* ---------- contenido de la memoria ---------- */
 const mvsEsCarga = s => /carga|solicitac|acci[oó]n|sism|viento|presi[oó]n|empuje|fuerza/i.test(s);
@@ -50272,7 +50266,7 @@ function renderMemoriaSimple(container) {
     const E = C ? mvsEstados(C) : [];
     return `<div class="calc-head"><h1>Constructor de Memorias de Cálculo</h1><div class="sub">Memoria resumida de una verificación hecha en cualquier planilla de la Mesa (estanque, placa base, fundación, etc.): objetivo, introducción, normativa, datos y materiales, cargas, verificaciones, esquemas y conclusiones, más la planilla Excel del cálculo como anexo.</div></div>
       <div class="panel"><h3>1 · Verificación</h3>${lista}
-        <div class="note">${L.length ? 'Para agregar otra: abre la planilla, haz el cálculo y toca <b>«📑 Memoria»</b> (junto a Imprimir). Se guardan las últimas 10.' : 'Aún no hay verificaciones. Abre cualquier planilla de la Mesa, haz el cálculo y toca <b>«📑 Memoria»</b> (junto a «Imprimir completo»): el resultado llega aquí automáticamente.'}</div>
+        <div class="note">${L.length ? 'Para agregar otra: abre la planilla, haz el cálculo y toca <b>«🖨 Imprimir ▾ → Enviar al Constructor de Memorias»</b> (barra superior). Se guardan las últimas 10.' : 'Aún no hay verificaciones. Abre cualquier planilla de la Mesa, haz el cálculo y toca <b>«🖨 Imprimir ▾ → Enviar al Constructor de Memorias»</b> (barra superior): el resultado llega aquí automáticamente.'}</div>
         ${C ? `<div class="note" style="margin-top:.4rem"><b>${esc(C.nombre)}</b> · ${C.secs.length} secciones · ${E.length} verificaciones con estado (${E.filter(e => e.est === 'CUMPLE').length} cumplen${E.some(e => e.est === 'NO CUMPLE') ? ', <b style="color:#b91c1c">' + E.filter(e => e.est === 'NO CUMPLE').length + ' no cumplen</b>' : ''}) · ${C.figs.length} esquema(s) <button type="button" class="btn-add" id="mvsDel" style="margin-left:.6rem">Quitar de la lista</button></div>` : ''}
       </div>
       ${C ? `<div class="panel"><h3>2 · Proyecto</h3><div class="field-grid">${IP('proyecto', 'Proyecto')}${IP('mandante', 'Mandante')}${IP('codigo', 'Código')}${IP('ubicacion', 'Ubicación')}${IP('elaboro', 'Elaboró')}${IP('reviso', 'Revisó')}${IP('fecha', 'Fecha')}${IP('rev', 'Revisión')}</div><div class="note">Los datos del proyecto son los mismos de la memoria general.</div></div>
@@ -50286,7 +50280,7 @@ function renderMemoriaSimple(container) {
         <button type="button" class="btn-add" id="mvsReset">Restaurar textos sugeridos</button></div>
       <div class="panel"><h3>4 · Emitir memoria</h3>
         <div class="mem-btns"><button type="button" class="mem-btn" data-act="todo">📦 Memoria Word + planilla Excel</button><button type="button" class="mem-btn" data-act="word">⬇ Word</button><button type="button" class="mem-btn" data-act="xlsx">📊 Excel</button><button type="button" class="mem-btn" data-act="pdf">⬇ PDF</button><button type="button" class="mem-btn" data-act="verpdf" title="Ver la memoria en PDF sin descargarla">👁 Ver PDF</button></div>
-        <div class="note">El PDF incluye al final la impresión completa de la planilla (Anexo B)${C.hoja ? '' : ' — <b>esta verificación se capturó antes de esa función: vuelve a la planilla y toca «📑 Memoria» otra vez para incluirla</b>'}. Word: el índice se actualiza al abrir (Word pregunta «¿actualizar campos?» → Sí). En iPad/iPhone los archivos se entregan con el menú Compartir.</div>
+        <div class="note">El PDF incluye al final la impresión completa de la planilla (Anexo B)${C.hoja ? '' : ' — <b>esta verificación se capturó antes de esa función: vuelve a la planilla y toca «🖨 Imprimir ▾ → Enviar al Constructor de Memorias» otra vez para incluirla</b>'}. Word: el índice se actualiza al abrir (Word pregunta «¿actualizar campos?» → Sí). En iPad/iPhone los archivos se entregan con el menú Compartir.</div>
         <div class="mem-prev-wrap" id="mvsPrev"></div></div>` : ''}`;
   }
   function prev() { const w = root.querySelector('#mvsPrev'); if (w && C) w.innerHTML = mcmSheetHtml({proy:Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO'})}, mvsBuild(C, P)).replace(/<\/div>$/, mvsAnexoHtml(C) + '</div>'); }
@@ -59598,14 +59592,21 @@ function revMenu(btn) {
   if (m) { m.remove(); return; }
   if (!revToolActual()) { fsToast('Abre primero una planilla de cálculo. Para exportar todas, usa el botón del inicio de la Mesa.'); return; }
   m = document.createElement('div'); m.id = 'revMenu';
-  m.innerHTML = '<div class="rev-t">Exportar para revisión externa</div>'
+  const fOn = typeof firmaIngOn === 'function' && firmaIngOn();
+  m.innerHTML = '<div class="rev-t">Firma</div>'
+    + '<button type="button" data-k="firma">' + (fOn ? '✓ Quitar la firma' : '✍ Firmar la memoria') + '<small>' + (fOn ? 'La memoria impresa queda sin firma' : 'Pone su firma sobre el nombre en el pie de firma') + '</small></button>'
+    + '<button type="button" data-k="firmaArch">🖊 Cambiar archivo de firma…</button>'
+    + '<div class="rev-t">Revisión externa</div>'
     + '<button type="button" data-k="zip">📦 Paquete completo (.zip)<small>Excel + PDF + código fuente + LEEME</small></button>'
-    + '<button type="button" data-k="excel">📊 Solo Excel</button><button type="button" data-k="pdf">📄 Solo PDF</button><button type="button" data-k="codigo">🧾 Solo código fuente</button>';
+    + '<button type="button" data-k="excel">📊 Solo Excel</button><button type="button" data-k="codigo">🧾 Solo código fuente</button>';
   document.body.appendChild(m);
   const r = btn.getBoundingClientRect();
   m.style.left = Math.max(8, Math.min(window.innerWidth - 268, r.right - 260)) + 'px';
   if (r.top > window.innerHeight / 2) m.style.bottom = (window.innerHeight - r.top + 6) + 'px'; else m.style.top = (r.bottom + 6) + 'px';
-  m.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; m.remove(); revExportar(b.dataset.k); });
+  m.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; m.remove();
+    if (b.dataset.k === 'firma') { firmaIngClick({}); return; }
+    if (b.dataset.k === 'firmaArch') { firmaIngPanel(btn); return; }
+    revExportar(b.dataset.k); });
   setTimeout(() => document.addEventListener('click', function cerrar(e) { if (!m.contains(e.target) && e.target !== btn) m.remove(); document.removeEventListener('click', cerrar); }), 0);
 }
 async function revExportar(k) {
@@ -59707,4 +59708,99 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
+<script>
+/* =========================================================================
+   BARRA DE BOTONES ÚNICA DE LAS PLANILLAS (2026-11)
+   🛠 Rediseño · 👁 Ver memoria PDF · 🖨 Imprimir ▾ · ✍ Revisión y firma ▾
+   Reemplaza a: Imprimir completo, Resumen, ⬇ PDF, 📑 Memoria, 👁 Ver PDF, 🔎 Revisión, ✍ Firmar,
+   y a los botones de memoria dentro de los paneles (fuego, transformadores, puentes, asimilación),
+   que quedan ocultos y se accionan desde aquí.
+   ========================================================================= */
+// En iPad / celular la app instalada no imprime: ahí se genera el PDF en el equipo (exportarPDF)
+function impEsMovil() {
+  const ua = navigator.userAgent || '';
+  return /iPad|iPhone|iPod|Android/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    || (window.matchMedia && window.matchMedia('(max-width:820px)').matches);
+}
+// Botón oculto de la memoria propia de la planilla (formato informe), si la tiene
+function impInformePropio() {
+  const main = document.getElementById('mainView'); if (!main) return null;
+  if (document.getElementById('afi_imprimir')) return {tipo:'af'};
+  const b = main.querySelector('button[id$="_imprimir"]');
+  return b ? {tipo:'mem', btn:b} : null;
+}
+function impMenuFlotante(btn, items, ancho) {
+  let m = document.getElementById('pdfMenu');
+  if (m) { m.remove(); return; }
+  m = document.createElement('div'); m.id = 'pdfMenu'; m.style.width = (ancho || 250) + 'px';
+  m.innerHTML = items.map((o, i) => '<button type="button" data-i="' + i + '">' + o.t + '</button>').join('');
+  document.body.appendChild(m);
+  const r = btn.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(window.innerWidth - (ancho || 250) - 8, r.right - (ancho || 250))) + 'px';
+  if (r.top > window.innerHeight / 2) m.style.bottom = (window.innerHeight - r.top + 6) + 'px'; else m.style.top = (r.bottom + 6) + 'px';
+  m.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; m.remove(); items[+b.dataset.i].fn(btn); });
+  setTimeout(() => document.addEventListener('click', function cerrar(e) { if (!m.contains(e.target) && e.target !== btn) m.remove(); document.removeEventListener('click', cerrar); }), 0);
+}
+// Proyecto del Constructor de Memorias (con el proyecto de POWER fijado, si lo hay)
+function impProyecto() {
+  const S0 = mcmLoad(), P = Object.assign({}, S0.proy);
+  const pw = (typeof PROYECTO_POWER !== 'undefined' && PROYECTO_POWER) ? PROYECTO_POWER : null;
+  if (pw) { if (pw.codigo && !P.codigo) P.codigo = pw.codigo; if (pw.proyecto && !P.proyecto) P.proyecto = pw.proyecto; if (pw.mandante && !P.mandante) P.mandante = pw.mandante; }
+  return {S0, P, Pt:Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO'})};
+}
+async function impConEspera(btn, txt, fn) {
+  const t0 = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ ' + txt; }
+  try { await fn(); } catch (e) { fsToast('No se pudo generar: ' + ((e && e.message) || e)); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = t0; } }
+}
+
+/* ---------- 👁 Ver memoria PDF ---------- */
+async function verMemoriaPdf(btn) {
+  if (window.__verPdfOpciones) { verPdfMenu(btn); return; }          // Asimilación: memoria y memoria detallada
+  const inf = impInformePropio();
+  if (inf && inf.tipo === 'mem') {                                   // informe propio (fuego, transformadores, puentes)
+    let html = null; const orig = window.memImprimir;
+    window.memImprimir = h => { html = h; };
+    try { inf.btn.click(); } finally { window.memImprimir = orig; }
+    if (!html) return;                                               // la planilla ya avisó por qué no hay memoria
+    const nombre = 'Memoria_' + ((location.hash || '').replace('#', '') || 'planilla') + '.pdf';
+    await impConEspera(btn, 'Generando PDF…', async () => mcmVerPdf(await afMemoriaPdf(html), nombre));
+    return;
+  }
+  const cap = await mvsCapturaObj(); if (!cap) return;               // resto: memoria resumida del Constructor (con la hoja como anexo)
+  await impConEspera(btn, 'Generando PDF…', async () => {
+    const {P, Pt} = impProyecto(), B = mvsBuild(cap, P);
+    mcmVerPdf(await mvsPdf(cap, Pt, B), mvsNombreBase(cap, P) + '.pdf');
+  });
+}
+
+/* ---------- 📝 Memoria en Word (mismo generador del Constructor) ---------- */
+async function impWord(btn) {
+  const cap = await mvsCapturaObj(); if (!cap) return;
+  await impConEspera(btn, 'Generando Word…', async () => {
+    const {S0, P, Pt} = impProyecto(), B = mvsBuild(cap, P), base = mvsNombreBase(cap, P);
+    const blob = await mcmDocx(Object.assign({}, S0, {proy:Pt}), B);
+    await mcmGuardarArchivo(base + '.docx', blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Documento de Word', '.docx');
+    try { archMemoria([{nombre:base + '.docx', blob}], Object.assign({}, Pt, {titulo:'Memoria de cálculo — ' + cap.nombre}), {clase:'verificacion', planilla:cap.nombre}); } catch (e) {}
+  });
+}
+
+/* ---------- 🖨 Imprimir ▾ ---------- */
+function impMenu(btn) {
+  if (!document.getElementById('pdfMenu') && !(typeof revToolActual === 'function' && revToolActual())) { fsToast('Abre primero una planilla de cálculo.'); return; }
+  const movil = impEsMovil(), items = [];
+  const inf = impInformePropio();
+  if (inf && inf.tipo === 'af') {
+    items.push({t:'📑 Memoria de cálculo (informe)', fn:() => document.getElementById('afi_imprimir').click()});
+    items.push({t:'📘 Memoria detallada (informe)', fn:() => document.getElementById('afi_imprimirDet').click()});
+  } else if (inf) items.push({t:'📑 Memoria de cálculo (informe)', fn:() => inf.btn.click()});
+  items.push({t:'🖨 Planilla completa — PDF', fn:() => movil ? exportarPDF(false) : printCompleto()});
+  items.push({t:'📄 Planilla resumen — PDF', fn:() => movil ? exportarPDF(true) : printResumen()});
+  items.push({t:'📝 Memoria en Word (.docx)', fn:b => impWord(b)});
+  items.push({t:'📦 Enviar al Constructor de Memorias', fn:() => mvsCapturar()});
+  impMenuFlotante(btn, items, 270);
+}
+</script>
+
 </body></html>
