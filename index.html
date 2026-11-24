@@ -47415,6 +47415,66 @@ function efPerimetroTxt(e) {
   return {formula: fP, calc: `${sP}<br>Am/V = 10·P / A = 10·${N(P)} / ${A} = <b>${MEM_N(10*P/e.A, 1)} m⁻¹</b>`, P};
 }
 
+// ---- Exención de protección y protección complementaria (conceptos de la nota técnica NT-FUE-01 de ING,
+// 24-11-2026, basada en EN 1993-1-2 §4.2.4, §4.2.5.1 y §4.2.5.2, OGUC Art. 4.3.2 y Listado Oficial ED17-2025).
+// (1) Un perfil sin protección cumple F cuando θa(t = F) ≤ θa,cr, es decir, tcr ≥ F (caso poco frecuente).
+// (2) Si no alcanza, la protección se dimensiona para el F completo con el perfil real: los minutos no se suman.
+// Límite de ksh·Am/V para cumplir sin protección: se calcula con el mismo motor de la planilla (afCurva, parámetros
+// fijos αc = 25, Φ = εf = 1, εm = 0,7, ca(θ), ρ = 7850, Δt = 5 s) por bisección, truncado a 0,1 m⁻¹ (lado seguro).
+// null = no alcanza ni con ksh·Am/V = 10 m⁻¹ (valor mínimo de cálculo, EN 1993-1-2 §4.2.5.1).
+// Reproduce la Tabla 3 de NT-FUE-01 (μ0 = 0,3: 44,5 m⁻¹ para F-30 y 14,2 m⁻¹ para F-60), con diferencias ≤ 0,2 m⁻¹ por el truncamiento.
+const EF_LIM_MU = [0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7], EF_LIM_F = [30, 60, 90];
+let efLimCache = null;
+function efLimitesSinProt() {
+  if (efLimCache) return efLimCache;
+  const p = {dt: 5, alfa: 25, phi: 1, ef: 1, em: 0.7, caVar: true, ca: 600, rho: 7850, ksh: 1};
+  const series = {};
+  const tcr = (F, th) => { const k = F.toFixed(3); if (!series[k]) series[k] = afCurva(F, p).serie; return afTiempoCrit(series[k], th); };
+  const cumple = (F, th, Fr) => { const t = tcr(F, th); return t == null || t >= Fr; };
+  efLimCache = EF_LIM_MU.map(mu => {
+    const th = efThetaCr(mu), lim = {};
+    EF_LIM_F.forEach(Fr => {
+      if (!cumple(10, th, Fr)) { lim[Fr] = null; return; }
+      let lo = 10, hi = 400;
+      for (let i = 0; i < 24; i++) { const m = (lo + hi)/2; if (cumple(m, th, Fr)) lo = m; else hi = m; }
+      lim[Fr] = Math.floor(lo*10 + 1e-6)/10;
+    });
+    return {mu, th, lim};
+  });
+  return efLimCache;
+}
+// Indicación por elemento. k: 'exime' (alcanza F sin protección por cálculo), 'complementa' (no alcanza: protección
+// para el F completo), 'inest' (gobierna la inestabilidad; no se evalúa con θcr). null = no aplica o falta información.
+function efSinProt(e) {
+  if (!(e.Freq > 0) || !e.curva || !e.geomOk) return null;
+  if (e.metodoCr === 'inestabilidad') return {k: 'inest'};
+  if (e.thcr == null) return null;
+  const thF = e.curva.hitos && e.curva.hitos[e.Freq] != null ? e.curva.hitos[e.Freq] : null;
+  return {k: (e.tcr == null || e.tcr >= e.Freq) ? 'exime' : 'complementa', thF, kAm: e.ksh*e.F};
+}
+function efSinProtWeb(e) {
+  const s = efSinProt(e);
+  if (!s) return '';
+  const tTxt = e.tcr != null ? `alcanza θcr = ${Math.round(e.thcr)} °C a los ${fmt1(e.tcr)} min` : `no alcanza θcr = ${Math.round(e.thcr)} °C en 150 min`;
+  const base = `ksh·Am/V = ${fmt1(s.kAm || 0)} m⁻¹${e.clase4 ? '; sección clase 4, §4.2.3.6' : ''}`;
+  if (s.k === 'inest') return `<li><strong>${esc(e.nombre)}</strong>: gobierna la inestabilidad, el método de la temperatura crítica no aplica. Para prescindir de la protección se debe verificar la resistencia a pandeo en caliente (EN 1993-1-2 §4.2.3.2 o §4.2.3.3), que entrega tiempos menores.</li>`;
+  if (s.k === 'exime') return `<li><strong>${esc(e.nombre)}</strong>: <span class="chip warn">Sin protección alcanzaría F-${e.Freq} por cálculo</span> El acero ${tTxt} (${base}). ${e.prot === 'ninguna' ? 'Caso poco frecuente de eximición.' : 'Podría evaluarse prescindir de la protección seleccionada.'} No es una solución del Listado: se presenta como antecedente técnico o estudio de asimilación (OGUC 4.3.2) y la DOM puede exigir un ensayo de laboratorio. Confirme que μ0 sale de la combinación de incendio con las cargas reales y valide el planteamiento con la DOM antes de construir.</li>`;
+  return `<li><strong>${esc(e.nombre)}</strong>: sin protección ${tTxt}, antes de F-${e.Freq} (${base}). La protección se dimensiona para los ${e.Freq} min completos sobre este perfil; los ${fmt1(e.tcr)} min del perfil no se descuentan. El perfil aporta con su masividad, que fija la fila de la tabla de espesores, y con su θcr, que solo reduce el espesor dentro del rango ensayado del producto.</li>`;
+}
+function efSinProtMem(e) {
+  const s = efSinProt(e), N = MEM_N;
+  if (!s) return '';
+  if (s.k === 'inest') return `<h2>Cumplimiento sin protección</h2><p>En este elemento gobierna la inestabilidad, por lo que su cumplimiento sin protección no se evalúa con la temperatura crítica. Corresponde la verificación de la resistencia a pandeo en incendio de EN 1993-1-2 §4.2.3.2 o §4.2.3.3, que entrega tiempos menores que los del método de la temperatura crítica.</p>`;
+  const thF = s.thF != null ? `θa(t = ${e.Freq} min) = ${N(s.thF, 0)} °C ${s.k === 'exime' ? '≤' : '&gt;'} θa,cr = ${N(e.thcr, 0)} °C` : '';
+  const tTxt = e.tcr != null ? `tcr = ${N(e.tcr, 1)} min` : `tcr &gt; 150 min`;
+  if (s.k === 'exime') return `<h2>Cumplimiento sin protección</h2>
+      <div class="eq">${thF ? thF + ' &nbsp;&nbsp;⇔&nbsp;&nbsp; ' : ''}${tTxt} ≥ F = ${e.Freq} min</div>
+      <p>Con ksh·Am/V = ${N(s.kAm, 1)} m⁻¹ y θa,cr = ${N(e.thcr, 0)} °C${e.clase4 ? ' (sección clase 4)' : ' (μ0 = ' + N(e.mu, 3) + ')'}, el acero sin protección no alcanza la temperatura crítica dentro de los ${e.Freq} min exigidos. ${e.prot === 'ninguna' ? 'El elemento cumple por cálculo la condición de la sección 6.0 sin protección aplicada.' : 'Por cálculo, el perfil alcanzaría la exigencia sin la protección especificada, que queda del lado de la seguridad.'} Este resultado no corresponde a una solución del Listado Oficial: su acreditación se rige por el Art. 4.3.2, como antecedente técnico o estudio de asimilación firmado por el profesional especialista, y la DOM puede exigir un ensayo de laboratorio.</p>`;
+  return `<h2>Aporte del perfil a la protección</h2>
+      <div class="eq">${thF ? thF + ' &nbsp;&nbsp;⇔&nbsp;&nbsp; ' : ''}${tTxt} &lt; F = ${e.Freq} min</div>
+      <p>Sin protección, el acero alcanza la temperatura crítica antes de la exigencia. ${e.prot === 'ninguna' ? 'El elemento requiere una protección' : 'La protección se verifica'} para los ${e.Freq} min completos de la curva normalizada aplicada sobre este perfil: los ${N(e.tcr, 1)} min que resiste el perfil por sí solo no se descuentan de la exigencia. El aporte del perfil está en su factor de sección (ksh·Am/V = ${N(s.kAm, 1)} m⁻¹; masividad a 4 caras ${N(e.F4, 1)} m⁻¹), que fija la fila de la tabla de espesores, y en su temperatura crítica θa,cr = ${N(e.thcr, 0)} °C, que reduce el espesor solo dentro del rango que contemple la tabla ensayada del producto.</p>`;
+}
+
 function efMemoriaHtml(inp, r, meta) {
   const N = MEM_N, PAL = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
   const pT = {dt: 5, alfa: 25, phi: 1, ef: 1, em: 0.7, caVar: true, ca: 600, rho: 7850};
@@ -47485,6 +47545,19 @@ function efMemoriaHtml(inp, r, meta) {
   const grafGlobal = conCurva.length ? `${efGraficoMem(conCurva.slice(0, 8).map(e => ({nombre: e.nombre, serie: e.curva.serie, color: colEl[r.elems.indexOf(e)]})), [], [], 120)}${MEM_F('Temperatura del acero sin protección versus tiempo para todos los elementos, y curva de incendio normalizado NCh 935/1')}` : '';
   const conCr = r.elems.filter(e => e.thcr != null && e.mu > 0 && !e.clase4);
   const grafKy = conCr.length ? `${efGraficoKy(conCr.slice(0, 8).map(e => ({nombre: e.nombre, th: e.thcr, mu: Math.max(0.013, e.mu), color: colEl[r.elems.indexOf(e)]})))}${MEM_F('Factor de reducción del límite elástico ky,θ (EN 1993-1-2 Tabla 3.1), relación μ0–θcr de la ecuación 4.22 y punto de trabajo de cada elemento')}` : '';
+
+  // ---- Cumplimiento sin protección y protección complementaria (NT-FUE-01)
+  const LIM = efLimitesSinProt(), lim03 = LIM.find(x => x.mu === 0.3).lim;
+  const limTxt = v => v != null ? N(v, 1) : 'No alcanza';
+  const tablaLim = `<p><b>Cumplimiento de la exigencia sin protección.</b> Un elemento de acero cumple su exigencia F sin protección cuando, al término de los F minutos de la curva normalizada, su temperatura no supera la temperatura crítica:</p>
+    <div class="eq">θa(t = F) ≤ θa,cr &nbsp;&nbsp;⇔&nbsp;&nbsp; tcr ≥ F</div>
+    <p>La verificación combina dos variables: el grado de utilización μ0 fija la temperatura admisible (ec. 4.22) y el factor de sección corregido ksh·Am/V fija la velocidad con que el acero llega a ella (ec. 4.25). La tabla siguiente se obtiene con los parámetros térmicos adoptados y la misma integración paso a paso, buscando para cada combinación el mayor ksh·Am/V con tcr ≥ F (valores truncados a 0,1 m⁻¹; ksh·Am/V no se toma menor que 10 m⁻¹, §4.2.5.1).</p>
+    ${MEM_T('Valor máximo de ksh·Am/V (m⁻¹) para que el acero sin protección cumpla la exigencia, según el grado de utilización')}
+    <table class="inf-t"><tr><th>Exigencia</th>${LIM.map(x => `<th>μ0 = ${N(x.mu, 2)}<br>θcr = ${N(x.th, 0)} °C</th>`).join('')}</tr>
+    ${EF_LIM_F.map(Fr => `<tr><td>F-${Fr}</td>${LIM.map(x => `<td>${limTxt(x.lim[Fr])}</td>`).join('')}</tr>`).join('')}</table>
+    <p>F-30 sin protección es alcanzable con perfiles masivos y niveles de carga moderados a bajos (con μ0 = 0,30, ksh·Am/V ≤ ${limTxt(lim03[30])} m⁻¹). F-60 exige secciones muy macizas y poca carga (con μ0 = 0,30, ksh·Am/V ≤ ${limTxt(lim03[60])} m⁻¹, cerca del mínimo de cálculo de 10 m⁻¹), y F-90 queda prácticamente excluido para un perfil expuesto en todo su contorno. El método supone temperatura uniforme en la sección y es válido cuando no gobierna la inestabilidad (§4.2.4); en pilares y en vigas con volcamiento corresponde la resistencia en incendio de §4.2.3.2 y §4.2.3.3, que entrega tiempos menores. Las secciones clase 4 se limitan a 350 °C (§4.2.3.6). El grado de utilización proviene de la combinación de incendio con las cargas del proyecto, y el factor de sección, de la exposición real del elemento.</p>
+    <p><b>Protección y capacidad propia del perfil.</b> Cuando el perfil no alcanza la exigencia por sí solo, la protección se dimensiona para el tiempo completo; los minutos de resistencia no se suman. Para una exigencia F-60, un perfil que alcanza su temperatura crítica a los 30 min no requiere una protección «de 30 minutos», sino una protección para los 60 min de la curva normalizada aplicada sobre ese perfil. La curva no se reinicia (a los 30 min los gases están a ${N(afIso(30), 0)} °C y siguen subiendo) y la protección actúa desde el inicio frenando el paso de calor hacia el acero (§4.2.5.2). El aporte del perfil está en su masividad, que fija la fila de la tabla de espesores (un perfil más masivo requiere menos espesor), y en su temperatura crítica, que reduce el espesor solo dentro del rango que contemple la tabla ensayada del producto. Adoptar una temperatura crítica mayor que la de la tabla exige justificarla por cálculo y constituye un estudio de asimilación.</p>
+    <p><b>Acreditación de estos resultados.</b> Un cálculo según EN 1993-1-2 que muestre que un perfil cumple sin protección, o que justifique un espesor menor que el de tabla, no corresponde a una solución del Listado Oficial. Se presenta como antecedente técnico o estudio de asimilación firmado por el profesional especialista (Art. 4.3.2), y la DOM puede exigir un ensayo de laboratorio. El Listado Oficial ED17-2025 no tiene pinturas intumescentes inscritas, por lo que su uso requiere un ensayo según NCh 935/1 de una Institución Oficial; una evaluación extranjera, como una tabla EN 13381, no implica por sí sola su aceptación en Chile.</p>`;
 
   const MIN_TRAZA = [0, 1, 2, 5, 10, 15, 20, 30, 45, 60, 90, 120];
   const fichas = r.elems.map((e, i) => {
@@ -47583,6 +47656,7 @@ function efMemoriaHtml(inp, r, meta) {
       <h2>Clase de la sección</h2>${clsTxt}
       <h2>Temperatura crítica</h2>${crTxt}
       <h2>Evolución de la temperatura del acero sin protección</h2>${ejTxt}${tablaTraza}${graf}${tcrTxt}
+      ${efSinProtMem(e)}
       ${protTxt}
       <h2>Resultado del elemento</h2><p><b>${esc(e.estado[1])}</b>.${e.avP.length ? ' ' + e.avP.map(esc).join(' ') : ''}</p>`;
   }).join('');
@@ -47693,6 +47767,7 @@ function efMemoriaHtml(inp, r, meta) {
     <p><b>Temperatura crítica.</b> Para elementos en los que no gobierna la inestabilidad, la temperatura crítica depende solo del grado de utilización μ0 (§4.2.4, ec. 4.22, con μ0 ≥ 0,013). La ecuación reproduce la pérdida de límite elástico ky,θ de la Tabla 3.1. La figura siguiente compara ambas relaciones y ubica a cada elemento.</p>
     ${grafKy}
     ${grafGlobal}
+    ${tablaLim}
     ${fichas}
 
     <div class="salto"></div>
@@ -47707,6 +47782,7 @@ function efMemoriaHtml(inp, r, meta) {
     <p>El sector se clasifica como edificio <b>tipo ${r.tipo || '—'}${r.tipoProv ? ' (provisorio)' : ''}</b> según el Art. 4.3.4, con una densidad de carga combustible media de ${r.media != null ? N(r.media, 0) + ' MJ/m²' : 'no determinada'} y una puntual máxima ${r.puntual != null ? 'de ' + N(r.puntual, 0) + ' MJ/m²' : 'no determinada'}.</p>
     ${tablaRes}
     <p><b>Resultado global: ${esc(r.global[1])}.</b> ${nBad ? `${nBad} elemento(s) no satisfacen la exigencia con la solución propuesta.` : ''} Un elemento solo se declara conforme con verificación completa: exigencia determinada, espesor tabulado suficiente dentro del alcance de la referencia y cobertura documental confirmada. En los elementos sin protección, un tiempo calculado mayor o igual a la exigencia es solo un resultado de cálculo: no acredita resistencia al fuego ante la DOM, porque la acreditación se rige por el Art. 4.3.2.</p>
+    ${(() => { const ex = r.elems.filter(e => (efSinProt(e) || {}).k === 'exime'); return ex.length ? `<p>Por cálculo, ${ex.length === 1 ? 'el elemento' : 'los elementos'} ${ex.map(e => esc(e.nombre) + ' (F-' + e.Freq + ')').join(', ')} ${ex.length === 1 ? 'alcanza' : 'alcanzan'} la exigencia sin protección (sección 6). Prescindir de la protección requiere acreditarlo según el Art. 4.3.2 y la DOM puede exigir un ensayo de laboratorio; por ello el planteamiento debe validarse con la DOM antes de construir. En los demás elementos con exigencia, la protección se dimensiona para el tiempo completo sobre el perfil real.</p>` : ''; })()}
     ${r.pend.length ? `${MEM_T('Antecedentes pendientes')}<table class="inf-t"><tr><th>Ámbito</th><th>Pendiente</th><th>Impide concluir</th></tr>${r.pend.map(q => `<tr><td class="l">${esc(q.ambito)}</td><td class="l">${esc(q.txt)}</td><td>${q.bloquea ? 'Sí' : 'No'}</td></tr>`).join('')}</table>` : ''}
     ${obsGlob}
 
@@ -47801,6 +47877,11 @@ function renderEstudioFuego(container) {
     <div class="panel" data-resumen="force">
       <h3>4 · Resultados por elemento</h3>
       <div id="ef_resElem"></div>
+      <div class="disclosure"><strong>Perfil sin protección (eximición).</strong> Es poco frecuente, pero un perfil puede cumplir su F sin protección si su temperatura a los F minutos de la curva ISO 834 no supera su θcr, es decir, si «t sin protección» ≥ F. Valor máximo de ksh·Am/V (m⁻¹) para lograrlo, calculado con el mismo motor de esta planilla (EN 1993-1-2, εm 0,7, αc 25); entre con el ksh·Am/V del elemento, que ya incluye su exposición:
+        <div style="overflow-x:auto;margin:.4rem 0"><table class="results"><tr><th>Exigencia</th>${efLimitesSinProt().map(x => `<th>μ0 = ${fmt2(x.mu)}<div class="note">θcr ${Math.round(x.th)} °C</div></th>`).join('')}</tr>${EF_LIM_F.map(Fr => `<tr><td>F-${Fr}</td>${efLimitesSinProt().map(x => `<td class="num">${x.lim[Fr] != null ? fmt1(x.lim[Fr]) : 'No alcanza'}</td>`).join('')}</tr>`).join('')}</table></div>
+        F-30 es alcanzable con perfiles masivos y poco cargados; F-60 solo con secciones muy macizas y poca carga; F-90 queda prácticamente descartado. Calcule μ0 con la combinación de incendio (AISC 360-16 Anexo 4, ec. A-4-1) y las cargas reales, no lo suponga. En pilares y vigas con volcamiento gobierna la inestabilidad: marque «Inestab. = Sí» y verifique la resistencia en caliente (EN 1993-1-2 §4.2.3.2 y §4.2.3.3). Clase 4: θcr = 350 °C. Una viga bajo losa expuesta por 3 caras tiene menor Am/V que expuesta por 4.
+        <br><strong>Protección complementaria.</strong> Si el perfil no alcanza, la protección se dimensiona para el F completo con el perfil real: los minutos no se suman (un perfil que resiste 30 min no se completa con una protección «de 30 min» para F-60). El perfil aporta con su masividad, que reduce el espesor de tabla, y con su θcr, solo dentro del rango ensayado del producto; usar una θcr mayor que la de la tabla es un estudio de asimilación.
+        <br><strong>Acreditación.</strong> El resultado de cálculo no es una solución del Listado: se presenta como antecedente técnico o estudio de asimilación (OGUC 4.3.2) y la DOM puede exigir un ensayo de laboratorio. Valide con la DOM antes de prescindir de la protección o reducir espesores. El Listado ED17-2025 no tiene pinturas intumescentes inscritas (requieren ensayo NCh 935/1), y una tabla EN 13381 no basta por sí sola en Chile. Referencia: nota técnica ING NT-FUE-01 (24-11-2026).</div>
     </div>
 
     <div class="panel">
@@ -47946,7 +48027,7 @@ function renderEstudioFuego(container) {
         <td class="num">${e.metodoCr === 'inestabilidad' ? '<span class="note">No aplicable (§4.2.3)</span>' : (e.metodoCr === 'mu_mayor_1' ? '<span class="note">μ0 > 1</span>' : n(e.thcr, 0))}</td><td class="num">${n(e.tcr, 1)}</td>
         <td class="num">${e.prot === 'ninguna' ? '—' : esc(e.espTxt)}${e.espInfo && e.espInfo.por ? `<div class="note">${esc(e.espInfo.por)}</div>` : ''}</td>
         <td>${sp(e.estado[0], e.estadoCorto)}<div class="note">${esc(e.estado[1].replace(/^[^—]+— /, ''))}</div>${e.av.length ? `<div class="note">${e.av.map(esc).join('<br>')}</div>` : ''}</td></tr>`).join('')}
-    </table></div>${efMejoraHtml(r)}` : '<div class="note">Agregue elementos en la sección 3.</div>';
+    </table></div>${(() => { const li = r.elems.map(efSinProtWeb).filter(Boolean); return li.length ? `<div class="resumen-hide" style="margin-top:1rem"><h4 style="margin:.2rem 0 .3rem">Perfil sin protección y protección complementaria</h4><div class="note" style="margin-bottom:.4rem">Solo en pantalla. Indica, por elemento, si el perfil sin protección alcanzaría su exigencia por cálculo (eximición, caso poco frecuente) o si la protección debe dimensionarse para el F completo.</div><ul class="note" style="margin:.2rem 0 0 1.1rem;padding:0;line-height:1.5">${li.join('')}</ul></div>` : ''; })()}${efMejoraHtml(r)}` : '<div class="note">Agregue elementos en la sección 3.</div>';
     document.getElementById('ef_resAsim').innerHTML = `${r.chkAuto.length ? `<table class="results" style="margin-bottom:.5rem"><tr><th>Criterio calculado</th><th>Estado</th><th>Detalle</th></tr>${r.chkAuto.map(c => `<tr><td>${esc(c.txt)}</td><td>${c.v === 'si' ? sp('ok', 'Cumple') : (c.v === 'pend' ? sp('warn', 'Pendiente') : sp('bad', 'No cumple'))}</td><td>${esc(c.obs)}</td></tr>`).join('')}</table>` : ''}
       <div class="verdict-row"><span>Método aplicable</span><span>${esc(r.metodo)}</span></div>
       <div class="verdict-row"><span>Resultado</span><span>${sp(r.asim[0], r.asim[1])}</span></div>`;
