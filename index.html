@@ -1852,7 +1852,14 @@ function fsSetFieldValue(el, fv){
 // es hermano del contenedor, no un hijo suyo).
 function fsBuildAddButtonMap(main){
   var map = {};
-  var addButtons = Array.prototype.slice.call(main.querySelectorAll('.btn-add')).filter(function(b){ return !b.closest('[data-fs-extra]'); });
+  // solo se prueban los botones «+ Agregar …»: la clase .btn-add también la usan botones que abren el selector de
+  // archivos (p. ej. «📂 Seleccionar archivo DXF…» en Cargas de Galpón), guardan, descargan o aplican sugerencias,
+  // y la prueba los disparaba al volver a una planilla (aparecía el diálogo de Windows y había que cerrarlo con Escape)
+  var addButtons = Array.prototype.slice.call(main.querySelectorAll('.btn-add')).filter(function(b){ return !b.closest('[data-fs-extra]') && /^\s*\+/.test(b.textContent || ''); });
+  // resguardo: mientras dura la prueba ningún clic puede abrir un selector de archivos
+  var clicOrig = HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click = function(){ if (this.type === 'file') return; return clicOrig.apply(this, arguments); };
+  try {
   addButtons.forEach(function(btn){
     var before = fsRowCounts(main);
     btn.click();
@@ -1865,6 +1872,7 @@ function fsBuildAddButtonMap(main){
       if (btns.length) btns[btns.length - 1].click(); // deshace la fila de prueba
     }
   });
+  } finally { HTMLInputElement.prototype.click = clicOrig; }
   return map;
 }
 function fsRestoreMain(main, saved){
