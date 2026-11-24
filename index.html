@@ -59742,11 +59742,11 @@ function impMenuFlotante(btn, items, ancho) {
   setTimeout(() => document.addEventListener('click', function cerrar(e) { if (!m.contains(e.target) && e.target !== btn) m.remove(); document.removeEventListener('click', cerrar); }), 0);
 }
 // Proyecto del Constructor de Memorias (con el proyecto de POWER fijado, si lo hay)
-function impProyecto() {
+function impProyecto(cap) {
   const S0 = mcmLoad(), P = Object.assign({}, S0.proy);
   const pw = (typeof PROYECTO_POWER !== 'undefined' && PROYECTO_POWER) ? PROYECTO_POWER : null;
   if (pw) { if (pw.codigo && !P.codigo) P.codigo = pw.codigo; if (pw.proyecto && !P.proyecto) P.proyecto = pw.proyecto; if (pw.mandante && !P.mandante) P.mandante = pw.mandante; }
-  return {S0, P, Pt:Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO'})};
+  return {S0, P, Pt:Object.assign({}, P, {titulo:'MEMORIA DE CÁLCULO' + (cap && cap.nombre ? ' — ' + String(cap.nombre).toUpperCase() : '')})};
 }
 async function impConEspera(btn, txt, fn) {
   const t0 = btn ? btn.textContent : '';
@@ -59755,9 +59755,24 @@ async function impConEspera(btn, txt, fn) {
   finally { if (btn) { btn.disabled = false; btn.textContent = t0; } }
 }
 
-/* ---------- 👁 Ver memoria PDF ---------- */
+/* ---------- 👁 Ver memoria PDF ----------
+   El PDF tarda varios segundos. Si mientras tanto se abre otra planilla, el visor NO se muestra
+   (antes aparecía sobre la planilla nueva con la memoria de la anterior). */
+const VERMEM = {ruta:null, t:0, nombre:''};
+(function(){
+  const orig = window.mcmVerPdf;
+  window.mcmVerPdf = function(blob, nombre) {
+    const g = VERMEM.ruta !== null && Date.now() - VERMEM.t < 300000 ? VERMEM.ruta : null;
+    VERMEM.ruta = null;
+    if (g !== null && location.hash !== g) { fsToast('La memoria de «' + (VERMEM.nombre || 'la planilla anterior') + '» no se mostró porque cambiaste de planilla mientras se generaba. Vuelve a ella y repite «👁 Ver memoria PDF».'); return; }
+    return orig.apply(this, arguments);
+  };
+})();
 async function verMemoriaPdf(btn) {
+  const h1 = document.querySelector('#mainView .calc-head h1');
+  VERMEM.ruta = location.hash; VERMEM.t = Date.now(); VERMEM.nombre = h1 ? h1.textContent.trim() : '';
   if (window.__verPdfOpciones) { verPdfMenu(btn); return; }          // Asimilación: memoria y memoria detallada
+  fsToast('Generando la memoria de «' + (VERMEM.nombre || 'esta planilla') + '»… tarda unos segundos.');
   const inf = impInformePropio();
   if (inf && inf.tipo === 'mem') {                                   // informe propio (fuego, transformadores, puentes)
     let html = null; const orig = window.memImprimir;
@@ -59770,7 +59785,7 @@ async function verMemoriaPdf(btn) {
   }
   const cap = await mvsCapturaObj(); if (!cap) return;               // resto: memoria resumida del Constructor (con la hoja como anexo)
   await impConEspera(btn, 'Generando PDF…', async () => {
-    const {P, Pt} = impProyecto(), B = mvsBuild(cap, P);
+    const {P, Pt} = impProyecto(cap), B = mvsBuild(cap, P);
     mcmVerPdf(await mvsPdf(cap, Pt, B), mvsNombreBase(cap, P) + '.pdf');
   });
 }
@@ -59779,7 +59794,7 @@ async function verMemoriaPdf(btn) {
 async function impWord(btn) {
   const cap = await mvsCapturaObj(); if (!cap) return;
   await impConEspera(btn, 'Generando Word…', async () => {
-    const {S0, P, Pt} = impProyecto(), B = mvsBuild(cap, P), base = mvsNombreBase(cap, P);
+    const {S0, P, Pt} = impProyecto(cap), B = mvsBuild(cap, P), base = mvsNombreBase(cap, P);
     const blob = await mcmDocx(Object.assign({}, S0, {proy:Pt}), B);
     await mcmGuardarArchivo(base + '.docx', blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Documento de Word', '.docx');
     try { archMemoria([{nombre:base + '.docx', blob}], Object.assign({}, Pt, {titulo:'Memoria de cálculo — ' + cap.nombre}), {clase:'verificacion', planilla:cap.nombre}); } catch (e) {}
