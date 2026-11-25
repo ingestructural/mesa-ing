@@ -3,12 +3,14 @@
 #  Clic derecho en el Explorador > «Usar como carpeta base de la Mesa ING».
 #
 #  Chrome no deja que un programa externo le entregue una carpeta a la Mesa,
-#  por eso se usa un puente fijo: Documentos\MesaBase, que se elige UNA vez en
-#  la Mesa con «Elegir carpeta base…». Este script lo redirige: quita la unión
-#  anterior (solo el enlace) y crea Documentos\MesaBase -> carpeta elegida
-#  (unión de Windows, mklink /J, sin administrador; funciona con Dropbox).
-#  La Mesa sigue con la misma carpeta base y ve el contenido nuevo.
-#  Registro de la última carpeta asignada: %APPDATA%\ING\mesa_base.json
+#  por eso se usa un puente fijo: Documentos\MesaBase (carpeta normal que se
+#  elige UNA vez en la Mesa con «Elegir carpeta base…»). Este script:
+#    1. borra dentro de MesaBase los enlaces (uniones) anteriores - SOLO los
+#       enlaces, nunca carpetas ni archivos reales;
+#    2. crea MesaBase\<nombre de la carpeta>  ->  carpeta elegida (unión de
+#       Windows, mklink /J, sin administrador; funciona también con Dropbox);
+#    3. escribe MesaBase\_mesa_base.json {nombre, ruta, fecha}. La Mesa lo
+#       lee y entra directo a esa carpeta, mostrando su nombre real.
 #  No se escribe nada dentro de la carpeta del proyecto.
 #  Registro: %APPDATA%\ING\mesa_base.log
 # ==========================================================================
@@ -51,29 +53,27 @@ try {
   if ($real -match '^[A-Za-z]:$') { $real += '\' }
   if ($real.TrimEnd('\') -ieq $puente -or $real.StartsWith($puente + '\', 'OrdinalIgnoreCase')) { throw 'Esa carpeta es el puente MesaBase; elija la carpeta del proyecto.' }
 
-  # 1. quitar el puente anterior: si es una unión, se quita solo el enlace (la carpeta destino no se toca).
-  #    Versión del 25-11 (carpeta real con un enlace adentro + _mesa_base.json): se quitan esos dos y la carpeta vacía.
-  $item = Get-Item -LiteralPath $puente -Force -ErrorAction SilentlyContinue
-  if ($item) {
-    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-      [void](Cmd ('rmdir "' + $puente + '"'))
-    } else {
-      Get-ChildItem -LiteralPath $puente -Force -Directory | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } | ForEach-Object { [void](Cmd ('rmdir "' + $_.FullName + '"')) }
-      Remove-Item -LiteralPath (Join-Path $puente '_mesa_base.json') -Force -ErrorAction SilentlyContinue
-      if (Get-ChildItem -LiteralPath $puente -Force) { throw 'Documentos\MesaBase tiene archivos propios y no se toca. Muévalos a otra carpeta y vuelva a intentar.' }
-      [IO.Directory]::Delete($puente)
-    }
-    if (Test-Path -LiteralPath $puente) { throw 'No se pudo quitar el puente anterior Documentos\MesaBase.' }
+  New-Item -ItemType Directory -Force -Path $puente | Out-Null
+
+  # 1. quitar enlaces anteriores (solo puntos de reanálisis: uniones/enlaces)
+  Get-ChildItem -LiteralPath $puente -Force -Directory | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } | ForEach-Object {
+    [void](Cmd ('rmdir "' + $_.FullName + '"'))
+    if (Test-Path -LiteralPath $_.FullName) { throw "No se pudo quitar el enlace anterior: $($_.Name)" }
   }
 
-  # 2. Documentos\MesaBase = unión a la carpeta elegida (Chrome sí acepta una unión elegida como carpeta base,
-  #    pero oculta las uniones que hay DENTRO de una carpeta; por eso el puente es la unión misma)
-  $out = Cmd ('mklink /J "' + $puente + '" "' + $real + '"')
-  if (-not (Test-Path -LiteralPath $puente)) { throw "No se pudo crear el enlace: $out" }
+  # 2. nombre del enlace = nombre real de la carpeta (sin caracteres no válidos)
+  $nombre = Split-Path -Leaf $real
+  if (-not $nombre -or $real -match '^[A-Za-z]:\\$') { $nombre = 'Unidad ' + $real.Substring(0,1) }
+  foreach ($c in [IO.Path]::GetInvalidFileNameChars()) { $nombre = $nombre.Replace([string]$c, '_') }
+  $base = $nombre; $i = 2
+  while (Test-Path -LiteralPath (Join-Path $puente $nombre)) { $nombre = "$base ($i)"; $i++ }   # hay una carpeta real con ese nombre: no se toca
+  $enlace = Join-Path $puente $nombre
+  $out = Cmd ('mklink /J "' + $enlace + '" "' + $real + '"')
+  if (-not (Test-Path -LiteralPath $enlace)) { throw "No se pudo crear el enlace: $out" }
 
-  # 3. registro de la carpeta asignada (fuera de la carpeta del proyecto)
-  $json = [ordered]@{ carpeta = (Split-Path -Leaf $real); ruta = $real; fecha = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss') } | ConvertTo-Json -Compress
-  [IO.File]::WriteAllText((Join-Path $logDir 'mesa_base.json'), $json, (New-Object Text.UTF8Encoding($false)))
+  # 3. referencia para la Mesa (UTF-8 sin BOM)
+  $json = [ordered]@{ nombre = $nombre; carpeta = (Split-Path -Leaf $real); ruta = $real; fecha = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss') } | ConvertTo-Json -Compress
+  [IO.File]::WriteAllText((Join-Path $puente '_mesa_base.json'), $json, (New-Object Text.UTF8Encoding($false)))
 
   Log "OK  $real"
   Aviso 'Mesa ING' ("Carpeta base: " + (Split-Path -Leaf $real) + "`n" + $real) $false
