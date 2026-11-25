@@ -1682,7 +1682,13 @@ async function fsRevisarPuente(){
     var r = await fsLeerPuente(FS_BASE_GUARDADA);
     var antes = FS_PUENTE_INFO ? (FS_PUENTE_INFO.ruta + '|' + FS_PUENTE_INFO.fecha) : '';
     var ahora = r ? (r.info.ruta + '|' + r.info.fecha) : '';
-    if (!r || antes === ahora) return;
+    if (!r) {
+      // puente = Documentos\MesaBase como unión (MESA_BASE.ps1): el clic derecho cambia su destino por fuera;
+      // al volver a la ventana se revisa la subcarpeta activa y se redibuja el árbol con el contenido nuevo
+      if (FS_BASE_GUARDADA.name === 'MesaBase') { await fsValidateActivePath(); if (fsPanelIsOpen()) { try { fsRenderTree(); } catch(e){} } }
+      return;
+    }
+    if (antes === ahora) return;
     FS_ROOT = await fsAplicarPuente(FS_BASE_GUARDADA);
     FS_ACTIVE_PATH = []; fsSaveActivePath();
     fsUpdateRootLabel(); fsUpdateSaveBarLabel();
@@ -2163,7 +2169,7 @@ function fsUpdateRootLabel(){
   var rt = document.getElementById('fsRutaPuente');
   var pi = FS_ROOT ? FS_PUENTE_INFO : null;
   var vacio = FS_ROOT && !pi && FS_BASE_GUARDADA && FS_BASE_GUARDADA.name === 'MesaBase';
-  if (rt) { rt.style.display = (pi || vacio) ? 'block' : 'none'; rt.textContent = pi ? (pi.ruta + ' · asignada desde el Explorador (clic derecho)') : (vacio ? 'Asigne la carpeta de trabajo con clic derecho en el Explorador › «Usar como carpeta base de la Mesa ING».' : ''); }
+  if (rt) { rt.style.display = (pi || vacio) ? 'block' : 'none'; rt.textContent = pi ? (pi.ruta + ' · asignada desde el Explorador (clic derecho)') : (vacio ? 'Puente Documentos\\MesaBase: muestra la carpeta asignada con clic derecho en el Explorador › «Usar como carpeta base de la Mesa ING».' : ''); }
 }
 function fsUpdateSaveBarLabel(){
   var el = document.querySelector('.calc-save-bar .fs-active-path');
