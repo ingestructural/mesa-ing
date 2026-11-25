@@ -694,8 +694,7 @@
     </div>
     <div class="fs-panel-body">
       <div class="fs-root-row">
-        <span style="flex:1;min-width:0"><span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v25-11</small>
-        <span id="fsRutaPuente" style="display:none;font-size:.74rem;color:var(--ink-muted);word-break:break-all;margin-top:.15rem"></span></span>
+        <span id="fsRootLabel">Sin carpeta base elegida</span> <small style="opacity:.55">v13-11 19:50</small>
         <button type="button" class="fs-toggle-btn" style="width:auto" id="fsChooseRootBtn">Elegir carpeta base…</button>
       </div>
       <div id="fsDropBase" style="border:2px dashed var(--line);border-radius:6px;padding:.55rem .7rem;margin:0 0 .7rem;font-size:.8rem;color:var(--ink-muted);text-align:center">o arrastre aquí la carpeta desde el Explorador de Windows para usarla como carpeta base</div>
@@ -1575,8 +1574,6 @@ async function firmaIngClick(ev){
 
 var FS_SUPPORTED = (typeof window.showDirectoryPicker === 'function');
 var FS_ROOT = null;          // FileSystemDirectoryHandle elegido por el usuario
-var FS_BASE_GUARDADA = null; // handle realmente elegido/guardado (si es el puente MesaBase, FS_ROOT es la carpeta enlazada dentro)
-var FS_PUENTE_INFO = null;   // {nombre, carpeta, ruta, fecha} de Documentos\MesaBase\_mesa_base.json (clic derecho del Explorador)
 var FS_ACTIVE_PATH = [];     // array de nombres de carpeta, relativo a FS_ROOT, donde se guarda por defecto
 var PENDING_RESTORE = null;
 var FS_STORED_NAME = '';     // nombre de la carpeta base guardada (aunque falte reautorizar)  // snapshot a restaurar apenas termine el próximo render de route()
@@ -1650,55 +1647,6 @@ async function fsStartIn(){
   if (!FS_ROOT) return null;
   try { var d = await fsResolveDir(FS_ACTIVE_PATH || [], false); return d || FS_ROOT; } catch(e){ return FS_ROOT; }
 }
-/* ---------- puente del clic derecho (Explorador > «Usar como carpeta base de la Mesa ING») ----------
-   Chrome no acepta que un programa externo le entregue una carpeta. Se elige UNA vez Documentos\MesaBase;
-   el script MESA_BASE.ps1 (mesabase/) deja ahí una unión de Windows a la carpeta elegida en el Explorador
-   y _mesa_base.json con su nombre y ruta. La Mesa entra directo a esa carpeta y la muestra con su nombre real. */
-async function fsLeerPuente(h){
-  try {
-    var fh = await h.getFileHandle('_mesa_base.json', {create:false});
-    var info = JSON.parse((await (await fh.getFile()).text()).replace(/^\uFEFF/, ''));
-    if (!info || !info.nombre) return null;
-    var sub = await h.getDirectoryHandle(info.nombre, {create:false});
-    return {info: info, sub: sub};
-  } catch(e){ return null; }
-}
-// h = carpeta guardada; devuelve la carpeta efectiva (la enlazada si h es el puente)
-async function fsAplicarPuente(h){
-  FS_BASE_GUARDADA = h;
-  var r = h ? await fsLeerPuente(h) : null;
-  FS_PUENTE_INFO = r ? r.info : null;
-  try { if (r) localStorage.setItem('mesaCalculoFS.puente', JSON.stringify(r.info)); else localStorage.removeItem('mesaCalculoFS.puente'); } catch(e){}
-  return r ? r.sub : h;
-}
-function fsPuenteGuardado(){ try { return JSON.parse(localStorage.getItem('mesaCalculoFS.puente') || 'null'); } catch(e){ return null; } }
-function fsNombreGuardado(stored){ var p = fsPuenteGuardado(); return (p && p.carpeta) || (p && p.nombre) || (stored && stored.name) || ''; }
-// al volver a la ventana de la Mesa: si en el Explorador se asignó otra carpeta, tomarla
-var fsRevisandoPuente = false;
-async function fsRevisarPuente(){
-  if (fsRevisandoPuente || !FS_BASE_GUARDADA || !FS_ROOT) return;
-  fsRevisandoPuente = true;
-  try {
-    var r = await fsLeerPuente(FS_BASE_GUARDADA);
-    var antes = FS_PUENTE_INFO ? (FS_PUENTE_INFO.ruta + '|' + FS_PUENTE_INFO.fecha) : '';
-    var ahora = r ? (r.info.ruta + '|' + r.info.fecha) : '';
-    if (!r) {
-      // puente = Documentos\MesaBase como unión (MESA_BASE.ps1): el clic derecho cambia su destino por fuera;
-      // al volver a la ventana se revisa la subcarpeta activa y se redibuja el árbol con el contenido nuevo
-      if (FS_BASE_GUARDADA.name === 'MesaBase') { await fsValidateActivePath(); if (fsPanelIsOpen()) { try { fsRenderTree(); } catch(e){} } }
-      return;
-    }
-    if (antes === ahora) return;
-    FS_ROOT = await fsAplicarPuente(FS_BASE_GUARDADA);
-    FS_ACTIVE_PATH = []; fsSaveActivePath();
-    fsUpdateRootLabel(); fsUpdateSaveBarLabel();
-    if (fsPanelIsOpen()) { try { fsRenderTree(); } catch(e){} }
-    fsToast('Carpeta base: ' + (FS_PUENTE_INFO.carpeta || FS_ROOT.name) + ' (asignada desde el Explorador)');
-  } catch(e){ console.error('carpeta base (clic derecho):', e); }
-  finally { fsRevisandoPuente = false; }
-}
-window.addEventListener('focus', fsRevisarPuente);
-document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible') fsRevisarPuente(); });
 /* ---------- carpeta base: elegir / reconectar ---------- */
 function fsTryReconnect(){
   if (FS_ROOT) return Promise.resolve(true);
@@ -1707,7 +1655,7 @@ function fsTryReconnect(){
     return stored.queryPermission({mode:'readwrite'}).then(function(perm){
       return perm === 'granted' ? perm : stored.queryPermission({mode:'read'});   // basta lectura para mostrarla
     }).then(function(perm){
-      if (perm === 'granted') return fsAplicarPuente(stored).then(function(ef){ FS_ROOT = ef; return fsValidateActivePath(); }).then(function(){ return true; });
+      if (perm === 'granted') { FS_ROOT = stored; return fsValidateActivePath().then(function(){ return true; }); }
       return false; // hace falta un gesto del usuario (clic) para volver a pedir permiso
     }).catch(function(){ return false; });
   }).catch(function(){ return false; });
@@ -1718,7 +1666,7 @@ function fsReconnectWithGesture(){
     return stored.requestPermission({mode:'readwrite'}).catch(function(){ return 'denied'; }).then(function(perm){
       return perm === 'granted' ? perm : stored.requestPermission({mode:'read'}).catch(function(){ return 'denied'; });
     }).then(function(perm){
-      if (perm === 'granted') return fsAplicarPuente(stored).then(function(ef){ FS_ROOT = ef; return fsValidateActivePath(); }).then(function(){ return true; });
+      if (perm === 'granted') { FS_ROOT = stored; return fsValidateActivePath().then(function(){ return true; }); }
       return false;
     }).catch(function(){ return false; });
   }).catch(function(){ return false; });
@@ -1735,26 +1683,22 @@ function fsChooseRoot(){
     // + partir en Documentos evita eso. (Un intento fallido no queda recordado en el id.)
     return window.showDirectoryPicker({id:'mesaBaseLocal', startIn:'documents'});
   }).then(function(handle){
-    return fsAplicarPuente(handle).then(function(ef){ return {handle: handle, ef: ef}; });
-  }).then(function(o){
-    var handle = o.handle;
     // la carpeta elegida se usa de inmediato; guardarla para la próxima sesión es aparte (si falla, se avisa)
-    FS_ROOT = o.ef; FS_STORED_NAME = o.ef.name || '';
+    FS_ROOT = handle; FS_STORED_NAME = handle.name || '';
     FS_ACTIVE_PATH = [];
     fsSaveActivePath();
     var guardado = fsDbSet('root', handle).then(function(){ return true; }, function(e){ console.error('carpeta base: no se pudo recordar', e); return false; });
     var plazo = new Promise(function(r){ setTimeout(function(){ r(false); }, 4000); });
-    return Promise.race([guardado, plazo]).then(function(ok){ fsChooseRoot.noGuardada = !ok; if (!ok) fsToast('Carpeta base: ' + o.ef.name + ' (no se pudo recordar para la próxima vez; vuelva a elegirla si al recargar no aparece).'); return o.ef; });
+    return Promise.race([guardado, plazo]).then(function(ok){ fsChooseRoot.noGuardada = !ok; if (!ok) fsToast('Carpeta base: ' + handle.name + ' (no se pudo recordar para la próxima vez; vuelva a elegirla si al recargar no aparece).'); return handle; });
   });
 }
 
 // permiso de edición sobre la carpeta base: se pide en el clic de guardar / crear / eliminar
 async function fsAsegurarEscritura(){
   if (!FS_ROOT) return false;
-  var h = FS_BASE_GUARDADA || FS_ROOT;   // con el puente MesaBase se pide sobre el puente: vale para cualquier carpeta asignada después
   try {
-    if ((await h.queryPermission({mode:'readwrite'})) === 'granted') return true;
-    return (await h.requestPermission({mode:'readwrite'})) === 'granted';
+    if ((await FS_ROOT.queryPermission({mode:'readwrite'})) === 'granted') return true;
+    return (await FS_ROOT.requestPermission({mode:'readwrite'})) === 'granted';
   } catch(e){ return false; }
 }
 /* ---------- operaciones sobre carpetas/archivos ---------- */
@@ -2166,10 +2110,6 @@ function fsPanelIsOpen(){ var p = document.getElementById('fsPanel'); return !!(
 function fsUpdateRootLabel(){
   var el = document.getElementById('fsRootLabel');
   if (el) el.textContent = FS_ROOT ? ('Carpeta base: ' + (FS_ROOT.name || '(elegida)')) : (FS_STORED_NAME ? ('Carpeta base: ' + FS_STORED_NAME + ' (se reconecta al primer clic)') : 'Sin carpeta base elegida');
-  var rt = document.getElementById('fsRutaPuente');
-  var pi = FS_ROOT ? FS_PUENTE_INFO : null;
-  var vacio = FS_ROOT && !pi && FS_BASE_GUARDADA && FS_BASE_GUARDADA.name === 'MesaBase';
-  if (rt) { rt.style.display = (pi || vacio) ? 'block' : 'none'; rt.textContent = pi ? (pi.ruta + ' · asignada desde el Explorador (clic derecho)') : (vacio ? 'Puente Documentos\\MesaBase: muestra la carpeta asignada con clic derecho en el Explorador › «Usar como carpeta base de la Mesa ING».' : ''); }
 }
 function fsUpdateSaveBarLabel(){
   var el = document.querySelector('.calc-save-bar .fs-active-path');
@@ -2563,9 +2503,8 @@ async function fsTomarBaseArrastrada(dt){
   try {
     var h = await it.getAsFileSystemHandle();
     if (!h || h.kind !== 'directory') { fsEstadoBase('No cambió — lo arrastrado no es una carpeta.', true); return false; }
-    try { await fsDbSet('root', h); } catch(err) { console.error(err); }
-    h = await fsAplicarPuente(h);
     FS_ROOT = h; FS_STORED_NAME = h.name || ''; FS_ACTIVE_PATH = []; fsSaveActivePath();
+    try { await fsDbSet('root', h); } catch(err) { console.error(err); }
     fsEstadoBase('Elegida: ' + h.name + ' (' + new Date().toLocaleTimeString('es-CL') + ')');
     document.getElementById('fsReconnectRow').style.display = 'none';
     fsUpdateRootLabel(); fsUpdateSaveBarLabel(); fsRenderTree();
@@ -2611,11 +2550,8 @@ window.addEventListener('storage', function(ev){
   fsLoadActivePath();
   fsDbGet('root').then(function(stored){
     if (!stored) return;
-    FS_STORED_NAME = fsNombreGuardado(stored);
-    return stored.queryPermission({mode:'readwrite'}).then(function(perm){
-      if (perm !== 'granted') { FS_ROOT = null; return; }
-      return fsAplicarPuente(stored).then(function(ef){ FS_ROOT = ef; });
-    });
+    FS_STORED_NAME = stored.name || '';
+    return stored.queryPermission({mode:'readwrite'}).then(function(perm){ FS_ROOT = perm === 'granted' ? stored : null; });
   }).catch(function(){}).then(function(){ fsUpdateRootLabel(); fsUpdateSaveBarLabel(); if (fsPanelIsOpen()) { try { fsRenderTree(); } catch(e){} } });
 });
 if (!FS_SUPPORTED) {
@@ -2628,7 +2564,7 @@ if (!FS_SUPPORTED) {
     if (ok) return;
     fsDbGet('root').then(function(stored){
       if (!stored) return;
-      FS_STORED_NAME = fsNombreGuardado(stored);
+      FS_STORED_NAME = stored.name || '';
       fsUpdateRootLabel(); fsUpdateSaveBarLabel();
       // Sin reautorización automática al primer clic: Chrome mostraba su aviso de permiso de carpeta al pinchar
       // cualquier planilla (había que cerrarlo con Escape). El permiso se pide solo cuando el usuario lo usa:
