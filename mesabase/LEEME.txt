@@ -1,0 +1,19 @@
+MESA ING - CARPETA BASE DESDE EL CLIC DERECHO (25-11-2026)
+=========================================================
+Instalar: doble clic en INSTALAR_MESA_BASE.vbs (solo este usuario, sin administrador).
+  - Copia los scripts a %APPDATA%\ING\MesaBase
+  - Agrega al clic derecho del Explorador (sobre una carpeta y sobre el fondo de
+    una carpeta abierta) «Usar como carpeta base de la Mesa ING», con icono azul.
+    En Windows 11 aparece en «Mostrar mas opciones» o con Shift + clic derecho.
+  - Crea Documentos\MesaBase (puente).
+
+Una sola vez en la Mesa: «Carpetas de calculos» > «Elegir carpeta base...» > Documentos\MesaBase.
+
+Uso: clic derecho en la carpeta de trabajo > «Usar como carpeta base de la Mesa ING».
+La Mesa toma esa carpeta (al abrirla o al volver a su ventana) y muestra su nombre real.
+
+Como funciona: Documentos\MesaBase contiene solo una union de Windows (mklink /J)
+hacia la carpeta elegida y _mesa_base.json con su nombre y ruta. No se escribe nada
+dentro de la carpeta del proyecto. Funciona tambien con carpetas de Dropbox.
+Registro: %APPDATA%\ING\mesa_base.log
+Quitar: DESINSTALAR_MESA_BASE.vbs (en %APPDATA%\ING\MesaBase).
