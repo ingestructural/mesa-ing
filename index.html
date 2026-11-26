@@ -48642,6 +48642,21 @@ function efTechoMem(r) {
       <p><b>Conclusión:</b> ${t.concl === 'si' ? 'los antecedentes permiten certificar la asimilación del elemento a la exigencia F-' + t.Fe + '.' : t.concl === 'no' ? 'el elemento no es asimilable con estos antecedentes; corresponde cambiar la solución o ensayarla.' : 'el elemento es asimilable a F-' + t.Fe + ' sujeto a completar los antecedentes pendientes de la tabla; hasta entonces no se emite la certificación.'}</p>`).join('')}`;
 }
 
+// Deja el Estudio de Resistencia al Fuego en blanco: descarta los datos ingresados en esta sesión (caché de
+// navegación entre planillas), el modelo RAM del panel 3b y el título del cálculo; el proyecto de POWER fijado se
+// mantiene (se cambia o suelta en su barra). Al volver a dibujar no se restaura nada.
+function efNuevoLimpiar() {
+  if (typeof TOOL_STATE_CACHE !== 'undefined') delete TOOL_STATE_CACHE['estudio-fuego'];
+  if (typeof PENDING_RESTORE !== 'undefined') PENDING_RESTORE = null;
+  PROYECTO_META.calculo = '';
+  if (!(typeof PROYECTO_POWER !== 'undefined' && PROYECTO_POWER)) PROYECTO_META.proyecto = '';
+  const main = document.getElementById('mainView');
+  if (location.hash.replace('#', '') === 'estudio-fuego' && typeof route === 'function') route();
+  else if (main) { renderEstudioFuego(main); injectCalcMeta(main); }
+  window.scrollTo(0, 0); if (main) main.scrollTop = 0;
+  if (typeof fsToast === 'function') fsToast('Nuevo estudio: la planilla quedó en blanco.');
+}
+
 function renderEstudioFuego(container) {
   const optsObj = o => Object.keys(o).map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
   const funcOpts = '<option value="0">—</option>' + EF_FUNC.map((f, i) => `<option value="${i + 1}">${esc(f)}</option>`).join('');
@@ -48651,6 +48666,10 @@ function renderEstudioFuego(container) {
     <div class="calc-head">
       <h1>Estudio de Resistencia al Fuego — Estructura de Acero</h1>
       <div class="sub">Estudio encadenado: carga combustible (NCh 1916) y densidad puntual por barrido de 2×2 m (NCh 1993), tipo de edificio (OGUC Art. 4.3.4 y 4.3.5), resistencia exigida por elemento según su función (Art. 4.3.3), masividad, temperatura del acero y temperatura crítica (EN 1993-1-2), espesor de protección según la referencia que cubre al elemento y lista de chequeo para asimilación (Art. 4.3.2; NCh 3684/1-2:2022). Tablas OGUC y procedimiento de densidad puntual comunes con «Carga combustible y clasificación del edificio».</div>
+      <style>@media print{.ef-nuevo-bar{display:none !important}}</style><div class="ef-nuevo-bar" style="display:flex;align-items:center;flex-wrap:wrap;gap:.6rem;margin:.7rem 0 .2rem">
+        <button type="button" class="print-btn alt" id="ef_nuevo" title="Borrar todos los datos y dejar la planilla en blanco">📄 Nuevo estudio</button>
+        <span id="ef_nuevoMsg" style="font-size:.78rem;line-height:1.35;color:var(--ink-muted);flex:1;min-width:220px">Deja la planilla en blanco: borra materiales, elementos, modelo RAM cargado (3b), funciones asignadas, asimilación y datos de la memoria. Guarde antes el estudio actual si lo necesita.</span>
+      </div>
     </div>
 
     <div class="panel">
@@ -48959,11 +48978,28 @@ function renderEstudioFuego(container) {
   document.getElementById('ef_add').addEventListener('click', () => { addRow(); recalc(); });
   container.querySelectorAll('.panel > .field-grid input, .panel > .field-grid select, #ef_chk select, #ef_chk input').forEach(el => el.addEventListener('input', recalc));
 
-  // Caso inicial (entradas de la versión 22-10-2026, incompleto a propósito): sin poder calorífico ni superficie,
-  // sin μ0, orientación ni espesores. Se ingresan los datos con su fuente.
-  addMat({desc: 'Ej.: pallets de madera (reemplazar)', zona: 'Z1'});
-  addRow({nombre: 'Pilar de marco', f1: 5, desig: 'IPE300', caras: '4', solic: 'flexocomp', prot: 'cerefire', ejemplo: true});
-  addRow({nombre: 'Viga de marco', f1: 9, f2: 8, desig: 'IPE300', caras: '3', solic: 'flexion', prot: 'cerefire', ejemplo: true});
+  // «Nuevo estudio»: borra todo y vuelve a dibujar la planilla en blanco. Confirmación propia (segundo clic dentro
+  // de 5 s, como «Nueva memoria»), porque confirm() puede estar bloqueado en la app instalada.
+  let efNuevoArmado = 0, efNuevoT = null;
+  document.getElementById('ef_nuevo').addEventListener('click', ev => {
+    const b = ev.currentTarget, msg = document.getElementById('ef_nuevoMsg');
+    if (Date.now() - efNuevoArmado > 5000) {
+      efNuevoArmado = Date.now();
+      b.textContent = '⚠ Pulse de nuevo para borrar todo';
+      b.classList.remove('alt'); b.style.background = 'var(--bad, #b91c1c)';
+      msg.dataset.txt = msg.textContent;
+      msg.textContent = 'Se borrarán todos los datos de este estudio. Vuelva a pulsar dentro de 5 segundos para confirmar.';
+      clearTimeout(efNuevoT);
+      efNuevoT = setTimeout(() => { efNuevoArmado = 0; b.textContent = '📄 Nuevo estudio'; b.classList.add('alt'); b.style.background = ''; msg.textContent = msg.dataset.txt || msg.textContent; }, 5000);
+      return;
+    }
+    clearTimeout(efNuevoT);
+    efNuevoLimpiar();
+  });
+
+  // La planilla abre en blanco (una fila vacía de material y otra de elemento), sin casos de ejemplo.
+  addMat();
+  addRow();
   recalc();
 }
 
@@ -59691,6 +59727,7 @@ function route() {
     else fsToast('Cálculo abierto: ' + (pending.calculo || pending.toolName));
   } else if (tool.calc && CALC_RENDERERS[tool.calc] && TOOL_STATE_CACHE[id]) {
     try { fsRestoreMain(main, TOOL_STATE_CACHE[id]); } catch (e) { /* si falla la restauración automática, se deja la planilla con sus valores por defecto */ }
+    if (id === 'estudio-fuego' && typeof fsToast === 'function') fsToast('Se muestran los datos ingresados antes en esta sesión. Use «Nuevo estudio» para empezar en blanco.');
   }
   if (typeof powerAplicar === 'function') { try { powerAplicar(main); } catch (e) {} }   // el proyecto de POWER fijado manda sobre lo restaurado
 }
