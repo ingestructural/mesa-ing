@@ -47114,6 +47114,9 @@ function calcEstudioFuego(inp) {
     const r = Object.assign({}, it, g, {nombre: nom, n: i + 1});
     if (!geomErr.length) efGeomErrs(r).forEach(e => geomErr.push(e));
     r.geomOk = !geomErr.length;
+    // Elemento sin perfil (fila nueva sin elegir): pendiente, no dato inválido
+    const sinPerfil = ['h', 'b', 'tw', 'tf', 'A'].every(k => it[k] == null || String(it[k]).trim() === '');
+    if (sinPerfil) { geomErr.length = 0; r.geomOk = false; P.push('perfil (elegir del catálogo o ingresar sus dimensiones)'); }
     geomErr.forEach(e => E.push('geometría: ' + e));
     const dFy = efDato(it.Fy, 'Fy', v => v > 0, 'debe ser mayor que 0'); r.Fy = dFy.v;
     if (dFy.err) E.push(dFy.err); else if (r.Fy == null) P.push('Fy');
@@ -49020,7 +49023,7 @@ function renderEstudioFuego(container) {
       <td><select data-f="exc" style="min-width:120px">${excOpts}</select></td>
       <td><input type="text" data-f="excResp" style="min-width:150px" placeholder="documento"></td>
       <td><select data-f="origen" style="min-width:86px"><option value="catalogo">Catálogo</option><option value="manual">Manual</option></select></td>
-      <td><select data-f="desig" style="min-width:160px">${afOpciones()}</select></td>
+      <td><select data-f="desig" style="min-width:160px"><option value="">— elegir perfil —</option>${afOpciones()}</select></td>
       <td><select data-f="tipo" style="min-width:110px">${tipoOpts}</select></td>
       <td>${inp('h')}</td><td>${inp('b')}</td><td>${inp('tw', 44)}</td><td>${inp('tf', 44)}</td><td>${inp('r', 38)}</td><td>${inp('A', 56)}</td>
       <td><select data-f="orient" style="min-width:96px"><option value="">— elegir —</option><option value="pilar">Pilar</option><option value="viga">Viga</option></select></td>
@@ -49045,7 +49048,7 @@ function renderEstudioFuego(container) {
     body.appendChild(tr);
     if (pre && pre.ejemplo) tr.dataset.ejemplo = '1';
     const q = f => tr.querySelector(`[data-f="${f}"]`);
-    q('desig').value = (pre && pre.desig) || 'IPE300';
+    q('desig').value = (pre && pre.desig) || '';   // sin perfil por defecto: nunca aparece un perfil ajeno al proyecto
     q('Fy').value = (pre && pre.Fy) || 2530;
     ['nombre', 'f1', 'f2', 'caras', 'solic', 'mu', 'muSimp', 'thcrExt', 'inest', 'prot', 'espProp', 'orient', 'bajoLosa', 'expo', 'techo', 'refDoc'].forEach(k => { if (pre && pre[k] != null) q(k).value = pre[k]; });
     if (pre && pre.origen === 'manual') q('origen').value = 'manual';
@@ -49056,10 +49059,12 @@ function renderEstudioFuego(container) {
     const q = f => tr.querySelector(`[data-f="${f}"]`);
     const manual = q('origen').value === 'manual';
     q('desig').disabled = manual;
+    if (manual) q('desig').value = '';   // perfil manual o del modelo RAM: el catálogo no muestra ningún perfil
     ['tipo', 'h', 'b', 'tw', 'tf', 'r', 'A'].forEach(f => { q(f).disabled = !manual; });
     if (!manual) {
-      const pc = afCatalogo().find(x => x.desig === q('desig').value) || afCatalogo()[0];
-      q('tipo').value = pc.tipo; q('h').value = pc.h; q('b').value = pc.b; q('tw').value = pc.tw; q('tf').value = pc.tf; q('r').value = pc.r; q('A').value = pc.A;
+      const pc = afCatalogo().find(x => x.desig === q('desig').value);
+      if (pc) { q('tipo').value = pc.tipo; q('h').value = pc.h; q('b').value = pc.b; q('tw').value = pc.tw; q('tf').value = pc.tf; q('r').value = pc.r; q('A').value = pc.A; }
+      else ['h', 'b', 'tw', 'tf', 'r', 'A'].forEach(f => { q(f).value = ''; });
     }
     q('espCert').disabled = q('prot').value !== 'otro';
     q('espProp').disabled = q('prot').value === 'ninguna';
