@@ -47311,7 +47311,7 @@ function calcEstudioFuego(inp) {
     r.av = []; r.avP = [];
     const av = (web, imp) => { r.av.push(web); r.avP.push(imp || web); };
     if (r.sobre390) av('Masividad a 4 caras > 390 m⁻¹ (Listado Oficial ED17-2025, punto 3).', 'Masividad a 4 caras superior a 390 m⁻¹, límite del Listado Oficial ED17-2025 (punto 3).');
-    if (r.metodoCr === 'externo') av(r.deRam ? `θcr = ${Math.round(r.thExt)} °C del modelo RAM Elements (importación de la sección 3): menor θcr del grupo.` : `θcr = ${Math.round(r.thExt)} °C ingresada (análisis externo).`, r.deRam ? `Temperatura crítica θcr = ${Math.round(r.thExt)} °C obtenida del modelo RAM Elements (Anexo A), la menor de los miembros del grupo.` : `Temperatura crítica θcr = ${Math.round(r.thExt)} °C informada por el proyectista a partir de un análisis externo.`);
+    if (r.metodoCr === 'externo') av(r.deRam ? `θcr = ${Math.round(r.thExt)} °C del modelo RAM Elements (importación de la sección 3a): menor θcr del grupo.` : `θcr = ${Math.round(r.thExt)} °C ingresada (análisis externo).`, r.deRam ? `Temperatura crítica θcr = ${Math.round(r.thExt)} °C obtenida del modelo RAM Elements (Anexo A), la menor de los miembros del grupo.` : `Temperatura crítica θcr = ${Math.round(r.thExt)} °C informada por el proyectista a partir de un análisis externo.`);
     if (r.muSimp && r.metodoCr === 'ec422') av(`μ0 simplificado = ηfi·γM,fi/γM0 = ${fmt2(r.muSimp)} (EN 1993-1-2 §4.2.4(4)): viga sin volcamiento.`, `Grado de utilización simplificado μ0 = ηfi·γM,fi/γM0 = ${fmt2(r.muSimp)} (EN 1993-1-2 §4.2.4(4); ηfi según §2.4.2(3)), aplicable a vigas sin volcamiento.`);
     if (r.muSimpNo) av('μ0 simplificado no aplicado: EN 1993-1-2 §4.2.4(4) lo permite solo en vigas sin volcamiento (solicitación «Flexión» e «Inestab.» = No) y en elementos en tracción. Elija «No» e ingrese μ0.', 'El grado de utilización simplificado de EN 1993-1-2 §4.2.4(4) no es aplicable a este elemento (solo vigas sin volcamiento y elementos en tracción); μ0 debe calcularse.');
     if (r.mu != null && r.mu < 0.013 && r.metodoCr === 'ec422') av('μ0 < 0,013: se usa 0,013 (EN 1993-1-2 §4.2.4).', 'μ0 inferior a 0,013: se adopta 0,013 (EN 1993-1-2 §4.2.4).');
@@ -48110,7 +48110,7 @@ function efRevisionHtml(inp, r, meta) {
     const c = E.filter(e => !e.exento && e.funcs && e.funcs.includes(8) && !e.funcs.some(f => f !== 8 && f !== 9 && T[f - 1] != null && T[f - 1] > T[8]) && e.Freq > T[8]);
     if (c.length) M.push({tit: `Revisar la función asignada a los elementos de techumbre: (9) F-${T[8]} en vez de (8) F-${T[7]}`, imp: 3, costo: 2,
       sit: `${c.length} elemento(s) están clasificados como (8) elementos soportantes horizontales, con F-${T[7]} en el tipo ${tipo}. Si forman parte de la estructura de techumbre y no soportan pisos ni elementos de mayor exigencia, corresponde la función (9) Techumbre incluido cielo falso, con F-${T[8]}. La reducción de la exigencia baja el espesor de protección${c.filter(e => e.tcr != null && e.tcr >= T[8] && e.tcr < e.Freq).length ? ' y, con F-' + T[8] + ', alcanzarían la exigencia sin protección por cálculo: ' + c.filter(e => e.tcr != null && e.tcr >= T[8] && e.tcr < e.Freq).map(nom).join('; ') : ''}.`,
-      acc: ['Confirmar en planos que estos elementos solo soportan la cubierta, y reasignar su función en la sección 3 (ficha o tabla de grupos RAM).', 'Mantener la función (8) en vigas que soporten entrepisos, altillos o equipos que deban permanecer en pie.'], el: c});
+      acc: ['Confirmar en planos que estos elementos solo soportan la cubierta, y reasignar su función en la tabla de grupos RAM (3a) o en la ficha (3b).', 'Mantener la función (8) en vigas que soporten entrepisos, altillos o equipos que deban permanecer en pie.'], el: c});
   }
 
   // 3. Cielo falso o elemento interpuesto
@@ -48147,13 +48147,13 @@ function efRevisionHtml(inp, r, meta) {
   const muDef = E.filter(e => !e.exento && e.Freq > 0 && e.metodoCr !== 'externo' && e.mu == null && !e.clase4 && e.tcr != null && e.tcr < e.Freq);
   if (muDef.length) M.push({tit: 'Calcular el grado de utilización μ0 de cada elemento', imp: 1, costo: 2,
     sit: `${muDef.length} elemento(s) usan el valor por defecto de μ0. Un μ0 calculado con las solicitaciones de incendio suele ser menor, lo que eleva la temperatura crítica y reduce el espesor de protección.`,
-    acc: ['Cargar el modelo RAM en la sección 3 o ingresar μ0 por elemento.'], el: muDef});
+    acc: ['Cargar el modelo RAM en la sección 3a o ingresar μ0 por elemento.'], el: muDef});
 
   // 9. Coberturas pendientes
   const cob = E.filter(e => !e.exento && e.prot !== 'ninguna' && e.cob !== 'si');
   if (cob.length) M.push({tit: 'Confirmar la cobertura documental de las protecciones', imp: 1, costo: 1,
     sit: `${cob.length} elemento(s) protegidos tienen un espesor suficiente según la tabla, pero falta confirmar que la referencia cubre la sección, la orientación, la exposición y el sistema ensayado. Sin esa confirmación el estudio no puede declararlos conformes.`,
-    acc: ['Cotejar cada tabla con el documento original (Listado Oficial o informe de ensayo) y marcar la cobertura en la sección 3.'], el: cob});
+    acc: ['Cotejar cada tabla con el documento original (Listado Oficial o informe de ensayo) y marcar la cobertura en las fichas 3b.'], el: cob});
 
   M.sort((a, b) => b.imp - a.imp || a.costo - b.costo);
 
@@ -48637,6 +48637,7 @@ async function efrLeer(file) {
     const a = nudos[v.VigasN1], z = nudos[v.VigasN2];
     const L = a && z ? Math.hypot(z[0] - a[0], z[1] - a[1], z[2] - a[2])*fL : 0;
     const cosV = L > 0 ? Math.abs(z[1] - a[1])*fL/L : 0;
+    const y1 = a ? a[1]*fL : null, y2 = z ? z[1]*fL : null;
     const f = F[v.VigasID] || {}, mt = mats[String(v.VigasMat || '').toUpperCase()];
     // fuerzas por estado primario en N y N·m (A1-A3, A7-A9 fuerzas; A4-A6, A10-A12 momentos)
     const est = {}; conRes.forEach(e => { est[e.k] = (f[e.k] || Array(12).fill(0)).map((x, i) => x*fN*([3, 4, 5, 9, 10, 11].includes(i) ? fL : 1)); });
@@ -48653,7 +48654,7 @@ async function efrLeer(file) {
       cal[ej] = {ram: Math.abs(dem)*fN*fL, rec, combo: e.id};
     });
     return {id: v.VigasID, n1: v.VigasN1, n2: v.VigasN2, grupo: String(v.VigasDescripcion || '').trim(), secc: String(v.VigasSecc || '').trim(), mat: String(v.VigasMat || '').trim(),
-      L, cosV, Fy: mt && mt.Fy > 0 ? mt.Fy : null, est, cal, razon: d && isFinite(+d.VigasDesignInteractionDemand) ? +d.VigasDesignInteractionDemand : null};
+      L, cosV, y1, y2, Fy: mt && mt.Fy > 0 ? mt.Fy : null, est, cal, razon: d && isFinite(+d.VigasDesignInteractionDemand) ? +d.VigasDesignInteractionDemand : null};
   }).filter(b => b.L > 0);
   return {archivo: file.name, retx: nombre, version: prop.ModelVersion || '', unidades: prop.Units || '', codigo: prop.DesignCodeSteelHR || '', disenado: prop.Designed === '1',
     estados, barras, secciones: sec, mats: Object.values(mats).map(m => ({nombre: m.nombre, Fy: m.Fy})), sinRes: prim.filter(e => !conRes.includes(e)).map(e => e.id)};
@@ -48694,7 +48695,7 @@ function efrLeerEtz(etz, archivos, file, nombre) {
     const cosV = L > 0 ? Math.abs(z.y - a.y)/L : 0, mt = mats[String(b.mat || '').toUpperCase()];
     const est = {}; conRes.forEach(e => { est[e.k] = Array.from({length: 12}, (_, i) => { const v = A(i + 1, e.k); return (Array.isArray(v) ? +v[j] || 0 : 0)*fN*([3, 4, 5, 9, 10, 11].includes(i) ? fL : 1); }); });
     return {id: vid[j] || j + 1, n1: a ? a.id : b.n1, n2: z ? z.id : b.n2, grupo: String(b.desc || '').trim(), secc: String(b.secc || '').trim(), mat: String(b.mat || '').trim(),
-      L, cosV, Fy: mt && mt.Fy > 0 ? mt.Fy : null, est, cal: {}, razon: razon(j), noUnif: noUnif(j, L/fL)};
+      L, cosV, y1: a ? a.y : null, y2: z ? z.y : null, Fy: mt && mt.Fy > 0 ? mt.Fy : null, est, cal: {}, razon: razon(j), noUnif: noUnif(j, L/fL)};
   }).filter(b => b.L > 0 && b.mat.toUpperCase() !== 'NONE');
   return {archivo: file.name, retx: nombre, formato: 'etz', version: String(m.version || ''), unidades: unid, codigo: c['ModelProperties1/DesignCodeSteelCF'] && barras.some(b => (sec[b.secc.toUpperCase()] || {}).tipo !== 'I-H') ? (c['ModelProperties1/DesignCodeSteelHR'] || '') + ' / ' + c['ModelProperties1/DesignCodeSteelCF'] : (c['ModelProperties1/DesignCodeSteelHR'] || ''),
     disenado: !!+c['ModelProperties1/Designed'], estados, barras, secciones: sec, mats: Object.values(mats).map(x => ({nombre: x.nombre, Fy: x.Fy})), sinRes: prim.filter(e => !conRes.includes(e)).map(e => e.id)};
@@ -48716,6 +48717,31 @@ const EFR_COMB = [{id: 'I-1', gD: 1.2, txt: '1,2D + 0,5L + 0,2S'}, {id: 'I-2', g
 function efrOrient(cosV) { return cosV >= 0.985 ? 'pilar' : (cosV <= 0.5 ? 'viga' : 'diag'); }
 const EFR_ORIENT_C = {pilar: 'Vertical', viga: 'Horizontal', diag: 'Inclinada'};
 const EFR_ORIENT = {pilar: 'Vertical (pilar)', viga: 'Horizontal o de baja pendiente (viga)', diag: 'Inclinado (diagonal)'};
+// Función por defecto de cada grupo RAM: los grupos cuyos miembros quedan íntegramente a la altura de la cabeza de las
+// columnas o por encima (cerchas, costaneras y vigas de techo) se proponen como (9) Techumbre incluido cielo falso;
+// el resto, (5) si es vertical y (8) si es horizontal. La cabeza de columna es la menor cota superior de los miembros
+// verticales que nacen en la base del modelo. Sin cotas (modelos guardados antes) se usa solo la orientación.
+const EFR_F1_CACHE = new WeakMap();
+function efrF1Def(M, key) {
+  let C = EFR_F1_CACHE.get(M);
+  if (!C) {
+    C = {}; const ok = b => b.y1 != null && b.y2 != null && isFinite(b.y1) && isFinite(b.y2);
+    let t = null;
+    if (M.barras.length && M.barras.every(ok)) {
+      const y0 = Math.min(...M.barras.map(b => Math.min(b.y1, b.y2)));
+      const cols = M.barras.filter(b => efrOrient(b.cosV) === 'pilar' && Math.min(b.y1, b.y2) - y0 < 0.05);
+      if (cols.length) t = Math.min(...cols.map(b => Math.max(b.y1, b.y2)));
+      // solo hay techumbre reconocible si existen miembros inclinados íntegramente sobre la cabeza de columna (cercha o
+      // techo a dos aguas); un altillo o un techo plano conserva (8) y la función la decide el proyectista
+      if (t != null && !M.barras.some(b => efrOrient(b.cosV) === 'diag' && Math.min(b.y1, b.y2) >= t - 0.05)) t = null;
+    }
+    const G = {}; M.barras.forEach(b => { const k = efrGrupoKey(b); (G[k] = G[k] || []).push(b); });
+    Object.keys(G).forEach(k => { const bs = G[k], o = efrOrient(bs[0].cosV);
+      C[k] = t != null && bs.every(b => Math.min(b.y1, b.y2) >= t - 0.05) ? 9 : (o === 'pilar' ? 5 : (o === 'viga' ? 8 : 0)); });
+    EFR_F1_CACHE.set(M, C);
+  }
+  return C[key] != null ? C[key] : 0;
+}
 function efrGrupoKey(b) { return b.secc.toUpperCase() + '|' + (b.grupo || '—') + '|' + efrOrient(b.cosV); }
 function efrRolDef(cat) { const c = String(cat || '').toUpperCase(); return /^DL/.test(c) ? 'D' : (c === 'LL' ? 'L' : (/^(SL|SN|SNOW)$/.test(c) ? 'S' : '')); }
 // Clase de la sección en incendio (EN 1993-1-1 Tabla 5.2 con ε = 0,85·√(235/fy), EN 1993-1-2 §4.2.2). Alma (o paredes
@@ -48802,7 +48828,7 @@ function efrCalc(M, cfg, resist) {
   });
   Object.values(G).sort((a, b) => a.key.localeCompare(b.key)).forEach((g, gi) => {
     g.n = gi + 1;
-    const gc = Object.assign({f1: g.orient === 'pilar' ? 5 : (g.orient === 'viga' ? 8 : 0), f2: 0, caras: '4', plt: 'calc'}, (cfg.grupos || {})[g.key] || {});
+    const gc = Object.assign({f1: efrF1Def(M, g.key), f2: 0, caras: '4', plt: 'calc'}, (cfg.grupos || {})[g.key] || {});
     g.cfg = gc;
     const s = M.secciones[g.secc.toUpperCase()];
     g.sec = s;
@@ -49011,7 +49037,7 @@ function efrPanelHtml() {
       #efr_grpTbl td[data-efr-rc="res"] .chip{white-space:nowrap}
       @media (min-width:1800px){#efr_panel{margin-right:calc(-1*min(300px, 100vw - 1790px))}}   /* sin pasar bajo la barra fija de la derecha */
     </style><div class="panel" id="efr_panel" data-fs-extra="efram">
-      <h3>3 · Elementos de acero — importar desde el modelo RAM Elements (opcional)</h3>
+      <h3>3a · Elementos de acero — importar desde el modelo RAM Elements (opcional)</h3>
       <div class="note" style="margin-bottom:.6rem">Úselo solo si no cuenta con el grado de utilización en incendio calculado por otra vía. Cargue el .zip del modelo de RAM Elements (o el archivo .retx de la versión 25 o el .etz de versiones anteriores). La planilla arma las combinaciones de incendio AISC 360-16 Anexo 4 (1,2D + 0,5L + 0,2S y 0,9D + 0,5L + 0,2S) con los estados que asigne como D, L y S, calcula μ0 y la temperatura crítica de cada miembro (EN 1993-1-2: ec. 4.22, pandeo ec. 4.21a, volcamiento ec. 4.21b, clase 4 a 350 °C) y, con la exigencia de la función que indique para cada grupo (Art. 4.3.3), separa los miembros que alcanzan su F sin protección de los que requieren protección. «Incorporar a la sección 3» crea un elemento por grupo y resultado, con su θcr. Volcamiento: «Calcular» usa C1 = 1,0, carga en el ala superior en vigas y Lb = K·L del miembro; elija «Impedido» solo si el ala comprimida está arriostrada en forma continua (por ejemplo, por una losa).</div>
       <div class="field-grid">
         <div class="field" style="grid-column:1/-1"><label>Modelo RAM Elements (.zip, .retx o .etz)</label><input type="file" id="efr_file" accept=".zip,.retx,.etz" style="width:100%;max-width:none;min-width:0;font-size:.85rem;box-sizing:border-box"></div>
@@ -49042,10 +49068,10 @@ function efrCfgHtml(M, cfg) {
       <div class="field"><label>Exposición de los elementos protegidos</label><select data-efr-k="expo">${Object.keys(EF_EXPO).map(k => `<option value="${k}"${(cfg.expo || 'interior') === k ? ' selected' : ''}>${EF_EXPO[k]}</option>`).join('')}</select></div>
       ${faltaFy ? `<div class="field"><label>Fy de los miembros sin material legible (kg/cm²)</label><input type="text" inputmode="decimal" data-efr-k="Fy" value="${esc(cfg.Fy || '')}" list="dl_ef_fy"></div>` : ''}
     </div></div>
-    ${(() => { const sinF = grupos.filter(g => !+((cfg.grupos[g.key] || {}).f1 != null ? cfg.grupos[g.key].f1 : (efrOrient(g.b.cosV) === 'pilar' ? 5 : (efrOrient(g.b.cosV) === 'viga' ? 8 : 0)))); return sinF.length ? `<div class="note" style="margin:.5rem 0 .3rem;color:#9a3412"><b>${sinF.length} grupo(s) sin función asignada</b> (${sinF.map(g => 'G' + (grupos.indexOf(g) + 1)).join(', ')}): sin función no hay exigencia F y el estudio no puede concluir sobre ellos. Asígneles la función que cumplen (por ejemplo, las diagonales del sistema que soporta a un elemento horizontal o vertical).</div>` : ''; })()}
+    ${(() => { const sinF = grupos.filter(g => !+((cfg.grupos[g.key] || {}).f1 != null ? cfg.grupos[g.key].f1 : efrF1Def(M, g.key))); return sinF.length ? `<div class="note" style="margin:.5rem 0 .3rem;color:#9a3412"><b>${sinF.length} grupo(s) sin función asignada</b> (${sinF.map(g => 'G' + (grupos.indexOf(g) + 1)).join(', ')}): sin función no hay exigencia F y el estudio no puede concluir sobre ellos. Asígneles la función que cumplen (por ejemplo, las diagonales del sistema que soporta a un elemento horizontal o vertical).</div>` : ''; })()}
     <div class="note" style="margin:.5rem 0 .3rem">La sobrecarga de techo Lr, el viento y el sismo no forman parte de la combinación de incendio (AISC 360-16 Anexo 4 §4.1.4). Función de cada grupo según el Art. 4.3.3: los elementos de techumbre van en la columna (9).</div>
     <div style="overflow-x:auto"><table class="results" id="efr_grpTbl"><tr><th>Función principal</th><th>Función adicional</th><th>Exposición</th><th>Volcamiento</th><th>θcr mín. (°C)</th><th>t sin prot. (min)</th><th>Resultado del cálculo</th></tr>
-      ${grupos.map((g, i) => { const c = Object.assign({f1: efrOrient(g.b.cosV) === 'pilar' ? 5 : (efrOrient(g.b.cosV) === 'viga' ? 8 : 0), f2: 0, caras: '4', plt: 'calc'}, cfg.grupos[g.key] || {}); const s = M.secciones[g.b.secc.toUpperCase()];
+      ${grupos.map((g, i) => { const c = Object.assign({f1: efrF1Def(M, g.key), f2: 0, caras: '4', plt: 'calc'}, cfg.grupos[g.key] || {}); const s = M.secciones[g.b.secc.toUpperCase()];
         return `<tr class="efr-gh"><td colspan="7"><b>G${i + 1} · ${esc(g.b.secc)}</b> <span class="note">· grupo RAM «${esc(g.b.grupo || '—')}» · ${EFR_ORIENT_C[efrOrient(g.b.cosV)]} · ${g.n} miembro(s)${s && s.err ? ' · ' + esc(s.err) : ''}</span></td></tr>
           <tr class="efr-gd"><td><select data-efr-g="${esc(g.key)}" data-efr-c="f1">${funcOpts(c.f1)}</select></td><td><select data-efr-g="${esc(g.key)}" data-efr-c="f2">${funcOpts(c.f2)}</select></td>
           <td>${sel('caras', g.key, c.caras, [['4', '4 caras'], ['3', '3 caras (losa)']])}</td>
@@ -49059,7 +49085,7 @@ function efrResHtml(M, R) {
   const estC = {exime: 'ok', prot: 'warn', pend: 'warn', nores: 'bad', sinexig: 'ok', sinsec: 'bad', sinF: 'warn'};
   return `${R.errs.length ? `<div class="note" style="color:var(--bad,#c0392b)">${R.errs.map(esc).join('<br>')}</div>` : ''}
     ${R.avisos.length ? `<div class="note" style="margin-top:.4rem">${R.avisos.map(esc).join('<br>')}</div>` : ''}
-    <div style="margin:.6rem 0"><button type="button" class="print-btn" id="efr_incorporar">Incorporar a la sección 3 (reemplaza los elementos [RAM] anteriores)</button>
+    <div style="margin:.6rem 0"><button type="button" class="print-btn" id="efr_incorporar">Incorporar a las fichas 3b (reemplaza los elementos [RAM] anteriores)</button>
       <div class="note" style="margin-top:.3rem">La protección y su espesor se asignan al incorporar, con el producto elegido arriba, solo a los grupos que por cálculo no alcanzan su F sin protección. Defina antes el tipo de edificio y la función de cada grupo; si los cambia, vuelva a incorporar.</div></div>
     <details><summary>Detalle por miembro (${R.miembros.length})</summary>
     <div style="overflow-x:auto;max-height:520px"><table class="results"><tr><th>ID RAM</th><th>G</th><th>Sección</th><th>L (m)</th><th>Comb.</th><th>N (kN)</th><th>M33 (kN·m)</th><th>M22 (kN·m)</th><th>Clase</th><th>μ0</th><th>Método θcr</th><th>θcr (°C)</th><th>t sin prot. (min)</th><th>Resultado</th></tr>
@@ -49093,7 +49119,7 @@ function efrElementos(M, R) {
 // Modelo compacto para «Guardar cálculo» (fuerzas redondeadas a 6 cifras significativas).
 function efrCompacto(M) {
   const c = v => (typeof v === 'number' && isFinite(v)) ? Number(v.toPrecision(6)) : v;
-  return Object.assign({}, M, {barras: M.barras.map(b => Object.assign({}, b, {L: c(b.L), cosV: c(b.cosV),
+  return Object.assign({}, M, {barras: M.barras.map(b => Object.assign({}, b, {L: c(b.L), cosV: c(b.cosV), y1: c(b.y1), y2: c(b.y2),
     est: Object.fromEntries(Object.entries(b.est).map(([k, a]) => [k, a.map(c)])),
     cal: Object.fromEntries(Object.entries(b.cal).map(([k, o]) => [k, {ram: c(o.ram), rec: c(o.rec), combo: o.combo}]))}))});
 }
@@ -49215,7 +49241,7 @@ function efInstruccionesHtml() {
   <ol>
     <li><b>Sección 1 · Carga combustible.</b> Ingrese cada material con su masa, poder calorífico y fuente. La planilla calcula la carga total, la densidad media y la densidad puntual en la ventana de 2×2 m más cargada.</li>
     <li><b>Sección 2 · Tipo de edificio.</b> Con pisos, superficie, ocupantes y destino aplica las tablas del Art. 4.3.4 y adopta el tipo más exigente (a, b, c o d). Sin tipo no hay exigencia F y el estudio no concluye.</li>
-    <li><b>Sección 3 · Elementos de acero.</b> Agregue cada elemento con «+ Agregar elemento» y complete su ficha: función principal (y adicional si la tiene), perfil, orientación, caras expuestas, exposición, solicitación, Fy y <b>μ0</b> (ver punto 4). Si va protegido, elija el producto, el espesor propuesto, la referencia documental y marque la cobertura como «Confirmada» cuando la tabla del informe cubra esa sección, orientación y exposición.</li>
+    <li><b>Sección 3b · Elementos de acero (fichas).</b> Agregue cada elemento con «+ Agregar elemento» y complete su ficha: función principal (y adicional si la tiene), perfil, orientación, caras expuestas, exposición, solicitación, Fy y <b>μ0</b> (ver punto 4). Si va protegido, elija el producto, el espesor propuesto, la referencia documental y marque la cobertura como «Confirmada» cuando la tabla del informe cubra esa sección, orientación y exposición.</li>
     <li><b>Qué se llena en cada ficha.</b> Siempre: nombre, función principal, perfil (no aplica a las filas del modelo RAM), orientación y protección; si se protege, exposición, espesor propuesto, cobertura y referencia documental. Aparecen solo cuando aplican: «bajo losa» y «caras» en vigas, dimensiones en perfiles manuales, espesor del certificado con «otro producto», respaldo de la excepción y solución de techumbre en la función 9. «Ajustes del cálculo» agrupa los datos con valor por defecto (función adicional, F manual, excepción, solicitación, Fy, μ0, θcr externa y volcamiento); se abren solo para cambiarlos.</li>
     <li><b>Resultado de cada elemento.</b> Aparece en la cabecera de su ficha: estado, exigencia F y protección; masividad (Am/V), clase de la sección, temperatura crítica θcr, minutos que resiste sin protección y espesor requerido; el motivo o lo que falta y, si no cumple, los productos que lo cubren.</li>
     <li><b>Sección 4 · Resumen de resultados.</b> Agrupa los elementos por la acción que necesitan (cumplen, cambiar perfil, elegir protección, confirmar cobertura, acreditar por cálculo). Cada elemento aparece una sola vez.</li>
@@ -49224,14 +49250,14 @@ function efInstruccionesHtml() {
     <li><b>Sección 7 · Memoria.</b> Complete los antecedentes del proyecto y genere la memoria imprimible; sale de los mismos datos y resultados.</li>
   </ol>
 
-  <h3>3. Funcionamiento con modelo RAM (importación de la sección 3)</h3>
+  <h3>3. Funcionamiento con modelo RAM (importación de la sección 3a)</h3>
   <ol>
     <li>Cargue el zip del modelo (RAM Elements .retx o versiones anteriores .etz). La planilla lee perfiles, barras, materiales y los esfuerzos de cada estado de carga.</li>
     <li>Agrupa los miembros por grupo RAM, perfil y orientación, y calcula μ0 de cada miembro con la combinación de incendio de AISC 360-16 Anexo 4 (1,2D + 0,5L + 0,2S y 0,9D + 0,5L + 0,2S). La sobrecarga de techo Lr, el viento y el sismo no entran en esa combinación.</li>
     <li>Con μ0 obtiene la temperatura crítica de cada miembro, considerando la clase de la sección, el pandeo y el volcamiento, y conserva la menor de cada grupo.</li>
-    <li>Propone la función: pilares (5) y vigas (8). Los miembros inclinados (diagonales, cuerdas de cerchas) quedan sin función: asígnela usted en la tabla de grupos. Revise también el factor K, las caras expuestas y el Fy de los miembros sin material legible.</li>
-    <li>La misma tabla de grupos muestra el resultado del cálculo de cada grupo (θcr mínima, minutos sin protección y cuántos miembros requieren protección). Revísela y pulse <b>«Incorporar a la sección 3»</b>. Cada grupo pasa a ser un elemento [RAM] con su θcr; a los que requieren protección se les asigna el producto con menor espesor que los cubre (Listado primero) y su referencia.</li>
-    <li>Después de incorporar, revise en la sección 3 la orientación, la exposición, la condición bajo losa y confirme la cobertura de cada elemento protegido. La tabla de grupos queda plegada; se abre para cambiar la configuración y volver a incorporar. Las secciones 1, 2, 5, 6 y 7 se completan igual que sin RAM.</li>
+    <li>Propone la función: los grupos que quedan íntegramente a la altura de la cabeza de las columnas o por encima (cerchas, costaneras y vigas de techo) como (9) Techumbre incluido cielo falso; el resto, pilares (5) y vigas (8). Los miembros inclinados que bajan de esa altura quedan sin función: asígnela usted en la tabla de grupos. La función de los elementos [RAM] se cambia solo en esta tabla de grupos (en la ficha queda bloqueada), porque al cambiarla se vuelven a separar los miembros que cumplen y los que no. Revise también el factor K, las caras expuestas y el Fy de los miembros sin material legible.</li>
+    <li>La misma tabla de grupos muestra el resultado del cálculo de cada grupo (θcr mínima, minutos sin protección y cuántos miembros requieren protección). Revísela y pulse <b>«Incorporar a las fichas 3b»</b>. Cada grupo pasa a ser un elemento [RAM] con su θcr; a los que requieren protección se les asigna el producto con menor espesor que los cubre (Listado primero) y su referencia.</li>
+    <li>Después de incorporar, revise en las fichas 3b la orientación, la exposición, la condición bajo losa y confirme la cobertura de cada elemento protegido. La tabla de grupos queda plegada; se abre para cambiar la configuración y volver a incorporar. Las secciones 1, 2, 5, 6 y 7 se completan igual que sin RAM.</li>
   </ol>
 
   <h3>4. Grado de utilización μ0</h3>
@@ -49262,7 +49288,7 @@ function efInstruccionesHtml() {
   <h3>6. Exención del Art. 4.3.26 (sección 2)</h3>
   <p>Las edificaciones de un piso, construidas con elementos no combustibles, quedan liberadas de protección contra el fuego si cumplen <b>todos</b> los requisitos del Art. 4.3.26. En «¿Aplicar la exención del Art. 4.3.26?» elija «Sí»: la planilla evalúa sola el número de pisos, los ocupantes (&lt; 100) y la carga combustible media (&lt; 250 MJ/m²); los demás requisitos se marcan «Cumple» con su respaldo escrito (especificación, plano de emplazamiento, resolución). Bodegaje e industria requieren la calificación de actividad inofensiva de la SEREMI de Salud (Art. 2.1.28). Con todo acreditado, los elementos quedan «sin exigencia» y la memoria incluye la tabla de requisitos; mientras falte uno, rigen las exigencias del tipo de edificio.</p>
 
-  <h3>7. Cabecera de cada ficha (sección 3)</h3>
+  <h3>7. Cabecera de cada ficha (sección 3b)</h3>
   <p>Cada ficha muestra arriba su resultado en una franja de color: verde cumple, amarillo sin verificar, rojo no cumple. La primera línea dice el estado, la exigencia y la protección (producto y espesor, o los minutos que resiste sin protección); la segunda, el motivo o lo que falta.</p>
 
   <h3>8. Anexo «Revisión y optimización»</h3>
@@ -49323,7 +49349,7 @@ function renderEstudioFuego(container) {
         <button type="button" class="print-btn" id="ef_instrBtn" title="Cómo funciona la planilla, con y sin modelo RAM">📘 Instrucciones y funcionamiento</button>
         <button type="button" class="print-btn" id="ef_revBtn" title="Anexo separado: revisión técnica del estudio y medidas para obtener la protección más baja que cumpla la OGUC">📋 Anexo: revisión y optimización</button>
         <button type="button" class="print-btn alt" id="ef_nuevo" title="Borrar todos los datos y dejar la planilla en blanco">📄 Nuevo estudio</button>
-        <span id="ef_nuevoMsg" style="font-size:.78rem;line-height:1.35;color:var(--ink-muted);flex:1;min-width:220px">Deja la planilla en blanco: borra materiales, elementos, modelo RAM cargado (3b), funciones asignadas, asimilación y datos de la memoria. Guarde antes el estudio actual si lo necesita.</span>
+        <span id="ef_nuevoMsg" style="font-size:.78rem;line-height:1.35;color:var(--ink-muted);flex:1;min-width:220px">Deja la planilla en blanco: borra materiales, elementos, modelo RAM cargado (3a), funciones asignadas, asimilación y datos de la memoria. Guarde antes el estudio actual si lo necesita.</span>
       </div>
     </div>
 
@@ -49380,8 +49406,7 @@ function renderEstudioFuego(container) {
     ${efrPanelHtml()}
 
     <div class="panel">
-      <h3>3 · Elementos de acero — fichas</h3>
-      <h4 style="margin:.1rem 0 .2rem">Estado de los elementos</h4><div id="ef_estado3"></div>
+      <h3>3b · Elementos de acero — fichas</h3>
       <div class="note" style="margin-bottom:.6rem">La función según OGUC Art. 4.3.3 fija la exigencia F; si el elemento cumple dos funciones, se adopta la mayor. «F manual» puede fijar una exigencia mayor; una menor solo se adopta con una excepción del Art. 4.3.5 y su respaldo documental. μ0 = Efi,d / Rfi,d,0 en la combinación de incendio con γM,fi = 1,0 (EN 1993-1-2 §4.2.4). Fy en kg/cm². La orientación, la condición bajo losa y la exposición definen qué tabla de protección cubre al elemento; «Cobertura» confirma, con su referencia documental, que el informe o la inscripción corresponde a esa sección, orientación, exposición y sistema. «θcr ingresada» reemplaza el cálculo con μ0 cuando la temperatura crítica viene de otro análisis (por ejemplo, del módulo 3b). En elementos de techumbre, elija el complejo del Listado solo si la techumbre se construye igual a la solución inscrita.</div>
       <datalist id="dl_ef_fy"><option value="2530">2530 — ASTM A36</option><option value="2700">2700 — A270ES (NCh 203)</option><option value="3450">3450 — A345ES (NCh 203)</option><option value="3515">3515 — ASTM A572 Gr. 50</option></datalist>
       <style>
@@ -49400,6 +49425,14 @@ function renderEstudioFuego(container) {
         @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) table.ef-lista tbody td.ef-cab.warn{background:#3A2A12} :root:not([data-theme="light"]) table.ef-lista tbody td.ef-cab.amar{background:#3B3209}}
         :root[data-theme="dark"] table.ef-lista tbody td.ef-cab.warn{background:#3A2A12} :root[data-theme="dark"] table.ef-lista tbody td.ef-cab.amar{background:#3B3209}
         table.ef-lista tbody td.ef-cab{text-align:left}
+        table.ef-lista tbody td[data-k="f1"]::before, table.ef-lista tbody td[data-k="f1"] > label{color:#0B4F8A;font-weight:700}
+        table.ef-lista tbody select[data-f="f1"]{font-weight:700 !important;font-size:.78rem !important;background:#E3F0FC !important;border:2px solid #4A90D9 !important;color:#0B3D6B !important}
+        @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) table.ef-lista tbody select[data-f="f1"]{background:#13304D !important;color:#CFE6FF !important}}
+        :root[data-theme="dark"] table.ef-lista tbody select[data-f="f1"]{background:#13304D !important;color:#CFE6FF !important}
+        table.ef-lista tbody select[data-f="f1"]:disabled, table.ef-lista tbody select[data-f="f2"]:disabled{opacity:1;cursor:not-allowed}
+        .ef-ramf{display:none;font:600 .66rem/1.2 'IBM Plex Sans',Arial,sans-serif;color:var(--accent,#0060c1);cursor:pointer;margin-top:.15rem;text-decoration:underline}
+        table.ef-lista tbody tr[data-ram="1"] .ef-ramf{display:block}
+        table.ef-lista tbody input[data-f="nombre"]{font-weight:700 !important;font-size:.86rem !important;padding:.3rem .4rem !important}
         table.ef-lista tbody td.ef-cab .ef-cab-l1{font-size:.9rem}
         table.ef-lista tbody td.ef-cab .ef-cab-f{font-weight:400;font-size:.78rem;color:var(--ink-muted)}
         table.ef-lista tbody td.ef-cab .ef-cab-acc{margin:.15rem 0}
@@ -49447,6 +49480,7 @@ function renderEstudioFuego(container) {
         <thead><tr><th>N°</th><th>Elemento</th><th>Función principal</th><th>Función adicional</th><th>F manual</th><th>Excepción 4.3.5</th><th>Respaldo de la excepción</th><th>Origen</th><th>Perfil</th><th>Tipo</th><th>h</th><th>b</th><th>tw</th><th>tf</th><th>r</th><th>A (cm²)</th><th>Orientación</th><th>Bajo losa</th><th>Caras</th><th>Exposición</th><th>Solicitación</th><th>Fy</th><th>μ0</th><th>¿μ0 simplificado?</th><th>θcr ingresada (°C)</th><th>Inestab.</th><th>Protección</th><th>Esp. cert.</th><th>Esp. propuesto (µm pintura / mm mortero o placa)</th><th>Cobertura</th><th>Referencia documental</th><th>Solución de techumbre del Listado</th><th></th></tr></thead>
         <tbody id="ef_body"></tbody></table></div>
       <button type="button" class="btn-add" id="ef_add">+ Agregar elemento</button>
+      <h4 style="margin:1rem 0 .2rem">Estado de los elementos</h4><div class="note" style="margin-bottom:.3rem">Resultado de las fichas de arriba, agrupado por lo que falta hacer. Cada elemento lleva a su ficha.</div><div id="ef_estado3"></div>
     </div>
 
     <div class="panel" data-resumen="force">
@@ -49522,7 +49556,7 @@ function renderEstudioFuego(container) {
     const inp = (f, w, ph) => `<input type="text" inputmode="decimal" data-f="${f}" style="min-width:${w || 52}px"${ph ? ` placeholder="${ph}"` : ''}>`;
     tr.innerHTML = `<td class="num" data-role="n"></td>
       <td><input type="text" data-f="nombre" style="min-width:110px" placeholder="Ej: Pilar P1"></td>
-      <td><select data-f="f1" style="min-width:170px">${funcOpts}</select></td>
+      <td><select data-f="f1" style="min-width:170px">${funcOpts}</select><span class="ef-ramf" title="La función de los elementos del modelo RAM se cambia en la tabla de grupos: ahí se vuelven a separar los miembros que cumplen y los que no.">Cambiar en la tabla de grupos RAM ↑</span></td>
       <td><select data-f="f2" style="min-width:150px">${funcOpts}</select></td>
       <td>${inp('Fmanual', 46, 'auto')}</td>
       <td><select data-f="exc" style="min-width:120px">${excOpts}</select></td>
@@ -49572,6 +49606,7 @@ function renderEstudioFuego(container) {
     const ram = /^\[RAM\]/.test(v('nombre'));
     tr.dataset.dims = v('origen') === 'manual' && !ram ? '1' : '';
     tr.dataset.ram = ram ? '1' : '';
+    q('f1').disabled = ram; q('f2').disabled = ram;
     tr.dataset.viga = v('orient') === 'viga' ? '1' : '';
     tr.dataset.losa = v('orient') === 'viga' && v('bajoLosa') === 'si' ? '1' : '';
     tr.dataset.prot = v('prot') === 'ninguna' ? 'ninguna' : (v('prot') === 'otro' ? 'otro' : 'si');
@@ -49662,7 +49697,7 @@ function renderEstudioFuego(container) {
     ${r.resist ? `<div style="overflow-x:auto;margin-top:.5rem"><table class="results"><tr><th>Elemento (OGUC 4.3.3)</th><th>Tipo ${r.tipo}</th><th>Condición (4.3.5)</th></tr>${r.resist.map(x => `<tr><td>${esc(x.elemento)}</td><td class="num">${esc(x.txt)}</td><td class="note">${esc(x.cond)}</td></tr>`).join('')}</table></div>` : ''}`;
     document.getElementById('ef_estado3').innerHTML = efEstadoHtml(r) || '<div class="note">Agregue elementos o importe el modelo RAM.</div>';
     { const cnt = c => r.elems.filter(e => efAccion(e).c === c).length;
-      document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .4rem"><span class="chip bad">✗ Requieren acción: ${cnt('bad')}</span><span class="chip warn">! Faltan datos: ${cnt('warn')}</span><span class="chip amar" style="background:#FFF1B8;color:#6B5200">◐ Por confirmar o por cálculo: ${cnt('amar')}</span><span class="chip ok">✓ Cumplen: ${cnt('ok')}</span></div><div class="note">El estado de cada elemento y qué hacer están en la tabla «Estado de los elementos», al inicio de la sección 3.</div>` : '<div class="note">Agregue elementos en la sección 3.</div>'; }
+      document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .4rem"><span class="chip bad">✗ Requieren acción: ${cnt('bad')}</span><span class="chip warn">! Faltan datos: ${cnt('warn')}</span><span class="chip amar" style="background:#FFF1B8;color:#6B5200">◐ Por confirmar o por cálculo: ${cnt('amar')}</span><span class="chip ok">✓ Cumplen: ${cnt('ok')}</span></div><div class="note">El estado de cada elemento y qué hacer están en la tabla «Estado de los elementos», al final de la sección 3b.</div>` : '<div class="note">Agregue elementos en la sección 3.</div>'; }
     document.getElementById('ef_resAsim').innerHTML = efAsimHtml(r);
     document.getElementById('ef_chkWrap').style.display = r.requiereAsim ? '' : 'none';
     { const nC = efAsimCasos(r).filter(c => c.k === 'calc').length, sinA = !r.requiereAsim;
@@ -49766,6 +49801,11 @@ function renderEstudioFuego(container) {
     const inf = el ? efEspesorProd(k, Object.assign({}, el, {prot: k})) : null;
     if (!q('refDoc').value || b.dataset.k !== (el && el.prot)) q('refDoc').value = (EF_PROT[k].fuente || '') + (inf && inf.tabla && inf.tabla.titulo ? ' — ' + inf.tabla.titulo : '');
     efVis(tr); recalc();
+  });
+  body.addEventListener('click', ev => {
+    if (!ev.target.closest('.ef-ramf')) return;
+    const det = document.getElementById('efr_det'); if (det) det.open = true;
+    const t = document.getElementById('efr_grpTbl'); if (t) t.scrollIntoView({behavior: 'smooth', block: 'center'});
   });
   document.getElementById('ef_estado3').addEventListener('click', ev => {
     const a = ev.target.closest('a[data-ir]'); if (!a) return; ev.preventDefault();
