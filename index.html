@@ -45337,7 +45337,7 @@ async function afMemoriaPdf(html) {
   const tramos = []; let act = null;
   Array.from(raiz.children).forEach(ch => {
     if (ch.tagName === 'STYLE') return;
-    if (ch.classList.contains('salto') || !act) { act = document.createElement('div'); act.className = claseRaiz; if (estilo) act.appendChild(estilo.cloneNode(true)); tramos.push(act); }
+    if (ch.classList.contains('salto') || !act) { act = document.createElement('div'); act.className = claseRaiz; act.style.paddingRight = '8px'; act.style.boxSizing = 'border-box'; if (estilo) act.appendChild(estilo.cloneNode(true)); tramos.push(act); }
     if (!ch.classList.contains('salto') || ch.children.length || ch.textContent.trim()) act.appendChild(ch);
   });
   const oc = document.createElement('div'); oc.style.cssText = 'position:fixed;left:0;top:0;width:703px;z-index:-10;pointer-events:none;background:#fff';
@@ -47784,7 +47784,17 @@ function efMemoriaHtml(inp, r, meta) {
 
     <div class="salto"></div>
     <h1>8. CONCLUSIONES</h1>
-    <p>El sector se clasifica como edificio <b>tipo ${r.tipo || '—'}${r.tipoProv ? ' (provisorio)' : ''}</b> según el Art. 4.3.4, con una densidad de carga combustible media de ${r.media != null ? N(r.media, 0) + ' MJ/m²' : 'no determinada'} y una puntual máxima ${r.puntual != null ? 'de ' + N(r.puntual, 0) + ' MJ/m²' : 'no determinada'}.</p>
+    ${!r.tipo ? `<p><b>El estudio no puede concluir sobre la protección de los elementos porque no está determinado el tipo de edificio.</b> El tipo (Art. 4.3.4) fija la exigencia F de cada elemento (Art. 4.3.3); sin ella no es posible decidir si un elemento requiere protección ni dimensionarla. Para determinarlo se requiere la densidad de carga combustible media y la puntual máxima (NCh 1916 y NCh 1993), con la masa y el poder calorífico de cada material y su fuente, o adoptar el tipo con su justificación documentada.</p>` : ''}
+    <p>El sector se clasifica como edificio <b>tipo ${r.tipo || '—'}${r.tipoProv ? ' (provisorio)' : ''}</b> según el Art. 4.3.4, con una densidad de carga combustible media ${r.media != null ? 'de ' + N(r.media, 0) + ' MJ/m²' : 'no determinada'} y una puntual máxima ${r.puntual != null ? 'de ' + N(r.puntual, 0) + ' MJ/m²' : 'no determinada'}${r.tipo && r.media == null ? ' (tipo adoptado por el proyectista)' : ''}.</p>
+    ${(() => { const sf = r.elems.filter(e => e.Freq == null && r.tipo && !(e.f1 > 0) && !(e.f2 > 0)); return sf.length ? `<p><b>${sf.length === 1 ? 'El elemento' : 'Los elementos'} ${sf.map(e => esc(e.nombre)).join('; ')} no ${sf.length === 1 ? 'tiene' : 'tienen'} función asignada según el Art. 4.3.3</b>, por lo que su exigencia no está determinada y el estudio no concluye sobre ${sf.length === 1 ? 'él' : 'ellos'}.</p>` : ''; })()}
+    ${(() => { const pr = r.elems.filter(e => e.prot !== 'ninguna' && e.Freq > 0);
+      const sp = r.elems.filter(e => e.prot === 'ninguna' && e.Freq > 0 && e.metodoCr !== 'mu_mayor_1' && e.tcr != null && e.tcr < e.Freq);
+      const spSin = sp.filter(e => !(e.alternativas && e.alternativas.length));
+      let h = '';
+      if (pr.length) h += `${MEM_T('Especificación de la protección pasiva')}<table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Exigencia</th><th>Producto</th><th>Espesor mínimo</th><th>Referencia</th></tr>${pr.map(e => `<tr><td>${r.elems.indexOf(e) + 1}</td><td class="l">${esc(e.nombre)}</td><td>F-${e.Freq}</td><td class="l">${esc((EF_PROT[e.prot] || {}).corto || EF_PROD[e.prot])}</td><td><b>${e.espReq != null ? e.espReq + ' ' + e.espU : '—'}</b></td><td class="l">${esc(e.espInfo && e.espInfo.tabla ? e.espInfo.tabla.titulo + (e.espInfo.asimilado ? ' (requiere asimilación)' : '') : (EF_PROT[e.prot] || {}).fuente || '')}</td></tr>`).join('')}</table>`;
+      if (spSin.length) h += `<p><b>Sin producto aplicable.</b> ${spSin.length === 1 ? 'El elemento' : 'Los elementos'} ${spSin.map(e => esc(e.nombre) + ' (Am/V = ' + N(e.F, 0) + ' m⁻¹)').join('; ')} requiere${spSin.length === 1 ? '' : 'n'} protección, pero ninguna de las tablas de los productos considerados cubre ${spSin.length === 1 ? 'su sección' : 'sus secciones'}: el factor de masividad supera el rango ensayado o el tipo de sección no está tabulado. Las alternativas son reemplazar el perfil por uno de menor masividad o cerrado, encajonarlo con un sistema de placas con informe de ensayo que lo cubra, o acreditar una solución por asimilación certificada (Art. 4.3.2).</p>`;
+      else if (sp.length) h += `<p>${sp.length} elemento(s) requieren protección y aún no tienen producto asignado; la sección 6 indica los productos que los cubren.</p>`;
+      return h; })()}
     ${tablaRes}
     <p><b>Resultado global: ${esc(r.global[1])}.</b> ${nBad ? `${nBad} elemento(s) no satisfacen la exigencia con la solución propuesta.` : ''} Un elemento solo se declara conforme con verificación completa: exigencia determinada, espesor tabulado suficiente dentro del alcance de la referencia y cobertura documental confirmada. En los elementos sin protección, un tiempo calculado mayor o igual a la exigencia es solo un resultado de cálculo: no acredita resistencia al fuego ante la DOM, porque la acreditación se rige por el Art. 4.3.2.</p>
     ${(() => { const ex = r.elems.filter(e => (efSinProt(e) || {}).k === 'exime'); return ex.length ? `<p>Por cálculo, ${ex.length === 1 ? 'el elemento' : 'los elementos'} ${ex.map(e => esc(e.nombre) + ' (F-' + e.Freq + ')').join(', ')} ${ex.length === 1 ? 'alcanza' : 'alcanzan'} la exigencia sin protección (sección 6). Prescindir de la protección requiere acreditarlo según el Art. 4.3.2 y la DOM puede exigir un ensayo de laboratorio; por ello el planteamiento debe validarse con la DOM antes de construir. En los demás elementos con exigencia, la protección se dimensiona para el tiempo completo sobre el perfil real.</p>` : ''; })()}
@@ -48468,8 +48478,11 @@ function efrCfgHtml(M, cfg) {
     </table></div>
     <div class="field-grid" style="min-width:260px">
       <div class="field"><label>Factor de longitud de pandeo K (Lcr = K·L del miembro)</label><input type="text" inputmode="decimal" data-efr-k="K" value="${esc(cfg.K)}"></div>
+      <div class="field"><label>Protección de los grupos que la requieren</label><select data-efr-k="prot">${[['auto', 'Automática: producto que cubre el elemento con el menor espesor (Listado primero)'], ['ninguna', 'No asignar (elegir en la sección 3)']].concat(Object.keys(EF_PROT).filter(k => EF_PROT[k].modo).map(k => [k, EF_PROT[k].nombre])).map(o => `<option value="${o[0]}"${(cfg.prot || 'auto') === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></div>
+      <div class="field"><label>Exposición de los elementos protegidos</label><select data-efr-k="expo">${Object.keys(EF_EXPO).map(k => `<option value="${k}"${(cfg.expo || 'interior') === k ? ' selected' : ''}>${EF_EXPO[k]}</option>`).join('')}</select></div>
       ${faltaFy ? `<div class="field"><label>Fy de los miembros sin material legible (kg/cm²)</label><input type="text" inputmode="decimal" data-efr-k="Fy" value="${esc(cfg.Fy || '')}" list="dl_ef_fy"></div>` : ''}
     </div></div>
+    ${(() => { const sinF = grupos.filter(g => !+((cfg.grupos[g.key] || {}).f1 != null ? cfg.grupos[g.key].f1 : (efrOrient(g.b.cosV) === 'pilar' ? 5 : (efrOrient(g.b.cosV) === 'viga' ? 8 : 0)))); return sinF.length ? `<div class="note" style="margin:.5rem 0 .3rem;color:#9a3412"><b>${sinF.length} grupo(s) sin función asignada</b> (${sinF.map(g => 'G' + (grupos.indexOf(g) + 1)).join(', ')}): sin función no hay exigencia F y el estudio no puede concluir sobre ellos. Asígneles la función que cumplen (por ejemplo, las diagonales del sistema que soporta a un elemento horizontal o vertical).</div>` : ''; })()}
     <div class="note" style="margin:.5rem 0 .3rem">La sobrecarga de techo Lr, el viento y el sismo no forman parte de la combinación de incendio (AISC 360-16 Anexo 4 §4.1.4). Función de cada grupo según el Art. 4.3.3: los elementos de techumbre van en la columna (9).</div>
     <div style="overflow-x:auto"><table class="results" style="min-width:980px"><tr><th>G</th><th>Grupo RAM</th><th>Sección</th><th>Orientación</th><th>N°</th><th>Función principal</th><th>Función adicional</th><th>Exposición</th><th>Volcamiento</th></tr>
       ${grupos.map((g, i) => { const c = Object.assign({f1: efrOrient(g.b.cosV) === 'pilar' ? 5 : (efrOrient(g.b.cosV) === 'viga' ? 8 : 0), f2: 0, caras: '4', plt: 'calc'}, cfg.grupos[g.key] || {}); const s = M.secciones[g.b.secc.toUpperCase()];
@@ -48491,7 +48504,8 @@ function efrResHtml(M, R) {
         <td>${g.err ? chip('bad', g.err) : Object.keys(g.cuenta).map(k => chip(estC[k], `${EFR_EST[k]}: ${g.cuenta[k]}`)).join(' ')}</td></tr>`).join('')}
     </table></div>
     ${R.avisos.length ? `<div class="note" style="margin-top:.4rem">${R.avisos.map(esc).join('<br>')}</div>` : ''}
-    <div style="margin:.6rem 0"><button type="button" class="print-btn" id="efr_incorporar">Incorporar a la sección 3 (reemplaza los elementos [RAM] anteriores)</button></div>
+    <div style="margin:.6rem 0"><button type="button" class="print-btn" id="efr_incorporar">Incorporar a la sección 3 (reemplaza los elementos [RAM] anteriores)</button>
+      <div class="note" style="margin-top:.3rem">La protección y su espesor se asignan al incorporar, con el producto elegido arriba, solo a los grupos que por cálculo no alcanzan su F sin protección. Defina antes el tipo de edificio y la función de cada grupo; si los cambia, vuelva a incorporar.</div></div>
     <details><summary>Detalle por miembro (${R.miembros.length})</summary>
     <div style="overflow-x:auto;max-height:520px"><table class="results" style="min-width:1250px"><tr><th>ID RAM</th><th>G</th><th>Sección</th><th>L (m)</th><th>Comb.</th><th>N (kN)</th><th>M33 (kN·m)</th><th>M22 (kN·m)</th><th>Clase</th><th>μ0</th><th>Método θcr</th><th>θcr (°C)</th><th>t sin prot. (min)</th><th>Resultado</th></tr>
       ${R.miembros.map(m => `<tr><td class="num">${m.id}</td><td class="num">${m.g}</td><td>${esc(m.secc)}</td><td class="num">${n(m.L, 2)}</td><td>${m.gov ? m.gov.c.id : '—'}</td>
@@ -48722,7 +48736,7 @@ function renderEstudioFuego(container) {
   const val = id => document.getElementById(id).value;
   // Módulo opcional 3b (modelo RAM Elements): estado propio, guardado con el cálculo por [data-fs-extra]
   const efrPanel = document.getElementById('efr_panel');
-  let efrM = null, efrCfg = {rol: {}, K: '1', Fy: '', grupos: {}}, efrR = null;
+  let efrM = null, efrCfg = {rol: {}, K: '1', Fy: '', grupos: {}, prot: 'auto', expo: 'interior'}, efrR = null;
   const efrPintarCfg = () => { document.getElementById('efr_cfg').innerHTML = efrM ? efrCfgHtml(efrM, efrCfg) : ''; };
 
   function addMat(pre) {
@@ -48769,10 +48783,11 @@ function renderEstudioFuego(container) {
       <td><select data-f="techo" style="min-width:150px">${efTechoOpts()}</select></td>
       <td><button type="button" class="btn-remove" title="Eliminar">✕</button></td>`;
     body.appendChild(tr);
+    if (pre && pre.ejemplo) tr.dataset.ejemplo = '1';
     const q = f => tr.querySelector(`[data-f="${f}"]`);
     q('desig').value = (pre && pre.desig) || 'IPE300';
     q('Fy').value = (pre && pre.Fy) || 2530;
-    ['nombre', 'f1', 'f2', 'caras', 'solic', 'mu', 'thcrExt', 'inest', 'prot', 'espProp', 'orient', 'bajoLosa', 'expo', 'techo'].forEach(k => { if (pre && pre[k] != null) q(k).value = pre[k]; });
+    ['nombre', 'f1', 'f2', 'caras', 'solic', 'mu', 'thcrExt', 'inest', 'prot', 'espProp', 'orient', 'bajoLosa', 'expo', 'techo', 'refDoc'].forEach(k => { if (pre && pre[k] != null) q(k).value = pre[k]; });
     if (pre && pre.origen === 'manual') q('origen').value = 'manual';
     syncRow(tr);
     if (pre && pre.origen === 'manual') ['tipo', 'h', 'b', 'tw', 'tf', 'r', 'A'].forEach(k => { if (pre[k] != null) q(k).value = pre[k]; });
@@ -48869,7 +48884,7 @@ function renderEstudioFuego(container) {
     const msg = document.getElementById('efr_msg'); msg.textContent = 'Leyendo «' + f.name + '»…';
     try {
       const M = await efrLeer(f);
-      efrM = M; efrCfg = {rol: {}, K: '1', Fy: '', grupos: {}};
+      efrM = M; efrCfg = {rol: {}, K: '1', Fy: '', grupos: {}, prot: 'auto', expo: 'interior'};
       M.estados.filter(e => !e.comb).forEach(e => { efrCfg.rol[e.k] = efrRolDef(e.cat); });
       msg.textContent = '';
     } catch (e) { efrM = null; msg.textContent = 'No se pudo leer el modelo: ' + ((e && e.message) || e); }
@@ -48881,18 +48896,53 @@ function renderEstudioFuego(container) {
     else if (t.dataset.efrK) efrCfg[t.dataset.efrK] = t.value;
     else if (t.dataset.efrG) { const g = efrCfg.grupos[t.dataset.efrG] = efrCfg.grupos[t.dataset.efrG] || {}; g[t.dataset.efrC] = /^f\d$/.test(t.dataset.efrC) ? +t.value : t.value; }
     else return;
+    if (t.dataset.efrC === 'f1' || t.dataset.efrC === 'f2') efrPintarCfg();
     recalc();
   });
+  // Protección automática de los elementos [RAM] que no alcanzan su F sin protección: el producto elegido en el panel o,
+  // en modo automático, el que cubre al elemento con el menor espesor, prefiriendo la aplicación directa de una tabla del
+  // Listado ED17-2025, luego la de un informe de ensayo y al final las que requieren asimilación (OGUC 4.3.2).
+  function efrAsignarProteccion() {
+    const modo = efrCfg.prot || 'auto';
+    if (modo === 'ninguna' || !ultimo || !ultimo.r) return;
+    const porNombre = {}; ultimo.r.elems.forEach(e => { porNombre[e.nombre] = e; });
+    let cambio = false;
+    Array.from(body.children).forEach(tr => {
+      const q = f => tr.querySelector(`[data-f="${f}"]`), nom = q('nombre').value;
+      if (!/^\[RAM\]/.test(nom) || q('prot').value !== 'ninguna') return;
+      const e = porNombre[nom];
+      // solo los que, por cálculo, no alcanzan su F sin protección (μ0 > 1 no se resuelve con protección)
+      if (!e || !(e.Freq > 0) || e.metodoCr === 'mu_mayor_1' || !(e.tcr != null && e.tcr < e.Freq)) return;
+      const base = Object.assign({}, e, {prot: 'ninguna'});
+      let elegido = null;
+      if (modo === 'auto') {
+        const c = efAlternativas(base).map(a => Object.assign(a, {lis: EF_PROT[a.k].listado ? 0 : 1}));
+        c.sort((a, b) => (a.asimilado - b.asimilado) || (a.lis - b.lis) || (a.u === b.u ? a.v - b.v : (a.u === 'mm' ? -1 : 1)));
+        // efAlternativas excluye las asimilaciones: si ningún producto cubre directamente, se busca entre ellas
+        elegido = c[0] || Object.keys(EF_PROT).filter(k => EF_PROT[k].modo).map(k => Object.assign({k}, efEspesorProd(k, base), {lis: EF_PROT[k].listado ? 0 : 1}))
+          .filter(a => a.v != null).sort((a, b) => (a.lis - b.lis) || (a.u === b.u ? a.v - b.v : (a.u === 'mm' ? -1 : 1)))[0] || null;
+      } else { const a = Object.assign({k: modo}, efEspesorProd(modo, base)); elegido = a.v != null ? a : null; }
+      if (!elegido) return;
+      q('prot').value = elegido.k; syncRow(tr);
+      q('espProp').value = Math.ceil(elegido.v);
+      if (!q('expo').value) q('expo').value = efrCfg.expo || 'interior';
+      q('refDoc').value = EF_PROT[elegido.k].fuente + (elegido.tabla && elegido.tabla.titulo ? ' — ' + elegido.tabla.titulo : '');
+      cambio = true;
+    });
+    if (cambio) recalc();
+  }
   efrPanel.addEventListener('click', ev => {
     if (!ev.target.closest('#efr_incorporar') || !efrR) return;
-    Array.from(body.children).forEach(tr => { if (/^\[RAM\]/.test(tr.querySelector('[data-f="nombre"]').value)) tr.remove(); });
+    // reemplaza los elementos [RAM] anteriores y las filas de ejemplo de la planilla
+    Array.from(body.children).forEach(tr => { if (tr.dataset.ejemplo === '1' || /^\[RAM\]/.test(tr.querySelector('[data-f="nombre"]').value)) tr.remove(); });
     efrElementos(efrM, efrR).forEach(pre => addRow(pre));
     recalc();
+    efrAsignarProteccion();
     body.closest('.panel').scrollIntoView({behavior: 'smooth', block: 'start'});
   });
   efrPanel.__fsExtra = {
     capture: () => efrM ? {M: efrCompacto(efrM), cfg: efrCfg} : null,
-    restore: v => { if (!v || !v.M) return; efrM = v.M; efrCfg = Object.assign({rol: {}, K: '1', Fy: '', grupos: {}}, v.cfg || {}); efrPintarCfg(); recalc(); }
+    restore: v => { if (!v || !v.M) return; efrM = v.M; efrCfg = Object.assign({rol: {}, K: '1', Fy: '', grupos: {}, prot: 'auto', expo: 'interior'}, v.cfg || {}); efrPintarCfg(); recalc(); }
   };
   (window.REV_RESULTADOS = window.REV_RESULTADOS || {}).estudioFuego = () => { recalc(); return efResultadoJson(ultimo.inp, ultimo.r); };
   document.getElementById('efi_imprimir').addEventListener('click', () => { recalc(); memImprimir(efMemoriaHtml(ultimo.inp, ultimo.r, memMeta('efi'))); });
@@ -48912,8 +48962,8 @@ function renderEstudioFuego(container) {
   // Caso inicial (entradas de la versión 22-10-2026, incompleto a propósito): sin poder calorífico ni superficie,
   // sin μ0, orientación ni espesores. Se ingresan los datos con su fuente.
   addMat({desc: 'Ej.: pallets de madera (reemplazar)', zona: 'Z1'});
-  addRow({nombre: 'Pilar de marco', f1: 5, desig: 'IPE300', caras: '4', solic: 'flexocomp', prot: 'cerefire'});
-  addRow({nombre: 'Viga de marco', f1: 9, f2: 8, desig: 'IPE300', caras: '3', solic: 'flexion', prot: 'cerefire'});
+  addRow({nombre: 'Pilar de marco', f1: 5, desig: 'IPE300', caras: '4', solic: 'flexocomp', prot: 'cerefire', ejemplo: true});
+  addRow({nombre: 'Viga de marco', f1: 9, f2: 8, desig: 'IPE300', caras: '3', solic: 'flexion', prot: 'cerefire', ejemplo: true});
   recalc();
 }
 
