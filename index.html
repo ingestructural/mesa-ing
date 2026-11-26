@@ -48803,8 +48803,14 @@ function renderEstudioFuego(container) {
         <div class="field"><label>Procedencia de la densidad puntual medida</label><input type="text" id="ef_puntualFte" placeholder="informe, medición, fecha"></div>
       </div>
       <div class="note" style="margin:.6rem 0">Carga = masa × poder calorífico. Ingrese el poder calorífico con su fuente (NCh 1916, ensayo NCh 1914/2 o ficha técnica); la planilla no trae valores por defecto. Densidad puntual (NCh 1993): indique la huella en planta de cada acopio como «x; y; largo; ancho» en metros, con un mismo origen para el sector; la planilla busca la ventana de 2×2 m más cargada, también entre acopios vecinos, y el resultado no cambia al dividir filas ni al renombrar ubicaciones. Escriba «distribuido» en Ubicación si el material está repartido en todo el sector. Una ubicación sin huella solo da una estimación y la clasificación queda provisoria.</div>
-      <div style="overflow-x:auto"><table class="results editable" style="min-width:1000px">
-        <thead><tr><th>N°</th><th>Material / acopio</th><th>Masa (kg)</th><th>Poder calorífico (MJ/kg)</th><th>Fuente del poder calorífico</th><th>Ubicación</th><th>Huella x; y; largo; ancho (m)</th><th>Carga (MJ)</th><th></th></tr></thead>
+      <style>
+        #ef_matTbl{width:100%;font-size:.76rem}
+        #ef_matTbl th{font-size:.66rem;padding:.35rem .25rem}
+        #ef_matTbl td{padding:.22rem .2rem}
+        #ef_matTbl input{font-size:.76rem;padding:.2rem .25rem;width:100%;min-width:0 !important;box-sizing:border-box}
+      </style>
+      <div style="overflow-x:auto"><table class="results editable" id="ef_matTbl">
+        <thead><tr><th>N°</th><th style="width:20%">Material / acopio</th><th>Masa (kg)</th><th>Poder calorífico (MJ/kg)</th><th style="width:19%">Fuente del poder calorífico</th><th>Ubicación</th><th style="width:15%">Huella x; y; largo; ancho (m)</th><th>Carga (MJ)</th><th></th></tr></thead>
         <tbody id="ef_mat"></tbody></table></div>
       <datalist id="dl_ef_ubic"><option value="distribuido"></option></datalist>
       <button type="button" class="btn-add" id="ef_addMat">+ Agregar material</button>
@@ -48834,8 +48840,22 @@ function renderEstudioFuego(container) {
       <h3>3 · Elementos de acero</h3>
       <div class="note" style="margin-bottom:.6rem">La función según OGUC Art. 4.3.3 fija la exigencia F; si el elemento cumple dos funciones, se adopta la mayor. «F manual» puede fijar una exigencia mayor; una menor solo se adopta con una excepción del Art. 4.3.5 y su respaldo documental. μ0 = Efi,d / Rfi,d,0 en la combinación de incendio con γM,fi = 1,0 (EN 1993-1-2 §4.2.4). Fy en kg/cm². La orientación, la condición bajo losa y la exposición definen qué tabla de protección cubre al elemento; «Cobertura» confirma, con su referencia documental, que el informe o la inscripción corresponde a esa sección, orientación, exposición y sistema. «θcr ingresada» reemplaza el cálculo con μ0 cuando la temperatura crítica viene de otro análisis (por ejemplo, del módulo 3b). En elementos de techumbre, elija el complejo del Listado solo si la techumbre se construye igual a la solución inscrita.</div>
       <datalist id="dl_ef_fy"><option value="2530">2530 — ASTM A36</option><option value="2700">2700 — A270ES (NCh 203)</option><option value="3450">3450 — A345ES (NCh 203)</option><option value="3515">3515 — ASTM A572 Gr. 50</option></datalist>
-      <div style="overflow-x:auto"><style>table.ef-lista input, table.ef-lista select{ font-size:.8rem !important; padding:.24rem .28rem !important; } table.ef-lista td{ padding:.2rem .16rem; }</style>
-      <table class="results editable ef-lista" style="min-width:2850px">
+      <style>
+        /* 3: cada elemento se muestra como una ficha con sus campos rotulados, sin desplazamiento horizontal */
+        table.ef-lista, table.ef-lista tbody{display:block;width:100%}
+        table.ef-lista thead{display:none}
+        table.ef-lista tbody tr{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.35rem .5rem;padding:.55rem .6rem;margin:0 0 .55rem;border:1px solid var(--line);border-radius:6px;background:transparent}
+        table.ef-lista tbody td{display:flex;flex-direction:column;justify-content:flex-end;padding:0;border:0;min-width:0}
+        table.ef-lista tbody td::before{content:attr(data-l);font-size:.64rem;font-weight:600;letter-spacing:.02em;color:var(--ink-muted);margin-bottom:.12rem;line-height:1.2}
+        table.ef-lista tbody td.ef-w2{grid-column:span 2}
+        table.ef-lista tbody td.ef-w3{grid-column:span 3}
+        table.ef-lista tbody td[data-role="n"]{font-weight:700;justify-content:center}
+        table.ef-lista input, table.ef-lista select{font-size:.78rem !important;padding:.22rem .26rem !important;width:100%;min-width:0 !important;box-sizing:border-box}
+        table.ef-lista tbody td:last-child{align-items:flex-end}
+        @media (max-width:620px){table.ef-lista tbody tr{grid-template-columns:repeat(2,minmax(0,1fr))} table.ef-lista tbody td.ef-w3{grid-column:span 2}}
+      </style>
+      <div>
+      <table class="results editable ef-lista">
         <thead><tr><th>N°</th><th>Elemento</th><th>Función principal</th><th>Función adicional</th><th>F manual</th><th>Excepción 4.3.5</th><th>Respaldo de la excepción</th><th>Origen</th><th>Perfil</th><th>Tipo</th><th>h</th><th>b</th><th>tw</th><th>tf</th><th>r</th><th>A (cm²)</th><th>Orientación</th><th>Bajo losa</th><th>Caras</th><th>Exposición</th><th>Solicitación</th><th>Fy</th><th>μ0</th><th>θcr ingresada (°C)</th><th>Inestab.</th><th>Protección</th><th>Esp. cert.</th><th>Esp. propuesto (µm pintura / mm mortero o placa)</th><th>Cobertura</th><th>Referencia documental</th><th>Solución de techumbre del Listado</th><th></th></tr></thead>
         <tbody id="ef_body"></tbody></table></div>
       <button type="button" class="btn-add" id="ef_add">+ Agregar elemento</button>
@@ -48857,9 +48877,9 @@ function renderEstudioFuego(container) {
       <div class="field-grid">
         <div class="field"><label>Origen del ensayo de referencia</label><select id="ef_origen"><option value="">— sin definir —</option><option value="nac">Nacional (NCh 935/1)</option><option value="ext">Extranjero</option></select></div>
       </div>
-      <div style="overflow-x:auto"><table class="results editable" style="min-width:900px">
+      <div style="overflow-x:auto"><table class="results editable" style="width:100%;font-size:.78rem">
         <thead><tr><th>Criterio</th><th>Referencia</th><th>Estado</th><th>Observación / antecedente</th></tr></thead>
-        <tbody id="ef_chk">${EF_CHK.map(c => `<tr><td>${esc(c[1])}</td><td class="note">${esc(c[2])}</td><td><select id="ef_chk_${c[0]}" style="min-width:140px"><option value="pend">Sin antecedente</option><option value="si">Cumple</option><option value="no">No cumple</option><option value="na">No aplica</option></select></td><td><input type="text" id="ef_obs_${c[0]}" style="min-width:220px"></td></tr>`).join('')}</tbody>
+        <tbody id="ef_chk">${EF_CHK.map(c => `<tr><td>${esc(c[1])}</td><td class="note">${esc(c[2])}</td><td><select id="ef_chk_${c[0]}" style="min-width:122px;width:100%;font-size:.76rem"><option value="pend">Sin antecedente</option><option value="si">Cumple</option><option value="no">No cumple</option><option value="na">No aplica</option></select></td><td><input type="text" id="ef_obs_${c[0]}" style="min-width:150px;width:100%;box-sizing:border-box;font-size:.76rem"></td></tr>`).join('')}</tbody>
       </table></div>
       <div id="ef_resAsim" style="margin-top:.6rem"></div>
       <div class="disclosure">OGUC 4.3.2: lo que no figure en el Listado Oficial se acredita con certificado de ensaye de una Institución Oficial de Control Técnico. Si un elemento no figura en el Listado ni tiene certificación, un profesional especialista puede certificar su asimilación a un tipo del Art. 4.3.3, adjuntando la certificación en el país de origen; si no es posible, el Director de Obras Municipales exige el ensaye. Listado ED17-2025, punto 7: la asimilación sigue NCh 3684/1:2022 (ensayos nacionales, estructuras de acero o madera con placas) y NCh 3684/2:2022 (ensayos extranjeros). Esta lista ordena los antecedentes; no reemplaza el texto de esas normas ni el juicio del profesional que firma.</div>
@@ -48923,6 +48943,9 @@ function renderEstudioFuego(container) {
       <td><input type="text" data-f="refDoc" style="min-width:170px" placeholder="informe / tabla / inscripción"></td>
       <td><select data-f="techo" style="min-width:150px">${efTechoOpts()}</select></td>
       <td><button type="button" class="btn-remove" title="Eliminar">✕</button></td>`;
+    const rot = Array.from(body.closest('table').querySelectorAll('thead th')).map(th => th.textContent.trim());
+    const ancho = {nombre: 'ef-w3', f1: 'ef-w2', f2: 'ef-w2', excResp: 'ef-w2', desig: 'ef-w2', expo: 'ef-w2', prot: 'ef-w2', refDoc: 'ef-w2', techo: 'ef-w2'};   // ficha de 6 columnas: 7 renglones completos
+    Array.from(tr.children).forEach((td, i) => { td.dataset.l = rot[i] || ''; const f = td.querySelector('[data-f]'); if (f && ancho[f.dataset.f]) td.classList.add(ancho[f.dataset.f]); });
     body.appendChild(tr);
     if (pre && pre.ejemplo) tr.dataset.ejemplo = '1';
     const q = f => tr.querySelector(`[data-f="${f}"]`);
@@ -48998,8 +49021,16 @@ function renderEstudioFuego(container) {
       <tr><td><strong>Tipo adoptado para las exigencias</strong></td><td class="num"><strong>${r.tipo || '—'}${r.tipoProv ? ' (provisorio)' : ''}</strong></td><td>${r.tipoRed === 'no justificada' ? sp('bad', `Tipo ${r.tipoManual} no adoptado: reducción sin excepción documentada`) : (r.tipoRed === 'justificada' ? esc('Reducción por ' + r.tipoExcTxt) : (r.tipoManual ? 'Ingresado por el proyectista (igual o más exigente)' : 'Calculado'))}</td></tr>
     </table>
     ${r.resist ? `<div style="overflow-x:auto;margin-top:.5rem"><table class="results"><tr><th>Elemento (OGUC 4.3.3)</th><th>Tipo ${r.tipo}</th><th>Condición (4.3.5)</th></tr>${r.resist.map(x => `<tr><td>${esc(x.elemento)}</td><td class="num">${esc(x.txt)}</td><td class="note">${esc(x.cond)}</td></tr>`).join('')}</table></div>` : ''}`;
-    document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="overflow-x:auto"><table class="results" style="min-width:1300px">
-      <tr><th>N°</th><th>Elemento</th><th>F calculada</th><th>F adoptada</th><th>Am/V usado (m⁻¹)</th><th>F 4 caras (m⁻¹)</th><th>ksh</th><th>Clase de sección</th><th>θcr (°C)</th><th>t sin protección (min)</th><th>Esp. requerido</th><th>Estado</th></tr>
+    document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<style>
+      #ef_resElemTbl{width:100%;font-size:.74rem}
+      #ef_resElemTbl th{font-size:.64rem;padding:.35rem .22rem}
+      #ef_resElemTbl td{padding:.25rem .22rem;overflow-wrap:break-word}
+      #ef_resElemTbl td.num{white-space:nowrap}
+      #ef_resElemTbl td.num .note{white-space:normal}
+      #ef_resElemTbl .chip{font-size:.66rem;white-space:normal;display:inline-block}
+      #ef_resElemTbl .note{font-size:.66rem}
+    </style><div style="overflow-x:auto"><table class="results" id="ef_resElemTbl">
+      <tr><th>N°</th><th style="width:19%">Elemento</th><th>F calculada</th><th>F adoptada</th><th>Am/V usado (m⁻¹)</th><th>F 4 caras (m⁻¹)</th><th>ksh</th><th style="width:14%">Clase de sección</th><th>θcr (°C)</th><th>t sin protección (min)</th><th>Esp. requerido</th><th style="width:21%">Estado</th></tr>
       ${r.elems.map((e, i) => `<tr><td class="num">${i + 1}</td><td>${esc(e.nombre)}<div class="note">${esc(e.perfil)} · ${esc(EF_ORIENT[e.orient] || 'orientación sin indicar')}</div></td>
         <td class="num">${fTxt(e.FreqCalc)}</td><td class="num">${fTxt(e.Freq)}${e.reduccion ? `<div class="note">${e.reduccion === 'justificada' ? 'reducción justificada' : 'reducción no justificada: no se aplica'}</div>` : ''}</td>
         <td class="num">${n(e.F, 0)}</td><td class="num">${n(e.F4, 0)}</td><td class="num">${n(e.ksh, 2)}${e.kshEc && e.kshEc !== 'convexa' ? `<div class="note">ec. ${e.kshEc}</div>` : ''}</td>
