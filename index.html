@@ -48286,6 +48286,7 @@ function efrMmax(Mi, Mj, W, L) {
 const EFR_BM = 1.1;          // βM mínimo de EN 1993-1-2 Fig. 4.2 (momento uniforme): mayores k, lado de la seguridad
 const EFR_COMB = [{id: 'I-1', gD: 1.2, txt: '1,2D + 0,5L + 0,2S'}, {id: 'I-2', gD: 0.9, txt: '0,9D + 0,5L + 0,2S'}];
 function efrOrient(cosV) { return cosV >= 0.985 ? 'pilar' : (cosV <= 0.5 ? 'viga' : 'diag'); }
+const EFR_ORIENT_C = {pilar: 'Vertical', viga: 'Horizontal', diag: 'Inclinada'};
 const EFR_ORIENT = {pilar: 'Vertical (pilar)', viga: 'Horizontal o de baja pendiente (viga)', diag: 'Inclinado (diagonal)'};
 function efrGrupoKey(b) { return b.secc.toUpperCase() + '|' + (b.grupo || '—') + '|' + efrOrient(b.cosV); }
 function efrRolDef(cat) { const c = String(cat || '').toUpperCase(); return /^DL/.test(c) ? 'D' : (c === 'LL' ? 'L' : (/^(SL|SN|SNOW)$/.test(c) ? 'S' : '')); }
@@ -48564,7 +48565,16 @@ const EF_TECHO_SOL = {oficial: ['ok', 'Solución oficial del Listado'], 'listado
 
 /* ---------- Panel web del módulo RAM ---------- */
 function efrPanelHtml() {
-  return `<div class="panel" id="efr_panel" data-fs-extra="efram">
+  return `<style>
+      /* 3b: tablas compactas y panel más ancho que la columna de la planilla cuando la pantalla lo permite */
+      #efr_panel table.results{width:100%;font-size:.76rem}
+      #efr_panel table.results th{font-size:.68rem;padding:.35rem .3rem}
+      #efr_panel table.results td{padding:.25rem .3rem}
+      #efr_panel table.results select{font-size:.74rem;padding:.15rem .2rem;width:auto;max-width:100%}
+      #efr_panel table.results select[data-efr-c="f1"], #efr_panel table.results select[data-efr-c="f2"]{width:100%;min-width:138px}
+      #efr_panel table.results .chip{font-size:.68rem;white-space:normal;display:inline-block;margin:.05rem 0}
+      @media (min-width:1800px){#efr_panel{margin-right:calc(-1*min(300px, 100vw - 1790px))}}   /* sin pasar bajo la barra fija de la derecha */
+    </style><div class="panel" id="efr_panel" data-fs-extra="efram">
       <h3>3b · Grado de utilización desde el modelo RAM Elements (opcional)</h3>
       <div class="note" style="margin-bottom:.6rem">Úselo solo si no cuenta con el grado de utilización en incendio calculado por otra vía. Cargue el .zip del modelo de RAM Elements (o el archivo .retx de la versión 25 o el .etz de versiones anteriores). La planilla arma las combinaciones de incendio AISC 360-16 Anexo 4 (1,2D + 0,5L + 0,2S y 0,9D + 0,5L + 0,2S) con los estados que asigne como D, L y S, calcula μ0 y la temperatura crítica de cada miembro (EN 1993-1-2: ec. 4.22, pandeo ec. 4.21a, volcamiento ec. 4.21b, clase 4 a 350 °C) y, con la exigencia de la función que indique para cada grupo (Art. 4.3.3), separa los miembros que alcanzan su F sin protección de los que requieren protección. «Incorporar a la sección 3» crea un elemento por grupo y resultado, con su θcr. Volcamiento: «Calcular» usa C1 = 1,0, carga en el ala superior en vigas y Lb = K·L del miembro; elija «Impedido» solo si el ala comprimida está arriostrada en forma continua (por ejemplo, por una losa).</div>
       <div class="field-grid">
@@ -48576,7 +48586,8 @@ function efrPanelHtml() {
     </div>`;
 }
 function efrCfgHtml(M, cfg) {
-  const funcOpts = v => '<option value="0">—</option>' + EF_FUNC.map((f, i) => `<option value="${i + 1}"${+v === i + 1 ? ' selected' : ''}>${esc(f)}</option>`).join('');
+  const corto = ['(1) Cortafuego', '(2) Zona vertical de seguridad', '(3) Caja de ascensores', '(4) Divisorios entre unidades', '(5) Soportantes verticales', '(6) No soportantes y tabiques', '(7) Escaleras', '(8) Soportantes horizontales', '(9) Techumbre y cielo falso'];
+  const funcOpts = v => '<option value="0">—</option>' + EF_FUNC.map((f, i) => `<option value="${i + 1}" title="${esc(f)}"${+v === i + 1 ? ' selected' : ''}>${esc(corto[i])}</option>`).join('');
   const prim = M.estados.filter(e => !e.comb);
   const faltaFy = M.barras.some(b => !(b.Fy > 0));
   const G = {}; M.barras.forEach(b => { const k = efrGrupoKey(b); (G[k] = G[k] || {key: k, b, n: 0}).n++; });
@@ -48595,11 +48606,11 @@ function efrCfgHtml(M, cfg) {
     </div></div>
     ${(() => { const sinF = grupos.filter(g => !+((cfg.grupos[g.key] || {}).f1 != null ? cfg.grupos[g.key].f1 : (efrOrient(g.b.cosV) === 'pilar' ? 5 : (efrOrient(g.b.cosV) === 'viga' ? 8 : 0)))); return sinF.length ? `<div class="note" style="margin:.5rem 0 .3rem;color:#9a3412"><b>${sinF.length} grupo(s) sin función asignada</b> (${sinF.map(g => 'G' + (grupos.indexOf(g) + 1)).join(', ')}): sin función no hay exigencia F y el estudio no puede concluir sobre ellos. Asígneles la función que cumplen (por ejemplo, las diagonales del sistema que soporta a un elemento horizontal o vertical).</div>` : ''; })()}
     <div class="note" style="margin:.5rem 0 .3rem">La sobrecarga de techo Lr, el viento y el sismo no forman parte de la combinación de incendio (AISC 360-16 Anexo 4 §4.1.4). Función de cada grupo según el Art. 4.3.3: los elementos de techumbre van en la columna (9).</div>
-    <div style="overflow-x:auto"><table class="results" style="min-width:980px"><tr><th>G</th><th>Grupo RAM</th><th>Sección</th><th>Orientación</th><th>N°</th><th>Función principal</th><th>Función adicional</th><th>Exposición</th><th>Volcamiento</th></tr>
+    <div style="overflow-x:auto"><table class="results"><tr><th>G</th><th>Grupo RAM</th><th>Sección</th><th>Orientación</th><th>N°</th><th>Función principal</th><th>Función adicional</th><th>Exposición</th><th>Volcamiento</th></tr>
       ${grupos.map((g, i) => { const c = Object.assign({f1: efrOrient(g.b.cosV) === 'pilar' ? 5 : (efrOrient(g.b.cosV) === 'viga' ? 8 : 0), f2: 0, caras: '4', plt: 'calc'}, cfg.grupos[g.key] || {}); const s = M.secciones[g.b.secc.toUpperCase()];
-        return `<tr><td class="num">${i + 1}</td><td>${esc(g.b.grupo || '—')}</td><td>${esc(g.b.secc)}${s && s.err ? `<div class="note">${esc(s.err)}</div>` : ''}</td><td>${EFR_ORIENT[efrOrient(g.b.cosV)]}</td><td class="num">${g.n}</td>
-          <td><select data-efr-g="${esc(g.key)}" data-efr-c="f1" style="min-width:170px">${funcOpts(c.f1)}</select></td><td><select data-efr-g="${esc(g.key)}" data-efr-c="f2" style="min-width:150px">${funcOpts(c.f2)}</select></td>
-          <td>${sel('caras', g.key, c.caras, [['4', '4 caras'], ['3', '3 caras (bajo losa)']])}</td>
+        return `<tr><td class="num">${i + 1}</td><td>${esc(g.b.grupo || '—')}</td><td>${esc(g.b.secc)}${s && s.err ? `<div class="note">${esc(s.err)}</div>` : ''}</td><td>${EFR_ORIENT_C[efrOrient(g.b.cosV)]}</td><td class="num">${g.n}</td>
+          <td><select data-efr-g="${esc(g.key)}" data-efr-c="f1" style="min-width:138px;width:100%">${funcOpts(c.f1)}</select></td><td><select data-efr-g="${esc(g.key)}" data-efr-c="f2" style="min-width:138px;width:100%">${funcOpts(c.f2)}</select></td>
+          <td>${sel('caras', g.key, c.caras, [['4', '4 caras'], ['3', '3 caras (losa)']])}</td>
           <td>${s && (s.tipo === 'I-H' || s.tipo === 'U') ? sel('plt', g.key, c.plt, [['calc', 'Calcular'], ['si', 'Impedido']]) : '<span class="note">No aplica</span>'}</td></tr>`; }).join('')}
     </table></div>`;
 }
@@ -48609,8 +48620,8 @@ function efrResHtml(M, R) {
   const estC = {exime: 'ok', prot: 'warn', pend: 'warn', nores: 'bad', sinexig: 'ok', sinsec: 'bad', sinF: 'warn'};
   return `${R.errs.length ? `<div class="note" style="color:var(--bad,#c0392b)">${R.errs.map(esc).join('<br>')}</div>` : ''}
     <h4 style="margin:.8rem 0 .3rem">Resultado por grupo</h4>
-    <div style="overflow-x:auto"><table class="results" style="min-width:1100px"><tr><th>G</th><th>Grupo / sección</th><th>F</th><th>ksh·Am/V (m⁻¹)</th><th>μ0 máx.</th><th>θcr mín. (°C)</th><th>t sin prot. con θcr mín. (min)</th><th>Miembros</th></tr>
-      ${R.grupos.map(g => `<tr><td class="num">${g.n}</td><td>${esc(g.grupo)} · ${esc(g.secc)}<div class="note">${EFR_ORIENT[g.orient]}</div></td><td class="num">${g.F == null ? '—' : (g.F ? 'F-' + g.F : 'Sin exigencia')}</td>
+    <div style="overflow-x:auto"><table class="results"><tr><th>G</th><th>Grupo / sección</th><th>F</th><th>ksh·Am/V (m⁻¹)</th><th>μ0 máx.</th><th>θcr mín. (°C)</th><th>t sin prot. con θcr mín. (min)</th><th>Miembros</th></tr>
+      ${R.grupos.map(g => `<tr><td class="num">${g.n}</td><td>${esc(g.grupo)} · ${esc(g.secc)}<div class="note">${EFR_ORIENT_C[g.orient]}</div></td><td class="num">${g.F == null ? '—' : (g.F ? 'F-' + g.F : 'Sin exigencia')}</td>
         <td class="num">${g.Am ? n(g.ksh*g.Am, 1) : '—'}</td><td class="num">${n(g.muMax, 3)}</td><td class="num">${n(g.thMin, 0)}</td><td class="num">${g.thMin != null ? (g.tcrMin != null ? n(g.tcrMin, 1) : '> 150') : '—'}</td>
         <td>${g.err ? chip('bad', g.err) : Object.keys(g.cuenta).map(k => chip(estC[k], `${EFR_EST[k]}: ${g.cuenta[k]}`)).join(' ')}</td></tr>`).join('')}
     </table></div>
@@ -48618,7 +48629,7 @@ function efrResHtml(M, R) {
     <div style="margin:.6rem 0"><button type="button" class="print-btn" id="efr_incorporar">Incorporar a la sección 3 (reemplaza los elementos [RAM] anteriores)</button>
       <div class="note" style="margin-top:.3rem">La protección y su espesor se asignan al incorporar, con el producto elegido arriba, solo a los grupos que por cálculo no alcanzan su F sin protección. Defina antes el tipo de edificio y la función de cada grupo; si los cambia, vuelva a incorporar.</div></div>
     <details><summary>Detalle por miembro (${R.miembros.length})</summary>
-    <div style="overflow-x:auto;max-height:520px"><table class="results" style="min-width:1250px"><tr><th>ID RAM</th><th>G</th><th>Sección</th><th>L (m)</th><th>Comb.</th><th>N (kN)</th><th>M33 (kN·m)</th><th>M22 (kN·m)</th><th>Clase</th><th>μ0</th><th>Método θcr</th><th>θcr (°C)</th><th>t sin prot. (min)</th><th>Resultado</th></tr>
+    <div style="overflow-x:auto;max-height:520px"><table class="results"><tr><th>ID RAM</th><th>G</th><th>Sección</th><th>L (m)</th><th>Comb.</th><th>N (kN)</th><th>M33 (kN·m)</th><th>M22 (kN·m)</th><th>Clase</th><th>μ0</th><th>Método θcr</th><th>θcr (°C)</th><th>t sin prot. (min)</th><th>Resultado</th></tr>
       ${R.miembros.map(m => `<tr><td class="num">${m.id}</td><td class="num">${m.g}</td><td>${esc(m.secc)}</td><td class="num">${n(m.L, 2)}</td><td>${m.gov ? m.gov.c.id : '—'}</td>
         <td class="num">${m.gov ? (m.Nc > 0 ? n(-m.Nc/1000, 1) : n(m.Nt/1000, 1)) : '—'}</td><td class="num">${m.gov ? n(m.My/1e6, 2) : '—'}${m.k33 > 1.02 ? `<div class="note">×${n(m.k33, 2)}</div>` : ''}</td><td class="num">${m.gov ? n(m.Mz/1e6, 2) : '—'}</td>
         <td class="num">${m.gov && m.gov.cls ? m.gov.cl : '—'}</td><td class="num">${n(m.mu, 3)}</td><td>${EFR_REG[m.reg] || '—'}</td><td class="num">${n(m.th, 0)}</td><td class="num">${m.th != null ? (m.tcr != null ? n(m.tcr, 1) : '> 150') : '—'}</td><td>${chip(estC[m.est], EFR_EST[m.est])}</td></tr>`).join('')}
