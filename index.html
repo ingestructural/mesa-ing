@@ -46900,9 +46900,8 @@ function efCabecera(e) {
   const sp = efSinProt(e);
   const spTxt = !sp || e.exento ? '' : (sp.k === 'exime' ? (e.prot !== 'ninguna' ? `Por cálculo alcanzaría F-${e.Freq} sin protección: podría prescindirse de ella acreditándolo con antecedente técnico o asimilación (Art. 4.3.2); la DOM puede exigir ensayo.` : 'Para no protegerlo se acredita con antecedente técnico o asimilación (Art. 4.3.2); la DOM puede exigir ensayo.')
     : (sp.k === 'complementa' && e.prot !== 'ninguna' ? `La protección se dimensiona para los ${e.Freq} min completos; los minutos que resiste el perfil solo no se descuentan.` : ''));
-  const alts = (e.estado[0] === 'bad' && e.Freq > 0 && e.alternativas && e.alternativas.length)
-    ? `<details class="ef-cab-alt"><summary>Productos que cubren este elemento (${e.alternativas.length})</summary><ul>${e.alternativas.map(a => `<li>${esc(EF_PROT[a.k].nombre)}: <b>${esc(a.txt)}</b> · ${EF_PROT[a.k].listado ? 'Listado ED17-2025' : 'informe de ensayo, no inscrito en el Listado'}</li>`).join('')}</ul>${e.prot !== 'ninguna' && e.espReq != null ? `<div>Con el producto actual basta un espesor de ${esc(e.espTxt)}.</div>` : ''}Para adoptar uno, elíjalo en «Protección» e ingrese el espesor propuesto.</details>` : '';
-  return {cls: e.estado[0], html: `<div class="ef-cab-l1">${esc(e.estadoCorto)} · Exigencia ${esc(F)} · ${esc(prot)}</div>${calc.length && !e.exento && e.Freq !== 0 ? `<div class="ef-cab-l3">${esc(calc.join(' · '))}</div>` : ''}${(() => { const m = e.prot === 'ninguna' && sp && !e.exento ? '' : motivo; const t = [m, spTxt].filter(Boolean).join(' '); return t ? `<div class="ef-cab-l2">${esc(t)}</div>` : ''; })()}${alts}`};
+  const A = efAccion(e), det = [calc.length && !e.exento && e.Freq !== 0 ? calc.join(' · ') : '', motivo && e.estado[0] !== 'ok' ? 'Detalle: ' + motivo : '', spTxt].filter(Boolean);
+  return {cls: A.c, html: `<div class="ef-cab-l1">${EF_ACC_ICO[A.c] || ''} ${esc(A.t)} <span class="ef-cab-f">· Exigencia ${esc(F)}</span></div><div class="ef-cab-acc">${esc(A.a)}</div>${A.alts && A.alts.length ? `<div class="ef-cab-bot">${efAccBotones(A.alts)}</div>` : ''}${det.length ? `<details class="ef-cab-calc"><summary>Ver cálculo</summary>${det.map(t => `<div>${esc(t)}</div>`).join('')}</details>` : ''}`};
 }
 // Apartado de la memoria con la evaluación del Art. 4.3.26 (solo si el proyectista la pidió).
 function efEx4326Mem(r) {
@@ -48303,35 +48302,58 @@ function efAsimHtml(r) {
   if (falta.length) h += `<div style="margin:.6rem 0 .2rem;padding:.45rem .7rem;border-left:4px solid #E0A800;background:rgba(224,168,0,.10)"><b>Para cerrar esta sección</b><ol style="margin:.2rem 0 0;padding-left:1.2rem">${falta.map(f => `<li>${esc(f)}</li>`).join('')}</ol></div>`;
   return h;
 }
-function efResumenAccionHtml(r) {
+// Estado de cada elemento en palabras simples: un título, una acción y, si corresponde, los productos que sirven.
+// Lo usan la cabecera de la ficha y la tabla «Estado de los elementos» (sección 3).
+function efAccion(e) {
+  const P = EF_PROT[e.prot] || {}, u = e.espU || P.u || '';
+  const am = e.F4 != null && isFinite(e.F4) ? Math.round(e.F4) : null;
+  const alts = (e.alternativas || []).slice().sort((a, b) => ((EF_PROT[a.k].listado ? 0 : 1) - (EF_PROT[b.k].listado ? 0 : 1)) || (a.u === b.u ? a.v - b.v : (a.u === 'mm' ? -1 : 1)));
+  const est1 = String(e.estado[1] || ''), motivo = est1.replace(/^[^—]+— /, '');
+  const perfil = () => ({c: 'bad', g: 'perfil', t: 'Cambiar perfil', a: `Ningún producto ensayado cubre este perfil${am != null ? ` (Am/V ${am} m⁻¹${am > 390 ? '; el Listado admite hasta 390 m⁻¹' : ''})` : ''}. Use un perfil más robusto o revise la función.`});
+  if (e.exento || e.Freq === 0) return {c: 'ok', g: 'sinexig', t: 'No requiere protección', a: e.exento ? 'Exención del Art. 4.3.26.' : 'Sin exigencia de resistencia al fuego.'};
+  if (/datos inválidos/.test(est1)) return {c: 'bad', g: 'datos', t: 'Datos inválidos', a: motivo};
+  if (e.Freq == null) return {c: 'warn', g: 'datos', t: 'Falta la exigencia', a: motivo.replace(/^exigencia no determinada:?\s*/, '') || 'Complete la función y el tipo de edificio.'};
+  if (e.metodoCr === 'mu_mayor_1') return {c: 'bad', g: 'perfil', t: 'Cambiar perfil', a: 'El perfil no resiste la combinación de incendio ni a temperatura ambiente (μ0 > 1).'};
+  if (e.prot === 'ninguna') {
+    if (e.tcr != null && e.tcr < e.Freq) return alts.length ? {c: 'bad', g: 'elegir', t: 'Necesita protección', a: `Sin protección resiste ${fmt1(e.tcr)} min de los ${e.Freq} exigidos. Elija un producto:`, alts} : perfil();
+    if ((efSinProt(e) || {}).k === 'exime') return {c: 'amar', g: 'calc', t: 'Cumple por cálculo', a: `Resiste F-${e.Freq} sin protección (${e.tcr != null ? fmt1(e.tcr) + ' min' : 'más de 150 min'}). Para no protegerlo, presente la memoria de cálculo como antecedente técnico (Art. 4.3.2); la DOM puede exigir ensayo.`};
+    return {c: 'warn', g: 'datos', t: 'Faltan datos', a: 'Falta ' + (e.falta || []).join('; ') + '.'};
+  }
+  if (e.cob === 'no') return {c: 'bad', g: 'insuf', t: 'La referencia no cubre el elemento', a: 'Cambie el producto o la referencia documental.', alts};
+  if (e.espReq == null && (e.prot !== 'otro' || e.espCert != null)) {
+    if (!alts.length) return perfil();
+    return {c: 'bad', g: 'insuf', t: 'Este producto no sirve', a: `${P.corto || P.nombre} no cubre este perfil (${(e.espTxt || '').toLowerCase()}). Productos que sí lo cubren:`, alts};
+  }
+  if (e.espReq != null && e.espProp != null && e.espProp < e.espReq) return {c: 'bad', g: 'insuf', t: 'Espesor insuficiente', a: `${P.corto || P.nombre}: ${e.espProp} ${u} propuesto, se requieren ${e.espReq} ${u}.`, alts: [{k: e.prot, v: e.espReq, u, txt: e.espReq + ' ' + u}]};
+  if ((e.falta || []).length) {
+    const f = e.falta, pasos = [];
+    if (e.espProp == null && e.espReq != null) pasos.push(`escriba el espesor (mínimo ${e.espReq} ${u})`);
+    if (!e.expo) pasos.push('elija la exposición');
+    if (!e.refDoc) pasos.push('anote la referencia documental');
+    if (e.cob !== 'si') pasos.push('marque «Cobertura: Confirmada» cuando verifique que el documento cubre este perfil');
+    const otros = f.filter(x => !/espesor propuesto|exposición|referencia documental|cobertura documental|cotejo de la tabla/.test(x));
+    if (otros.length) pasos.push('complete: ' + otros.join('; '));
+    const listo = e.tablaSuf;
+    return {c: listo ? 'amar' : 'warn', g: listo ? 'cob' : 'datos', t: listo ? 'Protección correcta, falta confirmar' : 'Faltan datos',
+      a: (listo ? `${P.corto || P.nombre} ${e.espProp} ${u} cumple la tabla (mínimo ${e.espReq} ${u}). Para cerrar: ` : 'Para verificar: ') + pasos.join('; ') + '.'};
+  }
+  return {c: 'ok', g: 'ok', t: 'Cumple', a: `${P.corto || P.nombre} ${e.espProp} ${u} (mínimo ${e.espReq} ${u}).`};
+}
+const EF_ACC_ORDEN = ['perfil', 'elegir', 'insuf', 'datos', 'calc', 'cob', 'ok', 'sinexig'];
+const EF_ACC_ICO = {bad: '✗', warn: '!', amar: '◐', ok: '✓'};
+function efAccBotones(alts) {
+  return (alts || []).slice(0, 4).map(a => `<button type="button" class="ef-usar" data-k="${a.k}" data-v="${Math.ceil(a.v)}">Usar ${esc(EF_PROT[a.k].corto || EF_PROT[a.k].nombre)} · ${esc(a.txt || (Math.ceil(a.v) + ' ' + (a.u || '')))}</button>`).join('');
+}
+// Tabla breve «Estado de los elementos»: agrupa por lo que hay que hacer.
+function efEstadoHtml(r) {
   const E = r.elems || [];
-  if (!E.length) return '<div class="note">Agregue elementos en la sección 3.</div>';
-  const G = [
-    {k: 'sinexig', c: 'ok', t: 'Sin exigencia de resistencia al fuego', d: 'No requieren protección.'},
-    {k: 'ok', c: 'ok', t: 'Cumplen', d: 'Verificación completa.'},
-    {k: 'perfil', c: 'bad', t: 'No cumplen y ningún producto los cubre', d: 'Cambiar el perfil (masividad ≤ 390 m⁻¹), revisar la función o la exigencia, o usar un producto con certificado propio.'},
-    {k: 'elegir', c: 'bad', t: 'No cumplen sin protección y hay productos que los cubren', d: 'Elegir el producto en la ficha (desplegable de la cabecera) e ingresar el espesor.'},
-    {k: 'insuf', c: 'bad', t: 'Protección insuficiente o fuera del alcance de su tabla', d: 'Aumentar el espesor o cambiar el producto según la cabecera de la ficha.'},
-    {k: 'calc', c: 'amar', t: 'Cumplen solo por cálculo, sin protección', d: 'Acreditar con antecedente técnico o asimilación (Art. 4.3.2); la DOM puede exigir ensayo.'},
-    {k: 'cob', c: 'ok', t: 'Protegidos con el espesor que exige la tabla del producto', d: 'Solo falta un trámite de revisión: confirmar que la tabla usada (Listado o informe de ensayo) corresponde a este perfil, su posición, su exposición y el sistema ensayado, cotejarla con el documento original y marcar «Cobertura: confirmada» en la ficha. Con eso quedan «Cumple».'},
-    {k: 'datos', c: 'amar', t: 'Datos incompletos', d: 'Completar lo que indica la cabecera de la ficha.'}
-  ];
-  const grupo = e => {
-    if (e.exento || e.Freq === 0) return 'sinexig';
-    if (e.estado[0] === 'ok') return 'ok';
-    if (e.estado[0] === 'bad') return e.prot !== 'ninguna' ? 'insuf' : ((e.alternativas || []).length ? 'elegir' : 'perfil');
-    if (e.prot === 'ninguna' && (efSinProt(e) || {}).k === 'exime') return 'calc';
-    if (e.prot !== 'ninguna' && e.tablaSuf) return 'cob';
-    return 'datos';
-  };
-  const por = {}; E.forEach((e, i) => { (por[grupo(e)] = por[grupo(e)] || []).push(i); });
-  const nom = i => `<b>${i + 1}</b> ${esc(E[i].nombre.replace(/^\[RAM\]\s*/, '').replace(/\s+—\s+.*$/, ''))}`;
-  const cnt = c => E.filter(e => e.estado[0] === c).length;
-  return `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .6rem">
-      <span class="chip ok">Cumplen: ${cnt('ok')}</span><span class="chip warn">Sin verificar: ${cnt('warn')}</span><span class="chip bad">No cumplen: ${cnt('bad')}</span><span class="chip">Total: ${E.length}</span></div>
-    <style>#ef_resAccion .chip.amar{background:#FFF1B8;color:#6B5200}@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) #ef_resAccion .chip.amar{background:#3B3209;color:#F2D45C}}:root[data-theme="dark"] #ef_resAccion .chip.amar{background:#3B3209;color:#F2D45C}</style><table class="results" id="ef_resAccion" style="width:100%;font-size:.8rem"><tr><th style="width:30%">Situación</th><th style="width:6%">N°</th><th>Elementos (número de ficha)</th><th style="width:28%">Acción</th></tr>
-    ${G.filter(g => por[g.k]).map(g => `<tr><td><span class="chip ${g.c}">${esc(g.t)}</span></td><td class="num">${por[g.k].length}</td><td style="font-size:.74rem;line-height:1.45">${por[g.k].map(nom).join('<br>')}</td><td class="note">${esc(g.d)}</td></tr>`).join('')}
-    </table><div class="note" style="margin-top:.4rem">El detalle de cada elemento (cálculo, motivo y productos alternativos) está en la cabecera de su ficha, en la sección 3.</div>`;
+  if (!E.length) return '';
+  const nom = e => { const s = String(e.nombre).replace(/^\[RAM\]\s*/, ''); const g = s.match(/^(G\d+)\b/), m = s.match(/\((\d+) miembros?\)\s*$/i); return g ? g[1] + (m ? ` (${m[1]})` : '') : s.split(' — ')[0]; };
+  const G = {};
+  E.forEach((e, i) => { const a = efAccion(e); const k = a.g + '|' + a.t; (G[k] = G[k] || {a, idx: []}).idx.push(i); });
+  const filas = Object.values(G).sort((x, y) => EF_ACC_ORDEN.indexOf(x.a.g) - EF_ACC_ORDEN.indexOf(y.a.g));
+  const que = {perfil: 'Cambiar el perfil por uno más robusto (ningún producto lo cubre).', elegir: 'Elegir un producto en la ficha (botón «Usar…»).', insuf: 'Cambiar el producto o subir el espesor (botón «Usar…» en la ficha).', datos: 'Completar los datos que indica la ficha.', calc: 'Presentar la memoria de cálculo como antecedente técnico.', cob: 'Confirmar la cobertura y anotar la referencia en la ficha.', ok: 'Nada.', sinexig: 'Nada.'};
+  return `<table class="results ef-estado" style="width:100%;font-size:.8rem;margin:.2rem 0 .8rem"><tr><th style="width:24%">Estado</th><th>Elementos</th><th style="width:38%">Qué hacer</th></tr>${filas.map(f => `<tr><td style="text-align:left"><span class="chip ${f.a.c}">${EF_ACC_ICO[f.a.c] || ''} ${esc(f.a.t)}</span></td><td style="text-align:left">${f.idx.map(i => `<a href="#" data-ir="${i}">${esc(nom(E[i]))}</a>`).join(', ')}</td><td style="text-align:left">${esc(que[f.a.g] || '')}</td></tr>`).join('')}</table>`;
 }
 // Mejora (solo vista web, no se imprime): para cada elemento que no cumple o queda fuera del rango ensayado,
 // lista los productos del catálogo que sí cubren su exigencia, con el espesor requerido.
@@ -49359,6 +49381,7 @@ function renderEstudioFuego(container) {
 
     <div class="panel">
       <h3>3 · Elementos de acero — fichas</h3>
+      <h4 style="margin:.1rem 0 .2rem">Estado de los elementos</h4><div id="ef_estado3"></div>
       <div class="note" style="margin-bottom:.6rem">La función según OGUC Art. 4.3.3 fija la exigencia F; si el elemento cumple dos funciones, se adopta la mayor. «F manual» puede fijar una exigencia mayor; una menor solo se adopta con una excepción del Art. 4.3.5 y su respaldo documental. μ0 = Efi,d / Rfi,d,0 en la combinación de incendio con γM,fi = 1,0 (EN 1993-1-2 §4.2.4). Fy en kg/cm². La orientación, la condición bajo losa y la exposición definen qué tabla de protección cubre al elemento; «Cobertura» confirma, con su referencia documental, que el informe o la inscripción corresponde a esa sección, orientación, exposición y sistema. «θcr ingresada» reemplaza el cálculo con μ0 cuando la temperatura crítica viene de otro análisis (por ejemplo, del módulo 3b). En elementos de techumbre, elija el complejo del Listado solo si la techumbre se construye igual a la solución inscrita.</div>
       <datalist id="dl_ef_fy"><option value="2530">2530 — ASTM A36</option><option value="2700">2700 — A270ES (NCh 203)</option><option value="3450">3450 — A345ES (NCh 203)</option><option value="3515">3515 — ASTM A572 Gr. 50</option></datalist>
       <style>
@@ -49372,7 +49395,22 @@ function renderEstudioFuego(container) {
         table.ef-lista tbody td.ef-cab{grid-column:1 / -1;display:block;padding:.45rem .6rem;margin:-.1rem 0 .2rem;border-radius:5px;background:var(--surface-alt);font-size:.8rem;line-height:1.45}
         table.ef-lista tbody td.ef-cab::before{content:none}
         table.ef-lista tbody td.ef-cab.ok{background:var(--good-bg)} table.ef-lista tbody td.ef-cab.bad{background:var(--bad-bg)}
-        table.ef-lista tbody td.ef-cab.warn{background:color-mix(in srgb, var(--accent-warm) 14%, transparent)}
+        table.ef-lista tbody td.ef-cab.warn{background:#FDEBD0}
+        table.ef-lista tbody td.ef-cab.amar{background:#FFF1B8}
+        @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) table.ef-lista tbody td.ef-cab.warn{background:#3A2A12} :root:not([data-theme="light"]) table.ef-lista tbody td.ef-cab.amar{background:#3B3209}}
+        :root[data-theme="dark"] table.ef-lista tbody td.ef-cab.warn{background:#3A2A12} :root[data-theme="dark"] table.ef-lista tbody td.ef-cab.amar{background:#3B3209}
+        table.ef-lista tbody td.ef-cab{text-align:left}
+        table.ef-lista tbody td.ef-cab .ef-cab-l1{font-size:.9rem}
+        table.ef-lista tbody td.ef-cab .ef-cab-f{font-weight:400;font-size:.78rem;color:var(--ink-muted)}
+        table.ef-lista tbody td.ef-cab .ef-cab-acc{margin:.15rem 0}
+        table.ef-lista tbody td.ef-cab .ef-cab-bot{display:flex;flex-wrap:wrap;gap:.3rem;margin:.3rem 0 .1rem}
+        .ef-usar{font:600 .72rem/1.2 'IBM Plex Sans',Arial,sans-serif;background:#fff;border:1px solid var(--accent,#0060c1);color:var(--accent,#0060c1);border-radius:4px;padding:.25rem .5rem;cursor:pointer}
+        .ef-usar:hover{background:var(--accent,#0060c1);color:#fff}
+        table.ef-lista tbody td.ef-cab .ef-cab-calc{font-size:.72rem;color:var(--ink-muted);margin-top:.2rem}
+        table.ef-lista tbody td.ef-cab .ef-cab-calc summary{cursor:pointer;font-weight:600}
+        .ef-estado .chip.amar, #ef_estado3 .chip.amar{background:#FFF1B8;color:#6B5200}
+        tr.ef-flash td.ef-cab{outline:3px solid var(--accent,#0060c1)}
+        @media print{.ef-usar,.ef-cab-bot{display:none}}
         table.ef-lista tbody td.ef-cab .ef-cab-l1{font-weight:700}
         table.ef-lista tbody td.ef-cab .ef-cab-l2{color:var(--ink-muted);font-size:.74rem}
         table.ef-lista tbody td.ef-cab .ef-cab-l3{font-size:.76rem;margin:.1rem 0}
@@ -49622,7 +49660,9 @@ function renderEstudioFuego(container) {
       <tr><td><strong>Tipo adoptado para las exigencias</strong></td><td class="num"><strong>${r.tipo || '—'}${r.tipoProv ? ' (provisorio)' : ''}</strong></td><td>${r.tipoRed === 'no justificada' ? sp('bad', `Tipo ${r.tipoManual} no adoptado: reducción sin excepción documentada`) : (r.tipoRed === 'justificada' ? esc('Reducción por ' + r.tipoExcTxt) : (r.tipoManual ? 'Ingresado por el proyectista (igual o más exigente)' : 'Calculado'))}</td></tr>
     </table>
     ${r.resist ? `<div style="overflow-x:auto;margin-top:.5rem"><table class="results"><tr><th>Elemento (OGUC 4.3.3)</th><th>Tipo ${r.tipo}</th><th>Condición (4.3.5)</th></tr>${r.resist.map(x => `<tr><td>${esc(x.elemento)}</td><td class="num">${esc(x.txt)}</td><td class="note">${esc(x.cond)}</td></tr>`).join('')}</table></div>` : ''}`;
-    document.getElementById('ef_resElem').innerHTML = efResumenAccionHtml(r);
+    document.getElementById('ef_estado3').innerHTML = efEstadoHtml(r) || '<div class="note">Agregue elementos o importe el modelo RAM.</div>';
+    { const cnt = c => r.elems.filter(e => efAccion(e).c === c).length;
+      document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .4rem"><span class="chip bad">✗ Requieren acción: ${cnt('bad')}</span><span class="chip warn">! Faltan datos: ${cnt('warn')}</span><span class="chip amar" style="background:#FFF1B8;color:#6B5200">◐ Por confirmar o por cálculo: ${cnt('amar')}</span><span class="chip ok">✓ Cumplen: ${cnt('ok')}</span></div><div class="note">El estado de cada elemento y qué hacer están en la tabla «Estado de los elementos», al inicio de la sección 3.</div>` : '<div class="note">Agregue elementos en la sección 3.</div>'; }
     document.getElementById('ef_resAsim').innerHTML = efAsimHtml(r);
     document.getElementById('ef_chkWrap').style.display = r.requiereAsim ? '' : 'none';
     { const nC = efAsimCasos(r).filter(c => c.k === 'calc').length, sinA = !r.requiereAsim;
@@ -49715,6 +49755,23 @@ function renderEstudioFuego(container) {
     recalc();
   });
   body.addEventListener('click', e => { const b = e.target.closest('.btn-remove'); if (!b) return; b.closest('tr').remove(); recalc(); });
+  // «Usar …»: aplica el producto y el espesor sugeridos en la cabecera de la ficha
+  body.addEventListener('click', ev => {
+    const b = ev.target.closest('.ef-usar'); if (!b) return;
+    const tr = b.closest('tr'), q = f => tr.querySelector(`[data-f="${f}"]`), k = b.dataset.k;
+    q('prot').value = k; syncRow(tr);
+    q('espProp').value = b.dataset.v;
+    if (!q('expo').value) q('expo').value = 'interior';
+    const el = ultimo && ultimo.r ? ultimo.r.elems[Array.from(body.children).indexOf(tr)] : null;
+    const inf = el ? efEspesorProd(k, Object.assign({}, el, {prot: k})) : null;
+    if (!q('refDoc').value || b.dataset.k !== (el && el.prot)) q('refDoc').value = (EF_PROT[k].fuente || '') + (inf && inf.tabla && inf.tabla.titulo ? ' — ' + inf.tabla.titulo : '');
+    efVis(tr); recalc();
+  });
+  document.getElementById('ef_estado3').addEventListener('click', ev => {
+    const a = ev.target.closest('a[data-ir]'); if (!a) return; ev.preventDefault();
+    const tr = body.children[+a.dataset.ir]; if (!tr) return;
+    tr.scrollIntoView({behavior: 'smooth', block: 'center'}); tr.classList.add('ef-flash'); setTimeout(() => tr.classList.remove('ef-flash'), 1600);
+  });
   document.getElementById('ef_addMat').addEventListener('click', () => { addMat(); recalc(); });
   document.getElementById('ef_add').addEventListener('click', () => { addRow(); recalc(); });
   container.querySelectorAll('.panel > .field-grid input, .panel > .field-grid select, #ef_chk select, #ef_chk input, .ef-ex4326 select, .ef-ex4326 input').forEach(el => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
