@@ -46822,6 +46822,59 @@ const EF_EXC = {
   n14: {txt: 'Art. 4.3.5 n°14 — vivienda aislada, pareada o continua de hasta 2 pisos y ≤ 140 m²: F-15 en elementos soportantes (muro divisorio según columna (4))', func: [5, 7, 8, 9], F: 15}
 };
 // Excepciones que permiten adoptar un tipo menos exigente que el resultante de las tablas del Art. 4.3.4.
+// OGUC Art. 4.3.26 (texto oficial BCN, versión 02-10-2026): edificaciones de un piso construidas con elementos de
+// construcción no combustibles, liberadas de protección contra el fuego si cumplen simultáneamente los requisitos.
+// auto: la planilla lo evalúa con sus propios datos; el resto requiere estado y respaldo del proyectista.
+const EF_EX4326 = [
+  {id: 'piso', txt: 'Edificación de un piso', auto: true},
+  {id: 'nocomb', txt: 'Construida con elementos de construcción no combustibles (estructura, cubierta, cerramientos y aislaciones)'},
+  {id: 'ocup', txt: 'Carga de ocupación inferior a 100 personas', auto: true},
+  {id: 'carga', txt: 'Densidad de carga combustible media inferior a 250 MJ/m² en todos los recintos', auto: true},
+  {id: 'adultos', txt: 'Ocupada solo por adultos que puedan valerse por sí mismos'},
+  {id: 'destino', txt: 'Destino equipamiento (una actividad productiva, como bodegaje o industria, requiere la calificación de actividad inofensiva de la SEREMI de Salud para asimilarse a equipamiento, Art. 2.1.28)'},
+  {id: 'desl', txt: 'Distancia a los deslindes no inferior a 4 m'}
+];
+// Franja de resumen de la ficha del elemento (sección 3): estado, exigencia, protección y motivo.
+function efCabecera(e) {
+  const F = e.exento ? 'sin exigencia (exención Art. 4.3.26)' : (e.Freq == null ? 'no determinada' : (e.Freq ? 'F-' + e.Freq : 'sin exigencia'));
+  const P = EF_PROT[e.prot] || {};
+  let prot;
+  if (e.exento || e.Freq === 0) prot = 'No requiere protección';
+  else if (e.prot !== 'ninguna') prot = `Protección: ${P.corto || P.nombre || e.prot}${e.espProp != null ? ' · ' + e.espProp + ' ' + (e.espU || P.u || '') : ''}${e.espReq != null ? ' (mínimo ' + e.espReq + ' ' + e.espU + ')' : ''}${e.cob !== 'si' ? ' · cobertura por confirmar' : ''}`;
+  else if (e.tcr != null && e.Freq > 0 && e.tcr < e.Freq) prot = `Sin protección: resiste ${fmt1(e.tcr)} min < F-${e.Freq}` + (e.alternativas && e.alternativas.length ? ' · hay productos que lo cubren (sección 4)' : ' · ningún producto considerado cubre el perfil');
+  else if (e.tcr != null || (e.curva && e.thcr != null)) prot = 'Sin protección: alcanza la exigencia solo por cálculo (antecedente técnico o asimilación)';
+  else prot = 'Sin protección asignada';
+  const motivo = String(e.estado[1]).replace(/^[^—]+— /, '');
+  return {cls: e.estado[0], html: `<div class="ef-cab-l1">${esc(e.estadoCorto)} · Exigencia ${esc(F)} · ${esc(prot)}</div><div class="ef-cab-l2">${esc(motivo)}</div>`};
+}
+// Apartado de la memoria con la evaluación del Art. 4.3.26 (solo si el proyectista la pidió).
+function efEx4326Mem(r) {
+  const ex = r.exencion; if (!ex || !ex.pedida) return '';
+  const lab = {si: 'Cumple', no: 'No cumple', pend: 'Sin antecedente'}, cls = {si: 'ok', no: 'bad', pend: 'warn'};
+  return `<h2>Exención del Art. 4.3.26</h2>
+    <p>El Art. 4.3.26 de la OGUC libera de protección contra el fuego a las edificaciones de un piso construidas con elementos de construcción no combustibles que cumplan simultáneamente los requisitos siguientes. Las actividades productivas, como el bodegaje o la industria, solo se asimilan al destino equipamiento con la calificación de actividad inofensiva de la SEREMI de Salud (Art. 2.1.28).</p>
+    ${MEM_T('Requisitos de la exención del Art. 4.3.26')}
+    <table class="inf-t"><tr><th>N°</th><th>Requisito</th><th>Estado</th><th>Respaldo / observación</th></tr>${ex.req.map((q, i) => `<tr><td>${i + 1}</td><td class="l">${esc(q.txt)}</td><td class="${cls[q.v]}">${lab[q.v]}</td><td class="l">${esc(q.obs || '—')}${q.auto ? ' (evaluado con los datos de este estudio)' : ''}</td></tr>`).join('')}</table>
+    <p><b>${ex.aplica ? 'La exención queda acreditada: los elementos no tienen exigencia de resistencia al fuego.' : (ex.req.some(q => q.v === 'no') ? 'La exención no aplica, porque hay requisitos que no se cumplen. Rigen las exigencias del tipo de edificio.' : 'La exención queda pendiente de los antecedentes indicados. Mientras no se acrediten, rigen las exigencias del tipo de edificio.')}</b></p>`;
+}
+// Evalúa la exención: devuelve {pedida, aplica, req: [{id, txt, v: 'si'|'no'|'pend', obs, auto}]}.
+function efExencion4326(inp, d) {
+  const ex = inp.ex4326 || {}, pedida = ex.pedida === 'si';
+  const req = EF_EX4326.map(q => {
+    let v = 'pend', obs = '';
+    if (q.id === 'piso') { v = d.pisosFis == null ? 'pend' : (d.pisosFis === 1 ? 'si' : 'no'); obs = d.pisosFis == null ? 'Falta el número de pisos (sección 2).' : `${d.pisosFis} piso(s) informado(s) en la sección 2.`; }
+    else if (q.id === 'ocup') { v = d.ocup == null ? 'pend' : (d.ocup < 100 ? 'si' : 'no'); obs = d.ocup == null ? 'Falta el máximo de ocupantes (sección 2).' : `Máximo de ocupantes informado: ${d.ocup} (carga de ocupación según Art. 4.2.4).`; }
+    else if (q.id === 'carga') { v = d.media == null ? 'pend' : (d.media < 250 ? 'si' : 'no'); obs = d.media == null ? 'Densidad media no determinada: complete el inventario y la superficie (sección 1).' : `Densidad media del sector: ${fmt1(d.media)} MJ/m² (sección 1). Si hay varios recintos, cada uno debe quedar bajo 250 MJ/m².`; }
+    else {
+      const m = ex[q.id] || {};
+      obs = String(m.obs || '').trim();
+      v = m.v === 'no' ? 'no' : (m.v === 'si' ? (obs ? 'si' : 'pend') : 'pend');
+      if (m.v === 'si' && !obs) obs = 'Marcado «Cumple» sin respaldo documental.';
+    }
+    return {id: q.id, txt: q.txt, v, obs, auto: !!q.auto};
+  });
+  return {pedida, aplica: pedida && req.every(q => q.v === 'si'), req};
+}
 const EF_EXC_TIPO = {
   n3: 'Art. 4.3.5 n°3 — sector de distinto destino separado en planta, clasificado por separado',
   n15: 'Art. 4.3.5 n°15 — ampliación de vivienda: solo la superficie en exceso cumple el tipo más exigente'
@@ -47103,6 +47156,14 @@ function calcEstudioFuego(inp) {
   Object.assign(out, {pisos: pis, pisosEq, excepcion: !!pis.excepcion, t1, t2, t3, pT3, tipoCalc, tipoManual: tM, tipo, tipoRed, tipoProv, resist,
     tipoExcTxt: tipoRed === 'justificada' ? EF_EXC_TIPO[inp.tipoExc] : '', tipoResp: String(inp.tipoResp || '').trim()});
 
+  // Exención OGUC Art. 4.3.26: si se acredita, ningún elemento tiene exigencia de resistencia al fuego.
+  out.exencion = efExencion4326(inp, {pisosFis: pis.nFisicos != null && isFinite(pis.nFisicos) ? pis.nFisicos : null, ocup: dOc.v, media});
+  if (out.exencion.pedida && !out.exencion.aplica) {
+    const fal = out.exencion.req.filter(q => q.v !== 'si');
+    pend('Exención Art. 4.3.26', 'No acreditada: ' + fal.map(q => q.txt.split(' (')[0] + (q.v === 'no' ? ' (no cumple)' : ' (sin antecedente)')).join('; ') + '. Rigen las exigencias del tipo de edificio.', false);
+  }
+  if (out.exencion.aplica) aviso('Exención OGUC Art. 4.3.26 acreditada: los elementos no tienen exigencia de resistencia al fuego.');
+
   // (3)-(5) Elementos
   const pTerm = {dt: 5, alfa: 25, phi: 1, ef: 1, em: 0.7, caVar: true, ca: 600, rho: 7850};
   out.elems = (inp.elementos || []).map((it, i) => {
@@ -47150,7 +47211,9 @@ function calcEstudioFuego(inp) {
     r.funcs = fr;
     r.reqFunc = fr.map(f => ({f, req: resist ? resist[f - 1] : null}));
     r.FreqCalc = resist && fr.length ? Math.max(...r.reqFunc.map(x => (x.req.min == null || x.req.noExigible) ? 0 : x.req.min)) : null;
-    if (!fr.length) P.push('función según el Art. 4.3.3');
+    r.exento = !!out.exencion.aplica;
+    if (r.exento) r.FreqCalc = 0;
+    if (!fr.length && !r.exento) P.push('función según el Art. 4.3.3');
     const X = EF_EXC[it.exc], resp = String(it.excResp || '').trim();
     r.exc = X ? it.exc : ''; r.excTxt = X ? X.txt : ''; r.excResp = resp;
     if (X && fr.length && !fr.every(f => X.func.includes(f))) E.push(`la excepción ${X.txt.split(' — ')[0]} no se aplica a la función asignada`);
@@ -47227,11 +47290,11 @@ function calcEstudioFuego(inp) {
       else if (tipoProv) globBloq.push('clasificación definitiva (densidad puntual)');
       if (tipoRed === 'no justificada') globBloq.push('justificación del tipo adoptado');
     }
-    r.errs = E; r.falta = P.concat(globBloq);
+    r.errs = E; r.falta = r.exento ? [] : P.concat(globBloq);
     if (E.length) r.estado = ['bad', 'NO CUMPLE — datos inválidos: ' + E.join('; ')];
     else if (r.Freq == null) { if (!tipo && fr.length) r.falta.unshift('tipo de edificio'); r.estado = ['warn', 'NO VERIFICADO — exigencia no determinada' + (r.falta.length ? ': falta ' + r.falta.join('; ') : '')]; }
     else if (r.metodoCr === 'mu_mayor_1') r.estado = ['bad', `NO CUMPLE — μ0 = ${fmt2(r.mu)} > 1: la resistencia inicial no cubre la combinación de incendio (Efi,d > Rfi,d,0)`];
-    else if (r.Freq === 0) r.estado = r.falta.length ? ['warn', 'NO VERIFICADO — falta ' + r.falta.join('; ')] : ['ok', 'CUMPLE — sin exigencia de resistencia al fuego' + (r.reduccion ? ' (' + r.excTxt.split(' — ')[0] + ')' : '')];
+    else if (r.Freq === 0) r.estado = r.falta.length ? ['warn', 'NO VERIFICADO — falta ' + r.falta.join('; ')] : ['ok', 'CUMPLE — sin exigencia de resistencia al fuego' + (r.exento ? ' (exención OGUC Art. 4.3.26)' : (r.reduccion ? ' (' + r.excTxt.split(' — ')[0] + ')' : ''))];
     else if (it.prot === 'ninguna') {
       if (r.tcr != null && r.tcr < r.Freq) r.estado = ['bad', `NO CUMPLE — sin protección: t = ${fmt1(r.tcr)} min < F-${r.Freq}; requiere protección`];
       else if (r.curva && r.thcr != null && !r.falta.length) r.estado = ['warn', `NO VERIFICADO — sin protección: ${r.tcr != null ? 't = ' + fmt1(r.tcr) + ' min' : 'θcr no se alcanza en 150 min'} ≥ F-${r.Freq} por cálculo; no acredita resistencia al fuego (OGUC 4.3.2)`];
@@ -47284,6 +47347,8 @@ function calcEstudioFuego(inp) {
     : nNo ? ['bad', `No asimilable con estos antecedentes (${nNo} criterio(s) no cumplido(s)): corresponde ensayo o cambio de solución.`]
     : bloq.length ? ['warn', `Pendiente: falta ${bloq.join('; ')}. No emitir conclusión hasta completarlos.`]
     : ['ok', 'Antecedentes completos para que un profesional especialista emita el informe de asimilación (OGUC 4.3.2).'];
+  // Con la exención acreditada, la clasificación del edificio ya no condiciona la conclusión
+  if (out.exencion.aplica) out.pend.forEach(q => { if (q.ambito === 'Clasificación' || q.ambito === 'Densidad puntual') q.bloquea = false; });
   const nBad = out.elems.filter(e => e.estado[0] === 'bad').length, nOk = out.elems.filter(e => e.estado[0] === 'ok').length;
   out.global = out.errs.length ? ['bad', 'NO CUMPLE — hay datos inválidos']
     : nBad ? ['bad', `NO CUMPLE — ${nBad} elemento(s) no cumplen`]
@@ -47866,6 +47931,8 @@ function efMemoriaHtml(inp, r, meta) {
     ${r.tipo ? `${MEM_T('Resistencia al fuego exigida por elemento para el tipo ' + r.tipo + ' (OGUC Art. 4.3.3)')}
     <table class="inf-t"><tr><th>Elemento de construcción</th><th>Tipo ${r.tipo}</th><th>Condición de aplicación (Art. 4.3.5)</th></tr>${r.resist.map(x => `<tr><td class="l">${esc(x.elemento)}</td><td>${esc(x.txt)}</td><td class="l">${esc(x.cond)}</td></tr>`).join('')}</table>` : ''}
 
+    ${efEx4326Mem(r)}
+
     <div class="salto"></div>
     <h1>6. EXIGENCIA, COMPORTAMIENTO TÉRMICO Y PROTECCIÓN DE LOS ELEMENTOS</h1>
     <p>Cada elemento recibe la exigencia que corresponde a su función según el Art. 4.3.3. Si cumple más de una función (por ejemplo, una viga de marco que además soporta la techumbre), se le asigna la mayor de las exigencias.</p>
@@ -47910,6 +47977,7 @@ function efMemoriaHtml(inp, r, meta) {
 
     <div class="salto"></div>
     <h1>8. CONCLUSIONES</h1>
+    ${r.exencion && r.exencion.aplica ? `<p><b>La edificación cumple todos los requisitos del Art. 4.3.26 de la OGUC y queda liberada de protección contra el fuego.</b> En consecuencia, los elementos de acero analizados no tienen exigencia de resistencia al fuego y no requieren protección pasiva. La exención se sostiene en los antecedentes de la sección 5 (tabla de requisitos), que deben adjuntarse al permiso; cualquier cambio de destino, de ocupación, de materiales o de carga combustible obliga a revisarla.</p>` : ''}
     ${!r.tipo ? `<p><b>El estudio no puede concluir sobre la protección de los elementos porque no está determinado el tipo de edificio.</b> El tipo (Art. 4.3.4) fija la exigencia F de cada elemento (Art. 4.3.3); sin ella no es posible decidir si un elemento requiere protección ni dimensionarla. Para determinarlo se requiere la densidad de carga combustible media y la puntual máxima (NCh 1916 y NCh 1993), con la masa y el poder calorífico de cada material y su fuente, o adoptar el tipo con su justificación documentada.</p>` : ''}
     <p>El sector se clasifica como edificio <b>tipo ${r.tipo || '—'}${r.tipoProv ? ' (provisorio)' : ''}</b> según el Art. 4.3.4, con una densidad de carga combustible media ${r.media != null ? 'de ' + N(r.media, 0) + ' MJ/m²' : 'no determinada'} y una puntual máxima ${r.puntual != null ? 'de ' + N(r.puntual, 0) + ' MJ/m²' : 'no determinada'}${r.tipo && r.media == null ? ' (tipo adoptado por el proyectista)' : ''}.</p>
     ${(() => { const sf = r.elems.filter(e => e.Freq == null && r.tipo && !(e.f1 > 0) && !(e.f2 > 0)); return sf.length ? `<p><b>${sf.length === 1 ? 'El elemento' : 'Los elementos'} ${sf.map(e => esc(e.nombre)).join('; ')} no ${sf.length === 1 ? 'tiene' : 'tienen'} función asignada según el Art. 4.3.3</b>, por lo que su exigencia no está determinada y el estudio no concluye sobre ${sf.length === 1 ? 'él' : 'ellos'}.</p>` : ''; })()}
@@ -47938,6 +48006,148 @@ function efMemoriaHtml(inp, r, meta) {
     </ul>
     ${memFirmas(meta)}
     ${r.ram ? efrMemAnexo(r.ram.M, r.ram.cfg, r.ram.R) : ''}
+  </div>`;
+  return memFinalizar(html);
+}
+
+// Anexo independiente «Revisión técnica y optimización»: opinión técnica sobre el estudio, con las vías para
+// llegar a la protección más baja que cumpla la OGUC. Se calcula con los resultados del estudio (r); no incluye
+// precios: el costo se califica por la naturaleza de la medida (trámite, ingeniería u obra).
+function efRevisionHtml(inp, r, meta) {
+  const N = MEM_N, E = r.elems || [];
+  const fReq = e => e.exento ? 'Sin exigencia (Art. 4.3.26)' : (e.Freq ? 'F-' + e.Freq : (e.Freq === 0 ? 'Sin exigencia' : 'No determinada'));
+  const nom = e => '(' + e.n + ') ' + esc(e.nombre.replace(/^\[RAM\]\s*/, '').replace(/\s+—\s+.*$/, ''));
+  const lista = a => a.map(nom).join('; ');
+  const tipo = r.tipo, T = tipo ? EF_T433[tipo] : null;
+  const cuenta = k => E.filter(e => e.estado[0] === k).length;
+  const conExig = E.filter(e => e.Freq > 0);
+  const ex = r.exencion || {req: []};
+  const exReq = id => (ex.req.find(q => q.id === id) || {});
+  const M = [];   // medidas: {tit, imp (3 alto, 2 medio, 1 bajo), costo (1 trámite, 2 ingeniería, 3 obra), sit, acc[], el}
+  const COSTO = {1: 'Documental o trámite', 2: 'Ingeniería o especificación', 3: 'Obra o materiales'}, IMP = {3: 'Alto', 2: 'Medio', 1: 'Bajo'};
+
+  // 1. Exención del Art. 4.3.26
+  if (exReq('piso').v === 'si' && conExig.length) {
+    const falt = ex.req.filter(q => q.v !== 'si'), no = ex.req.filter(q => q.v === 'no');
+    if (!ex.aplica && !no.length) {
+      const acc = falt.map(q => {
+        if (q.id === 'destino') return 'Obtener de la SEREMI de Salud la calificación de actividad inofensiva (Art. 2.1.28). Sin ella, el bodegaje o la industria no se asimilan al destino equipamiento y la exención no procede.';
+        if (q.id === 'nocomb') return 'Acreditar con especificaciones técnicas o fichas que estructura, cubierta, cerramientos y aislaciones son de materiales no combustibles.';
+        if (q.id === 'desl') return 'Acreditar en el plano de emplazamiento una distancia a los deslindes no inferior a 4 m.';
+        if (q.id === 'adultos') return 'Declarar que la edificación será ocupada solo por adultos que puedan valerse por sí mismos.';
+        if (q.id === 'carga') return 'Completar el inventario de carga combustible y la superficie de cada recinto (cada uno bajo 250 MJ/m²).';
+        if (q.id === 'ocup') return 'Informar la carga de ocupación (Art. 4.2.4), que debe ser inferior a 100 personas.';
+        return q.txt;
+      });
+      if (r.media === 0 || r.cargaTotal === 0) acc.push('El estudio registra una carga combustible nula. Para sostener la exención conviene respaldarla con un inventario que incluya embalajes, pallets, mobiliario de oficina y otros combustibles presentes en operación, recinto por recinto.');
+      M.push({tit: 'Acreditar la exención del Art. 4.3.26', imp: 3, costo: 1,
+        sit: `La edificación es de un piso y ${ex.pedida ? 'el estudio ya plantea' : 'el estudio no plantea'} la exención del Art. 4.3.26. ${falt.length ? 'Faltan ' + falt.length + ' de los 7 requisitos: ' + falt.map(q => q.txt.split(' (')[0].toLowerCase()).join('; ') + '.' : ''} Si se acredita, ninguno de los ${conExig.length} elementos con exigencia necesita protección pasiva, lo que elimina por completo el costo de protección.`,
+        acc, el: conExig});
+    } else if (no.length) {
+      M.push({tit: 'Exención del Art. 4.3.26: no procede con los datos actuales', imp: 1, costo: 3,
+        sit: `No se cumple: ${no.map(q => q.txt.split(' (')[0].toLowerCase()).join('; ')}. La exención solo sería posible modificando esos parámetros del proyecto.`, acc: [], el: []});
+    }
+  }
+
+  // 2. Función (8) → (9) en elementos de techumbre
+  if (T && T[8] != null) {
+    const c = E.filter(e => !e.exento && e.funcs && e.funcs.includes(8) && !e.funcs.some(f => f !== 8 && f !== 9 && T[f - 1] != null && T[f - 1] > T[8]) && e.Freq > T[8]);
+    if (c.length) M.push({tit: `Revisar la función asignada a los elementos de techumbre: (9) F-${T[8]} en vez de (8) F-${T[7]}`, imp: 3, costo: 2,
+      sit: `${c.length} elemento(s) están clasificados como (8) elementos soportantes horizontales, con F-${T[7]} en el tipo ${tipo}. Si forman parte de la estructura de techumbre y no soportan pisos ni elementos de mayor exigencia, corresponde la función (9) Techumbre incluido cielo falso, con F-${T[8]}. La reducción de la exigencia baja el espesor de protección${c.filter(e => e.tcr != null && e.tcr >= T[8] && e.tcr < e.Freq).length ? ' y, con F-' + T[8] + ', alcanzarían la exigencia sin protección por cálculo: ' + c.filter(e => e.tcr != null && e.tcr >= T[8] && e.tcr < e.Freq).map(nom).join('; ') : ''}.`,
+      acc: ['Confirmar en planos que estos elementos solo soportan la cubierta, y reasignar su función en la sección 3 o 3b.', 'Mantener la función (8) en vigas que soporten entrepisos, altillos o equipos que deban permanecer en pie.'], el: c});
+  }
+
+  // 3. Cielo falso o elemento interpuesto
+  const techo = E.filter(e => !e.exento && e.Freq > 0 && e.funcs && e.funcs.includes(9) && e.exc !== 'n6');
+  if (techo.length) M.push({tit: 'Evaluar un cielo falso resistente bajo la techumbre (Art. 4.3.5 n°6, inc. 2°)', imp: 2, costo: 3,
+    sit: `${techo.length} elemento(s) de techumbre tienen exigencia. Un cielo falso con la resistencia exigida, adosado en forma continua y sin instalaciones entre cielo y estructura, deja la estructura de techumbre sin exigencia propia. Conviene cuando hay muchos perfiles livianos de techumbre que de otro modo deben protegerse uno a uno.`,
+    acc: ['Comparar el costo de un cielo del Listado Oficial con la protección perfil a perfil.', 'Aplicable solo si el cielo puede quedar continuo y sin instalaciones intermedias.'], el: techo});
+
+  // 4. Perfiles sin solución en el catálogo (masividad > 390 o sin producto)
+  const sinSol = E.filter(e => !e.exento && e.Freq > 0 && e.geomOk && e.prot === 'ninguna' && e.tcr != null && e.tcr < e.Freq && !(e.alternativas || []).length);
+  if (sinSol.length) M.push({tit: 'Cambiar los perfiles que ningún producto cubre', imp: 3, costo: 3,
+    sit: `${sinSol.length} elemento(s) no cumplen y ningún producto considerado cubre su combinación de masividad y exigencia. Las tablas del Listado Oficial ED17-2025 llegan hasta 390 m⁻¹ de masividad a 4 caras; estos perfiles la superan (${sinSol.map(e => nom(e) + ': ' + N(e.F4, 0) + ' m⁻¹').join('; ')}).`,
+    acc: ['Reemplazarlos por perfiles de mayor espesor o secciones cerradas con masividad a 4 caras de 390 m⁻¹ o menos.', 'Alternativa: encajonarlos con placas (protección en cajón), que reduce la masividad efectiva, o usar un producto con certificado propio para esa masividad.', 'Verificar si la función o la exención (puntos anteriores) eliminan la exigencia antes de rediseñar.'], el: sinSol});
+
+  // 5. Sección clase 4 (θcr = 350 °C)
+  const c4 = E.filter(e => !e.exento && e.Freq > 0 && e.clase4 && e.thcr != null && e.thcr <= 350);
+  if (c4.length) M.push({tit: 'Usar secciones clase 1 a 3 en lugar de clase 4', imp: 2, costo: 3,
+    sit: `${c4.length} elemento(s) tienen sección clase 4, cuya temperatura crítica se limita a 350 °C (EN 1993-1-2 §4.2.3.6). En una sección clase 1 a 3 la temperatura crítica se obtiene de μ0 (EN 1993-1-2 ec. 4.22) y supera 350 °C para todo μ0 menor que 1, lo que alarga el tiempo sin protección y reduce el espesor requerido.`,
+    acc: ['Al reemplazar perfiles, preferir espesores de ala y alma que den clase 1 a 3.'], el: c4});
+
+  // 6. Elementos que alcanzan la exigencia por cálculo
+  const xCalc = E.filter(e => !e.exento && (efSinProt(e) || {}).k === 'exime');
+  if (xCalc.length) M.push({tit: 'Prescindir de la protección donde el cálculo lo permite', imp: 2, costo: 2,
+    sit: `${xCalc.length} elemento(s) alcanzan la exigencia sin protección según el cálculo térmico de EN 1993-1-2. Para no protegerlos se requiere acreditarlo según el Art. 4.3.2, con un antecedente técnico o una asimilación; la DOM puede exigir respaldo adicional, como un ensayo.`,
+    acc: ['Incluir estos elementos en el informe de asimilación o antecedente técnico.', 'Si la DOM no acepta el cálculo, protegerlos con alguno de los productos indicados en la sección 4 de este anexo.'], el: xCalc});
+
+  // 7. Espesor propuesto mayor que el requerido
+  const sobre = E.filter(e => !e.exento && e.prot !== 'ninguna' && e.espProp != null && e.espReq != null && e.espProp > e.espReq * 1.0001);
+  if (sobre.length) M.push({tit: 'Ajustar el espesor propuesto al mínimo de la tabla', imp: 1, costo: 2,
+    sit: `${sobre.length} elemento(s) tienen un espesor propuesto mayor que el que exige la tabla de su producto: ${sobre.map(e => nom(e) + ' (' + e.espProp + ' → ' + e.espReq + ' ' + e.espU + ')').join('; ')}.`,
+    acc: ['Especificar el espesor mínimo tabulado, salvo que haya una razón constructiva para mantener el mayor.'], el: sobre});
+
+  // 8. μ0 por defecto o no informado
+  const muDef = E.filter(e => !e.exento && e.Freq > 0 && e.metodoCr !== 'externo' && e.mu == null && !e.clase4 && e.tcr != null && e.tcr < e.Freq);
+  if (muDef.length) M.push({tit: 'Calcular el grado de utilización μ0 de cada elemento', imp: 1, costo: 2,
+    sit: `${muDef.length} elemento(s) usan el valor por defecto de μ0. Un μ0 calculado con las solicitaciones de incendio suele ser menor, lo que eleva la temperatura crítica y reduce el espesor de protección.`,
+    acc: ['Cargar el modelo de cálculo (sección 3b) o ingresar μ0 por elemento.'], el: muDef});
+
+  // 9. Coberturas pendientes
+  const cob = E.filter(e => !e.exento && e.prot !== 'ninguna' && e.cob !== 'si');
+  if (cob.length) M.push({tit: 'Confirmar la cobertura documental de las protecciones', imp: 1, costo: 1,
+    sit: `${cob.length} elemento(s) protegidos tienen un espesor suficiente según la tabla, pero falta confirmar que la referencia cubre la sección, la orientación, la exposición y el sistema ensayado. Sin esa confirmación el estudio no puede declararlos conformes.`,
+    acc: ['Cotejar cada tabla con el documento original (Listado Oficial o informe de ensayo) y marcar la cobertura en la sección 3.'], el: cob});
+
+  M.sort((a, b) => b.imp - a.imp || a.costo - b.costo);
+
+  // Tabla de protección de menor espesor por elemento (sin precios)
+  const filasProt = E.filter(e => !e.exento && e.Freq > 0 && e.geomOk && (e.prot !== 'ninguna' || (e.tcr != null && e.tcr < e.Freq))).map(e => {
+    const opts = [];
+    if (e.prot !== 'ninguna' && e.espReq != null) opts.push({k: e.prot, v: e.espReq, txt: e.espTxt, actual: true});
+    (e.alternativas || []).forEach(a => opts.push({k: a.k, v: a.v, txt: a.txt}));
+    const lst = opts.filter(o => EF_PROT[o.k] && EF_PROT[o.k].listado), inf = opts.filter(o => EF_PROT[o.k] && !EF_PROT[o.k].listado);
+    const fmt = a => a.length ? a.map(o => `${esc(EF_PROT[o.k].corto || EF_PROT[o.k].nombre)} ${esc(o.txt)}${o.actual ? ' (actual)' : ''}`).join('<br>') : '—';
+    const actual = e.prot !== 'ninguna' ? esc((EF_PROT[e.prot] || {}).corto || (EF_PROT[e.prot] || {}).nombre || e.prot) + (e.espProp != null ? ' ' + e.espProp + ' ' + esc(e.espU || '') : '') : 'Sin protección';
+    return `<tr><td class="l">${nom(e)}</td><td>${esc(e.perfil)}</td><td>${fReq(e)}</td><td>${N(e.F4, 0)}</td><td class="l">${actual}</td><td class="l">${fmt(lst)}</td><td class="l">${fmt(inf)}</td></tr>`;
+  });
+
+  const resumen = `${MEM_T('Estado de los elementos según el estudio')}
+    <table class="inf-t"><tr><th>N°</th><th>Elemento</th><th>Perfil</th><th>Función</th><th>Exigencia</th><th>Am/V 4 caras (m⁻¹)</th><th>t sin protección (min)</th><th>Protección del estudio</th><th>Estado</th></tr>
+    ${E.map((e, i) => `<tr><td>${i + 1}</td><td class="l">${nom(e)}</td><td>${esc(e.perfil)}</td><td>${(e.funcs || []).map(f => '(' + f + ')').join(' + ') || '—'}</td><td>${fReq(e)}</td><td>${N(e.F4, 0)}</td><td>${e.tcr != null ? N(e.tcr, 1) : (e.curva && e.thcr != null ? '&gt; 150' : '—')}</td><td class="l">${e.prot !== 'ninguna' ? esc((EF_PROT[e.prot] || {}).corto || (EF_PROT[e.prot] || {}).nombre || e.prot) : 'Sin protección'}</td><td class="${e.estado[0] === 'ok' ? 'ok' : (e.estado[0] === 'bad' ? 'bad' : '')}">${esc(e.estadoCorto || e.estado[0])}</td></tr>`).join('')}</table>`;
+
+  const html = `<div class="mem-inf"><style>${MEM_CSS}</style>
+    ${memPortada('REVISIÓN TÉCNICA Y OPTIMIZACIÓN', 'Anexo al Estudio de Resistencia al Fuego — estructura de acero', meta)}
+    <div class="salto"></div>
+    <h1>ÍNDICE</h1>
+    <p>1. Objeto y alcance<br>2. Síntesis del estudio revisado<br>3. Medidas de optimización<br>${M.map((m, i) => `&nbsp;&nbsp;&nbsp;3.${i + 1} ${esc(m.tit)}`).join('<br>')}<br>4. Protección de menor espesor por elemento<br>5. Orden recomendado y conclusión</p>
+    <div class="salto"></div>
+
+    <h1>1. OBJETO Y ALCANCE</h1>
+    <p>Este anexo revisa los resultados del Estudio de Resistencia al Fuego de ${esc(meta.edif || inp.sector || 'la estructura en estudio')}${meta.cliente ? ', de ' + esc(meta.cliente) : ''}, y entrega una opinión técnica sobre las medidas que permiten cumplir la OGUC con la menor protección pasiva posible. Es un documento separado del estudio: no modifica sus resultados ni sus conclusiones, que siguen siendo los que constan en la memoria.</p>
+    <p>Las medidas se ordenan por su efecto sobre la protección exigida y por la naturaleza de su costo (trámite o documental, ingeniería o especificación, obra o materiales). El anexo no incluye precios; la comparación económica final requiere cotizar las alternativas con los proveedores.</p>
+
+    <h1>2. SÍNTESIS DEL ESTUDIO REVISADO</h1>
+    <p>Edificio tipo <b>${tipo || 'no determinado'}</b> (OGUC Art. 4.3.4), ${r.pisosEq != null ? r.pisosEq + ' piso(s) para la clasificación' : 'pisos no determinados'}, densidad de carga combustible media ${r.media != null ? N(r.media, 0) + ' MJ/m²' : 'no determinada'}. Se analizaron ${E.length} elemento(s): ${cuenta('ok')} cumplen, ${cuenta('warn')} quedan sin verificar y ${cuenta('bad')} no cumplen. Exención del Art. 4.3.26: ${ex.aplica ? 'acreditada' : (ex.pedida ? 'pendiente de antecedentes' : 'no planteada en el estudio')}. Resultado global del estudio: ${esc(r.global[1])}.</p>
+    ${tipo === 'd' ? '<p>El tipo d es la clasificación menos exigente del Art. 4.3.4, por lo que la clasificación del edificio no ofrece margen de optimización; el ahorro debe buscarse en la exención, la función de los elementos y la elección de perfiles y productos.</p>' : (tipo ? `<p>El tipo ${tipo} resulta de ${[['t1', 'la Tabla 1 (superficie)'], ['t2', 'la Tabla 2 (ocupantes)'], ['t3', 'la Tabla 3 (carga combustible)']].filter(([k]) => r[k] === r.tipoCalc).map(x => x[1]).join(' y ') || 'las tablas aplicables'}. Un tipo menos exigente solo se obtiene cambiando el parámetro que gobierna esa tabla.</p>` : '')}
+    ${resumen}
+
+    <h1>3. MEDIDAS DE OPTIMIZACIÓN</h1>
+    ${M.length ? M.map((m, i) => `<h2>3.${i + 1} ${esc(m.tit)}</h2>
+      <p><b>Impacto:</b> ${IMP[m.imp]} · <b>Naturaleza del costo:</b> ${COSTO[m.costo]}</p>
+      <p>${m.sit}</p>
+      ${m.acc.length ? '<ul>' + m.acc.map(a => `<li>${esc(a)}</li>`).join('') + '</ul>' : ''}
+      ${m.el.length ? `<p style="font-size:9pt"><b>Elementos:</b> ${m.el.length === E.length ? 'todos los elementos del estudio' : lista(m.el)}.</p>` : ''}`).join('')
+      : '<p>No se identifican medidas que reduzcan la protección respecto de la solución del estudio.</p>'}
+
+    <h1>4. PROTECCIÓN DE MENOR ESPESOR POR ELEMENTO</h1>
+    <p>Para cada elemento con exigencia se listan los productos del catálogo de la planilla cuya tabla cubre su masividad y su exigencia, con el espesor requerido. Los productos del Listado Oficial se aplican sin asimilación dentro de su alcance; los respaldados solo por informe de ensayo requieren que la DOM acepte ese respaldo. El espesor no equivale al costo: debe cotizarse cada alternativa.</p>
+    ${filasProt.length ? `${MEM_T('Alternativas de protección por elemento')}<table class="inf-t"><tr><th>Elemento</th><th>Perfil</th><th>Exigencia</th><th>Am/V (m⁻¹)</th><th>Protección del estudio</th><th>Listado Oficial ED17-2025</th><th>Informe de ensayo</th></tr>${filasProt.join('')}</table>` : '<p>No hay elementos con exigencia que requieran protección.</p>'}
+
+    <h1>5. ORDEN RECOMENDADO Y CONCLUSIÓN</h1>
+    ${M.length ? `${MEM_T('Medidas ordenadas por impacto y costo')}<table class="inf-t"><tr><th>Orden</th><th>Medida</th><th>Impacto</th><th>Naturaleza del costo</th><th>Elementos</th></tr>${M.map((m, i) => `<tr><td>${i + 1}</td><td class="l">${esc(m.tit)}</td><td>${IMP[m.imp]}</td><td>${COSTO[m.costo]}</td><td>${m.el.length}</td></tr>`).join('')}</table>` : ''}
+    <p>${M.length ? `La medida de mayor efecto es «${esc(M[0].tit)}». Conviene resolver primero las medidas documentales y de clasificación, porque pueden eliminar la exigencia de muchos elementos a la vez, y luego ajustar perfiles y productos solo en los elementos que mantengan exigencia.` : 'La solución del estudio no admite reducciones con los datos disponibles.'} Cualquier cambio que se adopte debe incorporarse al estudio y recalcularse antes de emitirlo a la DOM.</p>
+    ${memFirmas(meta)}
   </div>`;
   return memFinalizar(html);
 }
@@ -48832,7 +49042,16 @@ function efInstruccionesHtml() {
     <li>Resultado: con algún «No cumple» la solución no es asimilable (corresponde ensayo o cambio de solución); con criterios sin antecedente queda pendiente; con todo completo, los antecedentes permiten que un profesional especialista emita el informe de asimilación. La DOM puede exigir un ensayo de laboratorio.</li>
   </ol>
 
-  <h3>6. Revisión antes de emitir</h3>
+  <h3>6. Exención del Art. 4.3.26 (sección 2)</h3>
+  <p>Las edificaciones de un piso, construidas con elementos no combustibles, quedan liberadas de protección contra el fuego si cumplen <b>todos</b> los requisitos del Art. 4.3.26. En «¿Aplicar la exención del Art. 4.3.26?» elija «Sí»: la planilla evalúa sola el número de pisos, los ocupantes (&lt; 100) y la carga combustible media (&lt; 250 MJ/m²); los demás requisitos se marcan «Cumple» con su respaldo escrito (especificación, plano de emplazamiento, resolución). Bodegaje e industria requieren la calificación de actividad inofensiva de la SEREMI de Salud (Art. 2.1.28). Con todo acreditado, los elementos quedan «sin exigencia» y la memoria incluye la tabla de requisitos; mientras falte uno, rigen las exigencias del tipo de edificio.</p>
+
+  <h3>7. Cabecera de cada ficha (sección 3)</h3>
+  <p>Cada ficha muestra arriba su resultado en una franja de color: verde cumple, amarillo sin verificar, rojo no cumple. La primera línea dice el estado, la exigencia y la protección (producto y espesor, o los minutos que resiste sin protección); la segunda, el motivo o lo que falta.</p>
+
+  <h3>8. Anexo «Revisión y optimización»</h3>
+  <p>El botón <b>«📋 Anexo: revisión y optimización»</b> genera un documento separado de la memoria, con portada propia, que revisa el estudio y ordena por impacto las medidas para llegar a la protección más baja que cumpla: exención del Art. 4.3.26, función de los elementos de techumbre, cielo falso resistente, cambio de perfiles sin producto o clase 4, elementos que cumplen por cálculo, espesores sobre el mínimo, μ0 y coberturas pendientes. Incluye, por elemento, los productos que lo cubren con su espesor. No contiene precios: cada alternativa debe cotizarse. No modifica el estudio; las medidas que se adopten se ingresan en la planilla y se recalcula.</p>
+
+  <h3>9. Revisión antes de emitir</h3>
   <ul>
     <li>Tipo de edificio determinado y, si se adoptó uno menos exigente, con su excepción y respaldo.</li>
     <li>Todos los elementos con función asignada, incluidas diagonales y cuerdas.</li>
@@ -48842,7 +49061,7 @@ function efInstruccionesHtml() {
     <li>Sección 6 sin pendientes que bloqueen la conclusión.</li>
   </ul>
 
-  <h3>7. Mensajes frecuentes</h3>
+  <h3>10. Mensajes frecuentes</h3>
   <ul>
     <li><b>«Exigencia no determinada: falta tipo de edificio / función»</b>: complete la sección 2 o la función del elemento.</li>
     <li><b>«Sin producto aplicable»</b>: ningún producto del Listado o de los informes cargados cubre la sección (masividad o tipo de perfil fuera de tabla).</li>
@@ -48885,6 +49104,7 @@ function renderEstudioFuego(container) {
         #ef_instr .efi-lead{color:var(--ink-muted)}
       </style><dialog id="ef_instr" aria-label="Instrucciones y funcionamiento"><div class="efi-top"><button type="button" class="print-btn alt" id="ef_instrCerrar">✕ Cerrar</button></div><div class="efi-body">${efInstruccionesHtml()}</div></dialog><div class="ef-nuevo-bar" style="display:flex;align-items:center;flex-wrap:wrap;gap:.6rem;margin:.7rem 0 .2rem">
         <button type="button" class="print-btn" id="ef_instrBtn" title="Cómo funciona la planilla, con y sin modelo RAM">📘 Instrucciones y funcionamiento</button>
+        <button type="button" class="print-btn" id="ef_revBtn" title="Anexo separado: revisión técnica del estudio y medidas para obtener la protección más baja que cumpla la OGUC">📋 Anexo: revisión y optimización</button>
         <button type="button" class="print-btn alt" id="ef_nuevo" title="Borrar todos los datos y dejar la planilla en blanco">📄 Nuevo estudio</button>
         <span id="ef_nuevoMsg" style="font-size:.78rem;line-height:1.35;color:var(--ink-muted);flex:1;min-width:220px">Deja la planilla en blanco: borra materiales, elementos, modelo RAM cargado (3b), funciones asignadas, asimilación y datos de la memoria. Guarde antes el estudio actual si lo necesita.</span>
       </div>
@@ -48928,6 +49148,14 @@ function renderEstudioFuego(container) {
         <div class="field"><label>Excepción que justifica un tipo menos exigente</label><select id="ef_tipoExc"><option value="">— ninguna —</option>${Object.keys(EF_EXC_TIPO).map(k => `<option value="${k}">${esc(EF_EXC_TIPO[k].split(' — ')[0])}</option>`).join('')}</select></div>
         <div class="field"><label>Respaldo documental de la excepción</label><input type="text" id="ef_tipoResp" placeholder="documento que la acredita"></div>
       </div>
+      <div class="ef-ex4326" style="margin-top:.8rem;border:1px solid var(--line);border-radius:6px;padding:.6rem .75rem">
+        <div class="field" style="max-width:none"><label>¿Aplicar la exención del Art. 4.3.26 (edificación de un piso liberada de protección contra el fuego)?</label><select id="ef_ex4326" style="max-width:320px"><option value="no">No</option><option value="si">Sí, verificar sus requisitos</option></select></div>
+        <div class="note" style="margin:.4rem 0">OGUC Art. 4.3.26: las edificaciones de <b>un piso</b> construidas con elementos de construcción <b>no combustibles</b> quedan liberadas de protección contra el fuego si cumplen <b>todos</b> los requisitos de la tabla. Si falta uno, no hay exención y rigen las exigencias del tipo de edificio. Bodegaje e industria son actividades productivas (Art. 2.1.28): solo se asimilan a equipamiento con la calificación de actividad inofensiva de la SEREMI de Salud. La planilla evalúa sola el número de pisos, los ocupantes y la carga combustible; los demás requisitos se marcan con su respaldo (resolución, plano, ficha técnica). Con la exención acreditada, todos los elementos quedan «sin exigencia».</div>
+        <div id="ef_ex4326Box" style="display:none"><div style="overflow-x:auto"><table class="results editable" style="width:100%;font-size:.78rem">
+          <thead><tr><th style="width:42%">Requisito (Art. 4.3.26)</th><th style="width:18%">Estado</th><th>Respaldo / observación</th></tr></thead>
+          <tbody>${EF_EX4326.map(q => `<tr><td>${esc(q.txt)}</td><td>${q.auto ? `<span id="ef_exA_${q.id}"></span>` : `<select id="ef_ex_${q.id}" style="width:100%;min-width:110px;font-size:.76rem"><option value="pend">Sin antecedente</option><option value="si">Cumple</option><option value="no">No cumple</option></select>`}</td><td>${q.auto ? `<span class="note" id="ef_exO_${q.id}"></span>` : `<input type="text" id="ef_exr_${q.id}" style="width:100%;box-sizing:border-box;font-size:.76rem" placeholder="${q.id === 'destino' ? 'resolución SEREMI de Salud n°, fecha' : (q.id === 'desl' ? 'plano de emplazamiento' : (q.id === 'nocomb' ? 'especificación de cubierta, cerramientos y aislación' : 'antecedente'))}">`}</td></tr>`).join('')}</tbody>
+        </table></div><div id="ef_resEx" style="margin-top:.4rem"></div></div>
+      </div>
       <div id="ef_resTipo" style="margin-top:.6rem"></div>
       <div class="disclosure">Pisos (Art. 4.3.5 n°1): piso hasta 3,5 m; las alturas de los pisos que superan 3,5 m se suman aparte y se dividen por 3,5 m, y la fracción cuenta como un piso más. Se exceptúan las estructuras de un solo piso con DCC media inferior a 500 MJ/m² y sin altillos, que se consideran de 1 piso. En la Tabla 3 se entra con la mayor de las dos densidades; si el edificio cae en varias tablas, se adopta el tipo más exigente. Un tipo menos exigente que el calculado solo se adopta con una excepción del Art. 4.3.5 y su respaldo; en otro caso las exigencias se evalúan con el tipo calculado. Tablas 1, 2, 3 y del Art. 4.3.3 contrastadas con el texto de la OGUC.</div>
     </div>
@@ -48944,6 +49172,13 @@ function renderEstudioFuego(container) {
         table.ef-lista tbody td{display:flex;flex-direction:column;justify-content:flex-end;padding:0;border:0;min-width:0}
         table.ef-lista tbody td::before{content:attr(data-l);font-size:.64rem;font-weight:600;letter-spacing:.02em;color:var(--ink-muted);margin-bottom:.12rem;line-height:1.2}
         table.ef-lista tbody td.ef-w2{grid-column:span 2}
+        table.ef-lista tbody td.ef-cab{grid-column:1 / -1;display:block;padding:.45rem .6rem;margin:-.1rem 0 .2rem;border-radius:5px;background:var(--surface-alt);font-size:.8rem;line-height:1.45}
+        table.ef-lista tbody td.ef-cab::before{content:none}
+        table.ef-lista tbody td.ef-cab.ok{background:var(--good-bg)} table.ef-lista tbody td.ef-cab.bad{background:var(--bad-bg)}
+        table.ef-lista tbody td.ef-cab.warn{background:color-mix(in srgb, var(--accent-warm) 14%, transparent)}
+        table.ef-lista tbody td.ef-cab .ef-cab-l1{font-weight:700}
+        table.ef-lista tbody td.ef-cab .ef-cab-l2{color:var(--ink-muted);font-size:.74rem}
+        @media print{table.ef-lista tbody td.ef-cab{background:none !important;border:1px solid #999}}
         table.ef-lista tbody td.ef-w3{grid-column:span 3}
         table.ef-lista tbody td[data-role="n"]{font-weight:700;justify-content:center}
         table.ef-lista input, table.ef-lista select{font-size:.78rem !important;padding:.22rem .26rem !important;width:100%;min-width:0 !important;box-sizing:border-box}
@@ -49045,6 +49280,7 @@ function renderEstudioFuego(container) {
     const rot = Array.from(body.closest('table').querySelectorAll('thead th')).map(th => th.textContent.trim());
     const ancho = {nombre: 'ef-w3', f1: 'ef-w2', f2: 'ef-w2', excResp: 'ef-w2', desig: 'ef-w2', expo: 'ef-w2', prot: 'ef-w2', refDoc: 'ef-w2', techo: 'ef-w2'};   // ficha de 6 columnas: 7 renglones completos
     Array.from(tr.children).forEach((td, i) => { td.dataset.l = rot[i] || ''; const f = td.querySelector('[data-f]'); if (f && ancho[f.dataset.f]) td.classList.add(ancho[f.dataset.f]); });
+    const cab = document.createElement('td'); cab.className = 'ef-cab'; cab.dataset.role = 'cab'; tr.insertBefore(cab, tr.firstChild);
     body.appendChild(tr);
     if (pre && pre.ejemplo) tr.dataset.ejemplo = '1';
     const q = f => tr.querySelector(`[data-f="${f}"]`);
@@ -49092,7 +49328,8 @@ function renderEstudioFuego(container) {
     return {sector: val('ef_sector').trim(), area: val('ef_area'), puntualManual: val('ef_puntual'), puntualFuente: val('ef_puntualFte').trim(), materiales,
       pisosReales: val('ef_pisos'), altura: val('ef_altura'), altillos: val('ef_altillos'),
       t1: val('ef_t1'), superficie: val('ef_sup'), t2: val('ef_t2'), ocupantes: val('ef_ocup'),
-      t3: val('ef_t3'), tipoManual: val('ef_tipoMan'), tipoExc: val('ef_tipoExc'), tipoResp: val('ef_tipoResp').trim(), elementos, chk, origenEnsayo: val('ef_origen')};
+      t3: val('ef_t3'), tipoManual: val('ef_tipoMan'), tipoExc: val('ef_tipoExc'), tipoResp: val('ef_tipoResp').trim(), elementos, chk, origenEnsayo: val('ef_origen'),
+      ex4326: Object.assign({pedida: val('ef_ex4326')}, ...EF_EX4326.filter(q => !q.auto).map(q => ({[q.id]: {v: val('ef_ex_' + q.id), obs: val('ef_exr_' + q.id).trim()}})))};
   }
   const sp = (c, t) => `<span class="chip ${c}">${esc(t)}</span>`;
   const n = (v, d) => (v == null || !isFinite(v)) ? '—' : Number(v).toLocaleString('es-CL', {minimumFractionDigits: d, maximumFractionDigits: d});
@@ -49105,7 +49342,7 @@ function renderEstudioFuego(container) {
     r.ram = efrM ? {M: efrM, cfg: efrCfg, R: efrR} : null;
     document.getElementById('efr_res').innerHTML = efrM ? efrResHtml(efrM, efrR) : '';
     Array.from(mat.children).forEach((tr, i) => { tr.querySelector('[data-role="n"]').textContent = i + 1; const m = r.mats[i]; tr.querySelector('[data-role="carga"]').textContent = m.errs.length ? 'inválido' : n(m.carga, 0); });
-    Array.from(body.children).forEach((tr, i) => { tr.querySelector('[data-role="n"]').textContent = i + 1; });
+    Array.from(body.children).forEach((tr, i) => { tr.querySelector('[data-role="n"]').textContent = i + 1; const cab = tr.querySelector('[data-role="cab"]'); if (cab && r.elems[i]) { const c = efCabecera(r.elems[i]); cab.className = 'ef-cab ' + c.cls; cab.innerHTML = c.html; } });
     const p = r.pun;
     document.getElementById('ef_resCarga').innerHTML = `<table class="results">
       <tr><th>Magnitud</th><th>Valor</th><th>Observación</th></tr>
@@ -49113,6 +49350,13 @@ function renderEstudioFuego(container) {
       <tr><td><strong>Densidad de carga combustible media</strong></td><td class="num"><strong>${n(r.media, 0)} MJ/m²</strong></td><td>Carga total / superficie del sector (NCh 1916)</td></tr>
       <tr><td><strong>Densidad puntual máxima</strong></td><td class="num"><strong>${n(r.puntual, 0)} MJ/m²</strong></td><td>${p.origen === 'medida' ? 'Valor medido: ' + esc(inp.puntualFuente) : esc(cbPuntualTxt(p))}</td></tr>
     </table>`;
+    { const ex = r.exencion, box = document.getElementById('ef_ex4326Box');
+      box.style.display = ex.pedida ? '' : 'none';
+      const chipEx = v => v === 'si' ? sp('ok', 'Cumple') : (v === 'no' ? sp('bad', 'No cumple') : sp('warn', 'Sin antecedente'));
+      ex.req.forEach(q => { if (q.auto) { document.getElementById('ef_exA_' + q.id).innerHTML = chipEx(q.v); document.getElementById('ef_exO_' + q.id).textContent = q.obs; } });
+      document.getElementById('ef_resEx').innerHTML = !ex.pedida ? '' : (ex.aplica
+        ? `<div class="verdict-row"><span>Exención Art. 4.3.26</span><span>${sp('ok', 'ACREDITADA: los elementos quedan sin exigencia de resistencia al fuego')}</span></div>`
+        : `<div class="verdict-row"><span>Exención Art. 4.3.26</span><span>${sp(ex.req.some(q => q.v === 'no') ? 'bad' : 'warn', ex.req.some(q => q.v === 'no') ? 'NO APLICA: hay requisitos no cumplidos' : 'PENDIENTE: faltan antecedentes')}</span></div><div class="note">Mientras no se acredite, rigen las exigencias del tipo de edificio.</div>`); }
     document.getElementById('ef_resTipo').innerHTML = `<table class="results">
       <tr><th>Tabla</th><th>Tipo</th><th>Observación</th></tr>
       <tr><td>Pisos para clasificación</td><td class="num">${r.pisosEq != null ? r.pisosEq : '—'}</td><td>${esc(r.pisos.detalle || r.pisos.errs.join('; ') || '—')}</td></tr>
@@ -49220,6 +49464,7 @@ function renderEstudioFuego(container) {
   };
   (window.REV_RESULTADOS = window.REV_RESULTADOS || {}).estudioFuego = () => { recalc(); return efResultadoJson(ultimo.inp, ultimo.r); };
   document.getElementById('efi_imprimir').addEventListener('click', () => { recalc(); memImprimir(efMemoriaHtml(ultimo.inp, ultimo.r, memMeta('efi'))); });
+  document.getElementById('ef_revBtn').addEventListener('click', () => { recalc(); memImprimir(efRevisionHtml(ultimo.inp, ultimo.r, memMeta('efi'))); });
 
   mat.addEventListener('input', recalc);
   mat.addEventListener('click', e => { const b = e.target.closest('.btn-remove'); if (!b) return; b.closest('tr').remove(); recalc(); });
@@ -49231,7 +49476,7 @@ function renderEstudioFuego(container) {
   body.addEventListener('click', e => { const b = e.target.closest('.btn-remove'); if (!b) return; b.closest('tr').remove(); recalc(); });
   document.getElementById('ef_addMat').addEventListener('click', () => { addMat(); recalc(); });
   document.getElementById('ef_add').addEventListener('click', () => { addRow(); recalc(); });
-  container.querySelectorAll('.panel > .field-grid input, .panel > .field-grid select, #ef_chk select, #ef_chk input').forEach(el => el.addEventListener('input', recalc));
+  container.querySelectorAll('.panel > .field-grid input, .panel > .field-grid select, #ef_chk select, #ef_chk input, .ef-ex4326 select, .ef-ex4326 input').forEach(el => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
 
   // «Nuevo estudio»: borra todo y vuelve a dibujar la planilla en blanco. Confirmación propia (segundo clic dentro
   // de 5 s, como «Nueva memoria»), porque confirm() puede estar bloqueado en la app instalada.
