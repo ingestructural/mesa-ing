@@ -48167,6 +48167,98 @@ function efRevisionHtml(inp, r, meta) {
 
 // Sección 4: resumen por acción. Cada elemento aparece una sola vez, en el grupo de la acción que necesita;
 // el detalle de cada uno está en la cabecera de su ficha (sección 3).
+// Sección 5 (web): un caso por perfil que se asimila, con la referencia, la comparación y lo que falta para cerrarlo.
+const EF_CHK_CORTO = {ref: 'Informe de ensayo de referencia', lab: 'Laboratorio autorizado', inf: 'Contenido del informe', vig: 'Vigencia del informe o inscripción', nor: 'Norma de ensayo equivalente', sis: 'Mismo producto y sistema', sec: 'Sección y orientación comparables', tem: 'Temperatura de falla del ensayo ≤ θcr', amb: 'Exposición cubierta por el ensayo', pro: 'Firma de profesional especialista'};
+function efAsimCasos(r) {
+  const chkV = id => ((r.chk || []).find(c => c.id === id) || {}).v;
+  const casos = [];
+  (r.elems || []).forEach(e => {
+    if (!(e.Freq > 0)) return;
+    const PP = EF_PROT[e.prot] || {};
+    const fe = 'F-' + e.Freq, am = fmt1(e.F4) + ' m⁻¹', th = e.thcr != null ? Math.round(e.thcr) + ' °C' : null;
+    if (e.prot !== 'ninguna' && e.prot && (!PP.listado || (e.espInfo && e.espInfo.asimilado))) {
+      const t = e.espInfo && e.espInfo.tabla;
+      const maxT = t && t.rows ? (t.modo === 'idiem' ? t.rows[t.rows.length - 1][1] : t.rows[t.rows.length - 1][0]) : null;
+      const motivo = [], cmp = [], acc = []; let est = 'warn';
+      if (!PP.listado) motivo.push('producto no inscrito en el Listado ED17-2025');
+      if (e.espInfo && e.espInfo.asimilado) motivo.push('elemento ' + (e.orient || 'horizontal') + ' entrado en una tabla ensayada en pilares');
+      cmp.push(`Am/V real ${am}${maxT != null ? ' · tabla hasta ' + fmt1(maxT) + ' m⁻¹' : ''}`);
+      cmp.push(`Exigencia ${fe}${t && t.col ? ' · tabla F-' + t.col : ''}`);
+      if (th) cmp.push(`θcr ${th}${e.metodoCr === 'externo' ? ' (cargas del modelo)' : ''}`);
+      cmp.push(`Espesor ${e.espProp != null ? e.espProp : '—'} propuesto / ${e.espReq != null ? e.espReq : '—'} tabla ${e.espU || ''}`.trim());
+      if (e.F4 > 390) { est = 'bad'; acc.push(`Am/V ${am} supera 390 m⁻¹ (Listado, punto 3): cambiar el perfil.`); }
+      else if (e.espReq == null) { est = 'bad'; acc.push(`${e.espTxt && e.espTxt !== '—' ? e.espTxt : 'Sin valor en la tabla'}: no hay ensayo al cual asimilarlo; cambiar perfil o producto.`); }
+      if (est !== 'bad' && !(e.espProp >= e.espReq)) acc.push(`Especificar espesor ≥ ${e.espReq} ${e.espU} en la ficha.`);
+      if (est !== 'bad' && e.espInfo && e.espInfo.asimilado) acc.push('Justificar que la exposición real no es más severa que la del pilar ensayado (4 caras).');
+      if (est !== 'bad' && chkV('tem') !== 'si') acc.push('Comparar la temperatura de falla del informe con la θcr del elemento (columna Comparación).');
+      if (est !== 'bad' && (e.cob !== 'si' || !e.refDoc)) acc.push('Anotar en la ficha el documento de respaldo y confirmar la cobertura.');
+      if (est !== 'bad' && !acc.length) est = 'ok';
+      if (est === 'bad') cmp.splice(2);
+      casos.push({k: 'prot', e, est, ref: `${PP.corto || PP.nombre}${t ? ' · tabla «' + t.titulo + '»' : ''}`, fuente: PP.fuente || e.refDoc || '', motivo: motivo.join('; '), cmp, acc});
+      return;
+    }
+    const sp = e.prot === 'ninguna' ? efSinProt(e) : null;
+    if (sp && sp.k === 'exime') {
+      casos.push({k: 'calc', e, est: 'warn', ref: 'Cálculo EN 1993-1-2 (acero sin protección)', fuente: '', motivo: 'resiste sin protección según cálculo; no hay ensayo del perfil desnudo',
+        cmp: [`θcr ${th}${e.metodoCr === 'externo' ? ' (cargas del modelo)' : ''}`, `${e.tcr != null ? 't = ' + fmt1(e.tcr) + ' min' : 't > 150 min'} ≥ ${fe}`, `ksh·Am/V ${fmt1(sp.kAm)} m⁻¹`],
+        acc: ['Presentar la memoria de cálculo como antecedente técnico (Art. 4.3.2); la DOM puede exigir un ensayo.']});
+    }
+  });
+  // Agrupa casos iguales (mismo perfil, referencia, exigencia y acciones)
+  const g = [];
+  casos.forEach(c => {
+    const key = [c.k, c.e.perfil, c.ref, c.e.Freq, c.est, c.k === 'calc' ? c.e.thcr : '', c.cmp.filter(x => !/^θcr/.test(x)).join('|'), c.acc.join('|')].join('#');
+    const x = g.find(y => y.key === key);
+    if (x) x.els.push(c.e); else g.push(Object.assign({key, els: [c.e]}, c));
+  });
+  g.forEach(x => { const v = x.els.map(e => e.thcr).filter(t => t != null).map(Math.round); if (v.length) { const a = Math.min(...v), b = Math.max(...v); x.cmp = x.cmp.map(l => /^θcr/.test(l) ? `θcr ${a === b ? a : a + '–' + b} °C${x.e.metodoCr === 'externo' ? ' (cargas del modelo)' : ''}` : l); } });
+  return g;
+}
+function efAsimHtml(r) {
+  const G = efAsimCasos(r);
+  const corto = e => { const s = String(e.nombre || ('Elemento ' + e.n)).replace(/^\[RAM\]\s*/, ''); const g = s.match(/^(G\d+)\b/), m = s.match(/\((\d+) miembros?\)\s*$/i); return g ? g[1] + (m ? ` (${m[1]})` : '') : s.split(' — ')[0]; };
+  const pill = (c, t) => `<span class="chip ${c}">${esc(t)}</span>`;
+  const porPerfil = els => { const m = new Map(); els.forEach(e => { const k = e.perfil || '—'; if (!m.has(k)) m.set(k, []); m.get(k).push(corto(e)); }); return [...m].map(([k, v]) => `<b>${esc(k)}</b>: ${esc(v.join(', '))}`).join(' · '); };
+  const ens = G.filter(c => c.k === 'prot'), calc = G.filter(c => c.k === 'calc');
+  const sinRef = (r.elems || []).filter(e => e.Freq > 0 && e.estado && e.estado[0] === 'bad' && !G.some(x => x.els.includes(e)));
+  const tbl = 'class="results ef-asim" style="width:100%;font-size:.76rem;margin-bottom:.4rem"';
+  let h = '';
+  if (ens.length) {
+    h += `<h4 style="margin:.2rem 0 .2rem">Protección asimilada a un ensayo</h4><div class="note" style="margin-bottom:.3rem">Cada fila es un perfil y el ensayo al que se asimila. «Para cerrar» indica lo que falta.</div>
+      <div style="overflow-x:auto"><table ${tbl}><tr><th>Perfil · elementos</th><th>Se asimila a</th><th>Comparación</th><th>Para cerrar</th></tr>`;
+    ens.forEach(c => {
+      h += `<tr><td style="text-align:left"><b>${esc(c.e.perfil || '—')}</b><br>${esc(c.els.map(corto).join(', '))}<br>${pill(c.est, c.est === 'ok' ? 'Listo' : c.est === 'bad' ? 'No asimilable' : 'Por cerrar')}<div class="note">${esc(c.motivo)}</div></td>
+        <td style="text-align:left">${esc(c.ref)}${c.fuente ? `<div class="note">${esc(c.fuente)}</div>` : ''}</td><td style="text-align:left">${c.cmp.map(esc).join('<br>')}</td>
+        <td style="text-align:left">${c.acc.length ? '<ol style="margin:0;padding-left:1.1rem">' + c.acc.map(a => `<li>${esc(a)}</li>`).join('') + '</ol>' : 'Sin acciones pendientes.'}</td></tr>`;
+    });
+    h += `</table></div>`;
+  }
+  if (calc.length) {
+    h += `<h4 style="margin:.5rem 0 .2rem">Sin protección, acreditados por cálculo (EN 1993-1-2)</h4>
+      <div style="overflow-x:auto"><table ${tbl}><tr><th>Perfil</th><th>Elementos</th><th>Exigencia</th><th>θcr</th><th>Tiempo hasta θcr</th></tr>${calc.map(c => `<tr><td style="text-align:left"><b>${esc(c.e.perfil || '—')}</b></td><td style="text-align:left">${esc(c.els.map(corto).join(', '))}</td><td class="num">F-${c.e.Freq}</td><td class="num">${c.e.thcr != null ? Math.round(c.e.thcr) + ' °C' : '—'}</td><td class="num">${c.e.tcr != null ? fmt1(c.e.tcr) + ' min' : '&gt; 150 min'}</td></tr>`).join('')}</table></div>
+      <div class="note">No hay ensayo del perfil desnudo: se presentan con la memoria de cálculo como antecedente técnico (Art. 4.3.2) y la DOM puede exigir un ensayo de laboratorio.</div>`;
+  }
+  if (sinRef.length) h += `<h4 style="margin:.5rem 0 .2rem">Sin ensayo al cual asimilarlos</h4><div style="font-size:.78rem">${porPerfil(sinRef)}</div><div class="note">Ningún producto ensayado cubre su masividad o exigencia: se resuelven cambiando el perfil o la solución (sección 4).</div>`;
+  const T = (r.techo || []).filter(t => t.sol === 'requiere' && t.cielos && t.cielos.length);
+  if (T.length) h += `<div class="note" style="margin-top:.3rem">Techumbre sin solución (${T.map(t => esc(corto(t))).join(', ')}): alternativa de cielo falso con la resistencia exigida (Art. 4.3.5 n°6; ${esc(T[0].cielos.map(c => c.cod).join(', '))}).</div>`;
+  // Lista única de lo que falta
+  const falta = [];
+  if (ens.length) {
+    if (!document.getElementById('ef_origen').value) falta.push('Definir el origen del ensayo de referencia (arriba).');
+    const pend = (r.chk || []).filter(c => c.v === 'pend').map(c => EF_CHK_CORTO[c.id] || c.txt);
+    const no = (r.chk || []).filter(c => c.v === 'no').map(c => EF_CHK_CORTO[c.id] || c.txt);
+    if (no.length) falta.push(`Antecedente no cumplido (${no.join(', ')}): corresponde ensayo o cambio de solución.`);
+    if (pend.length) falta.push(`Acreditar en «Antecedentes del informe de referencia»: ${pend.join(', ')}.`);
+    const nW = ens.filter(c => c.est === 'warn').length, nB = ens.filter(c => c.est === 'bad').length;
+    if (nB) falta.push(`${nB} perfil(es) no asimilable(s): cambiar perfil o producto.`);
+    if (nW) falta.push(`Completar «Para cerrar» de ${nW} perfil(es).`);
+  }
+  if (calc.length) falta.push('Adjuntar la memoria de cálculo de los perfiles sin protección.');
+  if (sinRef.length) falta.push(`Cambiar perfil o solución de ${sinRef.length} elemento(s) sin ensayo de referencia.`);
+  if (!G.length && !sinRef.length) h += `<p class="note" style="margin:.2rem 0 .5rem">Ningún elemento requiere asimilación: las protecciones son soluciones del Listado aplicadas dentro de su alcance.</p>`;
+  if (falta.length) h += `<div style="margin:.6rem 0 .2rem;padding:.45rem .7rem;border-left:4px solid #E0A800;background:rgba(224,168,0,.10)"><b>Para cerrar esta sección</b><ol style="margin:.2rem 0 0;padding-left:1.2rem">${falta.map(f => `<li>${esc(f)}</li>`).join('')}</ol></div>`;
+  return h;
+}
 function efResumenAccionHtml(r) {
   const E = r.elems || [];
   if (!E.length) return '<div class="note">Agregue elementos en la sección 3.</div>';
@@ -49268,11 +49360,13 @@ function renderEstudioFuego(container) {
       <div class="field-grid">
         <div class="field"><label>Origen del ensayo de referencia</label><select id="ef_origen"><option value="">— sin definir —</option><option value="nac">Nacional (NCh 935/1)</option><option value="ext">Extranjero</option></select></div>
       </div>
-      <div style="overflow-x:auto"><table class="results editable" style="width:100%;font-size:.78rem">
-        <thead><tr><th>Criterio</th><th>Referencia</th><th>Estado</th><th>Observación / antecedente</th></tr></thead>
-        <tbody id="ef_chk">${EF_CHK.map(c => `<tr><td>${esc(c[1])}</td><td class="note">${esc(c[2])}</td><td><select id="ef_chk_${c[0]}" style="min-width:122px;width:100%;font-size:.76rem"><option value="pend">Sin antecedente</option><option value="si">Cumple</option><option value="no">No cumple</option><option value="na">No aplica</option></select></td><td><input type="text" id="ef_obs_${c[0]}" style="min-width:150px;width:100%;box-sizing:border-box;font-size:.76rem"></td></tr>`).join('')}</tbody>
-      </table></div>
       <div id="ef_resAsim" style="margin-top:.6rem"></div>
+      <div id="ef_chkWrap"><h4 style="margin:.6rem 0 .3rem">Antecedentes del informe de referencia</h4>
+      <div style="overflow-x:auto"><table class="results editable" style="width:100%;font-size:.78rem">
+        <thead><tr><th>Antecedente</th><th style="width:130px">Estado</th><th>Respaldo (documento, página)</th></tr></thead>
+        <tbody id="ef_chk">${EF_CHK.map(c => `<tr><td style="text-align:left"><b>${esc(EF_CHK_CORTO[c[0]] || c[1])}</b><div class="note" style="font-size:.7rem">${esc(c[1])} (${esc(c[2])})</div></td><td><select id="ef_chk_${c[0]}" style="min-width:136px;width:100%;font-size:.76rem"><option value="pend">Sin antecedente</option><option value="si">Cumple</option><option value="no">No cumple</option><option value="na">No aplica</option></select></td><td><input type="text" id="ef_obs_${c[0]}" style="min-width:150px;width:100%;box-sizing:border-box;font-size:.76rem"></td></tr>`).join('')}</tbody>
+      </table></div></div>
+      <div id="ef_resAsimFin" style="margin-top:.5rem"></div>
       <div class="disclosure">OGUC 4.3.2: lo que no figure en el Listado Oficial se acredita con certificado de ensaye de una Institución Oficial de Control Técnico. Si un elemento no figura en el Listado ni tiene certificación, un profesional especialista puede certificar su asimilación a un tipo del Art. 4.3.3, adjuntando la certificación en el país de origen; si no es posible, el Director de Obras Municipales exige el ensaye. Listado ED17-2025, punto 7: la asimilación sigue NCh 3684/1:2022 (ensayos nacionales, estructuras de acero o madera con placas) y NCh 3684/2:2022 (ensayos extranjeros). Esta lista ordena los antecedentes; no reemplaza el texto de esas normas ni el juicio del profesional que firma.</div>
     </div>
 
@@ -49448,11 +49542,11 @@ function renderEstudioFuego(container) {
     </table>
     ${r.resist ? `<div style="overflow-x:auto;margin-top:.5rem"><table class="results"><tr><th>Elemento (OGUC 4.3.3)</th><th>Tipo ${r.tipo}</th><th>Condición (4.3.5)</th></tr>${r.resist.map(x => `<tr><td>${esc(x.elemento)}</td><td class="num">${esc(x.txt)}</td><td class="note">${esc(x.cond)}</td></tr>`).join('')}</table></div>` : ''}`;
     document.getElementById('ef_resElem').innerHTML = efResumenAccionHtml(r);
-    document.getElementById('ef_resAsim').innerHTML = `${r.techo.length ? `<h4 style="margin:.2rem 0 .3rem">Elementos de techumbre (función 9): solución del Listado o asimilación</h4>
-      <div style="overflow-x:auto"><table class="results" style="margin-bottom:.6rem"><tr><th>Elemento</th><th>Exigencia</th><th>Solución</th><th>Fundamento</th></tr>${r.techo.map(t => `<tr><td>${esc(t.nombre)}<div class="note">${esc(t.perfil)}</div></td><td class="num">${fTxt(t.Fe)}</td><td>${sp(EF_TECHO_SOL[t.sol][0], EF_TECHO_SOL[t.sol][1])}</td><td class="note">${esc(t.txt)}${t.crit.length ? '<br>' + t.crit.map(c => (c.v === 'si' ? '✓ ' : c.v === 'no' ? '✗ ' : '○ ') + esc(c.c) + ': ' + esc(c.obs)).join('<br>') : ''}</td></tr>`).join('')}</table></div>
-      <div class="note" style="margin-bottom:.6rem">Solo hay solución oficial si la techumbre se construye igual a un complejo inscrito (elíjalo en la columna «Solución de techumbre del Listado» de la sección 3). Un cielo falso con la resistencia exigida, adosado y sin instalaciones entre ambos, se declara con la excepción «Art. 4.3.5 n°6» del elemento.</div>` : ''}${r.chkAuto.length ? `<table class="results" style="margin-bottom:.5rem"><tr><th>Criterio calculado</th><th>Estado</th><th>Detalle</th></tr>${r.chkAuto.map(c => `<tr><td>${esc(c.txt)}</td><td>${c.v === 'si' ? sp('ok', 'Cumple') : (c.v === 'pend' ? sp('warn', 'Pendiente') : sp('bad', 'No cumple'))}</td><td>${esc(c.obs)}</td></tr>`).join('')}</table>` : ''}
-      <div class="verdict-row"><span>Método aplicable</span><span>${esc(r.metodo)}</span></div>
-      <div class="verdict-row"><span>Resultado</span><span>${sp(r.asim[0], r.asim[1])}</span></div>`;
+    document.getElementById('ef_resAsim').innerHTML = efAsimHtml(r);
+    document.getElementById('ef_chkWrap').style.display = r.requiereAsim ? '' : 'none';
+    { const nC = efAsimCasos(r).filter(c => c.k === 'calc').length, sinA = !r.requiereAsim;
+      document.getElementById('ef_resAsimFin').innerHTML = sinA ? `<div class="verdict-row"><span>Resultado</span><span>${sp('ok', nC ? 'Sin protecciones fuera del Listado; los perfiles sin protección se acreditan por cálculo.' : r.metodo)}</span></div>`
+        : `<div class="verdict-row"><span>Método aplicable</span><span>${esc(r.metodo)}</span></div><div class="verdict-row"><span>Resultado</span><span>${(() => { const nB = efAsimCasos(r).filter(c => c.k === 'prot' && c.est === 'bad').length; return nB ? sp('bad', `No asimilable: ${nB} perfil(es) fuera del alcance del ensayo (ver tabla). Corresponde cambiar perfil o producto, o ensayar.`) : sp(r.asim[0], r.asim[1]); })()}</span></div>`; }
     document.getElementById('ef_resGlobal').innerHTML = `<div class="global-verdict ${r.global[0] === 'ok' ? 'ok' : 'bad'}"><span class="label">ESTUDIO DE RESISTENCIA AL FUEGO</span><span class="label">${esc(r.global[1])}</span></div>
       ${(() => { const pg = r.pend.filter(q => !/^Elemento\s/.test(q.ambito)), nE = r.pend.length - pg.length;
         return (pg.length ? `<table class="results" style="margin-top:.5rem"><tr><th>Ámbito</th><th>Pendiente o dato faltante</th><th>Bloquea la conclusión</th></tr>${pg.map(q => `<tr><td>${esc(q.ambito)}</td><td>${esc(q.txt)}</td><td>${q.bloquea ? 'Sí' : 'No'}</td></tr>`).join('')}</table>` : '')
