@@ -49086,7 +49086,6 @@ function efInstruccionesHtml() {
         F-30 es alcanzable con perfiles masivos y poco cargados; F-60 solo con secciones muy macizas y poca carga; F-90 queda prácticamente descartado. Calcule μ0 con la combinación de incendio (AISC 360-16 Anexo 4, ec. A-4-1) y las cargas reales, no lo suponga. En pilares y vigas con volcamiento gobierna la inestabilidad: marque «Inestab. = Sí» y verifique la resistencia en caliente (EN 1993-1-2 §4.2.3.2 y §4.2.3.3). Clase 4: θcr = 350 °C. Una viga bajo losa expuesta por 3 caras tiene menor Am/V que expuesta por 4.
         <br><strong>Protección complementaria.</strong> Si el perfil no alcanza, la protección se dimensiona para el F completo con el perfil real: los minutos no se suman (un perfil que resiste 30 min no se completa con una protección «de 30 min» para F-60). El perfil aporta con su masividad, que reduce el espesor de tabla, y con su θcr, solo dentro del rango ensayado del producto; usar una θcr mayor que la de la tabla es un estudio de asimilación.
         <br><strong>Acreditación.</strong> El resultado de cálculo no es una solución del Listado: se presenta como antecedente técnico o estudio de asimilación (OGUC 4.3.2) y la DOM puede exigir un ensayo de laboratorio. Valide con la DOM antes de prescindir de la protección o reducir espesores. El Listado ED17-2025 no tiene pinturas intumescentes inscritas (requieren ensayo NCh 935/1), y una tabla EN 13381 no basta por sí sola en Chile. Referencia: nota técnica ING NT-FUE-01 (24-11-2026).</div>
-    </div>
 
   <h3>5. Sección 5 · Asimilación: cuándo y cómo se usa</h3>
   <p><b>Cuándo.</b> La asimilación (OGUC Art. 4.3.2; NCh 3684/1 y 3684/2:2022) se requiere cuando la protección de algún elemento no es una solución del Listado Oficial aplicada directamente: un producto que no está en el Listado o un espesor obtenido fuera de la tabla oficial (por ejemplo, una viga calculada con la tabla de otra configuración). También en techumbres (función 9) que no se construyen igual a un complejo inscrito. Si todo está cubierto por el Listado dentro de su alcance, la planilla lo indica y la sección no necesita completarse.</p>
@@ -49259,6 +49258,7 @@ function renderEstudioFuego(container) {
     <div class="panel" data-resumen="force">
       <h3>4 · Resumen de resultados</h3>
       <div id="ef_resElem"></div>
+    </div>
 
     <div class="panel">
       <h3>5 · Asimilación (OGUC 4.3.2 · NCh 3684)</h3>
