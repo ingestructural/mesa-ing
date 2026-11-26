@@ -48176,9 +48176,9 @@ function efResumenAccionHtml(r) {
     {k: 'perfil', c: 'bad', t: 'No cumplen y ningún producto los cubre', d: 'Cambiar el perfil (masividad ≤ 390 m⁻¹), revisar la función o la exigencia, o usar un producto con certificado propio.'},
     {k: 'elegir', c: 'bad', t: 'No cumplen sin protección y hay productos que los cubren', d: 'Elegir el producto en la ficha (desplegable de la cabecera) e ingresar el espesor.'},
     {k: 'insuf', c: 'bad', t: 'Protección insuficiente o fuera del alcance de su tabla', d: 'Aumentar el espesor o cambiar el producto según la cabecera de la ficha.'},
-    {k: 'calc', c: 'warn', t: 'Cumplen solo por cálculo, sin protección', d: 'Acreditar con antecedente técnico o asimilación (Art. 4.3.2); la DOM puede exigir ensayo.'},
-    {k: 'cob', c: 'warn', t: 'Protegidos con espesor suficiente, cobertura por confirmar', d: 'Cotejar la tabla con el documento original y marcar «Cobertura» en la ficha.'},
-    {k: 'datos', c: 'warn', t: 'Datos incompletos', d: 'Completar lo que indica la cabecera de la ficha.'}
+    {k: 'calc', c: 'amar', t: 'Cumplen solo por cálculo, sin protección', d: 'Acreditar con antecedente técnico o asimilación (Art. 4.3.2); la DOM puede exigir ensayo.'},
+    {k: 'cob', c: 'ok', t: 'Protegidos con el espesor que exige la tabla del producto', d: 'Solo falta un trámite de revisión: confirmar que la tabla usada (Listado o informe de ensayo) corresponde a este perfil, su posición, su exposición y el sistema ensayado, cotejarla con el documento original y marcar «Cobertura: confirmada» en la ficha. Con eso quedan «Cumple».'},
+    {k: 'datos', c: 'amar', t: 'Datos incompletos', d: 'Completar lo que indica la cabecera de la ficha.'}
   ];
   const grupo = e => {
     if (e.exento || e.Freq === 0) return 'sinexig';
@@ -48193,7 +48193,7 @@ function efResumenAccionHtml(r) {
   const cnt = c => E.filter(e => e.estado[0] === c).length;
   return `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .6rem">
       <span class="chip ok">Cumplen: ${cnt('ok')}</span><span class="chip warn">Sin verificar: ${cnt('warn')}</span><span class="chip bad">No cumplen: ${cnt('bad')}</span><span class="chip">Total: ${E.length}</span></div>
-    <table class="results" id="ef_resAccion" style="width:100%;font-size:.8rem"><tr><th style="width:30%">Situación</th><th style="width:6%">N°</th><th>Elementos (número de ficha)</th><th style="width:28%">Acción</th></tr>
+    <style>#ef_resAccion .chip.amar{background:#FFF1B8;color:#6B5200}@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) #ef_resAccion .chip.amar{background:#3B3209;color:#F2D45C}}:root[data-theme="dark"] #ef_resAccion .chip.amar{background:#3B3209;color:#F2D45C}</style><table class="results" id="ef_resAccion" style="width:100%;font-size:.8rem"><tr><th style="width:30%">Situación</th><th style="width:6%">N°</th><th>Elementos (número de ficha)</th><th style="width:28%">Acción</th></tr>
     ${G.filter(g => por[g.k]).map(g => `<tr><td><span class="chip ${g.c}">${esc(g.t)}</span></td><td class="num">${por[g.k].length}</td><td style="font-size:.74rem;line-height:1.45">${por[g.k].map(nom).join('<br>')}</td><td class="note">${esc(g.d)}</td></tr>`).join('')}
     </table><div class="note" style="margin-top:.4rem">El detalle de cada elemento (cálculo, motivo y productos alternativos) está en la cabecera de su ficha, en la sección 3.</div>`;
 }
@@ -49225,8 +49225,8 @@ function renderEstudioFuego(container) {
         /* 3: cada elemento se muestra como una ficha con sus campos rotulados, sin desplazamiento horizontal */
         table.ef-lista, table.ef-lista tbody{display:block;width:100%}
         table.ef-lista thead{display:none}
-        table.ef-lista tbody tr{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.35rem .5rem;padding:.55rem .6rem;margin:0 0 .55rem;border:1px solid var(--line);border-radius:6px;background:transparent}
-        table.ef-lista tbody td{display:flex;flex-direction:column;justify-content:flex-end;padding:0;border:0;min-width:0}
+        table.ef-lista tbody tr{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:.25rem .3rem;padding:.55rem .6rem;margin:0 0 .55rem;border:1px solid var(--line);border-radius:6px;background:transparent}
+        table.ef-lista tbody td{display:flex;flex-direction:column;justify-content:flex-end;padding:0;border:0;min-width:0;grid-column:span var(--sp,1)}
         table.ef-lista tbody td::before{content:attr(data-l);font-size:.64rem;font-weight:600;letter-spacing:.02em;color:var(--ink-muted);margin-bottom:.12rem;line-height:1.2}
         table.ef-lista tbody td.ef-w2{grid-column:span 2}
         table.ef-lista tbody td.ef-cab{grid-column:1 / -1;display:block;padding:.45rem .6rem;margin:-.1rem 0 .2rem;border-radius:5px;background:var(--surface-alt);font-size:.8rem;line-height:1.45}
@@ -49242,11 +49242,11 @@ function renderEstudioFuego(container) {
         @media print{table.ef-lista tbody td.ef-cab{background:none !important;border:1px solid #999}}
         table.ef-lista tbody td.ef-w3{grid-column:span 3}
         table.ef-lista tbody td[data-role="n"]{font-weight:700;justify-content:center}
-        table.ef-lista input, table.ef-lista select{font-size:.78rem !important;padding:.22rem .26rem !important;width:100%;min-width:0 !important;box-sizing:border-box}
+        table.ef-lista input, table.ef-lista select{font-size:.7rem !important;font-family:'IBM Plex Sans',Arial,sans-serif !important;letter-spacing:0 !important;text-align:left !important;text-overflow:clip;padding:.22rem .26rem !important;width:100%;min-width:0 !important;box-sizing:border-box}
         table.ef-lista tbody tr{position:relative;padding-right:2.4rem}
         table.ef-lista tbody td:last-child{position:absolute;top:.55rem;right:.45rem}
         table.ef-lista tbody td:last-child::before{content:none}
-        @media (max-width:620px){table.ef-lista tbody tr{grid-template-columns:repeat(2,minmax(0,1fr))} table.ef-lista tbody td.ef-w3{grid-column:span 2}}
+        @media (max-width:620px){table.ef-lista tbody tr{grid-template-columns:repeat(2,minmax(0,1fr))} table.ef-lista tbody td{grid-column:span 1} table.ef-lista tbody td.ef-nom, table.ef-lista tbody td.ef-cab{grid-column:1 / -1}}
       </style>
       <div>
       <table class="results editable ef-lista">
@@ -49352,8 +49352,10 @@ function renderEstudioFuego(container) {
       <td><select data-f="techo" style="min-width:150px">${efTechoOpts()}</select></td>
       <td><button type="button" class="btn-remove" title="Eliminar">✕</button></td>`;
     const rot = Array.from(body.closest('table').querySelectorAll('thead th')).map(th => th.textContent.trim());
-    const ancho = {nombre: 'ef-w3', f1: 'ef-w2', f2: 'ef-w2', excResp: 'ef-w2', desig: 'ef-w2', expo: 'ef-w2', prot: 'ef-w2', refDoc: 'ef-w2', techo: 'ef-w2'};   // ficha de 6 columnas: 7 renglones completos
-    Array.from(tr.children).forEach((td, i) => { td.dataset.l = rot[i] || ''; const f = td.querySelector('[data-f]'); if (f && ancho[f.dataset.f]) td.classList.add(ancho[f.dataset.f]); });
+    // ficha de 12 columnas, renglones completos y anchos holgados para que ningún texto quede cortado
+    const ancho = {nombre: 11, f1: 4, f2: 4, Fmanual: 2, exc: 2, excResp: 3, origen: 2, desig: 4, tipo: 3, h: 2, b: 2, tw: 2, tf: 2, r: 2, A: 2,
+      orient: 2, bajoLosa: 2, caras: 2, expo: 3, solic: 3, Fy: 2, mu: 2, muSimp: 3, thcrExt: 3, inest: 2, prot: 5, espCert: 2, espProp: 2, cob: 3, refDoc: 8, techo: 4};
+    Array.from(tr.children).forEach((td, i) => { td.dataset.l = rot[i] || ''; const f = td.querySelector('[data-f]'); const k = f ? f.dataset.f : (td.dataset.role === 'n' ? 'n' : ''); td.style.setProperty('--sp', ancho[k] || 1); if (['nombre', 'f1', 'f2', 'desig', 'prot', 'refDoc', 'techo', 'excResp'].includes(k)) td.classList.add('ef-nom'); });
     const cab = document.createElement('td'); cab.className = 'ef-cab'; cab.dataset.role = 'cab'; tr.insertBefore(cab, tr.firstChild);
     body.appendChild(tr);
     if (pre && pre.ejemplo) tr.dataset.ejemplo = '1';
