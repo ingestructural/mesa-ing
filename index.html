@@ -49108,9 +49108,9 @@ function renderEstudioFuego(container) {
     efNuevoLimpiar();
   });
 
-  // La planilla abre en blanco (una fila vacía de material y otra de elemento), sin casos de ejemplo.
+  // La planilla abre en blanco: una fila vacía de material y ningún elemento de acero (una fila de elemento siempre
+  // trae un perfil seleccionado y aparecería como «Elemento 1» en los resultados). Sin casos de ejemplo.
   addMat();
-  addRow();
   recalc();
 }
 
