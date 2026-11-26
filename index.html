@@ -46841,11 +46841,24 @@ function efCabecera(e) {
   let prot;
   if (e.exento || e.Freq === 0) prot = 'No requiere protección';
   else if (e.prot !== 'ninguna') prot = `Protección: ${P.corto || P.nombre || e.prot}${e.espProp != null ? ' · ' + e.espProp + ' ' + (e.espU || P.u || '') : ''}${e.espReq != null ? ' (mínimo ' + e.espReq + ' ' + e.espU + ')' : ''}${e.cob !== 'si' ? ' · cobertura por confirmar' : ''}`;
-  else if (e.tcr != null && e.Freq > 0 && e.tcr < e.Freq) prot = `Sin protección: resiste ${fmt1(e.tcr)} min < F-${e.Freq}` + (e.alternativas && e.alternativas.length ? ' · hay productos que lo cubren (sección 4)' : ' · ningún producto considerado cubre el perfil');
+  else if (e.tcr != null && e.Freq > 0 && e.tcr < e.Freq) prot = `Sin protección: resiste ${fmt1(e.tcr)} min < F-${e.Freq}` + (e.alternativas && e.alternativas.length ? ' · hay productos que lo cubren (ver abajo)' : ' · ningún producto considerado cubre el perfil');
   else if (e.tcr != null || (e.curva && e.thcr != null)) prot = 'Sin protección: alcanza la exigencia solo por cálculo (antecedente técnico o asimilación)';
   else prot = 'Sin protección asignada';
   const motivo = String(e.estado[1]).replace(/^[^—]+— /, '');
-  return {cls: e.estado[0], html: `<div class="ef-cab-l1">${esc(e.estadoCorto)} · Exigencia ${esc(F)} · ${esc(prot)}</div><div class="ef-cab-l2">${esc(motivo)}</div>`};
+  // línea de cálculo: masividad, clase, temperatura crítica y tiempo sin protección
+  const calc = [];
+  if (e.F4 != null && isFinite(e.F4)) calc.push(`Am/V 4 caras ${Math.round(e.F4)} m⁻¹${e.F != null && Math.abs(e.F - e.F4) > 0.5 ? ' (usado ' + Math.round(e.F) + ')' : ''}${e.ksh != null && e.ksh < 0.999 ? ', ksh ' + fmt2(e.ksh) : ''}`);
+  if (e.cls) calc.push(e.clase4 ? 'sección clase 4' : 'sección clase 1-3');
+  if (e.metodoCr === 'inestabilidad') calc.push('gobierna la inestabilidad (EN 1993-1-2 §4.2.3)');
+  else if (e.thcr != null) calc.push(`θcr ${Math.round(e.thcr)} °C${e.metodoCr === 'externo' ? (e.deRam ? ' (modelo RAM)' : ' (ingresada)') : (e.mu != null ? ' (μ0 ' + fmt2(e.mu) + ')' : '')}`);
+  if (e.thcr != null && e.metodoCr !== 'inestabilidad' && e.curva) calc.push(e.tcr != null ? `sin protección llega a θcr a los ${fmt1(e.tcr)} min` : 'sin protección no llega a θcr en 150 min');
+  if (e.espReq != null && e.prot !== 'ninguna') calc.push(`espesor requerido ${e.espTxt}${e.espInfo && e.espInfo.por ? ' (' + e.espInfo.por + ')' : ''}`);
+  const sp = efSinProt(e);
+  const spTxt = !sp || e.exento ? '' : (sp.k === 'exime' ? (e.prot !== 'ninguna' ? `Por cálculo alcanzaría F-${e.Freq} sin protección: podría prescindirse de ella acreditándolo con antecedente técnico o asimilación (Art. 4.3.2); la DOM puede exigir ensayo.` : 'Para no protegerlo se acredita con antecedente técnico o asimilación (Art. 4.3.2); la DOM puede exigir ensayo.')
+    : (sp.k === 'complementa' && e.prot !== 'ninguna' ? `La protección se dimensiona para los ${e.Freq} min completos; los minutos que resiste el perfil solo no se descuentan.` : ''));
+  const alts = (e.estado[0] === 'bad' && e.Freq > 0 && e.alternativas && e.alternativas.length)
+    ? `<details class="ef-cab-alt"><summary>Productos que cubren este elemento (${e.alternativas.length})</summary><ul>${e.alternativas.map(a => `<li>${esc(EF_PROT[a.k].nombre)}: <b>${esc(a.txt)}</b> · ${EF_PROT[a.k].listado ? 'Listado ED17-2025' : 'informe de ensayo, no inscrito en el Listado'}</li>`).join('')}</ul>${e.prot !== 'ninguna' && e.espReq != null ? `<div>Con el producto actual basta un espesor de ${esc(e.espTxt)}.</div>` : ''}Para adoptar uno, elíjalo en «Protección» e ingrese el espesor propuesto.</details>` : '';
+  return {cls: e.estado[0], html: `<div class="ef-cab-l1">${esc(e.estadoCorto)} · Exigencia ${esc(F)} · ${esc(prot)}</div>${calc.length && !e.exento && e.Freq !== 0 ? `<div class="ef-cab-l3">${esc(calc.join(' · '))}</div>` : ''}${(() => { const m = e.prot === 'ninguna' && sp && !e.exento ? '' : motivo; const t = [m, spTxt].filter(Boolean).join(' '); return t ? `<div class="ef-cab-l2">${esc(t)}</div>` : ''; })()}${alts}`};
 }
 // Apartado de la memoria con la evaluación del Art. 4.3.26 (solo si el proyectista la pidió).
 function efEx4326Mem(r) {
@@ -47255,7 +47268,7 @@ function calcEstudioFuego(inp) {
     r.av = []; r.avP = [];
     const av = (web, imp) => { r.av.push(web); r.avP.push(imp || web); };
     if (r.sobre390) av('Masividad a 4 caras > 390 m⁻¹ (Listado Oficial ED17-2025, punto 3).', 'Masividad a 4 caras superior a 390 m⁻¹, límite del Listado Oficial ED17-2025 (punto 3).');
-    if (r.metodoCr === 'externo') av(r.deRam ? `θcr = ${Math.round(r.thExt)} °C del modelo RAM Elements (sección 3b): menor θcr del grupo.` : `θcr = ${Math.round(r.thExt)} °C ingresada (análisis externo).`, r.deRam ? `Temperatura crítica θcr = ${Math.round(r.thExt)} °C obtenida del modelo RAM Elements (Anexo A), la menor de los miembros del grupo.` : `Temperatura crítica θcr = ${Math.round(r.thExt)} °C informada por el proyectista a partir de un análisis externo.`);
+    if (r.metodoCr === 'externo') av(r.deRam ? `θcr = ${Math.round(r.thExt)} °C del modelo RAM Elements (importación de la sección 3): menor θcr del grupo.` : `θcr = ${Math.round(r.thExt)} °C ingresada (análisis externo).`, r.deRam ? `Temperatura crítica θcr = ${Math.round(r.thExt)} °C obtenida del modelo RAM Elements (Anexo A), la menor de los miembros del grupo.` : `Temperatura crítica θcr = ${Math.round(r.thExt)} °C informada por el proyectista a partir de un análisis externo.`);
     if (r.muSimp && r.metodoCr === 'ec422') av(`μ0 simplificado = ηfi·γM,fi/γM0 = ${fmt2(r.muSimp)} (EN 1993-1-2 §4.2.4(4)): viga sin volcamiento.`, `Grado de utilización simplificado μ0 = ηfi·γM,fi/γM0 = ${fmt2(r.muSimp)} (EN 1993-1-2 §4.2.4(4); ηfi según §2.4.2(3)), aplicable a vigas sin volcamiento.`);
     if (r.muSimpNo) av('μ0 simplificado no aplicado: EN 1993-1-2 §4.2.4(4) lo permite solo en vigas sin volcamiento (solicitación «Flexión» e «Inestab.» = No) y en elementos en tracción. Elija «No» e ingrese μ0.', 'El grado de utilización simplificado de EN 1993-1-2 §4.2.4(4) no es aplicable a este elemento (solo vigas sin volcamiento y elementos en tracción); μ0 debe calcularse.');
     if (r.mu != null && r.mu < 0.013 && r.metodoCr === 'ec422') av('μ0 < 0,013: se usa 0,013 (EN 1993-1-2 §4.2.4).', 'μ0 inferior a 0,013: se adopta 0,013 (EN 1993-1-2 §4.2.4).');
@@ -48054,7 +48067,7 @@ function efRevisionHtml(inp, r, meta) {
     const c = E.filter(e => !e.exento && e.funcs && e.funcs.includes(8) && !e.funcs.some(f => f !== 8 && f !== 9 && T[f - 1] != null && T[f - 1] > T[8]) && e.Freq > T[8]);
     if (c.length) M.push({tit: `Revisar la función asignada a los elementos de techumbre: (9) F-${T[8]} en vez de (8) F-${T[7]}`, imp: 3, costo: 2,
       sit: `${c.length} elemento(s) están clasificados como (8) elementos soportantes horizontales, con F-${T[7]} en el tipo ${tipo}. Si forman parte de la estructura de techumbre y no soportan pisos ni elementos de mayor exigencia, corresponde la función (9) Techumbre incluido cielo falso, con F-${T[8]}. La reducción de la exigencia baja el espesor de protección${c.filter(e => e.tcr != null && e.tcr >= T[8] && e.tcr < e.Freq).length ? ' y, con F-' + T[8] + ', alcanzarían la exigencia sin protección por cálculo: ' + c.filter(e => e.tcr != null && e.tcr >= T[8] && e.tcr < e.Freq).map(nom).join('; ') : ''}.`,
-      acc: ['Confirmar en planos que estos elementos solo soportan la cubierta, y reasignar su función en la sección 3 o 3b.', 'Mantener la función (8) en vigas que soporten entrepisos, altillos o equipos que deban permanecer en pie.'], el: c});
+      acc: ['Confirmar en planos que estos elementos solo soportan la cubierta, y reasignar su función en la sección 3 (ficha o tabla de grupos RAM).', 'Mantener la función (8) en vigas que soporten entrepisos, altillos o equipos que deban permanecer en pie.'], el: c});
   }
 
   // 3. Cielo falso o elemento interpuesto
@@ -48091,7 +48104,7 @@ function efRevisionHtml(inp, r, meta) {
   const muDef = E.filter(e => !e.exento && e.Freq > 0 && e.metodoCr !== 'externo' && e.mu == null && !e.clase4 && e.tcr != null && e.tcr < e.Freq);
   if (muDef.length) M.push({tit: 'Calcular el grado de utilización μ0 de cada elemento', imp: 1, costo: 2,
     sit: `${muDef.length} elemento(s) usan el valor por defecto de μ0. Un μ0 calculado con las solicitaciones de incendio suele ser menor, lo que eleva la temperatura crítica y reduce el espesor de protección.`,
-    acc: ['Cargar el modelo de cálculo (sección 3b) o ingresar μ0 por elemento.'], el: muDef});
+    acc: ['Cargar el modelo RAM en la sección 3 o ingresar μ0 por elemento.'], el: muDef});
 
   // 9. Coberturas pendientes
   const cob = E.filter(e => !e.exento && e.prot !== 'ninguna' && e.cob !== 'si');
@@ -48152,6 +48165,38 @@ function efRevisionHtml(inp, r, meta) {
   return memFinalizar(html);
 }
 
+// Sección 4: resumen por acción. Cada elemento aparece una sola vez, en el grupo de la acción que necesita;
+// el detalle de cada uno está en la cabecera de su ficha (sección 3).
+function efResumenAccionHtml(r) {
+  const E = r.elems || [];
+  if (!E.length) return '<div class="note">Agregue elementos en la sección 3.</div>';
+  const G = [
+    {k: 'sinexig', c: 'ok', t: 'Sin exigencia de resistencia al fuego', d: 'No requieren protección.'},
+    {k: 'ok', c: 'ok', t: 'Cumplen', d: 'Verificación completa.'},
+    {k: 'perfil', c: 'bad', t: 'No cumplen y ningún producto los cubre', d: 'Cambiar el perfil (masividad ≤ 390 m⁻¹), revisar la función o la exigencia, o usar un producto con certificado propio.'},
+    {k: 'elegir', c: 'bad', t: 'No cumplen sin protección y hay productos que los cubren', d: 'Elegir el producto en la ficha (desplegable de la cabecera) e ingresar el espesor.'},
+    {k: 'insuf', c: 'bad', t: 'Protección insuficiente o fuera del alcance de su tabla', d: 'Aumentar el espesor o cambiar el producto según la cabecera de la ficha.'},
+    {k: 'calc', c: 'amar', t: 'Cumplen solo por cálculo, sin protección', d: 'Acreditar con antecedente técnico o asimilación (Art. 4.3.2); la DOM puede exigir ensayo.'},
+    {k: 'cob', c: 'ok', t: 'Protegidos con el espesor que exige la tabla del producto', d: 'Solo falta un trámite de revisión: confirmar que la tabla usada (Listado o informe de ensayo) corresponde a este perfil, su posición, su exposición y el sistema ensayado, cotejarla con el documento original y marcar «Cobertura: confirmada» en la ficha. Con eso quedan «Cumple».'},
+    {k: 'datos', c: 'amar', t: 'Datos incompletos', d: 'Completar lo que indica la cabecera de la ficha.'}
+  ];
+  const grupo = e => {
+    if (e.exento || e.Freq === 0) return 'sinexig';
+    if (e.estado[0] === 'ok') return 'ok';
+    if (e.estado[0] === 'bad') return e.prot !== 'ninguna' ? 'insuf' : ((e.alternativas || []).length ? 'elegir' : 'perfil');
+    if (e.prot === 'ninguna' && (efSinProt(e) || {}).k === 'exime') return 'calc';
+    if (e.prot !== 'ninguna' && e.tablaSuf) return 'cob';
+    return 'datos';
+  };
+  const por = {}; E.forEach((e, i) => { (por[grupo(e)] = por[grupo(e)] || []).push(i); });
+  const nom = i => `<b>${i + 1}</b> ${esc(E[i].nombre.replace(/^\[RAM\]\s*/, '').replace(/\s+—\s+.*$/, ''))}`;
+  const cnt = c => E.filter(e => e.estado[0] === c).length;
+  return `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .6rem">
+      <span class="chip ok">Cumplen: ${cnt('ok')}</span><span class="chip warn">Sin verificar: ${cnt('warn')}</span><span class="chip bad">No cumplen: ${cnt('bad')}</span><span class="chip">Total: ${E.length}</span></div>
+    <style>#ef_resAccion .chip.amar{background:#FFF1B8;color:#6B5200}@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) #ef_resAccion .chip.amar{background:#3B3209;color:#F2D45C}}:root[data-theme="dark"] #ef_resAccion .chip.amar{background:#3B3209;color:#F2D45C}</style><table class="results" id="ef_resAccion" style="width:100%;font-size:.8rem"><tr><th style="width:30%">Situación</th><th style="width:6%">N°</th><th>Elementos (número de ficha)</th><th style="width:28%">Acción</th></tr>
+    ${G.filter(g => por[g.k]).map(g => `<tr><td><span class="chip ${g.c}">${esc(g.t)}</span></td><td class="num">${por[g.k].length}</td><td style="font-size:.74rem;line-height:1.45">${por[g.k].map(nom).join('<br>')}</td><td class="note">${esc(g.d)}</td></tr>`).join('')}
+    </table><div class="note" style="margin-top:.4rem">El detalle de cada elemento (cálculo, motivo y productos alternativos) está en la cabecera de su ficha, en la sección 3.</div>`;
+}
 // Mejora (solo vista web, no se imprime): para cada elemento que no cumple o queda fuera del rango ensayado,
 // lista los productos del catálogo que sí cubren su exigencia, con el espesor requerido.
 function efMejoraHtml(r) {
@@ -48791,23 +48836,30 @@ const EF_TECHO_SOL = {oficial: ['ok', 'Solución oficial del Listado'], 'listado
 /* ---------- Panel web del módulo RAM ---------- */
 function efrPanelHtml() {
   return `<style>
-      /* 3b: tablas compactas y panel más ancho que la columna de la planilla cuando la pantalla lo permite */
+      /* 3 (importación RAM): tablas compactas y panel más ancho que la columna de la planilla cuando la pantalla lo permite */
       #efr_panel table.results{width:100%;font-size:.76rem}
       #efr_panel table.results th{font-size:.68rem;padding:.35rem .3rem}
       #efr_panel table.results td{padding:.25rem .3rem}
       #efr_panel table.results select{font-size:.74rem;padding:.15rem .2rem;width:auto;max-width:100%}
       #efr_panel table.results select[data-efr-c="f1"], #efr_panel table.results select[data-efr-c="f2"]{width:100%;min-width:138px}
       #efr_panel table.results .chip{font-size:.68rem;white-space:normal;display:inline-block;margin:.05rem 0}
+      #efr_grpTbl select{min-width:0 !important;width:100%}
+      #efr_grpTbl select[data-efr-c="f1"]{min-width:128px !important}
+      #efr_grpTbl select[data-efr-c="f2"]{min-width:84px !important}
+      #efr_grpTbl select[data-efr-c="caras"], #efr_grpTbl select[data-efr-c="plt"]{width:auto}
+      #efr_grpTbl td[data-efr-rc="res"] .chip{white-space:nowrap}
       @media (min-width:1800px){#efr_panel{margin-right:calc(-1*min(300px, 100vw - 1790px))}}   /* sin pasar bajo la barra fija de la derecha */
     </style><div class="panel" id="efr_panel" data-fs-extra="efram">
-      <h3>3b · Grado de utilización desde el modelo RAM Elements (opcional)</h3>
+      <h3>3 · Elementos de acero — importar desde el modelo RAM Elements (opcional)</h3>
       <div class="note" style="margin-bottom:.6rem">Úselo solo si no cuenta con el grado de utilización en incendio calculado por otra vía. Cargue el .zip del modelo de RAM Elements (o el archivo .retx de la versión 25 o el .etz de versiones anteriores). La planilla arma las combinaciones de incendio AISC 360-16 Anexo 4 (1,2D + 0,5L + 0,2S y 0,9D + 0,5L + 0,2S) con los estados que asigne como D, L y S, calcula μ0 y la temperatura crítica de cada miembro (EN 1993-1-2: ec. 4.22, pandeo ec. 4.21a, volcamiento ec. 4.21b, clase 4 a 350 °C) y, con la exigencia de la función que indique para cada grupo (Art. 4.3.3), separa los miembros que alcanzan su F sin protección de los que requieren protección. «Incorporar a la sección 3» crea un elemento por grupo y resultado, con su θcr. Volcamiento: «Calcular» usa C1 = 1,0, carga en el ala superior en vigas y Lb = K·L del miembro; elija «Impedido» solo si el ala comprimida está arriostrada en forma continua (por ejemplo, por una losa).</div>
       <div class="field-grid">
         <div class="field" style="grid-column:1/-1"><label>Modelo RAM Elements (.zip, .retx o .etz)</label><input type="file" id="efr_file" accept=".zip,.retx,.etz" style="width:100%;max-width:none;min-width:0;font-size:.85rem;box-sizing:border-box"></div>
       </div>
       <div id="efr_msg" class="note" style="margin:.4rem 0"></div>
+      <div id="efr_resumen" class="note" style="margin:.4rem 0;font-size:.85rem" hidden></div>
+      <details id="efr_det" open><summary id="efr_detSum" style="cursor:pointer;font-weight:600;margin:.3rem 0" hidden>Configuración y resultado por grupo</summary>
       <div id="efr_cfg"></div>
-      <div id="efr_res"></div>
+      <div id="efr_res"></div></details>
     </div>`;
 }
 function efrCfgHtml(M, cfg) {
@@ -48831,12 +48883,13 @@ function efrCfgHtml(M, cfg) {
     </div></div>
     ${(() => { const sinF = grupos.filter(g => !+((cfg.grupos[g.key] || {}).f1 != null ? cfg.grupos[g.key].f1 : (efrOrient(g.b.cosV) === 'pilar' ? 5 : (efrOrient(g.b.cosV) === 'viga' ? 8 : 0)))); return sinF.length ? `<div class="note" style="margin:.5rem 0 .3rem;color:#9a3412"><b>${sinF.length} grupo(s) sin función asignada</b> (${sinF.map(g => 'G' + (grupos.indexOf(g) + 1)).join(', ')}): sin función no hay exigencia F y el estudio no puede concluir sobre ellos. Asígneles la función que cumplen (por ejemplo, las diagonales del sistema que soporta a un elemento horizontal o vertical).</div>` : ''; })()}
     <div class="note" style="margin:.5rem 0 .3rem">La sobrecarga de techo Lr, el viento y el sismo no forman parte de la combinación de incendio (AISC 360-16 Anexo 4 §4.1.4). Función de cada grupo según el Art. 4.3.3: los elementos de techumbre van en la columna (9).</div>
-    <div style="overflow-x:auto"><table class="results"><tr><th>G</th><th>Grupo RAM</th><th>Sección</th><th>Orientación</th><th>N°</th><th>Función principal</th><th>Función adicional</th><th>Exposición</th><th>Volcamiento</th></tr>
+    <div style="overflow-x:auto"><table class="results" id="efr_grpTbl"><tr><th>G</th><th>Grupo · sección</th><th>N°</th><th>Función principal</th><th>Función adicional</th><th>Exposición</th><th>Volcamiento</th><th>θcr mín. (°C)</th><th>t sin prot. (min)</th><th>Resultado del cálculo</th></tr>
       ${grupos.map((g, i) => { const c = Object.assign({f1: efrOrient(g.b.cosV) === 'pilar' ? 5 : (efrOrient(g.b.cosV) === 'viga' ? 8 : 0), f2: 0, caras: '4', plt: 'calc'}, cfg.grupos[g.key] || {}); const s = M.secciones[g.b.secc.toUpperCase()];
-        return `<tr><td class="num">${i + 1}</td><td>${esc(g.b.grupo || '—')}</td><td>${esc(g.b.secc)}${s && s.err ? `<div class="note">${esc(s.err)}</div>` : ''}</td><td>${EFR_ORIENT_C[efrOrient(g.b.cosV)]}</td><td class="num">${g.n}</td>
-          <td><select data-efr-g="${esc(g.key)}" data-efr-c="f1" style="min-width:138px;width:100%">${funcOpts(c.f1)}</select></td><td><select data-efr-g="${esc(g.key)}" data-efr-c="f2" style="min-width:138px;width:100%">${funcOpts(c.f2)}</select></td>
+        return `<tr><td class="num">${i + 1}</td><td>${esc(g.b.grupo || '—')} · ${esc(g.b.secc)}<div class="note">${EFR_ORIENT_C[efrOrient(g.b.cosV)]}</div>${s && s.err ? `<div class="note">${esc(s.err)}</div>` : ''}</td><td class="num">${g.n}</td>
+          <td><select data-efr-g="${esc(g.key)}" data-efr-c="f1">${funcOpts(c.f1)}</select></td><td><select data-efr-g="${esc(g.key)}" data-efr-c="f2">${funcOpts(c.f2)}</select></td>
           <td>${sel('caras', g.key, c.caras, [['4', '4 caras'], ['3', '3 caras (losa)']])}</td>
-          <td>${s && (s.tipo === 'I-H' || s.tipo === 'U') ? sel('plt', g.key, c.plt, [['calc', 'Calcular'], ['si', 'Impedido']]) : '<span class="note">No aplica</span>'}</td></tr>`; }).join('')}
+          <td>${s && (s.tipo === 'I-H' || s.tipo === 'U') ? sel('plt', g.key, c.plt, [['calc', 'Calcular'], ['si', 'Impedido']]) : '<span class="note">No aplica</span>'}</td>
+          <td class="num" data-efr-res="${esc(g.key)}" data-efr-rc="th">—</td><td class="num" data-efr-res="${esc(g.key)}" data-efr-rc="t">—</td><td data-efr-res="${esc(g.key)}" data-efr-rc="res"></td></tr>`; }).join('')}
     </table></div>`;
 }
 function efrResHtml(M, R) {
@@ -48844,12 +48897,6 @@ function efrResHtml(M, R) {
   const chip = (c, t) => `<span class="chip ${c}">${esc(t)}</span>`;
   const estC = {exime: 'ok', prot: 'warn', pend: 'warn', nores: 'bad', sinexig: 'ok', sinsec: 'bad', sinF: 'warn'};
   return `${R.errs.length ? `<div class="note" style="color:var(--bad,#c0392b)">${R.errs.map(esc).join('<br>')}</div>` : ''}
-    <h4 style="margin:.8rem 0 .3rem">Resultado por grupo</h4>
-    <div style="overflow-x:auto"><table class="results"><tr><th>G</th><th>Grupo / sección</th><th>F</th><th>ksh·Am/V (m⁻¹)</th><th>μ0 máx.</th><th>θcr mín. (°C)</th><th>t sin prot. con θcr mín. (min)</th><th>Miembros</th></tr>
-      ${R.grupos.map(g => `<tr><td class="num">${g.n}</td><td>${esc(g.grupo)} · ${esc(g.secc)}<div class="note">${EFR_ORIENT_C[g.orient]}</div></td><td class="num">${g.F == null ? '—' : (g.F ? 'F-' + g.F : 'Sin exigencia')}</td>
-        <td class="num">${g.Am ? n(g.ksh*g.Am, 1) : '—'}</td><td class="num">${n(g.muMax, 3)}</td><td class="num">${n(g.thMin, 0)}</td><td class="num">${g.thMin != null ? (g.tcrMin != null ? n(g.tcrMin, 1) : '> 150') : '—'}</td>
-        <td>${g.err ? chip('bad', g.err) : Object.keys(g.cuenta).map(k => chip(estC[k], `${EFR_EST[k]}: ${g.cuenta[k]}`)).join(' ')}</td></tr>`).join('')}
-    </table></div>
     ${R.avisos.length ? `<div class="note" style="margin-top:.4rem">${R.avisos.map(esc).join('<br>')}</div>` : ''}
     <div style="margin:.6rem 0"><button type="button" class="print-btn" id="efr_incorporar">Incorporar a la sección 3 (reemplaza los elementos [RAM] anteriores)</button>
       <div class="note" style="margin-top:.3rem">La protección y su espesor se asignan al incorporar, con el producto elegido arriba, solo a los grupos que por cálculo no alcanzan su F sin protección. Defina antes el tipo de edificio y la función de cada grupo; si los cambia, vuelva a incorporar.</div></div>
@@ -49008,20 +49055,21 @@ function efInstruccionesHtml() {
     <li><b>Sección 1 · Carga combustible.</b> Ingrese cada material con su masa, poder calorífico y fuente. La planilla calcula la carga total, la densidad media y la densidad puntual en la ventana de 2×2 m más cargada.</li>
     <li><b>Sección 2 · Tipo de edificio.</b> Con pisos, superficie, ocupantes y destino aplica las tablas del Art. 4.3.4 y adopta el tipo más exigente (a, b, c o d). Sin tipo no hay exigencia F y el estudio no concluye.</li>
     <li><b>Sección 3 · Elementos de acero.</b> Agregue cada elemento con «+ Agregar elemento» y complete su ficha: función principal (y adicional si la tiene), perfil, orientación, caras expuestas, exposición, solicitación, Fy y <b>μ0</b> (ver punto 4). Si va protegido, elija el producto, el espesor propuesto, la referencia documental y marque la cobertura como «Confirmada» cuando la tabla del informe cubra esa sección, orientación y exposición.</li>
-    <li><b>Sección 4 · Resultados por elemento.</b> La planilla fija la exigencia F, calcula la masividad (Am/V), la clase de la sección, la temperatura crítica θcr, los minutos que resiste sin protección y el espesor requerido por el producto. El estado indica si cumple, no cumple o qué falta.</li>
+    <li><b>Resultado de cada elemento.</b> Aparece en la cabecera de su ficha: estado, exigencia F y protección; masividad (Am/V), clase de la sección, temperatura crítica θcr, minutos que resiste sin protección y espesor requerido; el motivo o lo que falta y, si no cumple, los productos que lo cubren.</li>
+    <li><b>Sección 4 · Resumen de resultados.</b> Agrupa los elementos por la acción que necesitan (cumplen, cambiar perfil, elegir protección, confirmar cobertura, acreditar por cálculo). Cada elemento aparece una sola vez.</li>
     <li><b>Sección 5 · Asimilación.</b> Se completa solo cuando corresponde (ver punto 5).</li>
     <li><b>Sección 6 · Resultado global.</b> Resume el estado del estudio y lista los pendientes que bloquean la conclusión.</li>
     <li><b>Sección 7 · Memoria.</b> Complete los antecedentes del proyecto y genere la memoria imprimible; sale de los mismos datos y resultados.</li>
   </ol>
 
-  <h3>3. Funcionamiento con modelo RAM (sección 3b)</h3>
+  <h3>3. Funcionamiento con modelo RAM (importación de la sección 3)</h3>
   <ol>
     <li>Cargue el zip del modelo (RAM Elements .retx o versiones anteriores .etz). La planilla lee perfiles, barras, materiales y los esfuerzos de cada estado de carga.</li>
     <li>Agrupa los miembros por grupo RAM, perfil y orientación, y calcula μ0 de cada miembro con la combinación de incendio de AISC 360-16 Anexo 4 (1,2D + 0,5L + 0,2S y 0,9D + 0,5L + 0,2S). La sobrecarga de techo Lr, el viento y el sismo no entran en esa combinación.</li>
     <li>Con μ0 obtiene la temperatura crítica de cada miembro, considerando la clase de la sección, el pandeo y el volcamiento, y conserva la menor de cada grupo.</li>
     <li>Propone la función: pilares (5) y vigas (8). Los miembros inclinados (diagonales, cuerdas de cerchas) quedan sin función: asígnela usted en la tabla de grupos. Revise también el factor K, las caras expuestas y el Fy de los miembros sin material legible.</li>
-    <li>Revise la tabla «Resultado por grupo» y pulse <b>«Incorporar a la sección 3»</b>. Cada grupo pasa a ser un elemento [RAM] con su θcr; a los que requieren protección se les asigna el producto con menor espesor que los cubre (Listado primero) y su referencia.</li>
-    <li>Después de incorporar, revise en la sección 3 la orientación, la exposición, la condición bajo losa y confirme la cobertura de cada elemento protegido. Las secciones 1, 2, 5, 6 y 7 se completan igual que sin RAM.</li>
+    <li>La misma tabla de grupos muestra el resultado del cálculo de cada grupo (θcr mínima, minutos sin protección y cuántos miembros requieren protección). Revísela y pulse <b>«Incorporar a la sección 3»</b>. Cada grupo pasa a ser un elemento [RAM] con su θcr; a los que requieren protección se les asigna el producto con menor espesor que los cubre (Listado primero) y su referencia.</li>
+    <li>Después de incorporar, revise en la sección 3 la orientación, la exposición, la condición bajo losa y confirme la cobertura de cada elemento protegido. La tabla de grupos queda plegada; se abre para cambiar la configuración y volver a incorporar. Las secciones 1, 2, 5, 6 y 7 se completan igual que sin RAM.</li>
   </ol>
 
   <h3>4. Grado de utilización μ0</h3>
@@ -49031,6 +49079,13 @@ function efInstruccionesHtml() {
     <li>Si μ0 queda en blanco no se asume ningún valor: la temperatura crítica no se calcula y el elemento queda pendiente.</li>
     <li>No necesitan μ0: las secciones clase 4 (θcr = 350 °C), los elementos con «θcr ingresada» y los marcados con inestabilidad, que exigen verificar la resistencia en caliente (§4.2.3).</li>
   </ul>
+
+  <h3>4b. Perfil sin protección y protección complementaria</h3>
+        <div><strong>Perfil sin protección (eximición).</strong> Es poco frecuente, pero un perfil puede cumplir su F sin protección si su temperatura a los F minutos de la curva ISO 834 no supera su θcr, es decir, si «t sin protección» ≥ F. Valor máximo de ksh·Am/V (m⁻¹) para lograrlo, calculado con el mismo motor de esta planilla (EN 1993-1-2, εm 0,7, αc 25); entre con el ksh·Am/V del elemento, que ya incluye su exposición:
+        <div style="overflow-x:auto;margin:.4rem 0"><table class="results"><tr><th>Exigencia</th>${efLimitesSinProt().map(x => `<th>μ0 = ${fmt2(x.mu)}<div class="note">θcr ${Math.round(x.th)} °C</div></th>`).join('')}</tr>${EF_LIM_F.map(Fr => `<tr><td>F-${Fr}</td>${efLimitesSinProt().map(x => `<td class="num">${x.lim[Fr] != null ? fmt1(x.lim[Fr]) : 'No alcanza'}</td>`).join('')}</tr>`).join('')}</table></div>
+        F-30 es alcanzable con perfiles masivos y poco cargados; F-60 solo con secciones muy macizas y poca carga; F-90 queda prácticamente descartado. Calcule μ0 con la combinación de incendio (AISC 360-16 Anexo 4, ec. A-4-1) y las cargas reales, no lo suponga. En pilares y vigas con volcamiento gobierna la inestabilidad: marque «Inestab. = Sí» y verifique la resistencia en caliente (EN 1993-1-2 §4.2.3.2 y §4.2.3.3). Clase 4: θcr = 350 °C. Una viga bajo losa expuesta por 3 caras tiene menor Am/V que expuesta por 4.
+        <br><strong>Protección complementaria.</strong> Si el perfil no alcanza, la protección se dimensiona para el F completo con el perfil real: los minutos no se suman (un perfil que resiste 30 min no se completa con una protección «de 30 min» para F-60). El perfil aporta con su masividad, que reduce el espesor de tabla, y con su θcr, solo dentro del rango ensayado del producto; usar una θcr mayor que la de la tabla es un estudio de asimilación.
+        <br><strong>Acreditación.</strong> El resultado de cálculo no es una solución del Listado: se presenta como antecedente técnico o estudio de asimilación (OGUC 4.3.2) y la DOM puede exigir un ensayo de laboratorio. Valide con la DOM antes de prescindir de la protección o reducir espesores. El Listado ED17-2025 no tiene pinturas intumescentes inscritas (requieren ensayo NCh 935/1), y una tabla EN 13381 no basta por sí sola en Chile. Referencia: nota técnica ING NT-FUE-01 (24-11-2026).</div>
 
   <h3>5. Sección 5 · Asimilación: cuándo y cómo se usa</h3>
   <p><b>Cuándo.</b> La asimilación (OGUC Art. 4.3.2; NCh 3684/1 y 3684/2:2022) se requiere cuando la protección de algún elemento no es una solución del Listado Oficial aplicada directamente: un producto que no está en el Listado o un espesor obtenido fuera de la tabla oficial (por ejemplo, una viga calculada con la tabla de otra configuración). También en techumbres (función 9) que no se construyen igual a un complejo inscrito. Si todo está cubierto por el Listado dentro de su alcance, la planilla lo indica y la sección no necesita completarse.</p>
@@ -49071,7 +49126,7 @@ function efInstruccionesHtml() {
 }
 
 // Deja el Estudio de Resistencia al Fuego en blanco: descarta los datos ingresados en esta sesión (caché de
-// navegación entre planillas), el modelo RAM del panel 3b y el título del cálculo; el proyecto de POWER fijado se
+// navegación entre planillas), el modelo RAM importado y el título del cálculo; el proyecto de POWER fijado se
 // mantiene (se cambia o suelta en su barra). Al volver a dibujar no se restaura nada.
 function efNuevoLimpiar() {
   if (typeof TOOL_STATE_CACHE !== 'undefined') delete TOOL_STATE_CACHE['estudio-fuego'];
@@ -49160,16 +49215,18 @@ function renderEstudioFuego(container) {
       <div class="disclosure">Pisos (Art. 4.3.5 n°1): piso hasta 3,5 m; las alturas de los pisos que superan 3,5 m se suman aparte y se dividen por 3,5 m, y la fracción cuenta como un piso más. Se exceptúan las estructuras de un solo piso con DCC media inferior a 500 MJ/m² y sin altillos, que se consideran de 1 piso. En la Tabla 3 se entra con la mayor de las dos densidades; si el edificio cae en varias tablas, se adopta el tipo más exigente. Un tipo menos exigente que el calculado solo se adopta con una excepción del Art. 4.3.5 y su respaldo; en otro caso las exigencias se evalúan con el tipo calculado. Tablas 1, 2, 3 y del Art. 4.3.3 contrastadas con el texto de la OGUC.</div>
     </div>
 
+    ${efrPanelHtml()}
+
     <div class="panel">
-      <h3>3 · Elementos de acero</h3>
+      <h3>3 · Elementos de acero — fichas</h3>
       <div class="note" style="margin-bottom:.6rem">La función según OGUC Art. 4.3.3 fija la exigencia F; si el elemento cumple dos funciones, se adopta la mayor. «F manual» puede fijar una exigencia mayor; una menor solo se adopta con una excepción del Art. 4.3.5 y su respaldo documental. μ0 = Efi,d / Rfi,d,0 en la combinación de incendio con γM,fi = 1,0 (EN 1993-1-2 §4.2.4). Fy en kg/cm². La orientación, la condición bajo losa y la exposición definen qué tabla de protección cubre al elemento; «Cobertura» confirma, con su referencia documental, que el informe o la inscripción corresponde a esa sección, orientación, exposición y sistema. «θcr ingresada» reemplaza el cálculo con μ0 cuando la temperatura crítica viene de otro análisis (por ejemplo, del módulo 3b). En elementos de techumbre, elija el complejo del Listado solo si la techumbre se construye igual a la solución inscrita.</div>
       <datalist id="dl_ef_fy"><option value="2530">2530 — ASTM A36</option><option value="2700">2700 — A270ES (NCh 203)</option><option value="3450">3450 — A345ES (NCh 203)</option><option value="3515">3515 — ASTM A572 Gr. 50</option></datalist>
       <style>
         /* 3: cada elemento se muestra como una ficha con sus campos rotulados, sin desplazamiento horizontal */
         table.ef-lista, table.ef-lista tbody{display:block;width:100%}
         table.ef-lista thead{display:none}
-        table.ef-lista tbody tr{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.35rem .5rem;padding:.55rem .6rem;margin:0 0 .55rem;border:1px solid var(--line);border-radius:6px;background:transparent}
-        table.ef-lista tbody td{display:flex;flex-direction:column;justify-content:flex-end;padding:0;border:0;min-width:0}
+        table.ef-lista tbody tr{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:.25rem .3rem;padding:.55rem .6rem;margin:0 0 .55rem;border:1px solid var(--line);border-radius:6px;background:transparent}
+        table.ef-lista tbody td{display:flex;flex-direction:column;justify-content:flex-end;padding:0;border:0;min-width:0;grid-column:span var(--sp,1)}
         table.ef-lista tbody td::before{content:attr(data-l);font-size:.64rem;font-weight:600;letter-spacing:.02em;color:var(--ink-muted);margin-bottom:.12rem;line-height:1.2}
         table.ef-lista tbody td.ef-w2{grid-column:span 2}
         table.ef-lista tbody td.ef-cab{grid-column:1 / -1;display:block;padding:.45rem .6rem;margin:-.1rem 0 .2rem;border-radius:5px;background:var(--surface-alt);font-size:.8rem;line-height:1.45}
@@ -49178,14 +49235,18 @@ function renderEstudioFuego(container) {
         table.ef-lista tbody td.ef-cab.warn{background:color-mix(in srgb, var(--accent-warm) 14%, transparent)}
         table.ef-lista tbody td.ef-cab .ef-cab-l1{font-weight:700}
         table.ef-lista tbody td.ef-cab .ef-cab-l2{color:var(--ink-muted);font-size:.74rem}
+        table.ef-lista tbody td.ef-cab .ef-cab-l3{font-size:.76rem;margin:.1rem 0}
+        table.ef-lista tbody td.ef-cab .ef-cab-alt{font-size:.74rem;margin-top:.25rem}
+        table.ef-lista tbody td.ef-cab .ef-cab-alt summary{cursor:pointer;font-weight:600}
+        table.ef-lista tbody td.ef-cab .ef-cab-alt ul{margin:.2rem 0 .2rem 1.1rem;padding:0}
         @media print{table.ef-lista tbody td.ef-cab{background:none !important;border:1px solid #999}}
         table.ef-lista tbody td.ef-w3{grid-column:span 3}
         table.ef-lista tbody td[data-role="n"]{font-weight:700;justify-content:center}
-        table.ef-lista input, table.ef-lista select{font-size:.78rem !important;padding:.22rem .26rem !important;width:100%;min-width:0 !important;box-sizing:border-box}
+        table.ef-lista input, table.ef-lista select{font-size:.7rem !important;font-family:'IBM Plex Sans',Arial,sans-serif !important;letter-spacing:0 !important;text-align:left !important;text-overflow:clip;padding:.22rem .26rem !important;width:100%;min-width:0 !important;box-sizing:border-box}
         table.ef-lista tbody tr{position:relative;padding-right:2.4rem}
         table.ef-lista tbody td:last-child{position:absolute;top:.55rem;right:.45rem}
         table.ef-lista tbody td:last-child::before{content:none}
-        @media (max-width:620px){table.ef-lista tbody tr{grid-template-columns:repeat(2,minmax(0,1fr))} table.ef-lista tbody td.ef-w3{grid-column:span 2}}
+        @media (max-width:620px){table.ef-lista tbody tr{grid-template-columns:repeat(2,minmax(0,1fr))} table.ef-lista tbody td{grid-column:span 1} table.ef-lista tbody td.ef-nom, table.ef-lista tbody td.ef-cab{grid-column:1 / -1}}
       </style>
       <div>
       <table class="results editable ef-lista">
@@ -49193,16 +49254,10 @@ function renderEstudioFuego(container) {
         <tbody id="ef_body"></tbody></table></div>
       <button type="button" class="btn-add" id="ef_add">+ Agregar elemento</button>
     </div>
-    ${efrPanelHtml()}
 
     <div class="panel" data-resumen="force">
-      <h3>4 · Resultados por elemento</h3>
+      <h3>4 · Resumen de resultados</h3>
       <div id="ef_resElem"></div>
-      <div class="disclosure"><strong>Perfil sin protección (eximición).</strong> Es poco frecuente, pero un perfil puede cumplir su F sin protección si su temperatura a los F minutos de la curva ISO 834 no supera su θcr, es decir, si «t sin protección» ≥ F. Valor máximo de ksh·Am/V (m⁻¹) para lograrlo, calculado con el mismo motor de esta planilla (EN 1993-1-2, εm 0,7, αc 25); entre con el ksh·Am/V del elemento, que ya incluye su exposición:
-        <div style="overflow-x:auto;margin:.4rem 0"><table class="results"><tr><th>Exigencia</th>${efLimitesSinProt().map(x => `<th>μ0 = ${fmt2(x.mu)}<div class="note">θcr ${Math.round(x.th)} °C</div></th>`).join('')}</tr>${EF_LIM_F.map(Fr => `<tr><td>F-${Fr}</td>${efLimitesSinProt().map(x => `<td class="num">${x.lim[Fr] != null ? fmt1(x.lim[Fr]) : 'No alcanza'}</td>`).join('')}</tr>`).join('')}</table></div>
-        F-30 es alcanzable con perfiles masivos y poco cargados; F-60 solo con secciones muy macizas y poca carga; F-90 queda prácticamente descartado. Calcule μ0 con la combinación de incendio (AISC 360-16 Anexo 4, ec. A-4-1) y las cargas reales, no lo suponga. En pilares y vigas con volcamiento gobierna la inestabilidad: marque «Inestab. = Sí» y verifique la resistencia en caliente (EN 1993-1-2 §4.2.3.2 y §4.2.3.3). Clase 4: θcr = 350 °C. Una viga bajo losa expuesta por 3 caras tiene menor Am/V que expuesta por 4.
-        <br><strong>Protección complementaria.</strong> Si el perfil no alcanza, la protección se dimensiona para el F completo con el perfil real: los minutos no se suman (un perfil que resiste 30 min no se completa con una protección «de 30 min» para F-60). El perfil aporta con su masividad, que reduce el espesor de tabla, y con su θcr, solo dentro del rango ensayado del producto; usar una θcr mayor que la de la tabla es un estudio de asimilación.
-        <br><strong>Acreditación.</strong> El resultado de cálculo no es una solución del Listado: se presenta como antecedente técnico o estudio de asimilación (OGUC 4.3.2) y la DOM puede exigir un ensayo de laboratorio. Valide con la DOM antes de prescindir de la protección o reducir espesores. El Listado ED17-2025 no tiene pinturas intumescentes inscritas (requieren ensayo NCh 935/1), y una tabla EN 13381 no basta por sí sola en Chile. Referencia: nota técnica ING NT-FUE-01 (24-11-2026).</div>
     </div>
 
     <div class="panel">
@@ -49231,7 +49286,26 @@ function renderEstudioFuego(container) {
   // Módulo opcional 3b (modelo RAM Elements): estado propio, guardado con el cálculo por [data-fs-extra]
   const efrPanel = document.getElementById('efr_panel');
   let efrM = null, efrCfg = {rol: {}, K: '1', Fy: '', grupos: {}, prot: 'auto', expo: 'interior'}, efrR = null;
-  const efrPintarCfg = () => { document.getElementById('efr_cfg').innerHTML = efrM ? efrCfgHtml(efrM, efrCfg) : ''; };
+  const efrPintarCfg = () => { document.getElementById('efr_cfg').innerHTML = efrM ? efrCfgHtml(efrM, efrCfg) : ''; efrPintarRes(); };
+  // Resultado del cálculo RAM en las columnas de la misma tabla de grupos; tras incorporar, la tabla se pliega.
+  let efrPlegado = null;
+  function efrPintarRes() {
+    const estC = {exime: 'ok', prot: 'warn', pend: 'warn', nores: 'bad', sinexig: 'ok', sinsec: 'bad', sinF: 'warn'};
+    const estCorto = {exime: 'Sin protección', prot: 'Proteger', pend: 'Pendiente', nores: 'No resuelto', sinexig: 'Sin exigencia', sinsec: 'Sin sección', sinF: 'Sin función'};
+    const byKey = {}; if (efrR) efrR.grupos.forEach(g => { byKey[g.key] = g; });
+    document.querySelectorAll('#efr_grpTbl [data-efr-res]').forEach(td => {
+      const g = byKey[td.dataset.efrRes], c = td.dataset.efrRc;
+      if (!g) { td.textContent = c === 'res' ? '' : '—'; return; }
+      if (c === 'th') td.textContent = n(g.thMin, 0);
+      else if (c === 't') td.textContent = g.thMin != null ? (g.tcrMin != null ? n(g.tcrMin, 1) : '> 150') : '—';
+      else td.innerHTML = `<div class="note">${g.F == null ? 'Exigencia no determinada' : fTxt(g.F)}</div>` + (g.err ? sp('bad', g.err) : Object.keys(g.cuenta).map(k => `<span class="chip ${estC[k]}" title="${esc(EFR_EST[k])}">${esc(estCorto[k] || EFR_EST[k])}: ${g.cuenta[k]}</span>`).join(' '));
+    });
+    const nRam = Array.from(body.children).filter(tr => /^\[RAM\]/.test(tr.querySelector('[data-f="nombre"]').value)).length;
+    const inc = !!(efrM && nRam), res = document.getElementById('efr_resumen'), sum = document.getElementById('efr_detSum'), det = document.getElementById('efr_det');
+    res.hidden = !inc; sum.hidden = !inc;
+    if (inc) res.innerHTML = `<b>Modelo «${esc(efrM.retx)}» incorporado:</b> ${efrR ? efrR.grupos.length + ' grupos' : 'grupos'} pasaron a ${nRam} elemento(s) [RAM] en las fichas de abajo, donde está el resultado de cada uno. Si cambia la configuración de los grupos, vuelva a incorporar.`;
+    if (inc !== efrPlegado) { det.open = !inc; efrPlegado = inc; }
+  }
 
   function addMat(pre) {
     const tr = document.createElement('tr');
@@ -49278,8 +49352,10 @@ function renderEstudioFuego(container) {
       <td><select data-f="techo" style="min-width:150px">${efTechoOpts()}</select></td>
       <td><button type="button" class="btn-remove" title="Eliminar">✕</button></td>`;
     const rot = Array.from(body.closest('table').querySelectorAll('thead th')).map(th => th.textContent.trim());
-    const ancho = {nombre: 'ef-w3', f1: 'ef-w2', f2: 'ef-w2', excResp: 'ef-w2', desig: 'ef-w2', expo: 'ef-w2', prot: 'ef-w2', refDoc: 'ef-w2', techo: 'ef-w2'};   // ficha de 6 columnas: 7 renglones completos
-    Array.from(tr.children).forEach((td, i) => { td.dataset.l = rot[i] || ''; const f = td.querySelector('[data-f]'); if (f && ancho[f.dataset.f]) td.classList.add(ancho[f.dataset.f]); });
+    // ficha de 12 columnas, renglones completos y anchos holgados para que ningún texto quede cortado
+    const ancho = {nombre: 11, f1: 4, f2: 4, Fmanual: 2, exc: 2, excResp: 3, origen: 2, desig: 4, tipo: 3, h: 2, b: 2, tw: 2, tf: 2, r: 2, A: 2,
+      orient: 2, bajoLosa: 2, caras: 2, expo: 3, solic: 3, Fy: 2, mu: 2, muSimp: 3, thcrExt: 3, inest: 2, prot: 5, espCert: 2, espProp: 2, cob: 3, refDoc: 8, techo: 4};
+    Array.from(tr.children).forEach((td, i) => { td.dataset.l = rot[i] || ''; const f = td.querySelector('[data-f]'); const k = f ? f.dataset.f : (td.dataset.role === 'n' ? 'n' : ''); td.style.setProperty('--sp', ancho[k] || 1); if (['nombre', 'f1', 'f2', 'desig', 'prot', 'refDoc', 'techo', 'excResp'].includes(k)) td.classList.add('ef-nom'); });
     const cab = document.createElement('td'); cab.className = 'ef-cab'; cab.dataset.role = 'cab'; tr.insertBefore(cab, tr.firstChild);
     body.appendChild(tr);
     if (pre && pre.ejemplo) tr.dataset.ejemplo = '1';
@@ -49341,6 +49417,7 @@ function renderEstudioFuego(container) {
     efrR = efrM ? efrCalc(efrM, efrCfg, r.resist) : null;
     r.ram = efrM ? {M: efrM, cfg: efrCfg, R: efrR} : null;
     document.getElementById('efr_res').innerHTML = efrM ? efrResHtml(efrM, efrR) : '';
+    efrPintarRes();
     Array.from(mat.children).forEach((tr, i) => { tr.querySelector('[data-role="n"]').textContent = i + 1; const m = r.mats[i]; tr.querySelector('[data-role="carga"]').textContent = m.errs.length ? 'inválido' : n(m.carga, 0); });
     Array.from(body.children).forEach((tr, i) => { tr.querySelector('[data-role="n"]').textContent = i + 1; const cab = tr.querySelector('[data-role="cab"]'); if (cab && r.elems[i]) { const c = efCabecera(r.elems[i]); cab.className = 'ef-cab ' + c.cls; cab.innerHTML = c.html; } });
     const p = r.pun;
@@ -49367,31 +49444,16 @@ function renderEstudioFuego(container) {
       <tr><td><strong>Tipo adoptado para las exigencias</strong></td><td class="num"><strong>${r.tipo || '—'}${r.tipoProv ? ' (provisorio)' : ''}</strong></td><td>${r.tipoRed === 'no justificada' ? sp('bad', `Tipo ${r.tipoManual} no adoptado: reducción sin excepción documentada`) : (r.tipoRed === 'justificada' ? esc('Reducción por ' + r.tipoExcTxt) : (r.tipoManual ? 'Ingresado por el proyectista (igual o más exigente)' : 'Calculado'))}</td></tr>
     </table>
     ${r.resist ? `<div style="overflow-x:auto;margin-top:.5rem"><table class="results"><tr><th>Elemento (OGUC 4.3.3)</th><th>Tipo ${r.tipo}</th><th>Condición (4.3.5)</th></tr>${r.resist.map(x => `<tr><td>${esc(x.elemento)}</td><td class="num">${esc(x.txt)}</td><td class="note">${esc(x.cond)}</td></tr>`).join('')}</table></div>` : ''}`;
-    document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<style>
-      #ef_resElemTbl{width:100%;font-size:.74rem}
-      #ef_resElemTbl th{font-size:.64rem;padding:.35rem .22rem}
-      #ef_resElemTbl td{padding:.25rem .22rem;overflow-wrap:break-word}
-      #ef_resElemTbl td.num{white-space:nowrap}
-      #ef_resElemTbl td.num .note{white-space:normal}
-      #ef_resElemTbl .chip{font-size:.66rem;white-space:normal;display:inline-block}
-      #ef_resElemTbl .note{font-size:.66rem}
-    </style><div style="overflow-x:auto"><table class="results" id="ef_resElemTbl">
-      <tr><th>N°</th><th style="width:19%">Elemento</th><th>F calculada</th><th>F adoptada</th><th>Am/V usado (m⁻¹)</th><th>F 4 caras (m⁻¹)</th><th>ksh</th><th style="width:14%">Clase de sección</th><th>θcr (°C)</th><th>t sin protección (min)</th><th>Esp. requerido</th><th style="width:21%">Estado</th></tr>
-      ${r.elems.map((e, i) => `<tr><td class="num">${i + 1}</td><td>${esc(e.nombre)}<div class="note">${esc(e.perfil)} · ${esc(EF_ORIENT[e.orient] || 'orientación sin indicar')}</div></td>
-        <td class="num">${fTxt(e.FreqCalc)}</td><td class="num">${fTxt(e.Freq)}${e.reduccion ? `<div class="note">${e.reduccion === 'justificada' ? 'reducción justificada' : 'reducción no justificada: no se aplica'}</div>` : ''}</td>
-        <td class="num">${n(e.F, 0)}</td><td class="num">${n(e.F4, 0)}</td><td class="num">${n(e.ksh, 2)}${e.kshEc && e.kshEc !== 'convexa' ? `<div class="note">ec. ${e.kshEc}</div>` : ''}</td>
-        <td>${e.cls ? (e.clase4 ? sp('warn', 'Clase 4 → 350 °C') : 'Clase 1-3') + `<div class="note">${esc(e.cls.txt)}</div>` : '<span class="note">No evaluada</span>'}</td>
-        <td class="num">${e.metodoCr === 'inestabilidad' ? '<span class="note">No aplicable (§4.2.3)</span>' : (e.metodoCr === 'mu_mayor_1' ? '<span class="note">μ0 > 1</span>' : n(e.thcr, 0))}</td><td class="num">${n(e.tcr, 1)}</td>
-        <td class="num">${e.prot === 'ninguna' ? '—' : esc(e.espTxt)}${e.espInfo && e.espInfo.por ? `<div class="note">${esc(e.espInfo.por)}</div>` : ''}</td>
-        <td>${sp(e.estado[0], e.estadoCorto)}<div class="note">${esc(e.estado[1].replace(/^[^—]+— /, ''))}</div>${e.av.length ? `<div class="note">${e.av.map(esc).join('<br>')}</div>` : ''}</td></tr>`).join('')}
-    </table></div>${(() => { const li = r.elems.map(efSinProtWeb).filter(Boolean); return li.length ? `<div class="resumen-hide" style="margin-top:1rem"><h4 style="margin:.2rem 0 .3rem">Perfil sin protección y protección complementaria</h4><div class="note" style="margin-bottom:.4rem">Solo en pantalla. Indica, por elemento, si el perfil sin protección alcanzaría su exigencia por cálculo (eximición, caso poco frecuente) o si la protección debe dimensionarse para el F completo.</div><ul class="note" style="margin:.2rem 0 0 1.1rem;padding:0;line-height:1.5">${li.join('')}</ul></div>` : ''; })()}${efMejoraHtml(r)}` : '<div class="note">Agregue elementos en la sección 3.</div>';
+    document.getElementById('ef_resElem').innerHTML = efResumenAccionHtml(r);
     document.getElementById('ef_resAsim').innerHTML = `${r.techo.length ? `<h4 style="margin:.2rem 0 .3rem">Elementos de techumbre (función 9): solución del Listado o asimilación</h4>
       <div style="overflow-x:auto"><table class="results" style="margin-bottom:.6rem"><tr><th>Elemento</th><th>Exigencia</th><th>Solución</th><th>Fundamento</th></tr>${r.techo.map(t => `<tr><td>${esc(t.nombre)}<div class="note">${esc(t.perfil)}</div></td><td class="num">${fTxt(t.Fe)}</td><td>${sp(EF_TECHO_SOL[t.sol][0], EF_TECHO_SOL[t.sol][1])}</td><td class="note">${esc(t.txt)}${t.crit.length ? '<br>' + t.crit.map(c => (c.v === 'si' ? '✓ ' : c.v === 'no' ? '✗ ' : '○ ') + esc(c.c) + ': ' + esc(c.obs)).join('<br>') : ''}</td></tr>`).join('')}</table></div>
       <div class="note" style="margin-bottom:.6rem">Solo hay solución oficial si la techumbre se construye igual a un complejo inscrito (elíjalo en la columna «Solución de techumbre del Listado» de la sección 3). Un cielo falso con la resistencia exigida, adosado y sin instalaciones entre ambos, se declara con la excepción «Art. 4.3.5 n°6» del elemento.</div>` : ''}${r.chkAuto.length ? `<table class="results" style="margin-bottom:.5rem"><tr><th>Criterio calculado</th><th>Estado</th><th>Detalle</th></tr>${r.chkAuto.map(c => `<tr><td>${esc(c.txt)}</td><td>${c.v === 'si' ? sp('ok', 'Cumple') : (c.v === 'pend' ? sp('warn', 'Pendiente') : sp('bad', 'No cumple'))}</td><td>${esc(c.obs)}</td></tr>`).join('')}</table>` : ''}
       <div class="verdict-row"><span>Método aplicable</span><span>${esc(r.metodo)}</span></div>
       <div class="verdict-row"><span>Resultado</span><span>${sp(r.asim[0], r.asim[1])}</span></div>`;
     document.getElementById('ef_resGlobal').innerHTML = `<div class="global-verdict ${r.global[0] === 'ok' ? 'ok' : 'bad'}"><span class="label">ESTUDIO DE RESISTENCIA AL FUEGO</span><span class="label">${esc(r.global[1])}</span></div>
-      ${r.pend.length ? `<table class="results" style="margin-top:.5rem"><tr><th>Ámbito</th><th>Pendiente o dato faltante</th><th>Bloquea la conclusión</th></tr>${r.pend.map(q => `<tr><td>${esc(q.ambito)}</td><td>${esc(q.txt)}</td><td>${q.bloquea ? 'Sí' : 'No'}</td></tr>`).join('')}</table>` : ''}
+      ${(() => { const pg = r.pend.filter(q => !/^Elemento\s/.test(q.ambito)), nE = r.pend.length - pg.length;
+        return (pg.length ? `<table class="results" style="margin-top:.5rem"><tr><th>Ámbito</th><th>Pendiente o dato faltante</th><th>Bloquea la conclusión</th></tr>${pg.map(q => `<tr><td>${esc(q.ambito)}</td><td>${esc(q.txt)}</td><td>${q.bloquea ? 'Sí' : 'No'}</td></tr>`).join('')}</table>` : '')
+          + (nE ? `<div class="note" style="margin-top:.4rem">${nE} pendiente(s) de elementos: están agrupados por acción en el resumen de la sección 4 y detallados en la cabecera de cada ficha.</div>` : ''); })()}
       ${r.avisos.length ? `<div class="note" style="margin-top:.4rem">${r.avisos.map(esc).join('<br>')}</div>` : ''}`;
     xlsxSetPrintSheets(estudioFuegoDatosHtml(inp, r), estudioFuegoCalcHtml(inp, r, false), estudioFuegoCalcHtml(inp, r, true));
     ultimo = {inp, r};
