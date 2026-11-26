@@ -597,6 +597,7 @@
   }
   .calc-save-bar button:hover{background:var(--surface-alt);}
   .calc-save-bar .fs-active-path{font-weight:700; color:var(--ink);}
+  .calc-save-bar .nuevo-calc-btn{color:#9a3412; border-color:color-mix(in srgb, #c2410c 45%, var(--line));}
   .fs-toast{
     position:fixed; bottom:1.1rem; right:1.1rem; background:var(--accent); color:var(--accent-ink);
     padding:.6rem .9rem; border-radius:6px; font-size:.8rem; z-index:80; max-width:360px; line-height:1.4;
@@ -2400,6 +2401,7 @@ function injectSaveBar(main){
     head.appendChild(bar);
     bar.querySelector('#fsSaveAsBtn').addEventListener('click', function(){ fsSaveAsCurrentCalc(); });
     bar.querySelector('#fsOpenFileBtn').addEventListener('click', function(){ fsOpenFromDisk(); });
+    nuevoBoton(bar);
     return;
   }
   bar.innerHTML =
@@ -2411,7 +2413,104 @@ function injectSaveBar(main){
   bar.querySelector('#fsSaveBtn').addEventListener('click', function(){ fsSaveCurrentCalc(); });
   bar.querySelector('#fsSaveAsBtn').addEventListener('click', function(){ fsSaveAsCurrentCalc(); });
   bar.querySelector('#fsOpenFileBtn').addEventListener('click', function(){ fsOpenFromDisk(); });
+  nuevoBoton(bar);
   fsUpdateSaveBarLabel();
+}
+
+/* ---------- botón «🗋 Nuevo …»: deja la planilla visible en blanco, con sus valores por defecto ----------
+   Borra lo ingresado en ESA planilla (campos, filas agregadas, modelo cargado), el estado que se repone al volver
+   a ella (TOOL_STATE_CACHE) y el que algunas guardan en el navegador (Cargas de Galpón, Combinaciones). No toca la
+   carpeta base, el proyecto de POWER fijado, el título del proyecto ni las otras planillas. Pide confirmación y
+   durante 10 s ofrece «↶ Deshacer». Va en la barra de guardar (.calc-save-bar), que no se imprime. No lleva la
+   clase .btn-add ni empieza con «+» (fsBuildAddButtonMap prueba esos botones al restaurar). */
+var NUEVO_EXCLUIR = ['estudio-fuego', 'biblioteca-normas'];   // Estudio de fuego: ING lo está trabajando (2026-11-26); Biblioteca: no tiene datos de cálculo
+var NUEVO_ROTULO = {
+  'cargas-galpon':'Nuevo proyecto', 'cargas-puentes':'Nuevo proyecto', 'combinaciones-carga':'Nuevo proyecto',
+  'distribucion-sismica':'Nuevo proyecto', 'sismo':'Nuevo proyecto', 'sismo-nch2369':'Nuevo proyecto',
+  'viento':'Nuevo proyecto', 'pavimentos':'Nuevo proyecto',
+  'combustible':'Nuevo estudio', 'proteccion-fuego':'Nuevo estudio', 'fuego-losas':'Nuevo estudio',
+  'sobreancho-madera-fuego':'Nuevo estudio', 'asimilacion-fuego':'Nuevo estudio', 'muros-transformadores':'Nuevo estudio'
+};
+// planillas que además guardan sus datos en el navegador (se reponen al recargar la Mesa)
+var NUEVO_LS = { 'cargas-galpon':['mesa_cargas_galpon_v1'], 'combinaciones-carga':['mesa_combinaciones_v1'] };
+// planillas con datos en variables globales (fuera de los campos): {guardar() → copia, reiniciar(), reponer(copia)}
+var NUEVO_HOOKS = {};
+function nuevoRotulo(id){ return NUEVO_ROTULO[id] || 'Nuevo cálculo'; }
+function nuevoBoton(bar){
+  var id = location.hash.replace('#','');
+  if (!bar || NUEVO_EXCLUIR.indexOf(id) >= 0 || bar.querySelector('#nuevoCalcBtn')) return;
+  var b = document.createElement('button');
+  b.type = 'button'; b.id = 'nuevoCalcBtn'; b.className = 'nuevo-calc-btn';
+  b.textContent = '🗋 ' + nuevoRotulo(id);
+  b.title = 'Borrar todos los datos de esta planilla y partir de cero (pide confirmación; se puede deshacer)';
+  b.addEventListener('click', nuevoPreguntar);
+  bar.insertBefore(b, bar.querySelector('button'));
+}
+function nuevoPreguntar(){
+  var tool = fsCurrentTool(); if (!tool) return;
+  var rot = nuevoRotulo(tool.id);
+  var v = document.getElementById('nuevoConfirm'); if (v) v.remove();
+  v = document.createElement('div'); v.id = 'nuevoConfirm';
+  v.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px';
+  v.innerHTML =
+    '<div role="dialog" aria-label="' + escapeHtmlAttr(rot) + '" style="background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:1.1rem 1.2rem;width:100%;max-width:470px;font-family:\'IBM Plex Sans\',sans-serif">' +
+      '<div style="font-weight:700;font-size:1.05rem;margin-bottom:.5rem">' + escapeHtmlAttr(rot) + '</div>' +
+      '<div style="font-size:.86rem;line-height:1.45;margin-bottom:.9rem">Se borrarán todos los datos ingresados en <b>' + escapeHtmlAttr(tool.name) + '</b> y la planilla quedará con sus valores por defecto.' +
+      '<br><span style="color:var(--ink-muted);font-size:.8rem">No cambian el proyecto de POWER, el título del proyecto, la carpeta base, los cálculos guardados en archivos ni las otras planillas. Si necesita estos datos, guárdelos antes con «💾 Guardar cálculo».</span></div>' +
+      '<div style="display:flex;gap:.5rem;justify-content:flex-end;flex-wrap:wrap">' +
+        '<button type="button" class="print-btn alt" data-n="no">Cancelar</button>' +
+        '<button type="button" class="print-btn" data-n="si">Borrar y partir de cero</button>' +
+      '</div></div>';
+  document.body.appendChild(v);
+  function fin(ok){ v.remove(); document.removeEventListener('keydown', tecla, true); if (ok) nuevoEjecutar(tool); }
+  function tecla(e){ if (e.key === 'Escape') { e.preventDefault(); fin(false); } }
+  document.addEventListener('keydown', tecla, true);
+  v.addEventListener('click', function(e){ var b = e.target.closest('[data-n]'); if (b) fin(b.dataset.n === 'si'); else if (e.target === v) fin(false); });
+  v.querySelector('[data-n="no"]').focus();
+}
+var NUEVO_DESHACER = null, NUEVO_TIMER = null;
+function nuevoEjecutar(tool){
+  var main = document.getElementById('mainView');
+  var resp = { id: tool.id, snap: null, calculo: PROYECTO_META.calculo, ls: {} };
+  try { resp.snap = fsCaptureMain(main); } catch (e) {}
+  (NUEVO_LS[tool.id] || []).forEach(function(k){
+    try { resp.ls[k] = localStorage.getItem(k); localStorage.removeItem(k); } catch (e) {}
+  });
+  var hk = NUEVO_HOOKS[tool.id];
+  if (hk) { try { resp.hook = hk.guardar(); hk.reiniciar(); } catch (e) {} }
+  delete TOOL_STATE_CACHE[tool.id];
+  PENDING_RESTORE = null;
+  PROYECTO_META.calculo = '';   // el título del cálculo es de esta planilla; el del proyecto se conserva
+  route();                       // misma id: vuelve a dibujar la planilla desde cero (sin caché) y reaplica POWER
+  window.scrollTo(0, 0);
+  NUEVO_DESHACER = resp;
+  nuevoAvisoDeshacer(nuevoRotulo(tool.id));
+}
+function nuevoAvisoDeshacer(rot){
+  var el = document.getElementById('nuevoUndo');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'nuevoUndo';
+    el.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:150;display:flex;align-items:center;gap:.8rem;background:#1f2937;color:#fff;border-radius:6px;padding:.6rem .9rem;font:500 .86rem/1.3 \'IBM Plex Sans\',sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.25);max-width:calc(100vw - 32px)';
+    el.innerHTML = '<span class="nu-t"></span><button type="button" style="background:#fff;color:#1f2937;border:0;border-radius:4px;padding:.3rem .65rem;font:700 .82rem \'IBM Plex Sans\',sans-serif;cursor:pointer">↶ Deshacer</button>';
+    el.querySelector('button').addEventListener('click', nuevoDeshacer);
+    document.body.appendChild(el);
+  }
+  el.querySelector('.nu-t').textContent = rot + ': planilla en blanco.';
+  el.style.display = 'flex';
+  clearTimeout(NUEVO_TIMER);
+  NUEVO_TIMER = setTimeout(function(){ el.style.display = 'none'; NUEVO_DESHACER = null; }, 10000);
+}
+function nuevoDeshacer(){
+  var r = NUEVO_DESHACER; NUEVO_DESHACER = null;
+  clearTimeout(NUEVO_TIMER);
+  var el = document.getElementById('nuevoUndo'); if (el) el.style.display = 'none';
+  if (!r) return;
+  Object.keys(r.ls).forEach(function(k){ try { if (r.ls[k] != null) localStorage.setItem(k, r.ls[k]); } catch (e) {} });
+  PROYECTO_META.calculo = r.calculo || '';
+  if (r.hook != null && NUEVO_HOOKS[r.id]) { try { NUEVO_HOOKS[r.id].reponer(r.hook); } catch (e) {} }
+  if (r.snap) TOOL_STATE_CACHE[r.id] = r.snap;
+  if (location.hash.replace('#','') === r.id) route(); else location.hash = r.id;
+  fsToast('Datos repuestos.');
 }
 
 /* ---------- delegación de eventos del árbol y controles del panel ---------- */
@@ -28872,6 +28971,18 @@ function renderLosa(main){
    ========================================================================= */
 var FD_APP_TIPO = 'aislada';
 var FD_RENDERERS = { aislada: renderAislada, corrida: renderCorrida, losa: renderLosa };
+// «🗋 Nuevo cálculo»: los datos de las 3 pestañas viven en ST_AISLADA/ST_CORRIDA/ST_LOSA (globales), no solo en los campos
+var FD_DEFECTO = JSON.stringify({a:ST_AISLADA, c:ST_CORRIDA, l:ST_LOSA, t:FD_APP_TIPO});
+function fdEstadoPoner(j){
+  var o = JSON.parse(j);
+  [[ST_AISLADA, o.a], [ST_CORRIDA, o.c], [ST_LOSA, o.l]].forEach(function(x){ Object.keys(x[0]).forEach(function(k){ delete x[0][k]; }); Object.assign(x[0], x[1]); });
+  FD_APP_TIPO = o.t;
+}
+NUEVO_HOOKS['fundaciones-directas'] = {
+  guardar: function(){ return JSON.stringify({a:ST_AISLADA, c:ST_CORRIDA, l:ST_LOSA, t:FD_APP_TIPO}); },
+  reiniciar: function(){ fdEstadoPoner(FD_DEFECTO); },
+  reponer: fdEstadoPoner
+};
 function renderFundacionesDirectas(main){
   main.innerHTML = `
     <div class="type-tabs" id="fdTypeTabs">
@@ -49008,9 +49119,9 @@ function renderEstudioFuego(container) {
     efNuevoLimpiar();
   });
 
-  // La planilla abre en blanco (una fila vacía de material y otra de elemento), sin casos de ejemplo.
+  // La planilla abre en blanco: una fila vacía de material y ningún elemento de acero (una fila de elemento siempre
+  // trae un perfil seleccionado y aparecería como «Elemento 1» en los resultados). Sin casos de ejemplo.
   addMat();
-  addRow();
   recalc();
 }
 
