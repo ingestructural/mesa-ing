@@ -46812,6 +46812,8 @@ const EF_ALCANCE = {
   otro: {ensayo: 'cert', txt: 'Certificado de ensaye del producto (OGUC 4.3.2)', cotejo: false}
 };
 const EF_ORIENT = {pilar: 'Pilar (vertical)', viga: 'Viga (horizontal)'};
+const EF_OPC = ['f2', 'Fmanual', 'exc', 'solic', 'Fy', 'mu', 'muSimp', 'thcrExt', 'inest'];
+const EF_DIM = ['tipo', 'h', 'b', 'tw', 'tf', 'r', 'A'];
 const EF_EXPO = {interior: 'Interior', exterior: 'Exterior / intemperie', agresivo: 'Ambiente industrial o marino'};
 // Excepciones del Art. 4.3.5 que permiten reducir o suprimir la exigencia del Art. 4.3.3 de un elemento de acero.
 // func: funciones (columnas del 4.3.3) a las que se aplica; F: exigencia mínima que queda.
@@ -49150,6 +49152,7 @@ function efInstruccionesHtml() {
     <li><b>Sección 1 · Carga combustible.</b> Ingrese cada material con su masa, poder calorífico y fuente. La planilla calcula la carga total, la densidad media y la densidad puntual en la ventana de 2×2 m más cargada.</li>
     <li><b>Sección 2 · Tipo de edificio.</b> Con pisos, superficie, ocupantes y destino aplica las tablas del Art. 4.3.4 y adopta el tipo más exigente (a, b, c o d). Sin tipo no hay exigencia F y el estudio no concluye.</li>
     <li><b>Sección 3 · Elementos de acero.</b> Agregue cada elemento con «+ Agregar elemento» y complete su ficha: función principal (y adicional si la tiene), perfil, orientación, caras expuestas, exposición, solicitación, Fy y <b>μ0</b> (ver punto 4). Si va protegido, elija el producto, el espesor propuesto, la referencia documental y marque la cobertura como «Confirmada» cuando la tabla del informe cubra esa sección, orientación y exposición.</li>
+    <li><b>Qué se llena en cada ficha.</b> Siempre: nombre, función principal, perfil (no aplica a las filas del modelo RAM), orientación y protección; si se protege, exposición, espesor propuesto, cobertura y referencia documental. Aparecen solo cuando aplican: «bajo losa» y «caras» en vigas, dimensiones en perfiles manuales, espesor del certificado con «otro producto», respaldo de la excepción y solución de techumbre en la función 9. «Ajustes del cálculo» agrupa los datos con valor por defecto (función adicional, F manual, excepción, solicitación, Fy, μ0, θcr externa y volcamiento); se abren solo para cambiarlos.</li>
     <li><b>Resultado de cada elemento.</b> Aparece en la cabecera de su ficha: estado, exigencia F y protección; masividad (Am/V), clase de la sección, temperatura crítica θcr, minutos que resiste sin protección y espesor requerido; el motivo o lo que falta y, si no cumple, los productos que lo cubren.</li>
     <li><b>Sección 4 · Resumen de resultados.</b> Agrupa los elementos por la acción que necesitan (cumplen, cambiar perfil, elegir protección, confirmar cobertura, acreditar por cálculo). Cada elemento aparece una sola vez.</li>
     <li><b>Sección 5 · Asimilación.</b> Se completa solo cuando corresponde (ver punto 5).</li>
@@ -49342,6 +49345,22 @@ function renderEstudioFuego(container) {
         table.ef-lista tbody td:last-child{position:absolute;top:.55rem;right:.45rem}
         table.ef-lista tbody td:last-child::before{content:none}
         @media (max-width:620px){table.ef-lista tbody tr{grid-template-columns:repeat(2,minmax(0,1fr))} table.ef-lista tbody td{grid-column:span 1} table.ef-lista tbody td.ef-nom, table.ef-lista tbody td.ef-cab{grid-column:1 / -1}}
+        /* Ficha simple: solo los datos que decide el usuario; el resto aparece cuando aplica o en «Ajustes» */
+        @media screen{
+          table.ef-lista tbody tr:not(.ef-mas) td.ef-opc{display:none}
+          table.ef-lista tbody tr:not(.ef-mas):not([data-dims="1"]) td.ef-dim{display:none}
+          table.ef-lista tbody tr:not([data-viga="1"]) td[data-k="bajoLosa"], table.ef-lista tbody tr:not([data-losa="1"]) td[data-k="caras"]{display:none}
+          table.ef-lista tbody tr:not([data-prot="otro"]) td[data-k="espCert"]{display:none}
+          table.ef-lista tbody tr[data-prot="ninguna"]:not(.ef-mas) td[data-k="expo"], table.ef-lista tbody tr[data-prot="ninguna"] td[data-k="espProp"], table.ef-lista tbody tr[data-prot="ninguna"] td[data-k="cob"], table.ef-lista tbody tr[data-prot="ninguna"] td[data-k="refDoc"]{display:none}
+          table.ef-lista tbody tr:not([data-exc="1"]) td[data-k="excResp"]{display:none}
+          table.ef-lista tbody tr[data-exc="1"] td[data-k="exc"]{display:flex}
+          table.ef-lista tbody tr:not([data-f9="1"]) td[data-k="techo"]{display:none}
+          table.ef-lista tbody tr[data-ram="1"]:not(.ef-mas) td[data-k="origen"], table.ef-lista tbody tr[data-ram="1"]:not(.ef-mas) td[data-k="desig"]{display:none}
+        }
+        table.ef-lista tbody td[data-role="mas"]{grid-column:1 / -1;justify-content:flex-start;padding-top:0}
+        table.ef-lista tbody td[data-role="mas"]::before{content:none}
+        .ef-mas-btn{font:600 .72rem/1.2 'IBM Plex Sans',Arial,sans-serif;background:none;border:0;color:var(--accent,#0060c1);cursor:pointer;padding:.1rem 0}
+        @media print{table.ef-lista tbody td[data-role="mas"]{display:none}}
       </style>
       <div>
       <table class="results editable ef-lista">
@@ -49447,12 +49466,13 @@ function renderEstudioFuego(container) {
       <td><select data-f="cob" style="min-width:120px"><option value="pend">Sin antecedente</option><option value="si">Confirmada</option><option value="no">No cubre</option></select></td>
       <td><input type="text" data-f="refDoc" style="min-width:170px" placeholder="informe / tabla / inscripción"></td>
       <td><select data-f="techo" style="min-width:150px">${efTechoOpts()}</select></td>
+      <td data-role="mas"><button type="button" class="ef-mas-btn"></button></td>
       <td><button type="button" class="btn-remove" title="Eliminar">✕</button></td>`;
     const rot = Array.from(body.closest('table').querySelectorAll('thead th')).map(th => th.textContent.trim());
     // ficha de 12 columnas, renglones completos y anchos holgados para que ningún texto quede cortado
     const ancho = {nombre: 11, f1: 4, f2: 4, Fmanual: 2, exc: 2, excResp: 3, origen: 2, desig: 4, tipo: 3, h: 2, b: 2, tw: 2, tf: 2, r: 2, A: 2,
       orient: 2, bajoLosa: 2, caras: 2, expo: 3, solic: 3, Fy: 2, mu: 2, muSimp: 3, thcrExt: 3, inest: 2, prot: 5, espCert: 2, espProp: 2, cob: 3, refDoc: 8, techo: 4};
-    Array.from(tr.children).forEach((td, i) => { td.dataset.l = rot[i] || ''; const f = td.querySelector('[data-f]'); const k = f ? f.dataset.f : (td.dataset.role === 'n' ? 'n' : ''); td.style.setProperty('--sp', ancho[k] || 1); if (['nombre', 'f1', 'f2', 'desig', 'prot', 'refDoc', 'techo', 'excResp'].includes(k)) td.classList.add('ef-nom'); });
+    Array.from(tr.children).forEach((td, i) => { td.dataset.l = rot[i] || ''; const f = td.querySelector('[data-f]'); const k = f ? f.dataset.f : (td.dataset.role === 'n' ? 'n' : ''); td.style.setProperty('--sp', ancho[k] || 1); if (k && k !== 'n') td.dataset.k = k; if (EF_OPC.includes(k)) td.classList.add('ef-opc'); if (EF_DIM.includes(k)) td.classList.add('ef-dim'); if (['nombre', 'f1', 'f2', 'desig', 'prot', 'refDoc', 'techo', 'excResp'].includes(k)) td.classList.add('ef-nom'); });
     const cab = document.createElement('td'); cab.className = 'ef-cab'; cab.dataset.role = 'cab'; tr.insertBefore(cab, tr.firstChild);
     body.appendChild(tr);
     if (pre && pre.ejemplo) tr.dataset.ejemplo = '1';
@@ -49463,6 +49483,24 @@ function renderEstudioFuego(container) {
     if (pre && pre.origen === 'manual') q('origen').value = 'manual';
     syncRow(tr);
     if (pre && pre.origen === 'manual') ['tipo', 'h', 'b', 'tw', 'tf', 'r', 'A'].forEach(k => { if (pre[k] != null) q(k).value = pre[k]; });
+    tr.querySelector('.ef-mas-btn').addEventListener('click', () => { tr.classList.toggle('ef-mas'); efVis(tr); });
+    efVis(tr);
+  }
+  // Qué campos se ven en la ficha: los básicos siempre; los condicionales cuando aplican; los ajustes con su botón.
+  function efVis(tr) {
+    const q = f => tr.querySelector(`[data-f="${f}"]`), v = f => q(f).value;
+    const ram = /^\[RAM\]/.test(v('nombre'));
+    tr.dataset.dims = v('origen') === 'manual' && !ram ? '1' : '';
+    tr.dataset.ram = ram ? '1' : '';
+    tr.dataset.viga = v('orient') === 'viga' ? '1' : '';
+    tr.dataset.losa = v('orient') === 'viga' && v('bajoLosa') === 'si' ? '1' : '';
+    tr.dataset.prot = v('prot') === 'ninguna' ? 'ninguna' : (v('prot') === 'otro' ? 'otro' : 'si');
+    tr.dataset.exc = v('exc') ? '1' : '';
+    tr.dataset.f9 = v('f1') === '9' || v('f2') === '9' ? '1' : '';
+    const def = {f2: '0', Fmanual: '', exc: '', solic: 'compresion', Fy: '2530', mu: '', muSimp: '', thcrExt: '', inest: 'no'};
+    const n = Object.keys(def).filter(k => { const x = q(k); return x && String(x.value) !== def[k] && !(k === 'f2' && !x.value); }).length;
+    const b = tr.querySelector('.ef-mas-btn');
+    if (b) b.textContent = tr.classList.contains('ef-mas') ? 'Ocultar ajustes ▴' : `Ajustes del cálculo${n ? ' · ' + n + ' con datos' : ''} ▾`;
   }
   function syncRow(tr) {
     const q = f => tr.querySelector(`[data-f="${f}"]`);
@@ -49516,7 +49554,7 @@ function renderEstudioFuego(container) {
     document.getElementById('efr_res').innerHTML = efrM ? efrResHtml(efrM, efrR) : '';
     efrPintarRes();
     Array.from(mat.children).forEach((tr, i) => { tr.querySelector('[data-role="n"]').textContent = i + 1; const m = r.mats[i]; tr.querySelector('[data-role="carga"]').textContent = m.errs.length ? 'inválido' : n(m.carga, 0); });
-    Array.from(body.children).forEach((tr, i) => { tr.querySelector('[data-role="n"]').textContent = i + 1; const cab = tr.querySelector('[data-role="cab"]'); if (cab && r.elems[i]) { const c = efCabecera(r.elems[i]); cab.className = 'ef-cab ' + c.cls; cab.innerHTML = c.html; } });
+    Array.from(body.children).forEach((tr, i) => { efVis(tr); tr.querySelector('[data-role="n"]').textContent = i + 1; const cab = tr.querySelector('[data-role="cab"]'); if (cab && r.elems[i]) { const c = efCabecera(r.elems[i]); cab.className = 'ef-cab ' + c.cls; cab.innerHTML = c.html; } });
     const p = r.pun;
     document.getElementById('ef_resCarga').innerHTML = `<table class="results">
       <tr><th>Magnitud</th><th>Valor</th><th>Observación</th></tr>
@@ -49630,6 +49668,7 @@ function renderEstudioFuego(container) {
   body.addEventListener('input', e => {
     const tr = e.target.closest('tr');
     if (tr && ['origen', 'desig', 'prot', 'orient', 'muSimp'].includes(e.target.dataset.f)) syncRow(tr);
+    if (tr) efVis(tr);
     recalc();
   });
   body.addEventListener('click', e => { const b = e.target.closest('.btn-remove'); if (!b) return; b.closest('tr').remove(); recalc(); });
