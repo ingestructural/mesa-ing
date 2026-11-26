@@ -48843,9 +48843,12 @@ function efrPanelHtml() {
       #efr_panel table.results select{font-size:.74rem;padding:.15rem .2rem;width:auto;max-width:100%}
       #efr_panel table.results select[data-efr-c="f1"], #efr_panel table.results select[data-efr-c="f2"]{width:100%;min-width:138px}
       #efr_panel table.results .chip{font-size:.68rem;white-space:normal;display:inline-block;margin:.05rem 0}
-      #efr_grpTbl select{min-width:0 !important;width:100%}
-      #efr_grpTbl select[data-efr-c="f1"]{min-width:128px !important}
-      #efr_grpTbl select[data-efr-c="f2"]{min-width:84px !important}
+      #efr_grpTbl select{min-width:0 !important;width:100%;font-family:'IBM Plex Sans',Arial,sans-serif !important;font-size:.72rem !important;text-align:left !important;letter-spacing:0 !important}
+      #efr_grpTbl select[data-efr-c="f1"]{min-width:188px !important}
+      #efr_grpTbl select[data-efr-c="f2"]{min-width:100px !important}
+      #efr_grpTbl tr.efr-gh td{text-align:left;padding:.35rem .4rem .1rem;border-bottom:0;background:var(--surface-alt)}
+      #efr_grpTbl tr.efr-gh td .note{display:inline}
+      #efr_grpTbl tr.efr-gd td{border-top:0;padding-bottom:.4rem}
       #efr_grpTbl select[data-efr-c="caras"], #efr_grpTbl select[data-efr-c="plt"]{width:auto}
       #efr_grpTbl td[data-efr-rc="res"] .chip{white-space:nowrap}
       @media (min-width:1800px){#efr_panel{margin-right:calc(-1*min(300px, 100vw - 1790px))}}   /* sin pasar bajo la barra fija de la derecha */
@@ -48883,10 +48886,10 @@ function efrCfgHtml(M, cfg) {
     </div></div>
     ${(() => { const sinF = grupos.filter(g => !+((cfg.grupos[g.key] || {}).f1 != null ? cfg.grupos[g.key].f1 : (efrOrient(g.b.cosV) === 'pilar' ? 5 : (efrOrient(g.b.cosV) === 'viga' ? 8 : 0)))); return sinF.length ? `<div class="note" style="margin:.5rem 0 .3rem;color:#9a3412"><b>${sinF.length} grupo(s) sin función asignada</b> (${sinF.map(g => 'G' + (grupos.indexOf(g) + 1)).join(', ')}): sin función no hay exigencia F y el estudio no puede concluir sobre ellos. Asígneles la función que cumplen (por ejemplo, las diagonales del sistema que soporta a un elemento horizontal o vertical).</div>` : ''; })()}
     <div class="note" style="margin:.5rem 0 .3rem">La sobrecarga de techo Lr, el viento y el sismo no forman parte de la combinación de incendio (AISC 360-16 Anexo 4 §4.1.4). Función de cada grupo según el Art. 4.3.3: los elementos de techumbre van en la columna (9).</div>
-    <div style="overflow-x:auto"><table class="results" id="efr_grpTbl"><tr><th>G</th><th>Grupo · sección</th><th>N°</th><th>Función principal</th><th>Función adicional</th><th>Exposición</th><th>Volcamiento</th><th>θcr mín. (°C)</th><th>t sin prot. (min)</th><th>Resultado del cálculo</th></tr>
+    <div style="overflow-x:auto"><table class="results" id="efr_grpTbl"><tr><th>Función principal</th><th>Función adicional</th><th>Exposición</th><th>Volcamiento</th><th>θcr mín. (°C)</th><th>t sin prot. (min)</th><th>Resultado del cálculo</th></tr>
       ${grupos.map((g, i) => { const c = Object.assign({f1: efrOrient(g.b.cosV) === 'pilar' ? 5 : (efrOrient(g.b.cosV) === 'viga' ? 8 : 0), f2: 0, caras: '4', plt: 'calc'}, cfg.grupos[g.key] || {}); const s = M.secciones[g.b.secc.toUpperCase()];
-        return `<tr><td class="num">${i + 1}</td><td>${esc(g.b.grupo || '—')} · ${esc(g.b.secc)}<div class="note">${EFR_ORIENT_C[efrOrient(g.b.cosV)]}</div>${s && s.err ? `<div class="note">${esc(s.err)}</div>` : ''}</td><td class="num">${g.n}</td>
-          <td><select data-efr-g="${esc(g.key)}" data-efr-c="f1">${funcOpts(c.f1)}</select></td><td><select data-efr-g="${esc(g.key)}" data-efr-c="f2">${funcOpts(c.f2)}</select></td>
+        return `<tr class="efr-gh"><td colspan="7"><b>G${i + 1} · ${esc(g.b.secc)}</b> <span class="note">· grupo RAM «${esc(g.b.grupo || '—')}» · ${EFR_ORIENT_C[efrOrient(g.b.cosV)]} · ${g.n} miembro(s)${s && s.err ? ' · ' + esc(s.err) : ''}</span></td></tr>
+          <tr class="efr-gd"><td><select data-efr-g="${esc(g.key)}" data-efr-c="f1">${funcOpts(c.f1)}</select></td><td><select data-efr-g="${esc(g.key)}" data-efr-c="f2">${funcOpts(c.f2)}</select></td>
           <td>${sel('caras', g.key, c.caras, [['4', '4 caras'], ['3', '3 caras (losa)']])}</td>
           <td>${s && (s.tipo === 'I-H' || s.tipo === 'U') ? sel('plt', g.key, c.plt, [['calc', 'Calcular'], ['si', 'Impedido']]) : '<span class="note">No aplica</span>'}</td>
           <td class="num" data-efr-res="${esc(g.key)}" data-efr-rc="th">—</td><td class="num" data-efr-res="${esc(g.key)}" data-efr-rc="t">—</td><td data-efr-res="${esc(g.key)}" data-efr-rc="res"></td></tr>`; }).join('')}
@@ -49298,7 +49301,7 @@ function renderEstudioFuego(container) {
       if (!g) { td.textContent = c === 'res' ? '' : '—'; return; }
       if (c === 'th') td.textContent = n(g.thMin, 0);
       else if (c === 't') td.textContent = g.thMin != null ? (g.tcrMin != null ? n(g.tcrMin, 1) : '> 150') : '—';
-      else td.innerHTML = `<div class="note">${g.F == null ? 'Exigencia no determinada' : fTxt(g.F)}</div>` + (g.err ? sp('bad', g.err) : Object.keys(g.cuenta).map(k => `<span class="chip ${estC[k]}" title="${esc(EFR_EST[k])}">${esc(estCorto[k] || EFR_EST[k])}: ${g.cuenta[k]}</span>`).join(' '));
+      else td.innerHTML = `<b>${g.F == null ? 'Exigencia no determinada' : fTxt(g.F)}</b> ` + (g.err ? sp('bad', g.err) : Object.keys(g.cuenta).map(k => `<span class="chip ${estC[k]}" title="${esc(EFR_EST[k])}">${esc(estCorto[k] || EFR_EST[k])}: ${g.cuenta[k]}</span>`).join(' '));
     });
     const nRam = Array.from(body.children).filter(tr => /^\[RAM\]/.test(tr.querySelector('[data-f="nombre"]').value)).length;
     const inc = !!(efrM && nRam), res = document.getElementById('efr_resumen'), sum = document.getElementById('efr_detSum'), det = document.getElementById('efr_det');
