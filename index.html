@@ -49381,7 +49381,6 @@ function renderEstudioFuego(container) {
 
     <div class="panel">
       <h3>3 · Elementos de acero — fichas</h3>
-      <h4 style="margin:.1rem 0 .2rem">Estado de los elementos</h4><div id="ef_estado3"></div>
       <div class="note" style="margin-bottom:.6rem">La función según OGUC Art. 4.3.3 fija la exigencia F; si el elemento cumple dos funciones, se adopta la mayor. «F manual» puede fijar una exigencia mayor; una menor solo se adopta con una excepción del Art. 4.3.5 y su respaldo documental. μ0 = Efi,d / Rfi,d,0 en la combinación de incendio con γM,fi = 1,0 (EN 1993-1-2 §4.2.4). Fy en kg/cm². La orientación, la condición bajo losa y la exposición definen qué tabla de protección cubre al elemento; «Cobertura» confirma, con su referencia documental, que el informe o la inscripción corresponde a esa sección, orientación, exposición y sistema. «θcr ingresada» reemplaza el cálculo con μ0 cuando la temperatura crítica viene de otro análisis (por ejemplo, del módulo 3b). En elementos de techumbre, elija el complejo del Listado solo si la techumbre se construye igual a la solución inscrita.</div>
       <datalist id="dl_ef_fy"><option value="2530">2530 — ASTM A36</option><option value="2700">2700 — A270ES (NCh 203)</option><option value="3450">3450 — A345ES (NCh 203)</option><option value="3515">3515 — ASTM A572 Gr. 50</option></datalist>
       <style>
@@ -49447,6 +49446,7 @@ function renderEstudioFuego(container) {
         <thead><tr><th>N°</th><th>Elemento</th><th>Función principal</th><th>Función adicional</th><th>F manual</th><th>Excepción 4.3.5</th><th>Respaldo de la excepción</th><th>Origen</th><th>Perfil</th><th>Tipo</th><th>h</th><th>b</th><th>tw</th><th>tf</th><th>r</th><th>A (cm²)</th><th>Orientación</th><th>Bajo losa</th><th>Caras</th><th>Exposición</th><th>Solicitación</th><th>Fy</th><th>μ0</th><th>¿μ0 simplificado?</th><th>θcr ingresada (°C)</th><th>Inestab.</th><th>Protección</th><th>Esp. cert.</th><th>Esp. propuesto (µm pintura / mm mortero o placa)</th><th>Cobertura</th><th>Referencia documental</th><th>Solución de techumbre del Listado</th><th></th></tr></thead>
         <tbody id="ef_body"></tbody></table></div>
       <button type="button" class="btn-add" id="ef_add">+ Agregar elemento</button>
+      <h4 style="margin:1rem 0 .2rem">Estado de los elementos</h4><div class="note" style="margin-bottom:.3rem">Resultado de las fichas de arriba, agrupado por lo que falta hacer. Cada elemento lleva a su ficha.</div><div id="ef_estado3"></div>
     </div>
 
     <div class="panel" data-resumen="force">
@@ -49662,7 +49662,7 @@ function renderEstudioFuego(container) {
     ${r.resist ? `<div style="overflow-x:auto;margin-top:.5rem"><table class="results"><tr><th>Elemento (OGUC 4.3.3)</th><th>Tipo ${r.tipo}</th><th>Condición (4.3.5)</th></tr>${r.resist.map(x => `<tr><td>${esc(x.elemento)}</td><td class="num">${esc(x.txt)}</td><td class="note">${esc(x.cond)}</td></tr>`).join('')}</table></div>` : ''}`;
     document.getElementById('ef_estado3').innerHTML = efEstadoHtml(r) || '<div class="note">Agregue elementos o importe el modelo RAM.</div>';
     { const cnt = c => r.elems.filter(e => efAccion(e).c === c).length;
-      document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .4rem"><span class="chip bad">✗ Requieren acción: ${cnt('bad')}</span><span class="chip warn">! Faltan datos: ${cnt('warn')}</span><span class="chip amar" style="background:#FFF1B8;color:#6B5200">◐ Por confirmar o por cálculo: ${cnt('amar')}</span><span class="chip ok">✓ Cumplen: ${cnt('ok')}</span></div><div class="note">El estado de cada elemento y qué hacer están en la tabla «Estado de los elementos», al inicio de la sección 3.</div>` : '<div class="note">Agregue elementos en la sección 3.</div>'; }
+      document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .4rem"><span class="chip bad">✗ Requieren acción: ${cnt('bad')}</span><span class="chip warn">! Faltan datos: ${cnt('warn')}</span><span class="chip amar" style="background:#FFF1B8;color:#6B5200">◐ Por confirmar o por cálculo: ${cnt('amar')}</span><span class="chip ok">✓ Cumplen: ${cnt('ok')}</span></div><div class="note">El estado de cada elemento y qué hacer están en la tabla «Estado de los elementos», al final de la sección 3.</div>` : '<div class="note">Agregue elementos en la sección 3.</div>'; }
     document.getElementById('ef_resAsim').innerHTML = efAsimHtml(r);
     document.getElementById('ef_chkWrap').style.display = r.requiereAsim ? '' : 'none';
     { const nC = efAsimCasos(r).filter(c => c.k === 'calc').length, sinA = !r.requiereAsim;
