@@ -46901,7 +46901,7 @@ function efCabecera(e) {
   const spTxt = !sp || e.exento ? '' : (sp.k === 'exime' ? (e.prot !== 'ninguna' ? `Por cálculo alcanzaría F-${e.Freq} sin protección: podría prescindirse de ella acreditándolo con antecedente técnico o asimilación (Art. 4.3.2); la DOM puede exigir ensayo.` : 'Para no protegerlo se acredita con antecedente técnico o asimilación (Art. 4.3.2); la DOM puede exigir ensayo.')
     : (sp.k === 'complementa' && e.prot !== 'ninguna' ? `La protección se dimensiona para los ${e.Freq} min completos; los minutos que resiste el perfil solo no se descuentan.` : ''));
   const A = efAccion(e), det = [calc.length && !e.exento && e.Freq !== 0 ? calc.join(' · ') : '', motivo && e.estado[0] !== 'ok' ? 'Detalle: ' + motivo : '', spTxt].filter(Boolean);
-  return {cls: A.c, html: `<div class="ef-cab-l1">${EF_ACC_ICO[A.c] || ''} ${esc(A.t)} <span class="ef-cab-f">· Exigencia ${esc(F)}</span></div><div class="ef-cab-acc">${esc(A.a)}</div>${A.alts && A.alts.length ? `<div class="ef-cab-bot">${efAccBotones(A.alts)}</div>` : ''}${det.length ? `<details class="ef-cab-calc"><summary>Ver cálculo</summary>${det.map(t => `<div>${esc(t)}</div>`).join('')}</details>` : ''}`};
+  return {cls: A.c, html: `<div class="ef-cab-l1">${EF_ACC_ICO[A.c] || ''} ${esc(A.t)} <span class="ef-cab-f">· Exigencia ${esc(F)}</span></div><div class="ef-cab-acc">${esc(A.a)}${A.asim ? ' <a href="#" class="ef-ir5">Ver la asimilación ↓</a>' : ''}</div>${A.alts && A.alts.length ? `<div class="ef-cab-bot">${efAccBotones(A.alts)}</div>` : ''}${det.length ? `<details class="ef-cab-calc"><summary>Ver cálculo</summary>${det.map(t => `<div>${esc(t)}</div>`).join('')}</details>` : ''}`};
 }
 // Apartado de la memoria con la evaluación del Art. 4.3.26 (solo si el proyectista la pidió).
 function efEx4326Mem(r) {
@@ -48262,12 +48262,12 @@ function efAsimHtml(r) {
   const corto = e => { const s = String(e.nombre || ('Elemento ' + e.n)).replace(/^\[RAM\]\s*/, ''); const g = s.match(/^(G\d+)\b/), m = s.match(/\((\d+) miembros?\)\s*$/i); return g ? g[1] + (m ? ` (${m[1]})` : '') : s.split(' — ')[0]; };
   const pill = (c, t) => `<span class="chip ${c}">${esc(t)}</span>`;
   const porPerfil = els => { const m = new Map(); els.forEach(e => { const k = e.perfil || '—'; if (!m.has(k)) m.set(k, []); m.get(k).push(corto(e)); }); return [...m].map(([k, v]) => `<b>${esc(k)}</b>: ${esc(v.join(', '))}`).join(' · '); };
-  const ens = G.filter(c => c.k === 'prot'), calc = G.filter(c => c.k === 'calc');
-  const sinRef = (r.elems || []).filter(e => e.Freq > 0 && e.estado && e.estado[0] === 'bad' && !G.some(x => x.els.includes(e)));
+  const ens = G.filter(c => c.k === 'prot');
+  if (!ens.length) return `<p style="margin:.2rem 0 .3rem"><span class="chip ok">No aplica</span> Las protecciones son soluciones del Listado aplicadas dentro de su alcance; no hay nada que asimilar. Los elementos que cumplen por cálculo o que requieren cambio están en la tabla «Estado de los elementos» (sección 3b).</p>`;
   const tbl = 'class="results ef-asim" style="width:100%;font-size:.76rem;margin-bottom:.4rem"';
   let h = '';
   if (ens.length) {
-    h += `<h4 style="margin:.2rem 0 .2rem">Protección asimilada a un ensayo</h4><div class="note" style="margin-bottom:.3rem">Cada fila es un perfil y el ensayo al que se asimila. «Para cerrar» indica lo que falta.</div>
+    h += `<h4 style="margin:.2rem 0 .2rem">Protección asimilada a un ensayo</h4><div class="note" style="margin-bottom:.3rem">Estos elementos usan un producto no inscrito en el Listado o una tabla fuera de su alcance, por lo que se acreditan por asimilación (OGUC Art. 4.3.2). Cada fila es un perfil y el ensayo al que se asimila; «Para cerrar» indica lo que falta.</div>
       <div style="overflow-x:auto"><table ${tbl}><tr><th>Perfil · elementos</th><th>Se asimila a</th><th>Comparación</th><th>Para cerrar</th></tr>`;
     ens.forEach(c => {
       h += `<tr><td style="text-align:left"><b>${esc(c.e.perfil || '—')}</b><br>${esc(c.els.map(corto).join(', '))}<br>${pill(c.est, c.est === 'ok' ? 'Listo' : c.est === 'bad' ? 'No asimilable' : 'Por cerrar')}<div class="note">${esc(c.motivo)}</div></td>
@@ -48276,14 +48276,6 @@ function efAsimHtml(r) {
     });
     h += `</table></div>`;
   }
-  if (calc.length) {
-    h += `<h4 style="margin:.5rem 0 .2rem">Sin protección, acreditados por cálculo (EN 1993-1-2)</h4>
-      <div style="overflow-x:auto"><table ${tbl}><tr><th>Perfil</th><th>Elementos</th><th>Exigencia</th><th>θcr</th><th>Tiempo hasta θcr</th></tr>${calc.map(c => `<tr><td style="text-align:left"><b>${esc(c.e.perfil || '—')}</b></td><td style="text-align:left">${esc(c.els.map(corto).join(', '))}</td><td class="num">F-${c.e.Freq}</td><td class="num">${c.e.thcr != null ? Math.round(c.e.thcr) + ' °C' : '—'}</td><td class="num">${c.e.tcr != null ? fmt1(c.e.tcr) + ' min' : '&gt; 150 min'}</td></tr>`).join('')}</table></div>
-      <div class="note">No hay ensayo del perfil desnudo: se presentan con la memoria de cálculo como antecedente técnico (Art. 4.3.2) y la DOM puede exigir un ensayo de laboratorio.</div>`;
-  }
-  if (sinRef.length) h += `<h4 style="margin:.5rem 0 .2rem">Sin ensayo al cual asimilarlos</h4><div style="font-size:.78rem">${porPerfil(sinRef)}</div><div class="note">Ningún producto ensayado cubre su masividad o exigencia: se resuelven cambiando el perfil o la solución (sección 4).</div>`;
-  const T = (r.techo || []).filter(t => t.sol === 'requiere' && t.cielos && t.cielos.length);
-  if (T.length) h += `<div class="note" style="margin-top:.3rem">Techumbre sin solución (${T.map(t => esc(corto(t))).join(', ')}): alternativa de cielo falso con la resistencia exigida (Art. 4.3.5 n°6; ${esc(T[0].cielos.map(c => c.cod).join(', '))}).</div>`;
   // Lista única de lo que falta
   const falta = [];
   if (ens.length) {
@@ -48296,15 +48288,25 @@ function efAsimHtml(r) {
     if (nB) falta.push(`${nB} perfil(es) no asimilable(s): cambiar perfil o producto.`);
     if (nW) falta.push(`Completar «Para cerrar» de ${nW} perfil(es).`);
   }
-  if (calc.length) falta.push('Adjuntar la memoria de cálculo de los perfiles sin protección.');
-  if (sinRef.length) falta.push(`Cambiar perfil o solución de ${sinRef.length} elemento(s) sin ensayo de referencia.`);
-  if (!G.length && !sinRef.length) h += `<p class="note" style="margin:.2rem 0 .5rem">Ningún elemento requiere asimilación: las protecciones son soluciones del Listado aplicadas dentro de su alcance.</p>`;
   if (falta.length) h += `<div style="margin:.6rem 0 .2rem;padding:.45rem .7rem;border-left:4px solid #E0A800;background:rgba(224,168,0,.10)"><b>Para cerrar esta sección</b><ol style="margin:.2rem 0 0;padding-left:1.2rem">${falta.map(f => `<li>${esc(f)}</li>`).join('')}</ol></div>`;
   return h;
 }
 // Estado de cada elemento en palabras simples: un título, una acción y, si corresponde, los productos que sirven.
 // Lo usan la cabecera de la ficha y la tabla «Estado de los elementos» (sección 3).
+// Protección que se acredita por asimilación (sección 5): producto no inscrito en el Listado o tabla usada fuera de
+// su alcance (elemento horizontal en una tabla ensayada en pilares).
+function efEsAsim(e) {
+  return e.Freq > 0 && !!e.prot && e.prot !== 'ninguna' && (!(EF_PROT[e.prot] || {}).listado || !!(e.espInfo && e.espInfo.asimilado));
+}
 function efAccion(e) {
+  const A = efAccion0(e);
+  if (!efEsAsim(e) || A.c === 'bad' || A.g === 'datos') return A;
+  const P = EF_PROT[e.prot] || {};
+  const por = !P.listado ? `${P.corto || P.nombre} no está inscrito en el Listado` : 'la tabla del Listado está ensayada en pilares y este elemento no es pilar';
+  return Object.assign({}, A, {c: 'amar', g: 'asim', asim: true, t: A.g === 'ok' ? 'Protección por asimilación' : 'Protección por asimilación, falta cerrar',
+    a: `${A.a} Se acredita por asimilación porque ${por}: complete la sección 5.`});
+}
+function efAccion0(e) {
   const P = EF_PROT[e.prot] || {}, u = e.espU || P.u || '';
   const am = e.F4 != null && isFinite(e.F4) ? Math.round(e.F4) : null;
   const alts = (e.alternativas || []).slice().sort((a, b) => ((EF_PROT[a.k].listado ? 0 : 1) - (EF_PROT[b.k].listado ? 0 : 1)) || (a.u === b.u ? a.v - b.v : (a.u === 'mm' ? -1 : 1)));
@@ -48339,10 +48341,10 @@ function efAccion(e) {
   }
   return {c: 'ok', g: 'ok', t: 'Cumple', a: `${P.corto || P.nombre} ${e.espProp} ${u} (mínimo ${e.espReq} ${u}).`};
 }
-const EF_ACC_ORDEN = ['perfil', 'elegir', 'insuf', 'datos', 'calc', 'cob', 'ok', 'sinexig'];
+const EF_ACC_ORDEN = ['perfil', 'elegir', 'insuf', 'datos', 'asim', 'calc', 'cob', 'ok', 'sinexig'];
 const EF_ACC_ICO = {bad: '✗', warn: '!', amar: '◐', ok: '✓'};
 function efAccBotones(alts) {
-  return (alts || []).slice(0, 4).map(a => `<button type="button" class="ef-usar" data-k="${a.k}" data-v="${Math.ceil(a.v)}">Usar ${esc(EF_PROT[a.k].corto || EF_PROT[a.k].nombre)} · ${esc(a.txt || (Math.ceil(a.v) + ' ' + (a.u || '')))}</button>`).join('');
+  return (alts || []).slice(0, 4).map(a => `<button type="button" class="ef-usar" data-k="${a.k}" data-v="${Math.ceil(a.v)}"${EF_PROT[a.k].listado ? '' : ' title="Producto con informe de ensayo, no inscrito en el Listado: se acredita por asimilación (sección 5)."'}>Usar ${esc(EF_PROT[a.k].corto || EF_PROT[a.k].nombre)} · ${esc(a.txt || (Math.ceil(a.v) + ' ' + (a.u || '')))}${EF_PROT[a.k].listado ? '' : ' · por asimilación'}</button>`).join('');
 }
 // Tabla breve «Estado de los elementos»: agrupa por lo que hay que hacer.
 function efEstadoHtml(r) {
@@ -48352,7 +48354,7 @@ function efEstadoHtml(r) {
   const G = {};
   E.forEach((e, i) => { const a = efAccion(e); const k = a.g + '|' + a.t; (G[k] = G[k] || {a, idx: []}).idx.push(i); });
   const filas = Object.values(G).sort((x, y) => EF_ACC_ORDEN.indexOf(x.a.g) - EF_ACC_ORDEN.indexOf(y.a.g));
-  const que = {perfil: 'Cambiar el perfil por uno más robusto (ningún producto lo cubre).', elegir: 'Elegir un producto en la ficha (botón «Usar…»).', insuf: 'Cambiar el producto o subir el espesor (botón «Usar…» en la ficha).', datos: 'Completar los datos que indica la ficha.', calc: 'Presentar la memoria de cálculo como antecedente técnico.', cob: 'Confirmar la cobertura y anotar la referencia en la ficha.', ok: 'Nada.', sinexig: 'Nada.'};
+  const que = {perfil: 'Cambiar el perfil por uno más robusto (ningún producto lo cubre).', elegir: 'Elegir un producto en la ficha (botón «Usar…»).', insuf: 'Cambiar el producto o subir el espesor (botón «Usar…» en la ficha).', datos: 'Completar los datos que indica la ficha.', calc: 'Presentar la memoria de cálculo como antecedente técnico.', cob: 'Confirmar la cobertura y anotar la referencia en la ficha.', asim: 'Completar la asimilación en la sección 5 (ensayo de referencia y comparación).', ok: 'Nada.', sinexig: 'Nada.'};
   return `<table class="results ef-estado" style="width:100%;font-size:.8rem;margin:.2rem 0 .8rem"><tr><th style="width:24%">Estado</th><th>Elementos</th><th style="width:38%">Qué hacer</th></tr>${filas.map(f => `<tr><td style="text-align:left"><span class="chip ${f.a.c}">${EF_ACC_ICO[f.a.c] || ''} ${esc(f.a.t)}</span></td><td style="text-align:left">${f.idx.map(i => `<a href="#" data-ir="${i}">${esc(nom(E[i]))}</a>`).join(', ')}</td><td style="text-align:left">${esc(que[f.a.g] || '')}</td></tr>`).join('')}</table>`;
 }
 // Mejora (solo vista web, no se imprime): para cada elemento que no cumple o queda fuera del rango ensayado,
@@ -49279,6 +49281,7 @@ function efInstruccionesHtml() {
   <p><b>Cuándo.</b> La asimilación (OGUC Art. 4.3.2; NCh 3684/1 y 3684/2:2022) se requiere cuando la protección de algún elemento no es una solución del Listado Oficial aplicada directamente: un producto que no está en el Listado o un espesor obtenido fuera de la tabla oficial (por ejemplo, una viga calculada con la tabla de otra configuración). También en techumbres (función 9) que no se construyen igual a un complejo inscrito. Si todo está cubierto por el Listado dentro de su alcance, la planilla lo indica y la sección no necesita completarse.</p>
   <p><b>Cómo.</b></p>
   <ol>
+    <li>La planilla detecta los casos: la ficha del elemento queda en «Protección por asimilación» con el enlace «Ver la asimilación ↓», la tabla «Estado de los elementos» los agrupa y los botones «Usar…» de productos no inscritos dicen «por asimilación». Si no hay ninguno, la sección 5 indica «No aplica».</li>
     <li>Elija el origen del ensayo de referencia: nacional (NCh 935/1, comparación según NCh 3684/1) o extranjero (NCh 3684/2).</li>
     <li>Revise cada criterio de la lista: existencia del informe, laboratorio, vigencia, norma de ensayo, mismo producto y sistema, sección y orientación comparables, temperatura de falla frente a θcr, exposición y firma del profesional. Marque «Cumple», «No cumple» o «No aplica» y anote el antecedente (informe, tabla, página).</li>
     <li>Tres criterios los evalúa la planilla: cobertura de cada elemento por la tabla ensayada, espesor propuesto suficiente y cobertura confirmada con referencia documental.</li>
@@ -49488,9 +49491,9 @@ function renderEstudioFuego(container) {
       <div id="ef_resElem"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="ef_sec5">
       <h3>5 · Asimilación (OGUC 4.3.2 · NCh 3684)</h3>
-      <div class="field-grid">
+      <div class="field-grid" id="ef_origWrap">
         <div class="field"><label>Origen del ensayo de referencia</label><select id="ef_origen"><option value="">— sin definir —</option><option value="nac">Nacional (NCh 935/1)</option><option value="ext">Extranjero</option></select></div>
       </div>
       <div id="ef_resAsim" style="margin-top:.6rem"></div>
@@ -49700,8 +49703,9 @@ function renderEstudioFuego(container) {
       document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .4rem"><span class="chip bad">✗ Requieren acción: ${cnt('bad')}</span><span class="chip warn">! Faltan datos: ${cnt('warn')}</span><span class="chip amar" style="background:#FFF1B8;color:#6B5200">◐ Por confirmar o por cálculo: ${cnt('amar')}</span><span class="chip ok">✓ Cumplen: ${cnt('ok')}</span></div><div class="note">El estado de cada elemento y qué hacer están en la tabla «Estado de los elementos», al final de la sección 3b.</div>` : '<div class="note">Agregue elementos en la sección 3.</div>'; }
     document.getElementById('ef_resAsim').innerHTML = efAsimHtml(r);
     document.getElementById('ef_chkWrap').style.display = r.requiereAsim ? '' : 'none';
+    document.getElementById('ef_origWrap').style.display = r.requiereAsim ? '' : 'none';
     { const nC = efAsimCasos(r).filter(c => c.k === 'calc').length, sinA = !r.requiereAsim;
-      document.getElementById('ef_resAsimFin').innerHTML = sinA ? `<div class="verdict-row"><span>Resultado</span><span>${sp('ok', nC ? 'Sin protecciones fuera del Listado; los perfiles sin protección se acreditan por cálculo.' : r.metodo)}</span></div>`
+      document.getElementById('ef_resAsimFin').innerHTML = sinA ? ''
         : `<div class="verdict-row"><span>Método aplicable</span><span>${esc(r.metodo)}</span></div><div class="verdict-row"><span>Resultado</span><span>${(() => { const nB = efAsimCasos(r).filter(c => c.k === 'prot' && c.est === 'bad').length; return nB ? sp('bad', `No asimilable: ${nB} perfil(es) fuera del alcance del ensayo (ver tabla). Corresponde cambiar perfil o producto, o ensayar.`) : sp(r.asim[0], r.asim[1]); })()}</span></div>`; }
     document.getElementById('ef_resGlobal').innerHTML = `<div class="global-verdict ${r.global[0] === 'ok' ? 'ok' : 'bad'}"><span class="label">ESTUDIO DE RESISTENCIA AL FUEGO</span><span class="label">${esc(r.global[1])}</span></div>
       ${(() => { const pg = r.pend.filter(q => !/^Elemento\s/.test(q.ambito)), nE = r.pend.length - pg.length;
@@ -49801,6 +49805,11 @@ function renderEstudioFuego(container) {
     const inf = el ? efEspesorProd(k, Object.assign({}, el, {prot: k})) : null;
     if (!q('refDoc').value || b.dataset.k !== (el && el.prot)) q('refDoc').value = (EF_PROT[k].fuente || '') + (inf && inf.tabla && inf.tabla.titulo ? ' — ' + inf.tabla.titulo : '');
     efVis(tr); recalc();
+  });
+  body.addEventListener('click', ev => {
+    if (!ev.target.closest('.ef-ir5')) return;
+    ev.preventDefault();
+    const t = document.getElementById('ef_sec5'); if (t) t.scrollIntoView({behavior: 'smooth', block: 'start'});
   });
   body.addEventListener('click', ev => {
     if (!ev.target.closest('.ef-ramf')) return;
