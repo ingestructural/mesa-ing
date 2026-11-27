@@ -48280,7 +48280,7 @@ function efAsimCasos(r) {
 }
 function efAsimHtml(r) {
   const G = efAsimCasos(r);
-  const corto = e => { const s = String(e.nombre || ('Elemento ' + e.n)).replace(/^\[RAM\]\s*/, ''); const g = s.match(/^(G\d+)\b/), m = s.match(/\((\d+) miembros?\)\s*$/i); return g ? g[1] + (m ? ` (${m[1]})` : '') : s.split(' — ')[0]; };
+  const corto = e => { const s = String(e.nombre || ('Elemento ' + e.n)).replace(/^\[RAM\]\s*/, ''); const g = s.match(/^(G\d+[a-f]?)\b/), m = s.match(/\((\d+) miembros?\)\s*$/i); return g ? g[1] + (m ? ` (${m[1]})` : '') : s.split(' — ')[0]; };
   const pill = (c, t) => `<span class="chip ${c}">${esc(t)}</span>`;
   const porPerfil = els => { const m = new Map(); els.forEach(e => { const k = e.perfil || '—'; if (!m.has(k)) m.set(k, []); m.get(k).push(corto(e)); }); return [...m].map(([k, v]) => `<b>${esc(k)}</b>: ${esc(v.join(', '))}`).join(' · '); };
   const ens = G.filter(c => c.k === 'prot');
@@ -48371,7 +48371,7 @@ function efAccBotones(alts) {
 function efEstadoHtml(r) {
   const E = r.elems || [];
   if (!E.length) return '';
-  const nom = e => { const s = String(e.nombre).replace(/^\[RAM\]\s*/, ''); const g = s.match(/^(G\d+)\b/), m = s.match(/\((\d+) miembros?\)\s*$/i); return g ? g[1] + (m ? ` (${m[1]})` : '') : s.split(' — ')[0]; };
+  const nom = e => { const s = String(e.nombre).replace(/^\[RAM\]\s*/, ''); const g = s.match(/^(G\d+[a-f]?)\b/), m = s.match(/\((\d+) miembros?\)\s*$/i); return g ? g[1] + (m ? ` (${m[1]})` : '') : s.split(' — ')[0]; };
   const G = {};
   E.forEach((e, i) => { const a = efAccion(e); const k = a.g + '|' + a.t; (G[k] = G[k] || {a, idx: []}).idx.push(i); });
   const filas = Object.values(G).sort((x, y) => EF_ACC_ORDEN.indexOf(x.a.g) - EF_ACC_ORDEN.indexOf(y.a.g));
@@ -49133,13 +49133,16 @@ function efrElementos(M, R) {
   R.grupos.forEach(g => {
     if (g.err) return;
     const s = g.sec, orden = ['exime', 'prot', 'pend', 'nores', 'sinexig', 'sinF'];
+    // Un grupo cuyos miembros dan resultados distintos se divide en fichas G8a, G8b…, una por resultado
+    const parts = orden.filter(st => g.miembros.some(m => m.est === st));
     orden.forEach(st => {
       const ms = g.miembros.filter(m => m.est === st);
       if (!ms.length) return;
+      const suf = parts.length > 1 ? 'abcdef'[parts.indexOf(st)] : '';
       const th = ms.filter(m => m.th != null), mu = ms.filter(m => m.mu != null);
       const comp = ms.some(m => m.Nc > 0 && m.Nc/(s.A*100*m.fy) >= 0.001), flex = ms.some(m => m.res && m.res.some(x => x.rY >= 0.01 || x.rZ >= 0.01));
       const r2 = v => Math.round(v*100)/100, sg = Object.assign({}, s, s.mas || {});
-      out.push({nombre: `[RAM] G${g.n} · ${g.secc} · ${g.grupo} — ${EFR_EST[st].charAt(0).toLowerCase() + EFR_EST[st].slice(1)} (${ms.length} ${ms.length === 1 ? 'miembro' : 'miembros'})`,
+      out.push({nombre: `[RAM] G${g.n}${suf} · ${g.secc} · ${g.grupo} — ${EFR_EST[st].charAt(0).toLowerCase() + EFR_EST[st].slice(1)} (${ms.length} ${ms.length === 1 ? 'miembro' : 'miembros'})`,
         f1: g.cfg.f1 || 0, f2: g.cfg.f2 || 0, origen: 'manual', tipo: sg.tipo, h: r2(sg.h), b: r2(sg.b), tw: r2(sg.tw), tf: r2(sg.tf), r: r2(sg.r || 0), A: r2(sg.A),
         orient: g.orient === 'viga' ? 'viga' : 'pilar', bajoLosa: g.orient === 'viga' ? (g.cfg.caras === '3' ? 'si' : 'no') : '', caras: g.cfg.caras,
         solic: comp && flex ? 'flexocomp' : (comp ? 'compresion' : 'flexion'), Fy: Math.round(ms[0].Fy || 0),
@@ -49289,7 +49292,7 @@ function efInstruccionesHtml() {
     <li>Agrupa los miembros por grupo RAM, perfil y orientación, y calcula μ0 de cada miembro con la combinación de incendio de AISC 360-16 Anexo 4 (1,2D + 0,5L + 0,2S y 0,9D + 0,5L + 0,2S). La sobrecarga de techo Lr, el viento y el sismo no entran en esa combinación.</li>
     <li>Con μ0 obtiene la temperatura crítica de cada miembro, considerando la clase de la sección, el pandeo y el volcamiento, y conserva la menor de cada grupo.</li>
     <li>Propone la función: los grupos que quedan íntegramente a la altura de la cabeza de las columnas o por encima (cerchas, costaneras y vigas de techo) como (9) Techumbre incluido cielo falso; el resto, pilares (5) y vigas (8). Los miembros inclinados que bajan de esa altura quedan sin función: asígnela usted en la tabla de grupos. La función de los elementos [RAM] se cambia solo en esta tabla de grupos (en la ficha queda bloqueada), porque al cambiarla se vuelven a separar los miembros que cumplen y los que no. Revise también el factor K, las caras expuestas y el Fy de los miembros sin material legible.</li>
-    <li>La misma tabla de grupos muestra el resultado del cálculo de cada grupo (θcr mínima, minutos sin protección y cuántos miembros requieren protección). Revísela y pulse <b>«Incorporar a las fichas 3b»</b>. Cada grupo pasa a ser un elemento [RAM] con su θcr; a los que requieren protección se les asigna el producto con menor espesor que los cubre (Listado primero) y su referencia.</li>
+    <li>La misma tabla de grupos muestra el resultado del cálculo de cada grupo (θcr mínima, minutos sin protección y cuántos miembros requieren protección). Revísela y pulse <b>«Incorporar a las fichas 3b»</b>. Cada grupo pasa a ser un elemento [RAM] con su θcr; si sus miembros dan resultados distintos (por ejemplo, unos alcanzan su F sin protección y otros no), el grupo se divide en fichas G8a, G8b…, una por resultado; a los que requieren protección se les asigna el producto con menor espesor que los cubre (Listado primero) y su referencia.</li>
     <li>Después de incorporar, revise en las fichas 3b la orientación, la exposición, la condición bajo losa y confirme la cobertura de cada elemento protegido. La tabla de grupos queda plegada; se abre para cambiar la configuración y volver a incorporar. Las secciones 1, 2, 5, 6 y 7 se completan igual que sin RAM.</li>
   </ol>
 
@@ -49700,7 +49703,7 @@ function renderEstudioFuego(container) {
       const q = f => tr.querySelector(`[data-f="${f}"]`).value;
       const manual = q('origen') === 'manual';
       return {n: i + 1, nombre: q('nombre').trim() || ('Elemento ' + (i + 1)), f1: +q('f1'), f2: +q('f2'), Fmanual: q('Fmanual'), exc: q('exc'), excResp: q('excResp').trim(),
-        perfil: manual ? ((q('nombre').match(/^\[RAM\] G\d+ · ([^·]+) ·/) || [])[1] || 'Manual').trim() : q('desig'), tipo: q('tipo'), h: q('h'), b: q('b'), tw: q('tw'), tf: q('tf'), r: q('r'), A: q('A'),
+        perfil: manual ? ((q('nombre').match(/^\[RAM\] G\d+[a-f]? · ([^·]+) ·/) || [])[1] || 'Manual').trim() : q('desig'), tipo: q('tipo'), h: q('h'), b: q('b'), tw: q('tw'), tf: q('tf'), r: q('r'), A: q('A'),
         orient: q('orient'), bajoLosa: q('orient') === 'pilar' ? '' : q('bajoLosa'), caras: q('caras'), expo: q('expo'), solic: q('solic'), Fy: q('Fy'), mu: q('muSimp') ? '' : q('mu'), muSimp: q('muSimp'), thcrExt: q('thcrExt'), inest: q('inest'),
         prot: q('prot'), espCert: q('espCert'), espProp: q('prot') === 'ninguna' ? '' : q('espProp'), cob: q('cob'), refDoc: q('refDoc').trim(), techo: q('techo')};
     });
