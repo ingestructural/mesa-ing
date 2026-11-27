@@ -48329,10 +48329,10 @@ function efAccion0(e) {
   if (e.espReq != null && e.espProp != null && e.espProp < e.espReq) return {c: 'bad', g: 'insuf', t: 'Espesor insuficiente', a: `${P.corto || P.nombre}: ${e.espProp} ${u} propuesto, se requieren ${e.espReq} ${u}.`, alts: [{k: e.prot, v: e.espReq, u, txt: e.espReq + ' ' + u}]};
   if ((e.falta || []).length) {
     const f = e.falta, pasos = [];
-    if (e.espProp == null && e.espReq != null) pasos.push(`escriba el espesor (mínimo ${e.espReq} ${u})`);
-    if (!e.expo) pasos.push('elija la exposición');
-    if (!e.refDoc) pasos.push('anote la referencia documental');
-    if (e.cob !== 'si') pasos.push('marque «Cobertura: Confirmada» cuando verifique que el documento cubre este perfil');
+    if (e.espProp == null && e.espReq != null) pasos.push(`escriba en «Esp. propuesto» el espesor (mínimo ${e.espReq} ${u})`);
+    if (!e.expo) pasos.push('elija la «Exposición»');
+    if (!e.refDoc) pasos.push('escriba en «Referencia documental» el documento, tabla y página');
+    if (e.cob !== 'si') pasos.push('en «Cobertura» elija «Confirmada» después de verificar en el documento que cubre este perfil con ese espesor');
     const otros = f.filter(x => !/espesor propuesto|exposición|referencia documental|cobertura documental|cotejo de la tabla/.test(x));
     if (otros.length) pasos.push('complete: ' + otros.join('; '));
     const listo = e.tablaSuf;
@@ -48354,8 +48354,18 @@ function efEstadoHtml(r) {
   const G = {};
   E.forEach((e, i) => { const a = efAccion(e); const k = a.g + '|' + a.t; (G[k] = G[k] || {a, idx: []}).idx.push(i); });
   const filas = Object.values(G).sort((x, y) => EF_ACC_ORDEN.indexOf(x.a.g) - EF_ACC_ORDEN.indexOf(y.a.g));
-  const que = {perfil: 'Cambiar el perfil por uno más robusto (ningún producto lo cubre).', elegir: 'Elegir un producto en la ficha (botón «Usar…»).', insuf: 'Cambiar el producto o subir el espesor (botón «Usar…» en la ficha).', exig: 'Asignar la función del elemento: en los [RAM], en la tabla de grupos de la sección 3a y volver a incorporar; en los demás, en la ficha. Sin función (o sin tipo de edificio, sección 2) no hay exigencia F.', datos: 'Completar los datos que indica la ficha.', calc: 'Presentar la memoria de cálculo como antecedente técnico.', cob: 'Revisar en el documento del producto (Listado o informe de ensayo) que cubre ese perfil con ese espesor; luego, en la ficha, poner «Cobertura: Confirmada» y anotar la referencia (documento, tabla, página).', asim: 'Completar la asimilación en la sección 5 (ensayo de referencia y comparación).', ok: 'Nada.', sinexig: 'Nada.'};
-  return `<table class="results ef-estado" style="width:100%;font-size:.8rem;margin:.2rem 0 .8rem"><tr><th style="width:24%">Estado</th><th>Elementos</th><th style="width:38%">Qué hacer</th></tr>${filas.map(f => `<tr><td style="text-align:left"><span class="chip ${f.a.c}">${EF_ACC_ICO[f.a.c] || ''} ${esc(f.a.t)}</span></td><td style="text-align:left">${f.idx.map(i => `<a href="#" data-ir="${i}">${esc(nom(E[i]))}</a>`).join(', ')}</td><td style="text-align:left">${esc(que[f.a.g] || '')}</td></tr>`).join('')}</table>`;
+  const que = {
+    perfil: 'Cambiar el perfil por uno de menor masividad: en el modelo RAM (y volver a cargarlo en 3a) o, si la ficha es manual, en el campo «Perfil» de la ficha.',
+    elegir: 'En la ficha, presionar uno de los botones «Usar …»: asigna el producto y el espesor que cumplen.',
+    insuf: 'En la ficha, presionar un botón «Usar …» o escribir un espesor mayor en «Esp. propuesto».',
+    exig: 'Asignar la función: en las fichas [RAM], con el enlace «Cambiar en la tabla de grupos RAM ↑», elegir la función del grupo y presionar «Incorporar a las fichas 3b»; en las fichas manuales, en «Función principal». Si falta el tipo de edificio, completarlo en la sección 2.',
+    calc: 'Nada en la planilla. La memoria de este estudio (🖨 Imprimir ▾ → 📑 Memoria de cálculo) ya incluye su verificación sin protección; esa memoria es el antecedente técnico que se presenta.',
+    cob: 'En cada ficha: 1) abrir el documento indicado en la protección (Listado o informe de ensayo) y verificar que cubre ese perfil con ese espesor; 2) en «Cobertura», elegir «Confirmada»; 3) en «Referencia documental», escribir documento, tabla y página.',
+    asim: 'En la ficha, presionar «Ver la asimilación ↓». En la sección 5: elegir el «Origen del ensayo de referencia», marcar cada fila de «Antecedentes del informe de referencia» y completar lo que indica «Para cerrar».',
+    ok: 'Nada.', sinexig: 'Nada.'};
+  // «Faltan datos»: se listan los datos concretos que faltan en cada ficha del grupo
+  const datosTxt = f => { const v = [...new Set(f.idx.map(i => efAccion(E[i]).a))]; return 'En la ficha: ' + v.map(t => t.replace(/^Falta\s+/i, '').replace(/^Para verificar:\s*/i, '').replace(/\.$/, '')).join(' · ') + '.'; };
+  return `<table class="results ef-estado" style="width:100%;font-size:.8rem;margin:.2rem 0 .8rem"><tr><th style="width:24%">Estado</th><th>Elementos</th><th style="width:42%">Acción</th></tr>${filas.map(f => `<tr><td style="text-align:left"><span class="chip ${f.a.c}">${EF_ACC_ICO[f.a.c] || ''} ${esc(f.a.t)}</span></td><td style="text-align:left">${f.idx.map(i => `<a href="#" data-ir="${i}">${esc(nom(E[i]))}</a>`).join(', ')}</td><td style="text-align:left">${esc(f.a.g === 'datos' ? datosTxt(f) : (que[f.a.g] || ''))}</td></tr>`).join('')}</table>`;
 }
 // Mejora (solo vista web, no se imprime): para cada elemento que no cumple o queda fuera del rango ensayado,
 // lista los productos del catálogo que sí cubren su exigencia, con el espesor requerido.
