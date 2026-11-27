@@ -51091,7 +51091,9 @@ const MCM_RES = {
 };
 const mcmResLabel = (S, m) => typeof MCM_RES[m].label === 'function' ? MCM_RES[m].label(S) : MCM_RES[m].label;
 const mcmCombos = S => String(S.combos || '').split('\n').map(x => x.trim()).filter(Boolean);
-const MCM_ING = ['Germán Aguilera, Ingeniero Civil', 'Víctor Villagrán, Ingeniero Civil'];
+const MCM_ING = ['J. Germán Aguilera Hafner, Ingeniero Civil', 'Víctor Villagrán, Ingeniero Civil'];
+// nombre anterior guardado en memorias/EETT: se muestra con el nombre completo (ING, 2026-11-27)
+const MCM_ING_FIX = v => v === 'Germán Aguilera, Ingeniero Civil' ? MCM_ING[0] : v;
 const MCM_DOCS = ['MEMORIA DE CÁLCULO ESTRUCTURAL', 'INFORME DE VERIFICACIÓN ESTRUCTURAL'];
 const MCM_REVS = ['Emitida para revisión', 'Emitida para observaciones o comentarios', 'Emitida para construcción'];
 const MCM_LATERAL = ['marcos arriostrados con diagonales en ambas direcciones', 'marcos rígidos (de momento) en ambas direcciones', 'marcos rígidos en una dirección y arriostrados en la otra',
@@ -51185,7 +51187,7 @@ function mcmCarga(S, sym) { const c = S.cargas.find(x => x.sym === sym); return 
 function mcmDef() {
   return {
     v:1,
-    proy:{titulo:'MEMORIA DE CÁLCULO ESTRUCTURAL', proyecto:'', mandante:'', codigo:'', ubicacion:'', fecha:MCM_HOY(), rev:'0', descRev:'Emitida para revisión', elaboro:'Germán Aguilera, Ingeniero Civil', reviso:''},
+    proy:{titulo:'MEMORIA DE CÁLCULO ESTRUCTURAL', proyecto:'', mandante:'', codigo:'', ubicacion:'', fecha:MCM_HOY(), rev:'0', descRev:'Emitida para revisión', elaboro:'J. Germán Aguilera Hafner, Ingeniero Civil', reviso:''},
     est:{uso:'industrial', acero:true, hormigon:true, madera:false, albanileria:false, metalcon:false, el:JSON.parse(JSON.stringify(MCM_EL0)), elOtro:{acero:'', hormigon:'', madera:'', albanileria:'', metalcon:'', fund:''}, nombre:'', dim:'', niveles:'1', cubierta:'', lateral:'marcos arriostrados con diagonales en ambas direcciones', sisAcero:'columnas, vigas, marcos y arriostramientos', sisHorm:'fundaciones, pedestales y radier', sisMad:'tabiques, entramados y costaneras', fund:'zapatas aisladas unidas por vigas de fundación'},
     mat:Object.fromEntries(Object.entries(MCM_MAT).map(([k, m]) => [k, {unidad: m.extra ? m.extra.opts[0] : undefined, on:['horm','a630','perf','pernos','sold'].includes(k), grado:m.opts[k === 'horm' ? 2 : 0], uso:({horm:'fundaciones, pedestales y radier', horm2:'emplantillado bajo fundaciones', a630:'armaduras de elementos de hormigón', perf:'columnas, vigas y arriostramientos', tubo:'elementos secundarios', pernos:'conexiones apernadas', anc:'anclaje de placas base', sold:'conexiones soldadas', mad:'tabiques y entramados', tab:'arriostramiento de tabiques', mcn:'montantes, soleras, vigas y cerchas', tor:'uniones entre perfiles', alb:'muros resistentes', grout:'pega y relleno de huecos'})[k] || ''}])),
     normSel:{}, normExtra:'',
@@ -51214,6 +51216,7 @@ function mcmMerge(s) {
   out.est.elOtro = Object.assign({acero:'', hormigon:'', madera:'', albanileria:'', metalcon:'', fund:''}, (s.est || {}).elOtro || {});
   const syms = (out.cargas || []).map(c => c.sym); MCM_CARGAS0().forEach(c => { if (!syms.includes(c.sym)) out.cargas.push(c); });
   Object.keys(out.mat).forEach(k => out.mat[k] = Object.assign(mcmDef().mat[k], out.mat[k]));
+  ['elaboro', 'reviso'].forEach(k => { if (out.proy) out.proy[k] = MCM_ING_FIX(out.proy[k]); });
   return out;
 }
 let mcmAvisoQuota = false;
@@ -51542,6 +51545,13 @@ async function mcmDocx(S, Bx, R) {
 // Guardar en el mismo archivo (si se abrió o guardó antes con el selector de archivos) o pedir nombre ("Guardar como")
 async function mcmGuardarEn(fh, nombre, data, mime, desc, ext, como) {
   if (fh && !como) { try { const w = await fh.createWritable(); await w.write(data); await w.close(); fsToast('Guardado: ' + fh.name); return fh; } catch (e) { /* sin permiso: se pide nombre */ } }
+  // «Guardar» (no «Guardar como») sin archivo abierto: se guarda en la carpeta activa de la Mesa, como «Guardar cálculo»
+  // de las planillas (escritura directa, sin diálogo). Si no hay carpeta base o no hay permiso, se pide nombre por descarga.
+  if (!como && typeof FS_ROOT !== 'undefined' && FS_ROOT && typeof fsResolveDir === 'function') {
+    try { if (typeof fsAsegurarEscritura !== 'function' || await fsAsegurarEscritura()) { const dir = await fsResolveDir(FS_ACTIVE_PATH, true);
+      if (dir) { const h = await dir.getFileHandle(nombre, {create:true}); const w = await h.createWritable(); await w.write(data); await w.close();
+        fsToast('Guardado en ' + ((FS_ACTIVE_PATH && FS_ACTIVE_PATH.length) ? FS_ACTIVE_PATH.join(' / ') : FS_ROOT.name) + ': ' + nombre); return h; } } } catch (e) { /* se sigue con el diálogo */ }
+  }
   if (!window.ING_GUARDAR_DESCARGA && typeof window.showSaveFilePicker === 'function') {
     try { const o = {suggestedName: fh ? fh.name : nombre, types:[{description:desc, accept:{[mime]:[ext]}}]}; { const si0 = typeof fsStartIn === 'function' ? await fsStartIn() : null; if (si0) o.startIn = si0; }
       const h = await window.showSaveFilePicker(o); const w = await h.createWritable(); await w.write(data); await w.close(); fsToast('Guardado: ' + h.name); return h; }
@@ -53905,7 +53915,7 @@ function ettDef() {
   return {v:1, proy:{proyecto:'', mandante:'', ubicacion:'', doc:'', rev:'Rev. 0', fecha:MCM_HOY(), elaboro:MCM_ING[0], reviso:'', contacto:'jgaguilera@ingestructural.cl', descripcion:''},
     mats:{acero:true, hormigon:true, madera:false, albanileria:false, metalcon:false}, modo:'separados', sel:{}, txt:{}, secOff:{}, desde:''};
 }
-function ettLoad() { let s = null; try { s = JSON.parse(localStorage.getItem(ETT_LS) || 'null'); } catch (e) {} const d = ettDef(); if (!s) return d; return Object.assign(d, s, {proy:Object.assign(d.proy, s.proy || {}), mats:Object.assign(d.mats, s.mats || {})}); }
+function ettLoad() { let s = null; try { s = JSON.parse(localStorage.getItem(ETT_LS) || 'null'); } catch (e) {} const d = ettDef(); if (!s) return d; const r = Object.assign(d, s, {proy:Object.assign(d.proy, s.proy || {}), mats:Object.assign(d.mats, s.mats || {})}); ['elaboro', 'reviso'].forEach(k => r.proy[k] = MCM_ING_FIX(r.proy[k])); return r; }
 function ettSave(E) { try { localStorage.setItem(ETT_LS, JSON.stringify(E)); } catch (e) {} }
 const ettKey = (m, si, ii, r, c) => `${m}.${si}.${ii}.${r}.${c}`;
 const ettClean = t => String(t).replace(/\s*Los campos de calidad[^.]*listas desplegables[^.]*\.[^.]*\./i, '').replace(/\s*Los campos[^.]*seleccionarse de las listas desplegables[^.]*\./i, '');
@@ -54203,9 +54213,11 @@ function ettBuild(E, mats) {
         else if (it.li) B.push({t:'ul', items:[it.li]});
         else if (it.tbl) {
           const rows0 = null;
-          const rows = it.tbl.slice(1).map((row, r0) => row.map((cell, c) => { const k = ettKey(m.id, si, ii, r0 + 1, c);
-            if (cell && cell.opts) return E.sel[k] || '[COMPLETAR: seleccionar]';
-            if (/\[COMPLETAR/.test(cell)) return (E.txt[k] && E.txt[k].trim()) ? E.txt[k] : cell; return cell; }));
+          // filas con lista sin seleccionar: no se incluyen (ING: lo no seleccionado no se necesita en el proyecto)
+          const rows = it.tbl.slice(1).map((row, r0) => row.some((cell, c) => cell && cell.opts && !E.sel[ettKey(m.id, si, ii, r0 + 1, c)]) ? null : row.map((cell, c) => { const k = ettKey(m.id, si, ii, r0 + 1, c);
+            if (cell && cell.opts) return E.sel[k];
+            if (/\[COMPLETAR/.test(cell)) return (E.txt[k] && E.txt[k].trim()) ? E.txt[k] : cell; return cell; })).filter(Boolean);
+          if (!rows.length) return;
           const nc = it.tbl[0].length, w = nc === 2 ? [3600, 6320] : Array(nc).fill(Math.round(9920 / nc));
           B.push({t:'table', cap:'', head:it.tbl[0].map(String), rows, widths:w, align:Array(nc).fill(nc === 2 ? 'l' : 'c')});
         }
@@ -54215,6 +54227,9 @@ function ettBuild(E, mats) {
   });
   // une viñetas consecutivas
   const out = []; B.forEach(b => { const l = out.at(-1); if (b.t === 'ul' && l && l.t === 'ul') l.items.push(...b.items); else out.push(b); });
+  // subtítulos que quedaron sin contenido (su tabla tenía solo listas sin seleccionar) se quitan
+  const lv = b => ({h1:1, h2:2, h3:3})[b.t] || 9;
+  for (let i = out.length - 1; i >= 0; i--) if (lv(out[i]) > 1 && lv(out[i]) < 9 && (i === out.length - 1 || lv(out[i + 1]) <= lv(out[i]))) out.splice(i, 1);
   let n1 = 0, n2 = 0, n3 = 0;
   out.forEach(b => { if (b.t === 'h1') { n1++; n2 = 0; n3 = 0; b.num = `${n1}.`; } else if (b.t === 'h2') { n2++; n3 = 0; b.num = `${n1}.${n2}`; } else if (b.t === 'h3') { n3++; b.num = `${n1}.${n2}.${n3}`; } });
   return out;
@@ -54244,6 +54259,14 @@ function ettImprimir(E, mats) {
 }
 
 /* ---------- Word ---------- */
+// PDF de las EETT con la misma paginación de las memorias (portada, índice, encabezado, pie y firma) → visor «Ver PDF»
+async function ettPdf(E, mats) {
+  const Q = E.proy, rev = String(Q.rev || '').replace(/^\s*rev\.?\s*/i, '').trim();
+  const P = {titulo:'ESPECIFICACIONES TÉCNICAS', sub1:ettSub(mats), proyecto:Q.proyecto, mandante:Q.mandante, ubicacion:Q.ubicacion, codigo:'',
+    documento:'Especificaciones técnicas — ' + mpgOracion(ettSub(mats)) + (String(Q.doc || '').trim() ? ' (N° ' + Q.doc.trim() + ')' : ''), rev, fecha:Q.fecha, elaboro:Q.elaboro, reviso:Q.reviso};
+  const R = await mpgPaginar({proy:P, portada:{}}, ettBuild(E, mats));
+  return mpgAPdf(R.html);
+}
 async function ettDocx(E, mats) {
   const d = await mcmLoadDocx();
   const {Document, Packer, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, Header, Footer, AlignmentType, WidthType, BorderStyle, ShadingType, PageNumber, HeadingLevel, PageBreak, TabStopType, VerticalAlign, LevelFormat, TableLayoutType, TableOfContents} = d;
@@ -54339,7 +54362,7 @@ function renderEETT(container) {
       <div class="field-grid"><div class="field"><label>Emisión</label><select data-modo><option value="separados" ${E.modo === 'separados' ? 'selected' : ''}>Un documento por material</option><option value="unico" ${E.modo === 'unico' ? 'selected' : ''}>Un solo documento con todos los materiales</option></select></div></div></div>
     ${A.map((m, i) => matPanel(m, 4 + i)).join('')}
     <div class="panel"><h3>${4 + A.length} · Emitir</h3>
-      <div class="mem-btns">${E.modo === 'unico' || A.length <= 1 ? `<button type="button" class="mem-btn" data-word="all">⬇ Descargar Word</button><button type="button" class="mem-btn" data-pdf="all">🖨 Imprimir / Guardar PDF</button>` : A.map(m => `<button type="button" class="mem-btn" data-word="${m.id}">⬇ Word — ${esc(m.label)}</button>`).join('') + A.map(m => `<button type="button" class="btn-add" data-pdf="${m.id}">🖨 PDF — ${esc(m.label)}</button>`).join('')}
+      <div class="mem-btns">${E.modo === 'unico' || A.length <= 1 ? `<button type="button" class="mem-btn" data-word="all">⬇ Descargar Word</button><button type="button" class="mem-btn" data-verpdf="all">👁 Ver PDF</button><button type="button" class="mem-btn" data-pdf="all">🖨 Imprimir / Guardar PDF</button>` : A.map(m => `<button type="button" class="mem-btn" data-word="${m.id}">⬇ Word — ${esc(m.label)}</button>`).join('') + A.map(m => `<button type="button" class="mem-btn" data-verpdf="${m.id}">👁 Ver PDF — ${esc(m.label)}</button>`).join('') + A.map(m => `<button type="button" class="btn-add" data-pdf="${m.id}">🖨 PDF — ${esc(m.label)}</button>`).join('')}
         <button type="button" class="btn-add" data-act="guardar">💾 Guardar</button><button type="button" class="btn-add" data-act="guardarComo">💾 Guardar como…</button><input type="file" accept=".json,application/json" id="ettFile" hidden></div>
       <div class="note">Word: al abrirlo, Word pregunta si actualiza los campos → Sí, para llenar el índice. Lo que falta queda destacado como [COMPLETAR].</div>
       ${A.length ? `<div class="field-grid" style="margin:.4rem 0">${E.modo === 'unico' || A.length <= 1 ? '' : `<div class="field"><label>Vista previa</label><select data-prev>${A.map(m => `<option value="${m.id}" ${E.prev === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></div>`}</div>
@@ -54363,6 +54386,11 @@ function renderEETT(container) {
   root.addEventListener('click', async e => { const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.mat) { E.mats[b.dataset.mat] = !E.mats[b.dataset.mat]; ettSave(E); draw(); return; }
     if (b.dataset.pdf) { ettImprimir(E, matsDe(b.dataset.pdf)); return; }
+    if (b.dataset.verpdf) { const mats = matsDe(b.dataset.verpdf); if (!mats.length) return; b.disabled = true; const t0 = b.textContent; b.textContent = '⏳ Generando…';
+      try { const tag = mats.length === 1 ? mats[0].label.replace(/^Estructuras de /, '') : 'Estructuras';
+        mcmVerPdf(await ettPdf(E, mats), `EETT_${mcmSlug(tag)}_${mcmSlug(E.proy.proyecto) || 'proyecto'}_${mcmSlug(E.proy.rev)}.pdf`); }
+      catch (err) { fsToast('No se pudo generar el PDF: ' + ((err && err.message) || err)); }
+      b.disabled = false; b.textContent = t0; return; }
     if (b.dataset.word) { const mats = matsDe(b.dataset.word); if (!mats.length) return; b.disabled = true; const t0 = b.textContent; b.textContent = 'Generando Word…';
       try { const blob = await ettDocx(E, mats); const tag = mats.length === 1 ? mats[0].label.replace(/^Estructuras de /, '') : 'Estructuras';
         await mcmGuardarArchivo(`EETT_${mcmSlug(tag)}_${mcmSlug(E.proy.proyecto) || 'proyecto'}_${mcmSlug(E.proy.rev)}.docx`, blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Documento de Word', '.docx'); }
@@ -54371,7 +54399,7 @@ function renderEETT(container) {
     const a = b.dataset.act;
     if (a === 'doc') ettDocumento(traer);
     else if (a === 'desdeArchivo') root.querySelector('#ettMemFile').click();
-    else if (a === 'abrir') { const r = await mcmAbrirJson('Especificaciones técnicas (.json)', root.querySelector('#ettFile')); if (!r) return; try { const o = JSON.parse(r.text); if (!o || !o.proy || !o.mats) throw 0; E = Object.assign(ettDef(), o); ettFH = r.fh; ettSave(E); draw(); fsToast('EETT abiertas: ' + r.name); } catch (err) { fsToast('Ese archivo no son EETT guardadas.'); } }
+    else if (a === 'abrir') { const r = await mcmAbrirJson('Especificaciones técnicas (.json)', root.querySelector('#ettFile')); if (!r) return; try { const o = JSON.parse(r.text); if (!o || !o.proy || !o.mats) throw 0; E = Object.assign(ettDef(), o); ['elaboro', 'reviso'].forEach(k => E.proy[k] = MCM_ING_FIX(E.proy[k])); ettFH = r.fh; ettSave(E); draw(); fsToast('EETT abiertas: ' + r.name); } catch (err) { fsToast('Ese archivo no son EETT guardadas.'); } }
     else if (a === 'guardar' || a === 'guardarComo') { ettFH = await mcmGuardarEn(ettFH, `EETT_${mcmSlug(E.proy.proyecto) || 'proyecto'}_${mcmSlug(E.proy.rev)}.json`, JSON.stringify(E), 'application/json', 'Especificaciones técnicas (.json)', '.json', a === 'guardarComo'); draw(); }
     else if (a === 'nueva') { if (Date.now() - armado > 4000) { armado = Date.now(); fsToast('Vuelve a pulsar «Nueva EETT» para empezar unas en blanco (guarda antes las actuales si las necesitas).'); return; } armado = 0; E = ettDef(); ettFH = null; ettSave(E); draw(); fsToast('EETT nuevas en blanco.'); }
   });
