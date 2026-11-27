@@ -48314,7 +48314,7 @@ function efAccion0(e) {
   const perfil = () => ({c: 'bad', g: 'perfil', t: 'Cambiar perfil', a: `Ningún producto ensayado cubre este perfil${am != null ? ` (Am/V ${am} m⁻¹${am > 390 ? '; el Listado admite hasta 390 m⁻¹' : ''})` : ''}. Use un perfil más robusto o revise la función.`});
   if (e.exento || e.Freq === 0) return {c: 'ok', g: 'sinexig', t: 'No requiere protección', a: e.exento ? 'Exención del Art. 4.3.26.' : 'Sin exigencia de resistencia al fuego.'};
   if (/datos inválidos/.test(est1)) return {c: 'bad', g: 'datos', t: 'Datos inválidos', a: motivo};
-  if (e.Freq == null) return {c: 'warn', g: 'datos', t: 'Falta la exigencia', a: motivo.replace(/^exigencia no determinada:?\s*/, '') || 'Complete la función y el tipo de edificio.'};
+  if (e.Freq == null) return {c: 'warn', g: 'exig', t: 'Falta la exigencia', a: motivo.replace(/^exigencia no determinada:?\s*/, '') || 'Complete la función y el tipo de edificio.'};
   if (e.metodoCr === 'mu_mayor_1') return {c: 'bad', g: 'perfil', t: 'Cambiar perfil', a: 'El perfil no resiste la combinación de incendio ni a temperatura ambiente (μ0 > 1).'};
   if (e.prot === 'ninguna') {
     if (e.tcr != null && e.tcr < e.Freq) return alts.length ? {c: 'bad', g: 'elegir', t: 'Necesita protección', a: `Sin protección resiste ${fmt1(e.tcr)} min de los ${e.Freq} exigidos. Elija un producto:`, alts} : perfil();
@@ -48341,7 +48341,7 @@ function efAccion0(e) {
   }
   return {c: 'ok', g: 'ok', t: 'Cumple', a: `${P.corto || P.nombre} ${e.espProp} ${u} (mínimo ${e.espReq} ${u}).`};
 }
-const EF_ACC_ORDEN = ['perfil', 'elegir', 'insuf', 'datos', 'asim', 'calc', 'cob', 'ok', 'sinexig'];
+const EF_ACC_ORDEN = ['perfil', 'elegir', 'insuf', 'exig', 'datos', 'asim', 'calc', 'cob', 'ok', 'sinexig'];
 const EF_ACC_ICO = {bad: '✗', warn: '!', amar: '◐', vcalc: '✓', conf: '○', asim: '◇', ok: '✓'};
 function efAccBotones(alts) {
   return (alts || []).slice(0, 4).map(a => `<button type="button" class="ef-usar" data-k="${a.k}" data-v="${Math.ceil(a.v)}"${EF_PROT[a.k].listado ? '' : ' title="Producto con informe de ensayo, no inscrito en el Listado: se acredita por asimilación (sección 5)."'}>Usar ${esc(EF_PROT[a.k].corto || EF_PROT[a.k].nombre)} · ${esc(a.txt || (Math.ceil(a.v) + ' ' + (a.u || '')))}${EF_PROT[a.k].listado ? '' : ' · por asimilación'}</button>`).join('');
@@ -48354,7 +48354,7 @@ function efEstadoHtml(r) {
   const G = {};
   E.forEach((e, i) => { const a = efAccion(e); const k = a.g + '|' + a.t; (G[k] = G[k] || {a, idx: []}).idx.push(i); });
   const filas = Object.values(G).sort((x, y) => EF_ACC_ORDEN.indexOf(x.a.g) - EF_ACC_ORDEN.indexOf(y.a.g));
-  const que = {perfil: 'Cambiar el perfil por uno más robusto (ningún producto lo cubre).', elegir: 'Elegir un producto en la ficha (botón «Usar…»).', insuf: 'Cambiar el producto o subir el espesor (botón «Usar…» en la ficha).', datos: 'Completar los datos que indica la ficha.', calc: 'Presentar la memoria de cálculo como antecedente técnico.', cob: 'Confirmar la cobertura y anotar la referencia en la ficha.', asim: 'Completar la asimilación en la sección 5 (ensayo de referencia y comparación).', ok: 'Nada.', sinexig: 'Nada.'};
+  const que = {perfil: 'Cambiar el perfil por uno más robusto (ningún producto lo cubre).', elegir: 'Elegir un producto en la ficha (botón «Usar…»).', insuf: 'Cambiar el producto o subir el espesor (botón «Usar…» en la ficha).', exig: 'Asignar la función del elemento: en los [RAM], en la tabla de grupos de la sección 3a y volver a incorporar; en los demás, en la ficha. Sin función (o sin tipo de edificio, sección 2) no hay exigencia F.', datos: 'Completar los datos que indica la ficha.', calc: 'Presentar la memoria de cálculo como antecedente técnico.', cob: 'Revisar en el documento del producto (Listado o informe de ensayo) que cubre ese perfil con ese espesor; luego, en la ficha, poner «Cobertura: Confirmada» y anotar la referencia (documento, tabla, página).', asim: 'Completar la asimilación en la sección 5 (ensayo de referencia y comparación).', ok: 'Nada.', sinexig: 'Nada.'};
   return `<table class="results ef-estado" style="width:100%;font-size:.8rem;margin:.2rem 0 .8rem"><tr><th style="width:24%">Estado</th><th>Elementos</th><th style="width:38%">Qué hacer</th></tr>${filas.map(f => `<tr><td style="text-align:left"><span class="chip ${f.a.c}">${EF_ACC_ICO[f.a.c] || ''} ${esc(f.a.t)}</span></td><td style="text-align:left">${f.idx.map(i => `<a href="#" data-ir="${i}">${esc(nom(E[i]))}</a>`).join(', ')}</td><td style="text-align:left">${esc(que[f.a.g] || '')}</td></tr>`).join('')}</table>`;
 }
 // Mejora (solo vista web, no se imprime): para cada elemento que no cumple o queda fuera del rango ensayado,
