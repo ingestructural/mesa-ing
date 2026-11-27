@@ -384,6 +384,27 @@
   #powerSel .ps-it b{flex:0 0 auto; min-width:6.5rem; color:#0b4a8f;}
   #powerSel .ps-it span{display:flex; flex-direction:column;} #powerSel .ps-it small{color:var(--ink-muted, #5b6573);}
   #powerSel .ps-vacio{padding:.8rem .4rem; color:var(--ink-muted, #5b6573);}
+  .ett-modal{position:fixed; inset:0; z-index:9000; background:rgba(15,25,40,.35); display:flex; align-items:flex-start; justify-content:center; padding:8vh 16px 16px;}
+  .ett-modal .ett-box{background:var(--panel, #fff); color:var(--ink, #1b2430); width:min(640px,100%); max-height:80vh; display:flex; flex-direction:column; border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,.25); padding:.9rem 1rem; gap:.5rem;}
+  .ett-modal .ps-top{display:flex; justify-content:space-between; align-items:center; gap:.5rem;}
+  .ett-modal .ps-x{border:0; background:none; font-size:1.1rem; cursor:pointer; color:inherit;}
+  .ett-modal .ps-q{width:100%; max-width:100%; box-sizing:border-box; text-align:left; padding:.45rem .6rem; font-size:.95rem;}
+  .ett-modal .ps-est{font-size:.8rem; color:var(--ink-muted, #5b6573);}
+  .ett-modal .ps-login{display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.35rem;} .ett-modal .ps-login input{text-align:left; min-width:0; flex:1 1 10rem;}
+  .ett-modal .ps-lista{overflow:auto; display:flex; flex-direction:column; border-top:1px solid var(--line, #e3e7ee);}
+  .ett-modal .ps-it{display:flex; gap:.8rem; align-items:baseline; text-align:left; font:inherit; padding:.5rem .4rem; border:0; border-bottom:1px solid var(--line, #e3e7ee); background:none; color:inherit; cursor:pointer;}
+  .ett-modal .ps-it:hover{background:rgba(0,96,193,.07);} .ett-modal .ps-it.sel{background:rgba(0,96,193,.12);}
+  .ett-modal .ps-it b{flex:0 0 auto; min-width:6.5rem; color:#0b4a8f;}
+  .ett-modal .ps-it span{display:flex; flex-direction:column;} .ett-modal .ps-it small{color:var(--ink-muted, #5b6573);}
+  .ett-modal .ps-vacio{padding:.8rem .4rem; color:var(--ink-muted, #5b6573);}
+  .ett-modal .ett-box{width:min(760px,100%); max-height:86vh;} .ett-modal{padding-top:5vh;}
+  .ett-modal .ett-scroll{overflow:auto; display:flex; flex-direction:column; gap:.15rem; border-top:1px solid var(--line, #e3e7ee); padding-top:.3rem;}
+  .ett-modal .ett-pane{display:flex; flex-direction:column; gap:.5rem; min-height:0; overflow:auto;}
+  .ett-modal h4{margin:.6rem 0 .2rem; font-size:.9rem; color:#0b4a8f;}
+  .ett-modal .ett-r{display:flex; gap:.5rem; align-items:flex-start; padding:.3rem .2rem; border-bottom:1px solid var(--line, #e3e7ee); cursor:pointer; font-size:.88rem;}
+  .ett-modal .ett-r span{display:flex; flex-direction:column; gap:.15rem; flex:1; min-width:0;} .ett-modal .ett-r small{color:var(--ink-muted, #5b6573); font-size:.76rem;}
+  .ett-modal .ett-r textarea{width:100%; box-sizing:border-box; font-size:.8rem; text-align:left;}
+  .ett-modal .ett-tabs{flex-wrap:wrap;}
 
   /* margen de página reducido a propósito (antes 12mm 14mm): Chrome dibuja su propio encabezado/pie de
      impresión (fecha, título de la pestaña, URL) DENTRO del margen de la hoja — es un elemento del propio
@@ -53888,17 +53909,274 @@ function ettLoad() { let s = null; try { s = JSON.parse(localStorage.getItem(ETT
 function ettSave(E) { try { localStorage.setItem(ETT_LS, JSON.stringify(E)); } catch (e) {} }
 const ettKey = (m, si, ii, r, c) => `${m}.${si}.${ii}.${r}.${c}`;
 const ettClean = t => String(t).replace(/\s*Los campos de calidad[^.]*listas desplegables[^.]*\.[^.]*\./i, '').replace(/\s*Los campos[^.]*seleccionarse de las listas desplegables[^.]*\./i, '');
-// trae desde la memoria: datos de proyecto, descripción, materiales activos y calidades por defecto
-function ettDesdeMemoria(E, M) {
-  const P = M.proy;
-  Object.assign(E.proy, {proyecto:P.proyecto || E.proy.proyecto, mandante:P.mandante || E.proy.mandante, ubicacion:P.ubicacion || E.proy.ubicacion, fecha:P.fecha || E.proy.fecha, elaboro:P.elaboro || E.proy.elaboro, reviso:P.reviso || E.proy.reviso, rev:'Rev. ' + (P.rev || '0')});
-  if (P.codigo) E.proy.doc = P.codigo;
-  E.proy.descripcion = [mcmTxt(M, 'descGen'), mcmTxt(M, 'descSis'), M.est.hormigon ? mcmTxt(M, 'descFund') : ''].filter(Boolean).join('\n\n');
-  ETT_MATS.forEach(m => E.mats[m.id] = !!M.est[m.mem]);
+/* ---------- traer datos a las EETT desde un documento ----------
+   Todas las fuentes arman un «candidato» C y pasan por la misma ventana de revisión (ettRevisar), donde solo se trae
+   lo marcado. Fuentes: memoria (.json del Constructor), otras EETT (.json), proyecto de POWER, documentos emitidos
+   en Archivo ING (memorias e informes, PDF o Word) y archivos Word/PDF/texto del computador.
+   C = {origen, proy:{campo:valor}, descripcion, mats:{id:true}|null, sel:{clave:valor}, txt, secOff, ev:{clave:'texto encontrado'}, amb:{clave:true}} */
+const ETT_PROY_LBL = {proyecto:'Proyecto', mandante:'Mandante', ubicacion:'Ubicación', doc:'N° de documento', rev:'Revisión', fecha:'Fecha', elaboro:'Elaborado por', reviso:'Revisado por'};
+const ETT_PROY_OFF = ['rev', 'fecha', 'doc'];   // datos del documento de origen: se ofrecen sin marcar (las EETT son un documento nuevo)
+function ettCandVacio(origen) { return {origen, proy:{}, descripcion:'', mats:null, sel:{}, txt:null, secOff:null, ev:{}, amb:{}}; }
+// memoria de cálculo del Constructor de Memorias (objeto ya pasado por mcmMerge)
+function ettCandMemoria(M, origen) {
+  const P = M.proy, C = ettCandVacio(origen || ('memoria ' + mcmV(P.proyecto, 'sin nombre')));
+  ['proyecto', 'mandante', 'ubicacion', 'fecha', 'elaboro', 'reviso'].forEach(k => { if (P[k]) C.proy[k] = P[k]; });
+  if (P.rev) C.proy.rev = 'Rev. ' + P.rev; if (P.codigo) C.proy.doc = P.codigo;
+  C.descripcion = [mcmTxt(M, 'descGen'), mcmTxt(M, 'descSis'), M.est.hormigon ? mcmTxt(M, 'descFund') : ''].filter(Boolean).join('\n\n');
+  C.mats = {}; ETT_MATS.forEach(m => { if (M.est[m.mem]) C.mats[m.id] = true; });
+  ETT_MATS.filter(m => C.mats[m.id]).forEach(m => (ETT_LIB[m.id] || []).forEach((sec, si) => sec.items.forEach((it, ii) => { if (!it.tbl) return;
+    it.tbl.forEach((row, r) => row.forEach((cell, c) => { if (!cell || !cell.opts) return; const lab = String(row[0] || '');
+      const rule = ETT_MAP.find(x => x[0] === m.id && x[1].test(lab)); if (!rule) return; let v = null; try { v = rule[2](M); } catch (e) {} if (v && cell.opts.includes(v)) C.sel[ettKey(m.id, si, ii, r, c)] = v; })); })));
+  return C;
+}
+// otras EETT guardadas (.json): datos del proyecto, materiales, calidades, textos completados y capítulos
+function ettCandEETT(o, origen) {
+  const C = ettCandVacio(origen || ('EETT ' + mcmV((o.proy || {}).proyecto, 'sin nombre')));
+  Object.keys(ETT_PROY_LBL).forEach(k => { const v = (o.proy || {})[k]; if (v && String(v).trim()) C.proy[k] = String(v).trim(); });
+  C.descripcion = (o.proy || {}).descripcion || '';
+  C.mats = {}; Object.keys(o.mats || {}).forEach(k => { if (o.mats[k]) C.mats[k] = true; });
+  Object.entries(o.sel || {}).forEach(([k, v]) => { if (v && C.mats[k.split('.')[0]]) C.sel[k] = v; });
+  const tx = Object.entries(o.txt || {}).filter(([k, v]) => v && String(v).trim()); if (tx.length) C.txt = Object.fromEntries(tx);
+  if (o.secOff && Object.values(o.secOff).some(Boolean)) C.secOff = o.secOff;
+  return C;
+}
+// texto libre de un documento (Word, PDF, texto), con los datos de su ficha cuando viene de Archivo ING
+const ETT_LBL_RX = {
+  proyecto:/^(?:nombre del proyecto|proyecto|obra)(?:\s*[:\t]\s*|\s{2,})(.+)$/i,
+  mandante:/^(?:mandante|cliente|propietario)(?:\s*[:\t]\s*|\s{2,})(.+)$/i,
+  ubicacion:/^(?:ubicaci[oó]n|emplazamiento|direcci[oó]n|instalaci[oó]n)(?:\s*[:\t]\s*|\s{2,})(.+)$/i,
+  doc:/^(?:c[oó]digo(?: power| del proyecto)?)(?:\s*[:\t]\s*|\s{2,})(.+)$/i,
+  elaboro:/^(?:elaborad[oa] por|elabor[oó]|preparad[oa] por)(?:\s*[:\t]\s*|\s{2,})(.+)$/i,
+  reviso:/^(?:revisad[oa] por|revis[oó])(?:\s*[:\t]\s*|\s{2,})(.+)$/i,
+};
+// [material, fila de la tabla (rótulo), opción de la lista, patrón en el texto, patrón que debe estar en la misma línea]
+const ETT_DET = [
+  ['acero', /laminados|soldados|Planchas/, 'ASTM A572 Gr.50', /\bA[\s-]?572\b/i],
+  ['acero', /laminados/, 'ASTM A992', /\bA[\s-]?992\b/i],
+  ['acero', /laminados|soldados|Planchas/, 'ASTM A36', /\bA[\s-]?36\b/i, /perfil|plancha|plat|acero|calidad|\bIPN\b|\bHEB?\b|\bIN\s?\d/i],
+  ['acero', /laminados|soldados|Planchas/, 'NCh203 A42-27ES', /\bA[\s-]?(?:42-27|270)\s?ES\b/i],
+  ['acero', /laminados|soldados/, 'NCh203 A52-34ES', /\bA[\s-]?(?:52-34|345)\s?ES\b/i],
+  ['acero', /Tubos/, 'ASTM A500 Gr.C', /\bA[\s-]?500\s*(?:Gr(?:ado)?\.?\s*)?C\b/i],
+  ['acero', /Tubos/, 'ASTM A53 Gr.B', /\bA[\s-]?53\s*(?:Gr(?:ado)?\.?\s*)?B\b/i],
+  ['acero', /Tubos/, 'ASTM A252', /\bA[\s-]?252\b/i],
+  ['acero', /Pernos de conexi/, 'ASTM A325 / F3125 Gr.A325 (tipo 1)', /\bA[\s-]?325\b/i],
+  ['acero', /Pernos de conexi/, 'ASTM A490 / F3125 Gr.A490', /\bA[\s-]?490\b/i],
+  ['acero', /Pernos de conexi/, 'ASTM A307 Gr.A', /\bA[\s-]?307\b/i],
+  ['acero', /Pernos de anclaje/, 'ASTM F1554 Gr.36', /\bF\s?1554\s*(?:Gr(?:ado)?\.?\s*)?36\b/i],
+  ['acero', /Pernos de anclaje/, 'ASTM F1554 Gr.55', /\bF\s?1554\s*(?:Gr(?:ado)?\.?\s*)?55\b/i],
+  ['acero', /Tuercas/, 'ASTM A563', /\bA[\s-]?563\b/i],
+  ['acero', /Tuercas/, 'ASTM F436 (golillas endurecidas)', /\bF\s?436\b/i],
+  ['acero', /Proceso de soldadura/, 'SMAW', /\bSMAW\b/], ['acero', /Proceso de soldadura/, 'FCAW', /\bFCAW\b/],
+  ['acero', /Proceso de soldadura/, 'GMAW', /\bGMAW\b/], ['acero', /Proceso de soldadura/, 'SAW', /\bSAW\b/],
+  ['acero', /Electrodo/, 'E70XX', /\bE\s?70(?:XX|18|16|10|11|13|14|24|28)\b/i],
+  ['acero', /Electrodo/, 'E71T-1', /\bE\s?71T-1\b/i], ['acero', /Electrodo/, 'ER70S-6', /\bER\s?70S-6\b/i],
+  ['acero', /Sistema de protecci/, 'Galvanizado + pintura (sistema dúplex)', /d[uú]plex/i],
+  ['acero', /Sistema de protecci/, 'Galvanizado en caliente (NCh2954 / ASTM A123)', /galvanizad[oa]s? en caliente|\bA\s?123\b|NCh\s?2954/i],
+  ['acero', /preparaci[oó]n de superficie/, 'SSPC-SP10 — Casi metal blanco (Near White Metal)', /\bSP\s?-?\s?10\b/i],
+  ['acero', /preparaci[oó]n de superficie/, 'SSPC-SP6 — Limpieza comercial (Commercial Blast)', /\bSP\s?-?\s?6\b/i],
+  ['acero', /preparaci[oó]n de superficie/, 'SSPC-SP2 — Limpieza con herramienta manual (Hand Tool)', /\bSP\s?-?\s?2\b/i],
+  ['acero', /preparaci[oó]n de superficie/, 'SSPC-SP3 — Limpieza con herramienta motorizada (Power Tool)', /\bSP\s?-?\s?3\b/i],
+  ...['G17', 'G20', 'G25', 'G30', 'G35', 'G40'].map(g => ['hormigon', /Grado de resistencia/, g, new RegExp('\\b' + g.replace('G', 'G\\s?') + '\\b')]),
+  ['hormigon', /barras de refuerzo/i, 'A630H (NCh204:2020) — grado estándar', /\bA[\s-]?630(?:-420)?\s?H\b/i],
+  ['hormigon', /barras de refuerzo/i, 'A440H (NCh204:2020)', /\bA[\s-]?440(?:-280)?\s?H\b/i],
+  ['hormigon', /Malla electrosoldada/, 'C-92', /\bC\s?-\s?92\b/i], ['hormigon', /Malla electrosoldada/, 'C-139', /\bC\s?-\s?139\b/i], ['hormigon', /Malla electrosoldada/, 'C-188', /\bC\s?-\s?188\b/i],
+  ['hormigon', /Tipo de cemento/, 'Cemento Resistente a Sulfatos', /resistente a (?:los )?sulfatos/i],
+  ['madera', /^Especie/, 'Pino radiata', /pino radiata/i], ['madera', /^Especie/, 'Pino oregón (Douglas fir)', /oreg[oó]n|douglas/i],
+  ['madera', /^Especie/, 'Eucalyptus nitens', /eucal[iy]ptus nitens/i], ['madera', /^Especie/, 'Raulí', /\braul[ií]\b/i],
+  ['madera', /^Especie/, 'Lenga', /\blenga\b/i],
+  ['madera', /visual/, 'GS', /grado (?:estructural )?GS\b/i], ['madera', /visual/, 'G1', /grado (?:estructural )?G1\b/i], ['madera', /visual/, 'G2', /grado (?:estructural )?G2\b/i],
+  ['madera', /mecánica/, 'C16 (BS EN 14081)', /\bC16\b/], ['madera', /mecánica/, 'C24 (BS EN 14081)', /\bC24\b/],
+  ['madera', /mecánica/, 'MGP10 (AS/NZS 1748)', /\bMGP\s?10\b/i], ['madera', /mecánica/, 'MGP12 (AS/NZS 1748)', /\bMGP\s?12\b/i],
+  ['madera', /laminada/i, 'Sí — elementos principales (vigas/columnas)', /laminada encolada|\bMLE\b/i],
+  ['albanileria', /Tipo de albañilería/, 'Albañilería armada (NCh1928)', /alba[ñn]iler[ií]a armada|NCh\s?1928/i],
+  ['albanileria', /Tipo de albañilería/, 'Albañilería confinada (NCh2123)', /alba[ñn]iler[ií]a confinada|NCh\s?2123/i],
+  ['albanileria', /Tipo de unidad/, 'Bloque de hormigón (NCh181)', /bloques? de hormig[oó]n/i],
+  ['albanileria', /Clase de mortero/, 'M10', /\bM\s?10\b/, /mortero/i], ['albanileria', /Clase de mortero/, 'M12,5', /\bM\s?12[,.]5\b/, /mortero/i], ['albanileria', /Clase de mortero/, 'M15', /\bM\s?15\b/, /mortero/i],
+  ['albanileria', /^Barras de refuerzo/, 'A630H (NCh204:2020)', /\bA[\s-]?630(?:-420)?\s?H\b/i],
+  ['metalcon', /^Calidad del acero/, 'ASTM A653 SS Grado 40 (fy = 2.812 kgf/cm²; fu = 3.867 kgf/cm²)', /\bA[\s-]?653\b.{0,25}?\b(?:Gr(?:ado)?\.?\s*)40\b/i],
+  ['metalcon', /^Calidad del acero/, 'ASTM A653 SS Grado 37', /\bA[\s-]?653\b.{0,25}?\b(?:Gr(?:ado)?\.?\s*)37\b/i],
+  ['metalcon', /^Calidad del acero/, 'ASTM A653 SS Grado 50 Clase 1', /\bA[\s-]?653\b.{0,25}?\b(?:Gr(?:ado)?\.?\s*)50\b/i],
+  ['metalcon', /^Calidad del acero/, 'ASTM A1003 ST40H', /\bA[\s-]?1003\b/i],
+  ['metalcon', /^Recubrimiento met/, 'Galvanizado G90 (Z275, 275 g/m²)', /\bG90\b|\bZ\s?275\b/i],
+  ['metalcon', /^Recubrimiento met/, 'Galvanizado G60 (Z180) — solo interior seco', /\bG60\b|\bZ\s?180\b/i],
+  ['metalcon', /^Recubrimiento met/, 'Aluzinc AZ150 (ASTM A792)', /\bAZ\s?150\b/i],
+  ['metalcon', /^Tableros estructurales/, 'OSB 9,5 mm', /\bOSB\b.{0,6}9[,.]5/i], ['metalcon', /^Tableros estructurales/, 'OSB 11,1 mm', /\bOSB\b.{0,6}11[,.]1/i], ['metalcon', /^Tableros estructurales/, 'OSB 15,1 mm', /\bOSB\b.{0,6}15[,.]1/i],
+];
+const ETT_MAT_RX = {
+  acero:/acero estructural|estructura(?:s)? de acero|de acero (?:ASTM|A[\s-]?\d)|perfiles? (?:laminad|soldad|de acero)|AISC\s?360|NCh\s?427|\bA[\s-]?572\b|\bA[\s-]?(?:270|345)\s?ES\b/i,
+  hormigon:/hormig[oó]n armado|ACI\s?318|NCh\s?430\b|fundaci[oó]n(?:es)? de hormig/i,
+  madera:/NCh\s?1198|estructura(?:s)? de madera|madera aserrada|madera laminada/i,
+  albanileria:/alba[ñn]iler[ií]a (?:armada|confinada|reforzada)|NCh\s?(?:1928|2123)/i,
+  metalcon:/metalcon|AISI\s?S100|\bA\s?653\b|acero galvanizado liviano|perfiles? (?:conformados? en fr[ií]o|plegados)/i,
+};
+function ettCorto(s, i, n) { const a = Math.max(0, i - 40), t = s.slice(a, a + (n || 110)).replace(/\s+/g, ' ').trim(); return (a > 0 ? '…' : '') + t + '…'; }
+function ettCandTexto(texto, meta, origen) {
+  const C = ettCandVacio(origen), T = String(texto || '').replace(/\r/g, ''), lines = T.split('\n').map(l => l.replace(/ /g, ' ').trim()).filter(Boolean);
+  meta = meta || {};
+  // datos del proyecto: ficha de Archivo ING primero; si no, rótulos «Proyecto: …» del documento
+  if (meta.proyecto) C.proy.proyecto = meta.proyecto; if (meta.mandante) C.proy.mandante = meta.mandante; if (meta.codigo) C.proy.doc = meta.codigo;
+  lines.slice(0, 90).forEach(l => Object.entries(ETT_LBL_RX).forEach(([k, rx]) => { if (C.proy[k]) return; const m = rx.exec(l); if (!m) return;
+    const v = m[1].split(/\t|\s+·\s+/).map(x => x.trim()).find(Boolean); if (v && v.length <= 160 && !/^[.\-—–\s\d]*$/.test(v)) { C.proy[k] = v; C.ev['p:' + k] = l.slice(0, 120); } }));
+  // descripción: párrafos bajo un título que diga «Descripción» (se descarta el índice)
+  for (let i = 0; i < lines.length && !C.descripcion; i++) {
+    const h = lines[i]; if (!/^(?:\d+(?:\.\d+)*\.?\s*)?descripci[oó]n/i.test(h) || /\t|\s{2,}\S+\s{2,}/.test(h) || h.length > 90 || /\d+\s*$/.test(h) && /\.{3,}|\t/.test(h)) continue;
+    const out = []; let n = 0;
+    for (let j = i + 1; j < lines.length && n < 1600; j++) { const l = lines[j];
+      const titulo = l.length < 90 && (/^\d+(?:\.\d+)*\.?\s+\S/.test(l) || (l === l.toUpperCase() && /[A-ZÁÉÍÓÚÑ]{4}/.test(l)));
+      if (titulo) { if (out.length) break; else continue; }
+      if (/^(?:figura|fig\.|tabla)\s*\S+[:.]/i.test(l)) continue;
+      out.push(l); n += l.length; }
+    const d = out.join('\n'); if (d.length >= 80) { C.descripcion = d.length > 1800 ? d.slice(0, 1800).replace(/\s+\S*$/, '') + '…' : d; C.descTit = h; if (!/estructura|proyecto|obra/i.test(h)) C.descOff = true; }
+  }
+  // calidades: cada patrón se busca línea a línea; si una misma fila tiene varias calidades, se ofrece sin marcar
+  const porFila = {};
   ETT_MATS.forEach(m => (ETT_LIB[m.id] || []).forEach((sec, si) => sec.items.forEach((it, ii) => { if (!it.tbl) return;
     it.tbl.forEach((row, r) => row.forEach((cell, c) => { if (!cell || !cell.opts) return; const lab = String(row[0] || '');
-      const rule = ETT_MAP.find(x => x[0] === m.id && x[1].test(lab)); if (!rule) return; let v = null; try { v = rule[2](M); } catch (e) {} if (v && cell.opts.includes(v)) E.sel[ettKey(m.id, si, ii, r, c)] = v; })); })));
-  E.desde = `${ettV(P.proyecto, 'memoria')} · ${new Date().toLocaleDateString('es-CL')}`;
+      ETT_DET.filter(d => d[0] === m.id && d[1].test(lab) && cell.opts.includes(d[2])).forEach(d => {
+        const l = lines.find(x => d[3].test(x) && (!d[4] || d[4].test(x))); if (!l) return;
+        const k = ettKey(m.id, si, ii, r, c); (porFila[k] = porFila[k] || []).push([d[2], ettCorto(l, l.search(d[3]))]); }); })); })));
+  Object.entries(porFila).forEach(([k, L]) => { C.sel[k] = L[0][0]; C.ev[k] = L.map(x => x[1]).filter((x, i, a) => a.indexOf(x) === i).slice(0, 2).join(' / ');
+    if (L.length > 1) { C.amb[k] = true; C.ev[k] = 'El documento menciona varias: ' + L.map(x => x[0]).join(', ') + '.'; } });
+  // materiales: por palabras clave o porque se encontró alguna calidad del material
+  C.mats = {};
+  ETT_MATS.forEach(m => { const l = lines.find(x => ETT_MAT_RX[m.id].test(x)); const s = Object.keys(C.sel).find(k => k.startsWith(m.id + '.'));
+    if (l || s) { C.mats[m.id] = true; C.ev['m:' + m.id] = l ? ettCorto(l, l.search(ETT_MAT_RX[m.id])) : 'Solo se encontró una calidad de este material; revise antes de marcar.'; if (!l) C.matOff = Object.assign(C.matOff || {}, {[m.id]:true}); } });
+  return C;
+}
+// texto de un archivo: PDF (pdf.js), Word .docx (document.xml) o texto
+async function ettTextoDe(blob, nombre) {
+  const n = String(nombre || '').toLowerCase();
+  if (/\.pdf$/.test(n) || blob.type === 'application/pdf') {
+    const lib = await firmaIngScript('archivo/pdfjs.min.js', 'pdfjsLib'); lib.GlobalWorkerOptions.workerSrc = 'archivo/pdfjs.worker.min.js';
+    const pdf = await lib.getDocument({data:await blob.arrayBuffer()}).promise, out = [];
+    for (let p = 1; p <= Math.min(pdf.numPages, 60); p++) { const tc = await (await pdf.getPage(p)).getTextContent(); let l = '';
+      tc.items.forEach(it => { l += it.str; if (it.hasEOL) { out.push(l); l = ''; } else if (it.str && !/\s$/.test(it.str)) l += ' '; }); if (l) out.push(l); }
+    return out.join('\n');
+  }
+  if (/\.docx$/.test(n) || /wordprocessingml/.test(blob.type)) {
+    const A = await fmpUnzip(await blob.arrayBuffer()), x = A['word/document.xml'] || A['document.xml']; if (!x) throw new Error('el Word no tiene contenido legible');
+    return new TextDecoder('utf-8').decode(x).replace(/<w:tab\/>/g, '\t').replace(/<w:br\/>/g, '\n').replace(/<\/w:p>\s*<\/w:tc>/g, '\t').replace(/<\/w:tc>/g, '\t')
+      .replace(/<\/w:tr>/g, '\n').replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  }
+  if (/\.doc$/.test(n)) throw new Error('los Word antiguos (.doc) no se pueden leer: guárdelo como .docx o PDF');
+  return await blob.text();
+}
+// archivo del computador o de Archivo ING → candidato (reconoce memorias y EETT .json)
+async function ettCandArchivo(blob, nombre, meta, soloMemoria) {
+  const n = String(nombre || '').toLowerCase();
+  if (/\.json$/.test(n) || blob.type === 'application/json') {
+    let o; try { o = JSON.parse(await blob.text()); } catch (e) { throw new Error('el archivo .json no se pudo leer'); }
+    if (o && o.proy && (o.est || o.mat || o.caps)) return ettCandMemoria(mcmMerge(o), 'memoria ' + mcmV(o.proy.proyecto, nombre));
+    if (soloMemoria) throw new Error('ese archivo no es una memoria guardada en el Constructor de Memorias');
+    if (o && o.proy && o.mats) return ettCandEETT(o, 'EETT ' + mcmV(o.proy.proyecto, nombre));
+    if (o && (o.formato === 'cotizador-ing' || o.codigo || o.proyecto)) { const s = o.cotizacion || o; const C = ettCandVacio(nombre);
+      if (s.proyecto) C.proy.proyecto = s.proyecto; if (s.mandante || s.cliente) C.proy.mandante = s.mandante || s.cliente; if (s.ubicacion) C.proy.ubicacion = s.ubicacion; if (s.codigo) C.proy.doc = s.codigo; return C; }
+    throw new Error('el archivo .json no es una memoria, unas EETT ni un documento de la Mesa');
+  }
+  if (soloMemoria) throw new Error('elija el archivo .json guardado en el Constructor de Memorias');
+  return ettCandTexto(await ettTextoDe(blob, nombre), meta, (meta && meta.titulo ? meta.titulo + ' · ' : '') + nombre);
+}
+
+/* ventana de revisión: lo encontrado, con casillas; solo se trae lo marcado */
+function ettRevisar(C, aplicar) {
+  const old = document.getElementById('ettRev'); if (old) old.remove();
+  const v = document.createElement('div'); v.id = 'ettRev'; v.className = 'ett-modal';
+  const fila = (k, on, tit, val, ev, extra) => `<label class="ett-r"><input type="checkbox" data-k="${esc(k)}" ${on ? 'checked' : ''}><span><b>${esc(tit)}:</b> ${esc(val)}${extra || ''}${ev ? `<small>${esc(ev)}</small>` : ''}</span></label>`;
+  const selLbl = k => { const [m, si, ii, r] = k.split('.'); const row = ((((ETT_LIB[m] || [])[+si] || {}).items || [])[+ii] || {}).tbl; const ml = (ETT_MATS.find(x => x.id === m) || {}).label || m;
+    return ml.replace(/^Estructuras de /, '') + ' · ' + (row && row[+r] ? row[+r][0] : k); };
+  const P = Object.entries(C.proy).filter(([k, x]) => x && ETT_PROY_LBL[k]), S = Object.keys(C.sel), M = Object.keys(C.mats || {});
+  const nada = !P.length && !C.descripcion && !M.length && !S.length && !C.txt;
+  v.innerHTML = `<div class="ett-box" role="dialog" aria-label="Revisar datos encontrados"><div class="ps-top"><b>Datos encontrados en: ${esc(C.origen)}</b><button type="button" class="ps-x" data-x title="Cerrar">✕</button></div>
+    <div class="note">Revisa lo encontrado. Solo se trae lo marcado; lo demás queda como está en estas EETT.</div><div class="ett-scroll">
+    ${nada ? '<div class="note"><b>No se encontraron datos que se puedan traer de este documento.</b></div>' : ''}
+    ${P.length ? `<h4>Datos del proyecto</h4>${P.map(([k, x]) => fila('p:' + k, !ETT_PROY_OFF.includes(k), ETT_PROY_LBL[k], x, C.ev['p:' + k] ? 'En el documento: ' + C.ev['p:' + k] : '')).join('')}` : ''}
+    ${C.descripcion ? `<h4>Descripción del proyecto</h4>${fila('desc', !C.descOff, 'Descripción', C.descTit ? '(bajo «' + C.descTit + '»)' : '', '', `<textarea readonly rows="5">${esc(C.descripcion)}</textarea>`)}` : ''}
+    ${M.length ? `<h4>Materiales de la estructura</h4><div class="note">Los materiales marcados quedan activos y los demás se desactivan.</div>${M.map(id => fila('m:' + id, !(C.matOff || {})[id], 'Material', (ETT_MATS.find(x => x.id === id) || {}).label || id, C.ev['m:' + id] ? 'En el documento: ' + C.ev['m:' + id] : '')).join('')}` : ''}
+    ${S.length ? `<h4>Calidades</h4>${S.map(k => fila(k, !C.amb[k] && !(C.matOff || {})[k.split('.')[0]], selLbl(k), C.sel[k], C.ev[k] ? (C.amb[k] ? C.ev[k] + ' Revise antes de marcar.' : 'En el documento: ' + C.ev[k]) : '')).join('')}` : ''}
+    ${C.txt || C.secOff ? `<h4>Contenido de las EETT</h4>${fila('txt', true, 'Textos completados y capítulos excluidos', (C.txt ? Object.keys(C.txt).length + ' textos' : '') + (C.secOff ? (C.txt ? ', ' : '') + 'capítulos marcados' : ''), '')}` : ''}
+    </div><div class="mem-btns" style="justify-content:flex-end">${nada ? '' : '<button type="button" class="mem-btn" data-ok>⇩ Traer lo marcado</button>'}<button type="button" class="btn-add" data-x>Cancelar</button></div></div>`;
+  document.body.appendChild(v);
+  const cerrar = () => { v.remove(); document.removeEventListener('keydown', tecla); }, tecla = e => { if (e.key === 'Escape') cerrar(); };
+  document.addEventListener('keydown', tecla);
+  v.addEventListener('click', e => { if (e.target === v || e.target.closest('[data-x]')) { cerrar(); return; }
+    if (!e.target.closest('[data-ok]')) return;
+    const on = new Set([...v.querySelectorAll('input[data-k]:checked')].map(x => x.dataset.k)); cerrar(); aplicar(on); });
+}
+function ettAplicar(E, C, on) {
+  let n = 0;
+  Object.keys(C.proy).forEach(k => { if (on.has('p:' + k)) { E.proy[k] = C.proy[k]; n++; } });
+  if (on.has('desc')) { E.proy.descripcion = C.descripcion; n++; }
+  const M = Object.keys(C.mats || {}).filter(id => on.has('m:' + id)); if (M.length) { ETT_MATS.forEach(m => E.mats[m.id] = M.includes(m.id)); n += M.length; }
+  Object.keys(C.sel).forEach(k => { if (on.has(k)) { E.sel[k] = C.sel[k]; n++; } });
+  if (on.has('txt')) { if (C.txt) Object.assign(E.txt, C.txt); if (C.secOff) E.secOff = Object.assign({}, C.secOff); n++; }
+  if (n) E.desde = `${C.origen} · ${new Date().toLocaleDateString('es-CL')}`;
+  return n;
+}
+
+/* ventana «Traer datos de documento»: proyecto de POWER, documentos emitidos en Archivo ING o archivo del computador */
+function ettDocumento(alCand) {
+  const old = document.getElementById('ettDoc'); if (old) old.remove();
+  const v = document.createElement('div'); v.id = 'ettDoc'; v.className = 'ett-modal';
+  v.innerHTML = `<div class="ett-box" role="dialog" aria-label="Traer datos de documento"><div class="ps-top"><b>Traer datos de documento</b><button type="button" class="ps-x" data-x title="Cerrar">✕</button></div>
+    <div class="mem-btns ett-tabs"><button type="button" class="mcm-tog on" data-tab="archivo">📁 Archivo ING (memorias e informes emitidos)</button><button type="button" class="mcm-tog" data-tab="power">🏗 Proyecto de POWER</button><button type="button" class="mcm-tog" data-tab="pc">💻 Archivo del computador</button></div>
+    <div class="ett-pane"></div></div>`;
+  document.body.appendChild(v);
+  const pane = v.querySelector('.ett-pane');
+  const cerrar = () => { v.remove(); document.removeEventListener('keydown', tecla); }, tecla = e => { if (e.key === 'Escape') cerrar(); };
+  document.addEventListener('keydown', tecla);
+  const entregar = C => { cerrar(); alCand(C); };
+  let tab = 'archivo', L = [];
+  const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  function lista(items, pintarIt) {
+    pane.innerHTML = `<input type="search" class="ps-q" data-noupper placeholder="Buscar por código, mandante, proyecto o título"><div class="ps-est"></div><div class="ps-lista"></div>`;
+    const q = pane.querySelector('.ps-q'), out = pane.querySelector('.ps-lista');
+    const pintar = () => { const w = norm(q.value).split(/\s+/).filter(Boolean); const F = items.filter(x => { const t = norm(pintarIt(x, true)); return w.every(y => t.includes(y)); });
+      out.innerHTML = F.length ? F.slice(0, 300).map((x, i) => `<button type="button" class="ps-it" data-i="${items.indexOf(x)}">${pintarIt(x)}</button>`).join('') : '<div class="ps-vacio">Nada coincide con la búsqueda.</div>'; };
+    q.addEventListener('input', pintar); pintar(); setTimeout(() => { try { q.focus(); } catch (e) {} }, 0);
+    return pane.querySelector('.ps-est');
+  }
+  function login(A, msg, luego) {
+    pane.innerHTML = `<div class="ps-est">${msg && msg !== 'Sin sesión' ? esc(msg) + '. ' : ''}Inicie sesión con su cuenta de POWER (la misma de Archivo ING):<span class="ps-login"><input type="email" class="ps-mail" data-noupper placeholder="correo"><input type="password" class="ps-pass" placeholder="contraseña"><button type="button" class="mem-btn ps-entrar">Entrar</button></span></div>`;
+    const entrar = () => A.login(pane.querySelector('.ps-mail').value.trim(), pane.querySelector('.ps-pass').value).then(luego).catch(e => fsToast('No se pudo iniciar sesión: ' + ((e && e.message) || e)));
+    pane.querySelector('.ps-entrar').onclick = entrar; pane.querySelector('.ps-pass').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
+  }
+  async function verArchivo() {
+    pane.innerHTML = '<div class="ps-est">Leyendo Archivo ING…</div>';
+    let A; try { A = await archCargar(); } catch (e) { pane.innerHTML = '<div class="ps-est">No se pudo conectar con Archivo ING (sin conexión).</div>'; return; }
+    try { L = (await A.listar(['memorias_pdf', 'informes_pdf'])).filter(d => /\.(pdf|docx)$/i.test(d.archivo || '') || /pdf|wordprocessingml/.test(d.mime || '')); }
+    catch (e) { if (e && e.code === 'auth') { login(A, e.message, verArchivo); return; } pane.innerHTML = `<div class="ps-est">No se pudo leer Archivo ING: ${esc((e && e.message) || e)}</div>`; return; }
+    if (tab !== 'archivo') return;
+    const est = lista(L, (d, plano) => { const tipo = d.col === 'informes_pdf' ? 'Informe' : 'Memoria'; const t = [d.codigo, d.titulo, d.proyecto, d.mandante, d.archivo, d.fecha].filter(Boolean);
+      return plano ? tipo + ' ' + t.join(' ') : `<b>${esc(d.codigo || tipo)}</b><span>${esc(d.titulo || d.archivo || '')}${d.rev ? ' · Rev. ' + esc(d.rev) : ''}<small>${esc([tipo, d.proyecto, d.mandante, d.fecha, d.archivo].filter(Boolean).join(' · '))}</small></span>`; });
+    est.textContent = L.length + ' documentos (memorias e informes). Elija uno: se lee el documento y se muestra lo encontrado antes de traerlo.';
+    pane.querySelector('.ps-lista').addEventListener('click', async e => { const b = e.target.closest('[data-i]'); if (!b) return; const d = L[+b.dataset.i];
+      est.textContent = 'Leyendo «' + (d.archivo || d.titulo) + '»…';
+      try { const blob = await A.obtener(d.col, d.id, d.mime); entregar(await ettCandArchivo(blob, d.archivo || 'documento.pdf', d)); }
+      catch (err) { est.textContent = 'No se pudo leer el documento: ' + ((err && err.message) || err); } });
+  }
+  async function verPower() {
+    let cache = []; try { cache = JSON.parse(localStorage.getItem('mesa_power_proyectos') || '[]') || []; } catch (e) {}
+    const pint = (p, plano) => plano ? [p.codigo, p.proyecto, p.mandante].join(' ') : `<b>${esc(p.codigo)}</b><span>${esc(p.proyecto || '')}${p.mandante ? '<small>' + esc(p.mandante) + '</small>' : ''}</span>`;
+    const usar = (lst, aviso) => { L = lst.filter(p => p && p.codigo).sort((a, b) => String(b.creado || '').localeCompare(String(a.creado || '')) || String(b.codigo).localeCompare(String(a.codigo)));
+      const est = lista(L, pint); est.textContent = aviso;
+      pane.querySelector('.ps-lista').addEventListener('click', e => { const b = e.target.closest('[data-i]'); if (!b) return; const p = L[+b.dataset.i];
+        const C = ettCandVacio('proyecto POWER ' + p.codigo); C.proy.proyecto = p.proyecto || ''; C.proy.mandante = p.mandante || ''; if (p.ubicacion) C.proy.ubicacion = p.ubicacion; C.proy.doc = p.codigo; entregar(C); }); };
+    if (cache.length) usar(cache, 'Lista guardada; actualizando desde POWER…'); else pane.innerHTML = '<div class="ps-est">Leyendo POWER…</div>';
+    let A; try { A = await archCargar(); } catch (e) { if (!cache.length) pane.innerHTML = '<div class="ps-est">No se pudo conectar con POWER (sin conexión).</div>'; return; }
+    try { const lst = await A.proyectos(); if (tab === 'power') usar(lst, lst.length + ' proyectos de POWER. Trae proyecto, mandante y código.'); }
+    catch (e) { if (tab !== 'power') return; if (e && e.code === 'auth') login(A, e.message, verPower); else if (!cache.length) pane.innerHTML = `<div class="ps-est">No se pudo leer POWER: ${esc((e && e.message) || e)}</div>`; }
+  }
+  function verPc() {
+    pane.innerHTML = `<div class="note">Elija una memoria o un informe en <b>Word (.docx)</b> o <b>PDF</b>, unas EETT o una memoria guardadas en la Mesa (<b>.json</b>), o un archivo de texto. La Mesa lee el documento y muestra lo que encontró (proyecto, mandante, descripción, materiales y calidades) para que marque qué traer.</div>
+      <div class="mem-btns"><button type="button" class="mem-btn" data-pc>📂 Elegir archivo…</button><input type="file" accept=".docx,.pdf,.json,.txt,application/pdf,application/json" hidden></div><div class="ps-est"></div>`;
+    const inp = pane.querySelector('input[type=file]'), est = pane.querySelector('.ps-est');
+    pane.querySelector('[data-pc]').onclick = () => inp.click();
+    inp.onchange = async () => { const f = inp.files[0]; if (!f) return; est.textContent = 'Leyendo «' + f.name + '»…';
+      try { entregar(await ettCandArchivo(f, f.name, null)); } catch (err) { est.textContent = 'No se pudo leer: ' + ((err && err.message) || err) + '.'; } inp.value = ''; };
+  }
+  const ir = t => { tab = t; v.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === t)); ({archivo:verArchivo, power:verPower, pc:verPc})[t](); };
+  v.addEventListener('click', e => { if (e.target === v || e.target.closest('[data-x]')) { cerrar(); return; } const b = e.target.closest('[data-tab]'); if (b) ir(b.dataset.tab); });
+  ir('archivo');
 }
 const ettV = (v, ph) => mcmV(v, ph);
 
@@ -54021,7 +54299,9 @@ async function ettDocx(E, mats) {
 /* ---------- interfaz ---------- */
 function renderEETT(container) {
   if (!document.getElementById('mcmCss')) { const st = document.createElement('style'); st.id = 'mcmCss'; st.textContent = MCM_CSS; document.head.appendChild(st); }
-  let E = ettLoad(), ettFH = null, armado = 0, armadoMem = 0;
+  let E = ettLoad(), ettFH = null, armado = 0;
+  // revisión de lo encontrado en el documento y aplicación de lo marcado
+  const traer = C => ettRevisar(C, on => { const n = ettAplicar(E, C, on); ettSave(E); draw(); fsToast(n ? 'Datos traídos de: ' + C.origen : 'No se marcó nada para traer.'); });
   const root = document.createElement('div'); root.className = 'mcm-ui'; container.innerHTML = ''; container.appendChild(root);
   document.documentElement.classList.add('mcm-on');
   const offRoute = () => { if (location.hash.replace('#', '') !== 'eett') { document.documentElement.classList.remove('mcm-on'); window.removeEventListener('hashchange', offRoute); } };
@@ -54045,14 +54325,14 @@ function renderEETT(container) {
   }
   function html() {
     const A = act();
-    // Solo se informa si estas EETT tomaron datos de una memoria (la memoria abierta en el equipo no se muestra: confundía).
-    const memInfo = E.desde ? `Estas EETT tomaron datos de: <b>${esc(E.desde)}</b>.` : 'Estas EETT <b>no están ligadas</b> a ninguna memoria de cálculo.';
+    // Solo se informa si estas EETT tomaron datos de un documento (la memoria abierta en el equipo no se muestra: confundía).
+    const memInfo = E.desde ? `Estas EETT tomaron datos de: <b>${esc(E.desde)}</b>.` : 'Estas EETT <b>no están ligadas</b> a ningún documento.';
     return `<div style="margin-bottom:1rem"><h1>Especificaciones Técnicas</h1>
       <div class="sub">Arma las especificaciones técnicas de acero, hormigón armado, madera, albañilería reforzada y perfiles Metalcon en formato ING Estructural, a partir de la biblioteca de EETT de la oficina. Puede tomar los datos del proyecto, la descripción de la estructura y las calidades de materiales de una memoria de cálculo del Constructor de Memorias.</div>
       <div class="mem-btns"><button type="button" class="btn-add" data-act="nueva">🗋 Nueva EETT</button><button type="button" class="btn-add" data-act="abrir">📂 Abrir EETT…</button><button type="button" class="btn-add" data-act="guardar">💾 Guardar</button><button type="button" class="btn-add" data-act="guardarComo">💾 Guardar como…</button>${ettFH ? `<span class="note" style="align-self:center">Archivo: <b>${esc(ettFH.name)}</b></span>` : ''}</div></div>
-    <div class="panel"><h3>1 · Tomar datos de la memoria de cálculo</h3><div class="note">${memInfo}</div>
-      <div class="mem-btns"><button type="button" class="mem-btn" data-act="desdeLocal">⇩ Traer datos de la memoria</button><button type="button" class="btn-add" data-act="desdeArchivo">📂 Desde archivo de memoria (.json)…</button><input type="file" accept=".json,application/json" id="ettMemFile" hidden></div>
-      <div class="note">Trae: proyecto, mandante, ubicación, fecha, revisión, elaboró y revisó, la descripción de la estructura, los materiales que componen la estructura y sus calidades (perfiles, pernos, soldadura, grado de hormigón, acero de refuerzo, madera, albañilería, perfiles Metalcon).</div></div>
+    <div class="panel"><h3>1 · Tomar datos de un documento</h3><div class="note">${memInfo}</div>
+      <div class="mem-btns"><button type="button" class="mem-btn" data-act="doc">📄 Traer datos de documento…</button><button type="button" class="btn-add" data-act="desdeArchivo">📂 Desde archivo de memoria (.json)…</button><input type="file" accept=".json,application/json" id="ettMemFile" hidden></div>
+      <div class="note"><b>Traer datos de documento:</b> cualquier documento emitido relacionado: memorias e informes de Archivo ING, un proyecto de POWER, unas EETT guardadas, o un Word o PDF del computador. <b>Desde archivo de memoria (.json):</b> la memoria guardada en el Constructor de Memorias. En los dos casos se trae lo que el documento tenga de proyecto, mandante, ubicación, elaboró y revisó, descripción, materiales y calidades (perfiles, pernos, soldadura, hormigón, refuerzo, madera, albañilería, Metalcon), y antes de traerlo se muestra lo encontrado para marcar qué se usa.</div></div>
     <div class="panel"><h3>2 · Datos del proyecto</h3><div class="field-grid">${F('Proyecto', 'proyecto')}${F('Mandante', 'mandante')}${F('Ubicación', 'ubicacion')}<div class="field"><label>N° de documento</label><input type="text" data-p="doc" value="${esc(E.proy.doc || '')}" placeholder="ej. ETA-2026-001">${ettSugSel('p:doc', act().flatMap(m => ETT_SUG_P.doc(m.pref)), 't')}</div><div class="field"><label>Revisión</label><input type="text" data-p="rev" value="${esc(E.proy.rev || '')}">${ettSugSel('p:rev', ETT_SUG_P.rev(), 't')}</div>${F('Fecha', 'fecha')}${SELP('Elaborado por', 'elaboro', MCM_ING)}${SELP('Revisado por', 'reviso', MCM_ING)}${F('Contacto', 'contacto')}</div>
       <div class="mem-blk"><h4>Descripción del proyecto <small>opcional; se trae de la memoria. Si queda vacía, el capítulo no se incluye.</small></h4><textarea data-p="descripcion" style="min-height:6em">${esc(E.proy.descripcion || '')}</textarea></div></div>
     <div class="panel"><h3>3 · Materiales y documento</h3><div class="mem-btns">${ETT_MATS.map(m => `<button type="button" class="mcm-tog ${E.mats[m.id] ? 'on' : ''}" data-mat="${m.id}">${E.mats[m.id] ? '✓ ' : ''}${esc(m.label)}</button>`).join('')}</div>
@@ -54078,7 +54358,7 @@ function renderEETT(container) {
     if (t.dataset.sec) { E.secOff[t.dataset.sec] = !t.checked; ettSave(E); draw(); return; }
     if (t.hasAttribute('data-modo')) { E.modo = t.value; ettSave(E); draw(); return; }
     if (t.hasAttribute('data-prev')) { E.prev = t.value; ettSave(E); draw(); return; }
-    if (t.id === 'ettMemFile' && t.files[0]) { t.files[0].text().then(tx => { const M = mcmMerge(JSON.parse(tx)); ettDesdeMemoria(E, M); ettSave(E); draw(); fsToast('Datos traídos de la memoria: ' + mcmV(M.proy.proyecto, t.files[0].name)); }).catch(() => fsToast('Ese archivo no es una memoria guardada.')); }
+    if (t.id === 'ettMemFile' && t.files[0]) { const f = t.files[0]; t.value = ''; ettCandArchivo(f, f.name, null, true).then(traer).catch(err => fsToast('No se pudo leer: ' + ((err && err.message) || err) + '.')); }
   });
   root.addEventListener('click', async e => { const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.mat) { E.mats[b.dataset.mat] = !E.mats[b.dataset.mat]; ettSave(E); draw(); return; }
@@ -54089,9 +54369,7 @@ function renderEETT(container) {
       catch (err) { fsToast('No se pudo generar el Word: ' + (err.message || err)); }
       b.disabled = false; b.textContent = t0; return; }
     const a = b.dataset.act;
-    if (a === 'desdeLocal') { let M = null; try { M = JSON.parse(localStorage.getItem(MCM_LS) || 'null'); } catch (err) {} if (!M || !M.proy) { fsToast('No hay una memoria en este equipo: ábrela desde archivo.'); return; }
-      if (Date.now() - armadoMem > 5000) { armadoMem = Date.now(); fsToast('Se traerán los datos de «' + mcmV(M.proy.proyecto, 'sin nombre') + '» (última memoria abierta en el Constructor de Memorias). Vuelve a pulsar para confirmar; si es otro proyecto, usa «Desde archivo de memoria (.json)».'); return; }
-      armadoMem = 0; M = mcmMerge(M); ettDesdeMemoria(E, M); ettSave(E); draw(); fsToast('Datos traídos de la memoria: ' + mcmV(M.proy.proyecto, 'sin nombre')); }
+    if (a === 'doc') ettDocumento(traer);
     else if (a === 'desdeArchivo') root.querySelector('#ettMemFile').click();
     else if (a === 'abrir') { const r = await mcmAbrirJson('Especificaciones técnicas (.json)', root.querySelector('#ettFile')); if (!r) return; try { const o = JSON.parse(r.text); if (!o || !o.proy || !o.mats) throw 0; E = Object.assign(ettDef(), o); ettFH = r.fh; ettSave(E); draw(); fsToast('EETT abiertas: ' + r.name); } catch (err) { fsToast('Ese archivo no son EETT guardadas.'); } }
     else if (a === 'guardar' || a === 'guardarComo') { ettFH = await mcmGuardarEn(ettFH, `EETT_${mcmSlug(E.proy.proyecto) || 'proyecto'}_${mcmSlug(E.proy.rev)}.json`, JSON.stringify(E), 'application/json', 'Especificaciones técnicas (.json)', '.json', a === 'guardarComo'); draw(); }
