@@ -48342,7 +48342,7 @@ function efAccion0(e) {
   return {c: 'ok', g: 'ok', t: 'Cumple', a: `${P.corto || P.nombre} ${e.espProp} ${u} (mínimo ${e.espReq} ${u}).`};
 }
 const EF_ACC_ORDEN = ['perfil', 'elegir', 'insuf', 'datos', 'asim', 'calc', 'cob', 'ok', 'sinexig'];
-const EF_ACC_ICO = {bad: '✗', warn: '!', amar: '◐', vcalc: '✓', conf: '◑', asim: '◒', ok: '✓'};
+const EF_ACC_ICO = {bad: '✗', warn: '!', amar: '◐', vcalc: '✓', conf: '○', asim: '◇', ok: '✓'};
 function efAccBotones(alts) {
   return (alts || []).slice(0, 4).map(a => `<button type="button" class="ef-usar" data-k="${a.k}" data-v="${Math.ceil(a.v)}"${EF_PROT[a.k].listado ? '' : ' title="Producto con informe de ensayo, no inscrito en el Listado: se acredita por asimilación (sección 5)."'}>Usar ${esc(EF_PROT[a.k].corto || EF_PROT[a.k].nombre)} · ${esc(a.txt || (Math.ceil(a.v) + ' ' + (a.u || '')))}${EF_PROT[a.k].listado ? '' : ' · por asimilación'}</button>`).join('');
 }
@@ -49452,6 +49452,18 @@ function renderEstudioFuego(container) {
         table.ef-lista tbody td.ef-cab .ef-cab-calc summary{cursor:pointer;font-weight:600}
         .ef-estado .chip.amar, #ef_estado3 .chip.amar, #ef_resElem .chip.amar{background:#FFF1B8;color:#6B5200}
         .ef-estado .chip.vcalc, #ef_estado3 .chip.vcalc, #ef_resElem .chip.vcalc{background:#E3F4E1;color:#2E6B30;border:1px dashed #6DAA62}
+        /* estados como texto de color, sin caja (pedido de ING) */
+        #ef_estado3 .chip, #ef_resElem .chip, #ef_resAsim .chip{background:none !important;border:0 !important;border-radius:0 !important;padding:0 !important;font-family:'IBM Plex Sans',Arial,sans-serif !important;font-size:.82rem !important;font-weight:700 !important}
+        #ef_estado3 .chip.bad, #ef_resElem .chip.bad, #ef_resAsim .chip.bad{color:#C0392B !important}
+        #ef_estado3 .chip.warn, #ef_resElem .chip.warn, #ef_resAsim .chip.warn{color:#C46A00 !important}
+        #ef_estado3 .chip.amar, #ef_resElem .chip.amar{color:#9A7400 !important}
+        #ef_estado3 .chip.vcalc, #ef_resElem .chip.vcalc{color:#3F8F2F !important}
+        #ef_estado3 .chip.conf, #ef_resElem .chip.conf{color:#0B5FA8 !important}
+        #ef_estado3 .chip.asim, #ef_resElem .chip.asim{color:#7A3FB0 !important}
+        #ef_estado3 .chip.ok, #ef_resElem .chip.ok, #ef_resAsim .chip.ok{color:#1B6B2A !important}
+        @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) #ef_estado3 .chip.conf, :root:not([data-theme="light"]) #ef_resElem .chip.conf{color:#7FB8F0 !important} :root:not([data-theme="light"]) #ef_estado3 .chip.asim, :root:not([data-theme="light"]) #ef_resElem .chip.asim{color:#C6A2EC !important} :root:not([data-theme="light"]) #ef_estado3 .chip.vcalc, :root:not([data-theme="light"]) #ef_resElem .chip.vcalc{color:#8FD07F !important} :root:not([data-theme="light"]) #ef_estado3 .chip.ok, :root:not([data-theme="light"]) #ef_resElem .chip.ok{color:#6FCB7F !important} :root:not([data-theme="light"]) #ef_estado3 .chip.bad, :root:not([data-theme="light"]) #ef_resElem .chip.bad{color:#FF8A7A !important}}
+        :root[data-theme="dark"] #ef_estado3 .chip.conf, :root[data-theme="dark"] #ef_resElem .chip.conf{color:#7FB8F0 !important} :root[data-theme="dark"] #ef_estado3 .chip.asim, :root[data-theme="dark"] #ef_resElem .chip.asim{color:#C6A2EC !important} :root[data-theme="dark"] #ef_estado3 .chip.vcalc, :root[data-theme="dark"] #ef_resElem .chip.vcalc{color:#8FD07F !important} :root[data-theme="dark"] #ef_estado3 .chip.ok, :root[data-theme="dark"] #ef_resElem .chip.ok{color:#6FCB7F !important} :root[data-theme="dark"] #ef_estado3 .chip.bad, :root[data-theme="dark"] #ef_resElem .chip.bad{color:#FF8A7A !important}
+        #ef_resElem > div:first-child{gap:1.1rem !important}
         .ef-estado .chip.conf, #ef_estado3 .chip.conf, #ef_resElem .chip.conf{background:#DCEBFB;color:#0B4F8A}
         .ef-estado .chip.asim, #ef_estado3 .chip.asim, #ef_resElem .chip.asim{background:#EADCF7;color:#5B2C8A}
         tr.ef-flash td.ef-cab{outline:3px solid var(--accent,#0060c1)}
@@ -49709,7 +49721,7 @@ function renderEstudioFuego(container) {
     ${r.resist ? `<div style="overflow-x:auto;margin-top:.5rem"><table class="results"><tr><th>Elemento (OGUC 4.3.3)</th><th>Tipo ${r.tipo}</th><th>Condición (4.3.5)</th></tr>${r.resist.map(x => `<tr><td>${esc(x.elemento)}</td><td class="num">${esc(x.txt)}</td><td class="note">${esc(x.cond)}</td></tr>`).join('')}</table></div>` : ''}`;
     document.getElementById('ef_estado3').innerHTML = efEstadoHtml(r) || '<div class="note">Agregue elementos o importe el modelo RAM.</div>';
     { const cnt = c => r.elems.filter(e => efAccion(e).c === c).length;
-      document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .4rem"><span class="chip bad">✗ Requieren acción: ${cnt('bad')}</span><span class="chip warn">! Faltan datos: ${cnt('warn')}</span><span class="chip vcalc">✓ Cumplen por cálculo: ${cnt('vcalc')}</span><span class="chip conf">◑ Protección por confirmar: ${cnt('conf')}</span>${cnt('asim') ? `<span class="chip asim">◒ Por asimilación: ${cnt('asim')}</span>` : ''}<span class="chip ok">✓ Cumplen: ${cnt('ok')}</span></div><div class="note">El estado de cada elemento y qué hacer están en la tabla «Estado de los elementos», al final de la sección 3b.</div>` : '<div class="note">Agregue elementos en la sección 3.</div>'; }
+      document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .4rem"><span class="chip bad">✗ Requieren acción: ${cnt('bad')}</span><span class="chip warn">! Faltan datos: ${cnt('warn')}</span><span class="chip vcalc">✓ Cumplen por cálculo: ${cnt('vcalc')}</span><span class="chip conf">○ Protección por confirmar: ${cnt('conf')}</span>${cnt('asim') ? `<span class="chip asim">◇ Por asimilación: ${cnt('asim')}</span>` : ''}<span class="chip ok">✓ Cumplen: ${cnt('ok')}</span></div><div class="note">El estado de cada elemento y qué hacer están en la tabla «Estado de los elementos», al final de la sección 3b.</div>` : '<div class="note">Agregue elementos en la sección 3.</div>'; }
     document.getElementById('ef_resAsim').innerHTML = efAsimHtml(r);
     document.getElementById('ef_chkWrap').style.display = r.requiereAsim ? '' : 'none';
     document.getElementById('ef_origWrap').style.display = r.requiereAsim ? '' : 'none';
