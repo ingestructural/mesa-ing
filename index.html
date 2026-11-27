@@ -48303,7 +48303,7 @@ function efAccion(e) {
   if (!efEsAsim(e) || A.c === 'bad' || A.g === 'datos') return A;
   const P = EF_PROT[e.prot] || {};
   const por = !P.listado ? `${P.corto || P.nombre} no está inscrito en el Listado` : 'la tabla del Listado está ensayada en pilares y este elemento no es pilar';
-  return Object.assign({}, A, {c: 'amar', g: 'asim', asim: true, t: A.g === 'ok' ? 'Protección por asimilación' : 'Protección por asimilación, falta cerrar',
+  return Object.assign({}, A, {c: 'asim', g: 'asim', asim: true, t: A.g === 'ok' ? 'Protección por asimilación' : 'Protección por asimilación, falta cerrar',
     a: `${A.a} Se acredita por asimilación porque ${por}: complete la sección 5.`});
 }
 function efAccion0(e) {
@@ -48336,13 +48336,13 @@ function efAccion0(e) {
     const otros = f.filter(x => !/espesor propuesto|exposición|referencia documental|cobertura documental|cotejo de la tabla/.test(x));
     if (otros.length) pasos.push('complete: ' + otros.join('; '));
     const listo = e.tablaSuf;
-    return {c: listo ? 'amar' : 'warn', g: listo ? 'cob' : 'datos', t: listo ? 'Protección correcta, falta confirmar' : 'Faltan datos',
+    return {c: listo ? 'conf' : 'warn', g: listo ? 'cob' : 'datos', t: listo ? 'Protección correcta, falta confirmar' : 'Faltan datos',
       a: (listo ? `${P.corto || P.nombre} ${e.espProp} ${u} cumple la tabla (mínimo ${e.espReq} ${u}). Para cerrar: ` : 'Para verificar: ') + pasos.join('; ') + '.'};
   }
   return {c: 'ok', g: 'ok', t: 'Cumple', a: `${P.corto || P.nombre} ${e.espProp} ${u} (mínimo ${e.espReq} ${u}).`};
 }
 const EF_ACC_ORDEN = ['perfil', 'elegir', 'insuf', 'datos', 'asim', 'calc', 'cob', 'ok', 'sinexig'];
-const EF_ACC_ICO = {bad: '✗', warn: '!', amar: '◐', ok: '✓'};
+const EF_ACC_ICO = {bad: '✗', warn: '!', amar: '◐', conf: '◑', asim: '◒', ok: '✓'};
 function efAccBotones(alts) {
   return (alts || []).slice(0, 4).map(a => `<button type="button" class="ef-usar" data-k="${a.k}" data-v="${Math.ceil(a.v)}"${EF_PROT[a.k].listado ? '' : ' title="Producto con informe de ensayo, no inscrito en el Listado: se acredita por asimilación (sección 5)."'}>Usar ${esc(EF_PROT[a.k].corto || EF_PROT[a.k].nombre)} · ${esc(a.txt || (Math.ceil(a.v) + ' ' + (a.u || '')))}${EF_PROT[a.k].listado ? '' : ' · por asimilación'}</button>`).join('');
 }
@@ -49292,7 +49292,7 @@ function efInstruccionesHtml() {
   <p>Las edificaciones de un piso, construidas con elementos no combustibles, quedan liberadas de protección contra el fuego si cumplen <b>todos</b> los requisitos del Art. 4.3.26. En «¿Aplicar la exención del Art. 4.3.26?» elija «Sí»: la planilla evalúa sola el número de pisos, los ocupantes (&lt; 100) y la carga combustible media (&lt; 250 MJ/m²); los demás requisitos se marcan «Cumple» con su respaldo escrito (especificación, plano de emplazamiento, resolución). Bodegaje e industria requieren la calificación de actividad inofensiva de la SEREMI de Salud (Art. 2.1.28). Con todo acreditado, los elementos quedan «sin exigencia» y la memoria incluye la tabla de requisitos; mientras falte uno, rigen las exigencias del tipo de edificio.</p>
 
   <h3>7. Cabecera de cada ficha (sección 3b)</h3>
-  <p>Cada ficha muestra arriba su resultado en una franja de color: verde cumple, amarillo sin verificar, rojo no cumple. La primera línea dice el estado, la exigencia y la protección (producto y espesor, o los minutos que resiste sin protección); la segunda, el motivo o lo que falta.</p>
+  <p>Cada ficha muestra arriba su resultado en una franja de color: verde cumple, amarillo cumple por cálculo, celeste protección correcta por confirmar, lila protección por asimilación, naranjo faltan datos y rojo no cumple. La primera línea dice el estado, la exigencia y la protección (producto y espesor, o los minutos que resiste sin protección); la segunda, el motivo o lo que falta.</p>
 
   <h3>8. Anexo «Revisión y optimización»</h3>
   <p>El botón <b>«📋 Anexo: revisión y optimización»</b> genera un documento separado de la memoria, con portada propia, que revisa el estudio y ordena por impacto las medidas para llegar a la protección más baja que cumpla: exención del Art. 4.3.26, función de los elementos de techumbre, cielo falso resistente, cambio de perfiles sin producto o clase 4, elementos que cumplen por cálculo, espesores sobre el mínimo, μ0 y coberturas pendientes. Incluye, por elemento, los productos que lo cubren con su espesor. No contiene precios: cada alternativa debe cotizarse. No modifica el estudio; las medidas que se adopten se ingresan en la planilla y se recalcula.</p>
@@ -49425,6 +49425,9 @@ function renderEstudioFuego(container) {
         table.ef-lista tbody td.ef-cab.ok{background:var(--good-bg)} table.ef-lista tbody td.ef-cab.bad{background:var(--bad-bg)}
         table.ef-lista tbody td.ef-cab.warn{background:#FDEBD0}
         table.ef-lista tbody td.ef-cab.amar{background:#FFF1B8}
+        table.ef-lista tbody td.ef-cab.conf{background:#DCEBFB} table.ef-lista tbody td.ef-cab.asim{background:#EADCF7}
+        @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) table.ef-lista tbody td.ef-cab.conf{background:#132C47} :root:not([data-theme="light"]) table.ef-lista tbody td.ef-cab.asim{background:#2E1F42}}
+        :root[data-theme="dark"] table.ef-lista tbody td.ef-cab.conf{background:#132C47} :root[data-theme="dark"] table.ef-lista tbody td.ef-cab.asim{background:#2E1F42}
         @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) table.ef-lista tbody td.ef-cab.warn{background:#3A2A12} :root:not([data-theme="light"]) table.ef-lista tbody td.ef-cab.amar{background:#3B3209}}
         :root[data-theme="dark"] table.ef-lista tbody td.ef-cab.warn{background:#3A2A12} :root[data-theme="dark"] table.ef-lista tbody td.ef-cab.amar{background:#3B3209}
         table.ef-lista tbody td.ef-cab{text-align:left}
@@ -49444,7 +49447,9 @@ function renderEstudioFuego(container) {
         .ef-usar:hover{background:var(--accent,#0060c1);color:#fff}
         table.ef-lista tbody td.ef-cab .ef-cab-calc{font-size:.72rem;color:var(--ink-muted);margin-top:.2rem}
         table.ef-lista tbody td.ef-cab .ef-cab-calc summary{cursor:pointer;font-weight:600}
-        .ef-estado .chip.amar, #ef_estado3 .chip.amar{background:#FFF1B8;color:#6B5200}
+        .ef-estado .chip.amar, #ef_estado3 .chip.amar, #ef_resElem .chip.amar{background:#FFF1B8;color:#6B5200}
+        .ef-estado .chip.conf, #ef_estado3 .chip.conf, #ef_resElem .chip.conf{background:#DCEBFB;color:#0B4F8A}
+        .ef-estado .chip.asim, #ef_estado3 .chip.asim, #ef_resElem .chip.asim{background:#EADCF7;color:#5B2C8A}
         tr.ef-flash td.ef-cab{outline:3px solid var(--accent,#0060c1)}
         @media print{.ef-usar,.ef-cab-bot{display:none}}
         table.ef-lista tbody td.ef-cab .ef-cab-l1{font-weight:700}
@@ -49700,7 +49705,7 @@ function renderEstudioFuego(container) {
     ${r.resist ? `<div style="overflow-x:auto;margin-top:.5rem"><table class="results"><tr><th>Elemento (OGUC 4.3.3)</th><th>Tipo ${r.tipo}</th><th>Condición (4.3.5)</th></tr>${r.resist.map(x => `<tr><td>${esc(x.elemento)}</td><td class="num">${esc(x.txt)}</td><td class="note">${esc(x.cond)}</td></tr>`).join('')}</table></div>` : ''}`;
     document.getElementById('ef_estado3').innerHTML = efEstadoHtml(r) || '<div class="note">Agregue elementos o importe el modelo RAM.</div>';
     { const cnt = c => r.elems.filter(e => efAccion(e).c === c).length;
-      document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .4rem"><span class="chip bad">✗ Requieren acción: ${cnt('bad')}</span><span class="chip warn">! Faltan datos: ${cnt('warn')}</span><span class="chip amar" style="background:#FFF1B8;color:#6B5200">◐ Por confirmar o por cálculo: ${cnt('amar')}</span><span class="chip ok">✓ Cumplen: ${cnt('ok')}</span></div><div class="note">El estado de cada elemento y qué hacer están en la tabla «Estado de los elementos», al final de la sección 3b.</div>` : '<div class="note">Agregue elementos en la sección 3.</div>'; }
+      document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .4rem"><span class="chip bad">✗ Requieren acción: ${cnt('bad')}</span><span class="chip warn">! Faltan datos: ${cnt('warn')}</span><span class="chip amar">◐ Cumplen por cálculo: ${cnt('amar')}</span><span class="chip conf">◑ Protección por confirmar: ${cnt('conf')}</span>${cnt('asim') ? `<span class="chip asim">◒ Por asimilación: ${cnt('asim')}</span>` : ''}<span class="chip ok">✓ Cumplen: ${cnt('ok')}</span></div><div class="note">El estado de cada elemento y qué hacer están en la tabla «Estado de los elementos», al final de la sección 3b.</div>` : '<div class="note">Agregue elementos en la sección 3.</div>'; }
     document.getElementById('ef_resAsim').innerHTML = efAsimHtml(r);
     document.getElementById('ef_chkWrap').style.display = r.requiereAsim ? '' : 'none';
     document.getElementById('ef_origWrap').style.display = r.requiereAsim ? '' : 'none';
