@@ -53971,7 +53971,7 @@ async function ettDocx(E, mats) {
 /* ---------- interfaz ---------- */
 function renderEETT(container) {
   if (!document.getElementById('mcmCss')) { const st = document.createElement('style'); st.id = 'mcmCss'; st.textContent = MCM_CSS; document.head.appendChild(st); }
-  let E = ettLoad(), ettFH = null, armado = 0;
+  let E = ettLoad(), ettFH = null, armado = 0, armadoMem = 0;
   const root = document.createElement('div'); root.className = 'mcm-ui'; container.innerHTML = ''; container.appendChild(root);
   document.documentElement.classList.add('mcm-on');
   const offRoute = () => { if (location.hash.replace('#', '') !== 'eett') { document.documentElement.classList.remove('mcm-on'); window.removeEventListener('hashchange', offRoute); } };
@@ -53995,11 +53995,15 @@ function renderEETT(container) {
   }
   function html() {
     const A = act();
-    let memInfo = ''; try { const M = JSON.parse(localStorage.getItem(MCM_LS) || 'null'); memInfo = M && M.proy ? `Memoria disponible en este equipo: <b>${esc(mcmV(M.proy.proyecto, 'sin nombre'))}</b> (${esc(M.proy.mandante || '')}${M.proy.fecha ? ', ' + esc(M.proy.fecha) : ''}).` : 'No hay una memoria guardada en este equipo; puedes abrir un archivo de memoria (.json).'; } catch (e) {}
+    // La memoria del equipo es la última abierta en el Constructor de Memorias: puede ser de otro proyecto.
+    // No se muestra como ligada; solo se usa si se pulsa «Traer datos» (con confirmación).
+    let memNom = ''; try { const M = JSON.parse(localStorage.getItem(MCM_LS) || 'null'); if (M && M.proy) memNom = mcmV(M.proy.proyecto, 'sin nombre') + (M.proy.mandante ? ' — ' + M.proy.mandante : ''); } catch (e) {}
+    const memInfo = (E.desde ? `Estas EETT tomaron datos de: <b>${esc(E.desde)}</b>.` : 'Estas EETT <b>no están ligadas</b> a ninguna memoria de cálculo.')
+      + (memNom ? ` <span style="opacity:.75">Última memoria abierta en el Constructor de Memorias de este equipo: ${esc(memNom)} (puede ser de otro proyecto; solo se usa si pulsas «Traer datos de la memoria»).</span>` : ' <span style="opacity:.75">No hay memoria abierta en el Constructor de Memorias de este equipo; puedes traer los datos desde un archivo de memoria (.json).</span>');
     return `<div style="margin-bottom:1rem"><h1>Especificaciones Técnicas</h1>
       <div class="sub">Arma las especificaciones técnicas de acero, hormigón armado, madera, albañilería reforzada y perfiles Metalcon en formato ING Estructural, a partir de la biblioteca de EETT de la oficina. Puede tomar los datos del proyecto, la descripción de la estructura y las calidades de materiales de una memoria de cálculo del Constructor de Memorias.</div>
       <div class="mem-btns"><button type="button" class="btn-add" data-act="nueva">🗋 Nueva EETT</button><button type="button" class="btn-add" data-act="abrir">📂 Abrir EETT…</button><button type="button" class="btn-add" data-act="guardar">💾 Guardar</button><button type="button" class="btn-add" data-act="guardarComo">💾 Guardar como…</button>${ettFH ? `<span class="note" style="align-self:center">Archivo: <b>${esc(ettFH.name)}</b></span>` : ''}</div></div>
-    <div class="panel"><h3>1 · Tomar datos de la memoria de cálculo</h3><div class="note">${memInfo}${E.desde ? ` Última importación: ${esc(E.desde)}.` : ''}</div>
+    <div class="panel"><h3>1 · Tomar datos de la memoria de cálculo</h3><div class="note">${memInfo}</div>
       <div class="mem-btns"><button type="button" class="mem-btn" data-act="desdeLocal">⇩ Traer datos de la memoria</button><button type="button" class="btn-add" data-act="desdeArchivo">📂 Desde archivo de memoria (.json)…</button><input type="file" accept=".json,application/json" id="ettMemFile" hidden></div>
       <div class="note">Trae: proyecto, mandante, ubicación, fecha, revisión, elaboró y revisó, la descripción de la estructura, los materiales que componen la estructura y sus calidades (perfiles, pernos, soldadura, grado de hormigón, acero de refuerzo, madera, albañilería, perfiles Metalcon).</div></div>
     <div class="panel"><h3>2 · Datos del proyecto</h3><div class="field-grid">${F('Proyecto', 'proyecto')}${F('Mandante', 'mandante')}${F('Ubicación', 'ubicacion')}<div class="field"><label>N° de documento</label><input type="text" data-p="doc" value="${esc(E.proy.doc || '')}" placeholder="ej. ETA-2026-001">${ettSugSel('p:doc', act().flatMap(m => ETT_SUG_P.doc(m.pref)), 't')}</div><div class="field"><label>Revisión</label><input type="text" data-p="rev" value="${esc(E.proy.rev || '')}">${ettSugSel('p:rev', ETT_SUG_P.rev(), 't')}</div>${F('Fecha', 'fecha')}${SELP('Elaborado por', 'elaboro', MCM_ING)}${SELP('Revisado por', 'reviso', MCM_ING)}${F('Contacto', 'contacto')}</div>
@@ -54038,7 +54042,9 @@ function renderEETT(container) {
       catch (err) { fsToast('No se pudo generar el Word: ' + (err.message || err)); }
       b.disabled = false; b.textContent = t0; return; }
     const a = b.dataset.act;
-    if (a === 'desdeLocal') { let M = null; try { M = JSON.parse(localStorage.getItem(MCM_LS) || 'null'); } catch (err) {} if (!M || !M.proy) { fsToast('No hay una memoria en este equipo: ábrela desde archivo.'); return; } M = mcmMerge(M); ettDesdeMemoria(E, M); ettSave(E); draw(); fsToast('Datos traídos de la memoria: ' + mcmV(M.proy.proyecto, 'sin nombre')); }
+    if (a === 'desdeLocal') { let M = null; try { M = JSON.parse(localStorage.getItem(MCM_LS) || 'null'); } catch (err) {} if (!M || !M.proy) { fsToast('No hay una memoria en este equipo: ábrela desde archivo.'); return; }
+      if (Date.now() - armadoMem > 5000) { armadoMem = Date.now(); fsToast('Se traerán los datos de «' + mcmV(M.proy.proyecto, 'sin nombre') + '» (última memoria abierta en el Constructor de Memorias). Vuelve a pulsar para confirmar; si es otro proyecto, usa «Desde archivo de memoria (.json)».'); return; }
+      armadoMem = 0; M = mcmMerge(M); ettDesdeMemoria(E, M); ettSave(E); draw(); fsToast('Datos traídos de la memoria: ' + mcmV(M.proy.proyecto, 'sin nombre')); }
     else if (a === 'desdeArchivo') root.querySelector('#ettMemFile').click();
     else if (a === 'abrir') { const r = await mcmAbrirJson('Especificaciones técnicas (.json)', root.querySelector('#ettFile')); if (!r) return; try { const o = JSON.parse(r.text); if (!o || !o.proy || !o.mats) throw 0; E = Object.assign(ettDef(), o); ettFH = r.fh; ettSave(E); draw(); fsToast('EETT abiertas: ' + r.name); } catch (err) { fsToast('Ese archivo no son EETT guardadas.'); } }
     else if (a === 'guardar' || a === 'guardarComo') { ettFH = await mcmGuardarEn(ettFH, `EETT_${mcmSlug(E.proy.proyecto) || 'proyecto'}_${mcmSlug(E.proy.rev)}.json`, JSON.stringify(E), 'application/json', 'Especificaciones técnicas (.json)', '.json', a === 'guardarComo'); draw(); }
