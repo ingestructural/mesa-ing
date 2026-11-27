@@ -370,6 +370,13 @@
   .calc-power .cp-nada{flex:1 1 14rem; color:#7a5a00;}
   .cp-btn{font:inherit; font-size:.8rem; padding:.25rem .6rem; border:1px solid #9fb6d3; border-radius:5px; background:#fff; color:#0b4a8f; cursor:pointer;}
   .cp-btn:hover{background:#eef4fb;} .cp-btn.cp-main{background:#0060c1; border-color:#0060c1; color:#fff;}
+  .field.mem-proy-f{display:block;} .field.mem-proy-f > label{display:block; margin-bottom:.3rem;}
+  .mem-proy select, .mem-proy input[type=text]{text-align:left !important; width:auto !important;}
+  .mem-proy{display:flex; flex-wrap:wrap; align-items:center; gap:.45rem .6rem;}
+  .mem-proy select{flex:0 0 auto; min-width:14rem;}
+  .mem-proy .mp-chip{flex:1 1 16rem; min-width:0; color:var(--ink, #1b2430);} .mem-proy .mp-chip b{color:#0b4a8f;}
+  .mem-proy .mp-chip.sin{color:#7a5a00;} .mem-proy input[type=text]{flex:1 1 18rem;}
+  .mem-proy [hidden]{display:none !important;}
   .calc-meta .field input.power-fijo{background:rgba(0,96,193,.06); color:#0b4a8f; font-weight:600; cursor:default;}
   #powerSel{position:fixed; inset:0; z-index:9000; background:rgba(15,25,40,.35); display:flex; align-items:flex-start; justify-content:center; padding:8vh 16px 16px;}
   #powerSel .ps-box{background:var(--panel, #fff); color:var(--ink, #1b2430); width:min(640px,100%); max-height:80vh; display:flex; flex-direction:column; border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,.25); padding:.9rem 1rem; gap:.5rem;}
@@ -903,6 +910,13 @@
     return nom ? p.codigo + ' — ' + nom : String(p.codigo);
   }
   if (PROYECTO_POWER) PROYECTO_META.proyecto = powerTexto(PROYECTO_POWER);
+  // Nombre de archivo de impresiones y PDF: el nombre/código del proyecto («CÓDIGO - Proyecto»), sin caracteres no válidos.
+  function nombreArchivoProyecto(txt){
+    return String(txt != null ? txt : (PROYECTO_META.proyecto || '')).replace(/\s*[—–]\s*/g, ' - ').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  }
+  var TITULO_DOC0 = document.title;
+  window.addEventListener('beforeprint', function(){ var n = window.__memNombreArchivo || nombreArchivoProyecto(); if (n) document.title = n; });
+  window.addEventListener('afterprint', function(){ document.title = TITULO_DOC0; window.__memNombreArchivo = ''; });
   // copia código/mandante/proyecto a la memoria general (Constructor de Memorias) y al encargo de Informes
   function powerCopiarADocumentos(p){
     [['mesaMemoria.v1', 'proy'], ['mesaInforme.v1', null]].forEach(function(d){
@@ -1195,7 +1209,8 @@
       }
       cont.insertAdjacentHTML('beforeend', firmaIngHtml({sinImagen:!!soloBlob}));   // pie de firma (sin la imagen en el paquete de revisión externa)
       pdfResolverColores(cont);
-      var nombre = (titulo.replace(/\s*—\s*/g, ' - ').replace(/[\\/:*?"<>|()]+/g, '').replace(/\s+/g, '_').slice(0, 70) || 'Mesa') + (resumen ? '_Resumen' : '') + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
+      var nombre = nombreArchivoProyecto() ? nombreArchivoProyecto() + (resumen ? ' - Resumen' : '') + '.pdf'
+        : (titulo.replace(/\s*—\s*/g, ' - ').replace(/[\\/:*?"<>|()]+/g, '').replace(/\s+/g, '_').slice(0, 70) || 'Mesa') + (resumen ? '_Resumen' : '') + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
       var opt = {
         margin: [8, 8, 16, 8], filename: nombre,
         image: { type: 'jpeg', quality: 0.95 },
@@ -46468,6 +46483,11 @@ function memPanelHtml(pre, num, titulo, phDesc) {
       <h3>${num} · ${titulo}</h3>
       <div class="note" style="margin-bottom:.6rem">Datos para el informe. Incluye portada, introducción, descripción, marco regulatorio, desarrollo teórico con fórmulas, tablas, gráficos, resultados y conclusiones, con los datos y resultados de esta calculadora.</div>
       <div class="field-grid">
+        <div class="field mem-proy-f" style="grid-column:1/-1"><label>Proyecto del informe</label>
+          <div class="mem-proy" data-mem="${pre}">
+            <select id="${pre}_origen"><option value="power"${PROYECTO_POWER ? ' selected' : ''}>Proyecto de POWER</option><option value="indiv"${PROYECTO_POWER ? '' : ' selected'}>Individual (sin POWER)</option></select>
+            ${memProyInfo(pre, PROYECTO_POWER ? 'power' : 'indiv')}
+          </div></div>
         ${inp('cliente','Cliente / mandante','Ej: CMPC')}
         ${inp('ubic','Ubicación','Ej: Los Ángeles, Región del Biobío')}
         ${inp('edif','Edificio / estructura','Ej: Ampliación Nave 4/4')}
@@ -46482,12 +46502,47 @@ function memPanelHtml(pre, num, titulo, phDesc) {
       <div class="note" style="margin-top:.6rem">Estos datos van en la portada del informe. La memoria se revisa con <b>«👁 Ver memoria PDF»</b> y se imprime con <b>«🖨 Imprimir ▾ → Memoria de cálculo (informe)»</b>, en la barra superior.</div>
     </div>`;
 }
+// Proyecto del informe: de POWER (código, nombre y mandante del proyecto fijado) o individual (nombre libre, sin POWER)
+function memProyPow() { return (typeof PROYECTO_POWER !== 'undefined' && PROYECTO_POWER) ? PROYECTO_POWER : null; }
+function memProyInfo(pre, org) {
+  const p = memProyPow(), pw = org === 'power';
+  const chip = p ? `<b>${esc(p.codigo)}</b>${p.proyecto ? ' · ' + esc(p.proyecto) : ''}${p.mandante ? ' · ' + esc(p.mandante) : ''}` : 'Sin proyecto de POWER elegido.';
+  return `<span class="mp-chip${p ? '' : ' sin'}" data-mp="chip"${pw ? '' : ' hidden'}>${chip}</span>`
+    + `<button type="button" class="cp-btn${p ? '' : ' cp-main'}" data-mp="elegir"${pw ? '' : ' hidden'}>${p ? 'Cambiar proyecto' : '📁 Elegir proyecto de POWER'}</button>`
+    + `<input type="text" id="${pre}_proy" data-mp="proy" data-noupper placeholder="Nombre o código del proyecto"${pw ? ' hidden' : ''}>`;
+}
+function memProyPintar(box) {
+  const pre = box.dataset.mem, sel = document.getElementById(pre + '_origen'); if (!sel) return;
+  const proy = document.getElementById(pre + '_proy'), val = proy ? proy.value : '';
+  box.querySelectorAll('[data-mp="chip"],[data-mp="elegir"]').forEach(n => n.remove());
+  const tmp = document.createElement('div'); tmp.innerHTML = memProyInfo(pre, sel.value);
+  const pw = sel.value === 'power';
+  Array.from(tmp.children).forEach(n => { if (n.dataset.mp !== 'proy') box.insertBefore(n, proy || null); });
+  if (proy) { proy.hidden = pw; proy.value = val; }
+  const p = memProyPow(), cli = document.getElementById(pre + '_cliente');
+  // el mandante del proyecto se copia al cliente si está vacío o si lo había puesto el proyecto anterior
+  if (pw && p && p.mandante && cli && (!cli.value.trim() || cli.value === cli.dataset.mpAuto) && cli.value.toUpperCase() !== p.mandante.toUpperCase()) {
+    cli.value = p.mandante; cli.dispatchEvent(new Event('input', {bubbles:true})); cli.dataset.mpAuto = cli.value;
+  }
+}
+document.addEventListener('change', e => { const box = e.target.closest && e.target.closest('.mem-proy'); if (box && e.target.tagName === 'SELECT') { e.target.dataset.elegido = '1'; memProyPintar(box); } });
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('.mem-proy [data-mp="elegir"]'); if (b && typeof powerSelector === 'function') powerSelector(b); });
+// al fijar un proyecto de POWER, los informes cuyo origen nadie eligió (ni el usuario ni el archivo abierto) pasan a ese proyecto
+document.addEventListener('mesa-power', e => document.querySelectorAll('.mem-proy').forEach(box => {
+  const sel = document.getElementById(box.dataset.mem + '_origen');
+  if (sel && e.detail && !sel.dataset.elegido) sel.value = 'power';
+  memProyPintar(box);
+}));
 function memMeta(pre) {
   const v = id => { const e = document.getElementById(pre + '_' + id); return e ? (e.value || '').trim() : ''; };
-  return {cliente:v('cliente'), ubic:v('ubic'), edif:v('edif'), num:v('num'), autor:v('autor'), autorProf:v('autorProf'), revisor:v('revisor'), revisorProf:v('revisorProf'), desc:v('desc')};
+  const org = v('origen') || (memProyPow() ? 'power' : 'indiv'), p = org === 'power' ? memProyPow() : null;
+  const libre = !memProyPow() && typeof PROYECTO_META !== 'undefined' ? (PROYECTO_META.proyecto || '') : '';   // título libre de la planilla (sin POWER)
+  return {origen:org, proyecto:p ? powerTexto(p) : (v('proy') || libre), codigo:p ? p.codigo : '',
+    cliente:v('cliente') || (p ? p.mandante || '' : ''), ubic:v('ubic'), edif:v('edif'), num:v('num'), autor:v('autor'), autorProf:v('autorProf'), revisor:v('revisor'), revisorProf:v('revisorProf'), desc:v('desc')};
 }
 function memPortada(t1, t2, meta) {
-  const proyecto = (typeof PROYECTO_META !== 'undefined' && PROYECTO_META.proyecto) ? PROYECTO_META.proyecto : '';
+  const proyecto = (meta && meta.proyecto !== undefined) ? meta.proyecto : ((typeof PROYECTO_META !== 'undefined' && PROYECTO_META.proyecto) ? PROYECTO_META.proyecto : '');
+  window.__memNombreArchivo = (typeof nombreArchivoProyecto === 'function' && proyecto) ? nombreArchivoProyecto(proyecto) : '';
   const fecha = new Date().toLocaleDateString('es-CL', {day:'numeric', month:'long', year:'numeric'});
   return `<div class="portada">
       <div class="t1">${t1}</div>
@@ -46537,6 +46592,7 @@ function memImprimir(html) {
   document.documentElement.classList.add('informe-print-active');
   const limpiar = () => { document.documentElement.classList.remove('informe-print-active'); window.removeEventListener('afterprint', limpiar); };
   window.addEventListener('afterprint', limpiar);
+  if (window.__memNombreArchivo) document.title = window.__memNombreArchivo;
   window.__printOficial = true; setTimeout(() => window.print(), 150);
 }
 const MEM_F = t => `<div class="inf-cap">Figura @@FIG@@: ${t}</div>`;
@@ -62061,14 +62117,15 @@ async function verMemoriaPdf(btn) {
     window.memImprimir = h => { html = h; };
     try { inf.btn.click(); } finally { window.memImprimir = orig; }
     if (!html) return;                                               // la planilla ya avisó por qué no hay memoria
-    const nombre = 'Memoria_' + ((location.hash || '').replace('#', '') || 'planilla') + '.pdf';
+    const nombre = (window.__memNombreArchivo || nombreArchivoProyecto()) ? (window.__memNombreArchivo || nombreArchivoProyecto()) + '.pdf' : 'Memoria_' + ((location.hash || '').replace('#', '') || 'planilla') + '.pdf';
+    window.__memNombreArchivo = '';
     await impConEspera(btn, 'Generando PDF…', async () => mcmVerPdf(await afMemoriaPdf(html), nombre));
     return;
   }
   const cap = await mvsCapturaObj(); if (!cap) return;               // resto: memoria resumida del Constructor (con la hoja como anexo)
   await impConEspera(btn, 'Generando PDF…', async () => {
     const {P, Pt} = impProyecto(cap), B = mvsBuild(cap, P);
-    mcmVerPdf(await mvsPdf(cap, Pt, B), mvsNombreBase(cap, P) + '.pdf');
+    mcmVerPdf(await mvsPdf(cap, Pt, B), (nombreArchivoProyecto() || mvsNombreBase(cap, P)) + '.pdf');
   });
 }
 
@@ -62076,7 +62133,7 @@ async function verMemoriaPdf(btn) {
 async function impWord(btn) {
   const cap = await mvsCapturaObj(); if (!cap) return;
   await impConEspera(btn, 'Generando Word…', async () => {
-    const {S0, P, Pt} = impProyecto(cap), B = mvsBuild(cap, P), base = mvsNombreBase(cap, P);
+    const {S0, P, Pt} = impProyecto(cap), B = mvsBuild(cap, P), base = nombreArchivoProyecto() || mvsNombreBase(cap, P);
     const blob = await mcmDocx(Object.assign({}, S0, {proy:Pt}), B);
     await mcmGuardarArchivo(base + '.docx', blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Documento de Word', '.docx');
     try { archMemoria([{nombre:base + '.docx', blob}], Object.assign({}, Pt, {titulo:'Memoria de cálculo — ' + cap.nombre}), {clase:'verificacion', planilla:cap.nombre}); } catch (e) {}
