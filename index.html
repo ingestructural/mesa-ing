@@ -48318,7 +48318,7 @@ function efAccion0(e) {
   if (e.metodoCr === 'mu_mayor_1') return {c: 'bad', g: 'perfil', t: 'Cambiar perfil', a: 'El perfil no resiste la combinación de incendio ni a temperatura ambiente (μ0 > 1).'};
   if (e.prot === 'ninguna') {
     if (e.tcr != null && e.tcr < e.Freq) return alts.length ? {c: 'bad', g: 'elegir', t: 'Necesita protección', a: `Sin protección resiste ${fmt1(e.tcr)} min de los ${e.Freq} exigidos. Elija un producto:`, alts} : perfil();
-    if ((efSinProt(e) || {}).k === 'exime') return {c: 'amar', g: 'calc', t: 'Cumple por cálculo', a: `Resiste F-${e.Freq} sin protección (${e.tcr != null ? fmt1(e.tcr) + ' min' : 'más de 150 min'}). Para no protegerlo, presente la memoria de cálculo como antecedente técnico (Art. 4.3.2); la DOM puede exigir ensayo.`};
+    if ((efSinProt(e) || {}).k === 'exime') return {c: 'vcalc', g: 'calc', t: 'Cumple por cálculo', a: `Resiste F-${e.Freq} sin protección (${e.tcr != null ? fmt1(e.tcr) + ' min' : 'más de 150 min'}). Para no protegerlo, presente la memoria de cálculo como antecedente técnico (Art. 4.3.2); la DOM puede exigir ensayo.`};
     return {c: 'warn', g: 'datos', t: 'Faltan datos', a: 'Falta ' + (e.falta || []).join('; ') + '.'};
   }
   if (e.cob === 'no') return {c: 'bad', g: 'insuf', t: 'La referencia no cubre el elemento', a: 'Cambie el producto o la referencia documental.', alts};
@@ -48342,7 +48342,7 @@ function efAccion0(e) {
   return {c: 'ok', g: 'ok', t: 'Cumple', a: `${P.corto || P.nombre} ${e.espProp} ${u} (mínimo ${e.espReq} ${u}).`};
 }
 const EF_ACC_ORDEN = ['perfil', 'elegir', 'insuf', 'datos', 'asim', 'calc', 'cob', 'ok', 'sinexig'];
-const EF_ACC_ICO = {bad: '✗', warn: '!', amar: '◐', conf: '◑', asim: '◒', ok: '✓'};
+const EF_ACC_ICO = {bad: '✗', warn: '!', amar: '◐', vcalc: '✓', conf: '◑', asim: '◒', ok: '✓'};
 function efAccBotones(alts) {
   return (alts || []).slice(0, 4).map(a => `<button type="button" class="ef-usar" data-k="${a.k}" data-v="${Math.ceil(a.v)}"${EF_PROT[a.k].listado ? '' : ' title="Producto con informe de ensayo, no inscrito en el Listado: se acredita por asimilación (sección 5)."'}>Usar ${esc(EF_PROT[a.k].corto || EF_PROT[a.k].nombre)} · ${esc(a.txt || (Math.ceil(a.v) + ' ' + (a.u || '')))}${EF_PROT[a.k].listado ? '' : ' · por asimilación'}</button>`).join('');
 }
@@ -49046,7 +49046,7 @@ function efrPanelHtml() {
       </div>
       <div id="efr_msg" class="note" style="margin:.4rem 0"></div>
       <div id="efr_resumen" class="note" style="margin:.4rem 0;font-size:.85rem" hidden></div>
-      <details id="efr_det" open><summary id="efr_detSum" style="cursor:pointer;font-weight:600;margin:.3rem 0" hidden>Configuración y resultado por grupo</summary>
+      <details id="efr_det" open><summary id="efr_detSum" style="cursor:pointer;font-weight:600;margin:.3rem 0;color:var(--accent,#0060c1)" hidden>Tabla de grupos RAM: configuración y resultado (clic para abrir o plegar)</summary>
       <div id="efr_cfg"></div>
       <div id="efr_res"></div></details>
     </div>`;
@@ -49087,7 +49087,7 @@ function efrResHtml(M, R) {
   const estC = {exime: 'ok', prot: 'warn', pend: 'warn', nores: 'bad', sinexig: 'ok', sinsec: 'bad', sinF: 'warn'};
   return `${R.errs.length ? `<div class="note" style="color:var(--bad,#c0392b)">${R.errs.map(esc).join('<br>')}</div>` : ''}
     ${R.avisos.length ? `<div class="note" style="margin-top:.4rem">${R.avisos.map(esc).join('<br>')}</div>` : ''}
-    <div style="margin:.6rem 0"><button type="button" class="print-btn" id="efr_incorporar">Incorporar a las fichas 3b (reemplaza los elementos [RAM] anteriores)</button>
+    <div style="margin:.6rem 0"><button type="button" class="print-btn" id="efr_incorporar">Incorporar a las fichas 3b (reemplaza los elementos [RAM] anteriores)</button> <button type="button" class="print-btn" id="efr_plegar" style="background:var(--surface-alt,#eef2f6);color:inherit">▲ Plegar la tabla de grupos</button>
       <div class="note" style="margin-top:.3rem">La protección y su espesor se asignan al incorporar, con el producto elegido arriba, solo a los grupos que por cálculo no alcanzan su F sin protección. Defina antes el tipo de edificio y la función de cada grupo; si los cambia, vuelva a incorporar.</div></div>
     <details><summary>Detalle por miembro (${R.miembros.length})</summary>
     <div style="overflow-x:auto;max-height:520px"><table class="results"><tr><th>ID RAM</th><th>G</th><th>Sección</th><th>L (m)</th><th>Comb.</th><th>N (kN)</th><th>M33 (kN·m)</th><th>M22 (kN·m)</th><th>Clase</th><th>μ0</th><th>Método θcr</th><th>θcr (°C)</th><th>t sin prot. (min)</th><th>Resultado</th></tr>
@@ -49292,7 +49292,7 @@ function efInstruccionesHtml() {
   <p>Las edificaciones de un piso, construidas con elementos no combustibles, quedan liberadas de protección contra el fuego si cumplen <b>todos</b> los requisitos del Art. 4.3.26. En «¿Aplicar la exención del Art. 4.3.26?» elija «Sí»: la planilla evalúa sola el número de pisos, los ocupantes (&lt; 100) y la carga combustible media (&lt; 250 MJ/m²); los demás requisitos se marcan «Cumple» con su respaldo escrito (especificación, plano de emplazamiento, resolución). Bodegaje e industria requieren la calificación de actividad inofensiva de la SEREMI de Salud (Art. 2.1.28). Con todo acreditado, los elementos quedan «sin exigencia» y la memoria incluye la tabla de requisitos; mientras falte uno, rigen las exigencias del tipo de edificio.</p>
 
   <h3>7. Cabecera de cada ficha (sección 3b)</h3>
-  <p>Cada ficha muestra arriba su resultado en una franja de color: verde cumple, amarillo cumple por cálculo, celeste protección correcta por confirmar, lila protección por asimilación, naranjo faltan datos y rojo no cumple. La primera línea dice el estado, la exigencia y la protección (producto y espesor, o los minutos que resiste sin protección); la segunda, el motivo o lo que falta.</p>
+  <p>Cada ficha muestra arriba su resultado en una franja de color: verde cumple, verde claro cumple por cálculo (presentar la memoria), celeste protección correcta por confirmar, lila protección por asimilación, naranjo faltan datos y rojo no cumple. La primera línea dice el estado, la exigencia y la protección (producto y espesor, o los minutos que resiste sin protección); la segunda, el motivo o lo que falta.</p>
 
   <h3>8. Anexo «Revisión y optimización»</h3>
   <p>El botón <b>«📋 Anexo: revisión y optimización»</b> genera un documento separado de la memoria, con portada propia, que revisa el estudio y ordena por impacto las medidas para llegar a la protección más baja que cumpla: exención del Art. 4.3.26, función de los elementos de techumbre, cielo falso resistente, cambio de perfiles sin producto o clase 4, elementos que cumplen por cálculo, espesores sobre el mínimo, μ0 y coberturas pendientes. Incluye, por elemento, los productos que lo cubren con su espesor. No contiene precios: cada alternativa debe cotizarse. No modifica el estudio; las medidas que se adopten se ingresan en la planilla y se recalcula.</p>
@@ -49425,6 +49425,9 @@ function renderEstudioFuego(container) {
         table.ef-lista tbody td.ef-cab.ok{background:var(--good-bg)} table.ef-lista tbody td.ef-cab.bad{background:var(--bad-bg)}
         table.ef-lista tbody td.ef-cab.warn{background:#FDEBD0}
         table.ef-lista tbody td.ef-cab.amar{background:#FFF1B8}
+        table.ef-lista tbody td.ef-cab.vcalc{background:#E3F4E1}
+        @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) table.ef-lista tbody td.ef-cab.vcalc{background:#173A1F}}
+        :root[data-theme="dark"] table.ef-lista tbody td.ef-cab.vcalc{background:#173A1F}
         table.ef-lista tbody td.ef-cab.conf{background:#DCEBFB} table.ef-lista tbody td.ef-cab.asim{background:#EADCF7}
         @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) table.ef-lista tbody td.ef-cab.conf{background:#132C47} :root:not([data-theme="light"]) table.ef-lista tbody td.ef-cab.asim{background:#2E1F42}}
         :root[data-theme="dark"] table.ef-lista tbody td.ef-cab.conf{background:#132C47} :root[data-theme="dark"] table.ef-lista tbody td.ef-cab.asim{background:#2E1F42}
@@ -49448,6 +49451,7 @@ function renderEstudioFuego(container) {
         table.ef-lista tbody td.ef-cab .ef-cab-calc{font-size:.72rem;color:var(--ink-muted);margin-top:.2rem}
         table.ef-lista tbody td.ef-cab .ef-cab-calc summary{cursor:pointer;font-weight:600}
         .ef-estado .chip.amar, #ef_estado3 .chip.amar, #ef_resElem .chip.amar{background:#FFF1B8;color:#6B5200}
+        .ef-estado .chip.vcalc, #ef_estado3 .chip.vcalc, #ef_resElem .chip.vcalc{background:#E3F4E1;color:#2E6B30;border:1px dashed #6DAA62}
         .ef-estado .chip.conf, #ef_estado3 .chip.conf, #ef_resElem .chip.conf{background:#DCEBFB;color:#0B4F8A}
         .ef-estado .chip.asim, #ef_estado3 .chip.asim, #ef_resElem .chip.asim{background:#EADCF7;color:#5B2C8A}
         tr.ef-flash td.ef-cab{outline:3px solid var(--accent,#0060c1)}
@@ -49705,7 +49709,7 @@ function renderEstudioFuego(container) {
     ${r.resist ? `<div style="overflow-x:auto;margin-top:.5rem"><table class="results"><tr><th>Elemento (OGUC 4.3.3)</th><th>Tipo ${r.tipo}</th><th>Condición (4.3.5)</th></tr>${r.resist.map(x => `<tr><td>${esc(x.elemento)}</td><td class="num">${esc(x.txt)}</td><td class="note">${esc(x.cond)}</td></tr>`).join('')}</table></div>` : ''}`;
     document.getElementById('ef_estado3').innerHTML = efEstadoHtml(r) || '<div class="note">Agregue elementos o importe el modelo RAM.</div>';
     { const cnt = c => r.elems.filter(e => efAccion(e).c === c).length;
-      document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .4rem"><span class="chip bad">✗ Requieren acción: ${cnt('bad')}</span><span class="chip warn">! Faltan datos: ${cnt('warn')}</span><span class="chip amar">◐ Cumplen por cálculo: ${cnt('amar')}</span><span class="chip conf">◑ Protección por confirmar: ${cnt('conf')}</span>${cnt('asim') ? `<span class="chip asim">◒ Por asimilación: ${cnt('asim')}</span>` : ''}<span class="chip ok">✓ Cumplen: ${cnt('ok')}</span></div><div class="note">El estado de cada elemento y qué hacer están en la tabla «Estado de los elementos», al final de la sección 3b.</div>` : '<div class="note">Agregue elementos en la sección 3.</div>'; }
+      document.getElementById('ef_resElem').innerHTML = r.elems.length ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .4rem"><span class="chip bad">✗ Requieren acción: ${cnt('bad')}</span><span class="chip warn">! Faltan datos: ${cnt('warn')}</span><span class="chip vcalc">✓ Cumplen por cálculo: ${cnt('vcalc')}</span><span class="chip conf">◑ Protección por confirmar: ${cnt('conf')}</span>${cnt('asim') ? `<span class="chip asim">◒ Por asimilación: ${cnt('asim')}</span>` : ''}<span class="chip ok">✓ Cumplen: ${cnt('ok')}</span></div><div class="note">El estado de cada elemento y qué hacer están en la tabla «Estado de los elementos», al final de la sección 3b.</div>` : '<div class="note">Agregue elementos en la sección 3.</div>'; }
     document.getElementById('ef_resAsim').innerHTML = efAsimHtml(r);
     document.getElementById('ef_chkWrap').style.display = r.requiereAsim ? '' : 'none';
     document.getElementById('ef_origWrap').style.display = r.requiereAsim ? '' : 'none';
@@ -49773,8 +49777,17 @@ function renderEstudioFuego(container) {
     });
     if (cambio) recalc();
   }
+  let efrVolver = null;
+  efrPanel.addEventListener('click', ev => {
+    if (!ev.target.closest('#efr_plegar')) return;
+    const det = document.getElementById('efr_det'); if (det) det.open = false;
+    const v = efrVolver && efrVolver.isConnected ? efrVolver : efrPanel; efrVolver = null;
+    v.scrollIntoView({behavior: 'smooth', block: 'start'});
+  });
   efrPanel.addEventListener('click', ev => {
     if (!ev.target.closest('#efr_incorporar') || !efrR) return;
+    efrVolver = null;
+    { const det = document.getElementById('efr_det'); if (det) det.open = false; }
     // reemplaza los elementos [RAM] anteriores y las filas de ejemplo de la planilla
     Array.from(body.children).forEach(tr => { if (tr.dataset.ejemplo === '1' || /^\[RAM\]/.test(tr.querySelector('[data-f="nombre"]').value)) tr.remove(); });
     efrElementos(efrM, efrR).forEach(pre => addRow(pre));
@@ -49818,6 +49831,7 @@ function renderEstudioFuego(container) {
   });
   body.addEventListener('click', ev => {
     if (!ev.target.closest('.ef-ramf')) return;
+    efrVolver = ev.target.closest('tr');
     const det = document.getElementById('efr_det'); if (det) det.open = true;
     const t = document.getElementById('efr_grpTbl'); if (t) t.scrollIntoView({behavior: 'smooth', block: 'center'});
   });
