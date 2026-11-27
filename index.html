@@ -53995,11 +53995,8 @@ function renderEETT(container) {
   }
   function html() {
     const A = act();
-    // La memoria del equipo es la última abierta en el Constructor de Memorias: puede ser de otro proyecto.
-    // No se muestra como ligada; solo se usa si se pulsa «Traer datos» (con confirmación).
-    let memNom = ''; try { const M = JSON.parse(localStorage.getItem(MCM_LS) || 'null'); if (M && M.proy) memNom = mcmV(M.proy.proyecto, 'sin nombre') + (M.proy.mandante ? ' — ' + M.proy.mandante : ''); } catch (e) {}
-    const memInfo = (E.desde ? `Estas EETT tomaron datos de: <b>${esc(E.desde)}</b>.` : 'Estas EETT <b>no están ligadas</b> a ninguna memoria de cálculo.')
-      + (memNom ? ` <span style="opacity:.75">Última memoria abierta en el Constructor de Memorias de este equipo: ${esc(memNom)} (puede ser de otro proyecto; solo se usa si pulsas «Traer datos de la memoria»).</span>` : ' <span style="opacity:.75">No hay memoria abierta en el Constructor de Memorias de este equipo; puedes traer los datos desde un archivo de memoria (.json).</span>');
+    // Solo se informa si estas EETT tomaron datos de una memoria (la memoria abierta en el equipo no se muestra: confundía).
+    const memInfo = E.desde ? `Estas EETT tomaron datos de: <b>${esc(E.desde)}</b>.` : 'Estas EETT <b>no están ligadas</b> a ninguna memoria de cálculo.';
     return `<div style="margin-bottom:1rem"><h1>Especificaciones Técnicas</h1>
       <div class="sub">Arma las especificaciones técnicas de acero, hormigón armado, madera, albañilería reforzada y perfiles Metalcon en formato ING Estructural, a partir de la biblioteca de EETT de la oficina. Puede tomar los datos del proyecto, la descripción de la estructura y las calidades de materiales de una memoria de cálculo del Constructor de Memorias.</div>
       <div class="mem-btns"><button type="button" class="btn-add" data-act="nueva">🗋 Nueva EETT</button><button type="button" class="btn-add" data-act="abrir">📂 Abrir EETT…</button><button type="button" class="btn-add" data-act="guardar">💾 Guardar</button><button type="button" class="btn-add" data-act="guardarComo">💾 Guardar como…</button>${ettFH ? `<span class="note" style="align-self:center">Archivo: <b>${esc(ettFH.name)}</b></span>` : ''}</div></div>
